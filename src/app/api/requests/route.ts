@@ -242,7 +242,7 @@ export async function PUT(req: NextRequest) {
 
       // Validate both are still SCHEDULED/CONFIRMED
       if (!["SCHEDULED", "CONFIRMED"].includes(origAssignment.status) ||
-          !["SCHEDULED", "CONFIRMED"].includes(targetAssignment.status)) {
+        !["SCHEDULED", "CONFIRMED"].includes(targetAssignment.status)) {
         return NextResponse.json({ success: false, error: "Um dos plantões já foi alterado e não pode ser trocado" }, { status: 409 });
       }
 

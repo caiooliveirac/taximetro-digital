@@ -34,52 +34,52 @@ const DATABASE_URL =
 // ── Nomes brasileiros ────────────────────────────────────────────
 
 const FIRST_F = [
-  "Mariana","Beatriz","Ana","Júlia","Camila","Fernanda","Larissa","Isabela",
-  "Amanda","Carolina","Letícia","Bruna","Patrícia","Raquel","Natália","Débora",
-  "Renata","Tatiana","Vanessa","Aline","Clara","Lívia","Priscila","Marina",
-  "Gabriela","Luísa","Helena","Bianca","Tainá","Laura",
+  "Mariana", "Beatriz", "Ana", "Júlia", "Camila", "Fernanda", "Larissa", "Isabela",
+  "Amanda", "Carolina", "Letícia", "Bruna", "Patrícia", "Raquel", "Natália", "Débora",
+  "Renata", "Tatiana", "Vanessa", "Aline", "Clara", "Lívia", "Priscila", "Marina",
+  "Gabriela", "Luísa", "Helena", "Bianca", "Tainá", "Laura",
 ];
 
 const FIRST_M = [
-  "Lucas","Pedro","Gabriel","Rafael","Matheus","Gustavo","Felipe","Bruno",
-  "Thiago","André","Vinícius","Leonardo","Diego","Henrique","Arthur","Caio",
-  "Daniel","Rodrigo","Samuel","Igor","Eduardo","Bernardo","João","Marcos",
-  "Luciano","Nicolas","Renan","Wallace","Elias","William",
+  "Lucas", "Pedro", "Gabriel", "Rafael", "Matheus", "Gustavo", "Felipe", "Bruno",
+  "Thiago", "André", "Vinícius", "Leonardo", "Diego", "Henrique", "Arthur", "Caio",
+  "Daniel", "Rodrigo", "Samuel", "Igor", "Eduardo", "Bernardo", "João", "Marcos",
+  "Luciano", "Nicolas", "Renan", "Wallace", "Elias", "William",
 ];
 
 const SURNAMES = [
-  "Silva","Santos","Oliveira","Souza","Lima","Ferreira","Almeida","Costa",
-  "Ribeiro","Nascimento","Carvalho","Mendes","Rocha","Martins","Freitas",
-  "Barbosa","Pereira","Araújo","Lopes","Correia","Duarte","Nunes","Vieira",
-  "Campos","Moreira","Teixeira","Monteiro","Reis","Melo","Cardoso","Barreto",
-  "Cunha","Nogueira","Pinto","Fonseca","Sampaio","Gomes","Brito","Castro","Ramos",
+  "Silva", "Santos", "Oliveira", "Souza", "Lima", "Ferreira", "Almeida", "Costa",
+  "Ribeiro", "Nascimento", "Carvalho", "Mendes", "Rocha", "Martins", "Freitas",
+  "Barbosa", "Pereira", "Araújo", "Lopes", "Correia", "Duarte", "Nunes", "Vieira",
+  "Campos", "Moreira", "Teixeira", "Monteiro", "Reis", "Melo", "Cardoso", "Barreto",
+  "Cunha", "Nogueira", "Pinto", "Fonseca", "Sampaio", "Gomes", "Brito", "Castro", "Ramos",
 ];
 
 // ── Constantes ────────────────────────────────────────────────────
 
 const BASE_RANK = [
-  "SM01","PM04","PM40","CN10","PR03","CC70",
-  "BR60","CB02","IT30","CZ50","BR05","PP20",
+  "SM01", "PM04", "PM40", "CN10", "PR03", "CC70",
+  "BR60", "CB02", "IT30", "CZ50", "BR05", "PP20",
 ];
 const NIGHT_SET = new Set(BASE_RANK.slice(0, 6));
-const FAC_ABBR = ["ZARNS","UFBA","AFYA","UNIFACS","EBMSP"] as const;
-const DOW = ["MON","TUE","WED","THU","FRI","SAT","SUN"] as const;
+const FAC_ABBR = ["ZARNS", "UFBA", "AFYA", "UNIFACS", "EBMSP"] as const;
+const DOW = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const;
 
 const CASE_SCENARIOS = [
   { nickname: "PCR — Fibrilação Ventricular", description: "Masculino, 58a, PCR em via pública. Ritmo FV. DEA 1 choque + RCP 2 min. RCE após 4 min." },
-  { nickname: "Trauma Cranioencefálico",      description: "Queda de moto sem capacete, masculino 23a. GCS 9. Anisocoria D>E. Imobilização cervical." },
-  { nickname: "Crise Hipertensiva",           description: "Feminina, 72a, PA 220x130mmHg, cefaleia intensa. Captopril 25mg SL. PA controle 180x100." },
-  { nickname: "Dispneia — EAP",               description: "Masculino 65a, dispneia súbita, crepitações bilaterais. SpO2 82%. Furosemida 40mg EV." },
-  { nickname: "Acidente Ofídico",             description: "Masculino 34a, jararaca em MID. Edema progressivo. Soro antibotrópico 4 ampolas." },
-  { nickname: "Convulsão Febril",             description: "Criança 2a, convulsão tônico-clônica 3 min. T 39.8C. Diazepam retal 5mg. Cessou crise." },
-  { nickname: "IAM com Supra ST",             description: "Masculino 62a, dor torácica 40 min. Supra V1-V4. AAS+Clopidogrel. Hemodinâmica ativada." },
-  { nickname: "Afogamento Grau 3",            description: "Masculino 17a, resgatado em praia. SpO2 89%. O2 15L/min. SNG descompressiva." },
+  { nickname: "Trauma Cranioencefálico", description: "Queda de moto sem capacete, masculino 23a. GCS 9. Anisocoria D>E. Imobilização cervical." },
+  { nickname: "Crise Hipertensiva", description: "Feminina, 72a, PA 220x130mmHg, cefaleia intensa. Captopril 25mg SL. PA controle 180x100." },
+  { nickname: "Dispneia — EAP", description: "Masculino 65a, dispneia súbita, crepitações bilaterais. SpO2 82%. Furosemida 40mg EV." },
+  { nickname: "Acidente Ofídico", description: "Masculino 34a, jararaca em MID. Edema progressivo. Soro antibotrópico 4 ampolas." },
+  { nickname: "Convulsão Febril", description: "Criança 2a, convulsão tônico-clônica 3 min. T 39.8C. Diazepam retal 5mg. Cessou crise." },
+  { nickname: "IAM com Supra ST", description: "Masculino 62a, dor torácica 40 min. Supra V1-V4. AAS+Clopidogrel. Hemodinâmica ativada." },
+  { nickname: "Afogamento Grau 3", description: "Masculino 17a, resgatado em praia. SpO2 89%. O2 15L/min. SNG descompressiva." },
 ];
 
 const PREC_NAMES = [
-  "Dra. Camila Braga","Dr. Thiago Damasceno","Dra. Patrícia Lopes","Dr. Marcos Vieira",
-  "Dra. Lívia Teixeira","Dr. Antônio Sampaio","Dra. Renata Fonseca","Dr. Nelson Cunha",
-  "Dra. Clarissa Monteiro","Dr. Jorge Barbosa","Dra. Aline Nogueira","Dr. Fábio Ramos",
+  "Dra. Camila Braga", "Dr. Thiago Damasceno", "Dra. Patrícia Lopes", "Dr. Marcos Vieira",
+  "Dra. Lívia Teixeira", "Dr. Antônio Sampaio", "Dra. Renata Fonseca", "Dr. Nelson Cunha",
+  "Dra. Clarissa Monteiro", "Dr. Jorge Barbosa", "Dra. Aline Nogueira", "Dr. Fábio Ramos",
   "Dra. Sônia Correia",
 ];
 
@@ -91,7 +91,7 @@ function stripAccents(s: string) { return s.normalize("NFD").replace(/[\u0300-\u
 
 function fakeCPF(n: number): string {
   const s = n.toString().padStart(11, "0");
-  return `${s.slice(0,3)}.${s.slice(3,6)}.${s.slice(6,9)}-${s.slice(9,11)}`;
+  return `${s.slice(0, 3)}.${s.slice(3, 6)}.${s.slice(6, 9)}-${s.slice(9, 11)}`;
 }
 
 /**
@@ -121,17 +121,17 @@ async function seedDev() {
   // ============================================================
   console.log("🔍 Verificando seed base...");
   const allBases = await db.select().from(bases);
-  const allFac   = await db.select().from(faculties);
+  const allFac = await db.select().from(faculties);
   if (!allBases.length || !allFac.length) {
     console.error("❌ Execute seed base primeiro: npm run db:seed");
     await client.end(); process.exit(1);
   }
   const baseByCode = Object.fromEntries(allBases.map(b => [b.code, b])) as Record<string, typeof allBases[0]>;
-  const facByAbbr  = Object.fromEntries(allFac.map(f => [f.abbreviation, f])) as Record<string, typeof allFac[0]>;
-  const facIds     = FAC_ABBR.map(a => facByAbbr[a].id);
-  const cruBase    = allBases.find(b => b.type === "CENTRAL")!;
-  const [admin]    = await db.select({ id: users.id }).from(users).where(eq(users.cpf, "000.000.000-00"));
-  const coordId    = admin!.id;
+  const facByAbbr = Object.fromEntries(allFac.map(f => [f.abbreviation, f])) as Record<string, typeof allFac[0]>;
+  const facIds = FAC_ABBR.map(a => facByAbbr[a].id);
+  const cruBase = allBases.find(b => b.type === "CENTRAL")!;
+  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.cpf, "000.000.000-00"));
+  const coordId = admin!.id;
 
   // ============================================================
   // 2. Faculty targets
@@ -381,10 +381,10 @@ async function seedDev() {
     insertedAll.push(...created);
   }
 
-  const todayStr  = dateStr(today);
-  const historyA  = insertedAll.filter(a => a.date < todayStr);
-  const todayA    = insertedAll.filter(a => a.date === todayStr);
-  const futureA   = insertedAll.filter(a => a.date > todayStr);
+  const todayStr = dateStr(today);
+  const historyA = insertedAll.filter(a => a.date < todayStr);
+  const todayA = insertedAll.filter(a => a.date === todayStr);
+  const futureA = insertedAll.filter(a => a.date > todayStr);
   console.log(`   -> ${historyA.length} passados, ${todayA.length} hoje, ${futureA.length} futuros`);
 
   // ============================================================

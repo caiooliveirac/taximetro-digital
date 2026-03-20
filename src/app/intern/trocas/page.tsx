@@ -151,17 +151,15 @@ export default function InternTrocas() {
       <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
         <button
           onClick={() => setTab("NEW")}
-          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-            tab === "NEW" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
-          }`}
+          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${tab === "NEW" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+            }`}
         >
           Nova Solicitação
         </button>
         <button
           onClick={() => setTab("HISTORY")}
-          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-            tab === "HISTORY" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
-          }`}
+          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${tab === "HISTORY" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+            }`}
         >
           Histórico
         </button>
@@ -256,9 +254,8 @@ export default function InternTrocas() {
           </Button>
 
           {msg && (
-            <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-              msg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-            }`}>
+            <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${msg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+              }`}>
               {msg.type === "success"
                 ? <CheckCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                 : <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />}
