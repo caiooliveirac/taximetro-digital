@@ -1,26 +1,26 @@
 import nodemailer from "nodemailer";
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST ?? "smtp.gmail.com",
-  port: Number(process.env.SMTP_PORT ?? 587),
-  secure: process.env.SMTP_SECURE === "true",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
+    host: process.env.SMTP_HOST ?? "smtp.gmail.com",
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === "true",
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
 });
 
 const FROM = process.env.SMTP_FROM ?? "Taxímetro Digital <noreply@mnrs.com.br>";
 
 export async function sendPasswordResetEmail(to: string, name: string, token: string) {
-  const baseUrl = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "https://mnrs.com.br/taximetro";
-  const resetUrl = `${baseUrl}/redefinir-senha/${token}`;
+    const baseUrl = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "https://mnrs.com.br/taximetro";
+    const resetUrl = `${baseUrl}/redefinir-senha/${token}`;
 
-  await transporter.sendMail({
-    from: FROM,
-    to,
-    subject: "Taxímetro Digital — Redefinição de Senha",
-    html: `
+    await transporter.sendMail({
+        from: FROM,
+        to,
+        subject: "Taxímetro Digital — Redefinição de Senha",
+        html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
         <div style="text-align: center; margin-bottom: 24px;">
           <h1 style="font-size: 20px; color: #1E3A5F; margin: 0;">Taxímetro Digital</h1>
@@ -38,5 +38,5 @@ export async function sendPasswordResetEmail(to: string, name: string, token: st
         <p style="font-size: 12px; color: #94a3b8; text-align: center;">Se o botão não funcionar, copie e cole este link no navegador:<br/><a href="${resetUrl}" style="color: #64748b; word-break: break-all;">${resetUrl}</a></p>
       </div>
     `,
-  });
+    });
 }

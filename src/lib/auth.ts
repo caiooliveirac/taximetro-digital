@@ -71,8 +71,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
   session: { strategy: "jwt" },
   pages: {
-    signIn: "/login",
-    error: "/login",
+    signIn: "/taximetro/login",
+    error: "/taximetro/login",
   },
   callbacks: {
     async signIn({ user, account }) {
@@ -87,10 +87,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             email: user.email,
             name: user.name ?? "",
           });
-          return `/registro/google?${params.toString()}`;
+          return `/taximetro/registro/google?${params.toString()}`;
         }
         if (!existing.isActive) {
-          return "/login?error=PendingApproval";
+          return "/taximetro/login?error=PendingApproval";
         }
         // Link Google ID if not yet linked
         if (!existing.googleId && account.providerAccountId) {
