@@ -80,14 +80,13 @@ export default function AdminSolicitacoes() {
                 <td className="py-2 pr-4">{TYPE_LABEL[r.type] ?? r.type}</td>
                 <td className="py-2 pr-4">{r.requesterName}</td>
                 <td className="py-2 pr-4">
-                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${
-                    r.status === "PENDING" ? "bg-amber-50 text-amber-700" :
-                    r.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" :
-                    r.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" :
-                    r.status === "REJECTED" ? "bg-red-50 text-red-700" :
-                    r.status === "ESCALATED" ? "bg-orange-50 text-orange-700" :
-                    "bg-slate-100 text-slate-600"
-                  }`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${r.status === "PENDING" ? "bg-amber-50 text-amber-700" :
+                      r.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" :
+                        r.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" :
+                          r.status === "REJECTED" ? "bg-red-50 text-red-700" :
+                            r.status === "ESCALATED" ? "bg-orange-50 text-orange-700" :
+                              "bg-slate-100 text-slate-600"
+                    }`}>{STATUS_LABEL[r.status] ?? r.status}</span>
                 </td>
                 <td className="py-2 pr-4 text-xs text-slate-400">{new Date(r.createdAt).toLocaleDateString("pt-BR")}</td>
                 <td className="py-2">
