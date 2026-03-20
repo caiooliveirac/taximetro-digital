@@ -21,6 +21,7 @@ async function cleanDev() {
 
   // Ordem respeitando foreign keys (filhos primeiro)
   const tables = [
+    "password_reset_tokens",
     "qr_sessions",
     "audit_log",
     "case_records",
