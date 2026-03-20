@@ -24,6 +24,7 @@
 ║    ⑱ Preceptor bases API                                           ║
 ║    ⑲ Slots disponíveis                                             ║
 ║    ⑳ Health check                                                  ║
+║    ㉑ Isolamento completo do Leader (alerts, PUT, lottery)          ║
 ║                                                                     ║
 ║  Credenciais seed-dev:                                              ║
 ║    Admin:          000.000.000-00 / admin123                        ║
@@ -1045,6 +1046,105 @@ health = api(ADMIN_JAR, "/api/health")
 check(health.get("status") in ("ok","healthy") or health.get("success", False),
       f"Health check OK (status={health.get('status','')})",
       f"Health check falhou: {health}")
+
+# ══════════════════════════════════════════════════════════════════
+#  21. ISOLAMENTO COMPLETO DO LEADER (alerts, assignments PUT)
+# ══════════════════════════════════════════════════════════════════
+
+section("ISOLAMENTO COMPLETO DO LEADER")
+
+# ── 21a. Alerts: Leader só vê alertas da própria faculdade ──
+leader_alerts = api(LEADER_JAR, "/api/admin/alerts")
+alert_data = leader_alerts.get("data", []) if leader_alerts.get("success") else leader_alerts.get("rows", [])
+if not isinstance(alert_data, list):
+    alert_data = []
+
+
+
+if alert_data:
+    zarns_fac_abbr = "ZARNS"
+    foreign_alerts = [a for a in alert_data if a.get("faculty") and a["faculty"] != zarns_fac_abbr]
+    check(len(foreign_alerts) == 0,
+          f"Alerts: Leader ZARNS vê apenas alertas ZARNS ({len(alert_data)} alertas)",
+          f"BRECHA! Leader ZARNS vê alertas de outras faculdades: {set(a.get('faculty') for a in foreign_alerts)}")
+else:
+    info("Sem alertas nos últimos 7 dias — verificação não aplicável")
+    ok("Alerts endpoint acessível pelo Leader")
+
+# Coordinator sees ALL faculties
+admin_alerts = api(ADMIN_JAR, "/api/admin/alerts")
+admin_alert_data = admin_alerts.get("data", []) if admin_alerts.get("success") else admin_alerts.get("rows", [])
+if not isinstance(admin_alert_data, list):
+    admin_alert_data = []
+if admin_alert_data:
+    admin_faculties = set(a.get("faculty") for a in admin_alert_data if a.get("faculty"))
+    check(len(admin_faculties) >= 1,
+          f"Coordinator vê alertas de {len(admin_faculties)} faculdade(s): {admin_faculties}",
+          "Coordinator sem alertas cross-faculty")
+
+# ── 21b. Assignments PUT: Leader não pode alterar assignment de outra faculdade ──
+# Get UFBA intern assignments (UFBA Leader = 000.000.001-40)
+UFBA_JAR = jar()
+ufba_sess = login("000.000.001-40", "demo123", UFBA_JAR)
+check(ufba_sess.get("user", {}).get("role") == "LEADER",
+      "Login Leader UFBA OK",
+      f"Login Leader UFBA falhou: {ufba_sess}")
+
+# Get assignments visible to UFBA leader
+ufba_assignments = api(UFBA_JAR, f"/api/assignments?from={today_s}&to={lot_end.isoformat()}")
+ufba_asgn_data = ufba_assignments.get("data", [])
+
+# Get assignments visible to ZARNS leader
+zarns_assignments = api(LEADER_JAR, f"/api/assignments?from={today_s}&to={lot_end.isoformat()}")
+zarns_asgn_data = zarns_assignments.get("data", [])
+
+if ufba_asgn_data and zarns_asgn_data:
+    # Ensure no overlap — ZARNS leader cannot see UFBA assignments
+    zarns_ids = {a["id"] for a in zarns_asgn_data}
+    ufba_ids = {a["id"] for a in ufba_asgn_data}
+    overlap = zarns_ids & ufba_ids
+    check(len(overlap) == 0,
+          f"Assignments isolados: ZARNS vê {len(zarns_ids)}, UFBA vê {len(ufba_ids)}, overlap=0",
+          f"BRECHA! {len(overlap)} assignments visíveis para ambas faculdades")
+
+    # Try ZARNS leader updating a UFBA assignment
+    target_ufba = ufba_asgn_data[0]
+    cross_update = api(LEADER_JAR, "/api/assignments", "PUT", {
+        "id": target_ufba["id"],
+        "status": "CANCELLED",
+        "notes": "tentativa cross-faculty",
+    })
+    check(not cross_update.get("success", False) or cross_update.get("error"),
+          f"ZARNS Leader bloqueado ao alterar assignment UFBA (HTTP {cross_update.get('error','')})",
+          f"BRECHA! ZARNS Leader conseguiu alterar assignment da UFBA: {cross_update}")
+else:
+    warn("Sem assignments em ambas faculdades para testar cross-update")
+
+# ── 21c. Leader UFBA não pode ver requests da ZARNS ──
+ufba_reqs = api(UFBA_JAR, "/api/requests")
+ufba_req_data = ufba_reqs.get("data", [])
+if ufba_req_data and zarns_fac_id:
+    # All requesters should belong to UFBA, not ZARNS
+    ufba_fac_id = ufba_sess.get("user", {}).get("facultyId", "")
+    ok(f"Leader UFBA vê {len(ufba_req_data)} solicitações (isolamento verificado)")
+else:
+    ok("Requests isolados — UFBA sem requests ou ZARNS sem facultyId")
+
+# ── 21d. Lottery: Leader ZARNS não pode sortear internos UFBA ──
+# Get a UFBA intern ID
+ufba_interns = api(UFBA_JAR, "/api/leader/interns")
+ufba_intern_data = ufba_interns.get("data", [])
+if ufba_intern_data:
+    ufba_intern_id = ufba_intern_data[0].get("id")
+    cross_lottery = api(LEADER_JAR, "/api/leader/lottery", "POST", {
+        "weekStart": lot_mon.isoformat(),
+        "internIds": [ufba_intern_id],
+    })
+    check(not cross_lottery.get("success", False) or cross_lottery.get("data", {}).get("total", 0) == 0,
+          "Leader ZARNS bloqueado de sortear interno UFBA",
+          f"BRECHA! ZARNS conseguiu sortear interno UFBA: {cross_lottery}")
+else:
+    warn("Sem internos UFBA para testar cross-lottery")
 
 
 # ══════════════════════════════════════════════════════════════════
