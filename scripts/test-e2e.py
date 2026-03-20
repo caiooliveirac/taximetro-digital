@@ -376,7 +376,7 @@ check(len(intern_comp_data) == 1,
 #  6. SOLICITAÇÕES — CRUD + REVIEW WORKFLOW
 # ══════════════════════════════════════════════════════════════════
 
-section("SOLICITAÇÕES (SWAP / DROP / EXTRA)")
+section("SOLICITAÇÕES (DROP_SHIFT)")
 
 intern_future = api(INTERN_JAR, f"/api/assignments?from={today_s}&to=2027-12-31")
 intern_future_data = [a for a in intern_future.get("data",[])
@@ -394,6 +394,14 @@ if len(intern_future_data) >= 1:
     check(drop_created,
           f"DROP_SHIFT criado ({drop_a['date']} {drop_a['period']})",
           f"DROP_SHIFT falhou: {drop_res}")
+
+    # BUG-5: Duplicate request prevention
+    dup_drop = api(INTERN_JAR, "/api/requests", "POST", {
+        "type": "DROP_SHIFT", "assignmentId": drop_a["id"],
+    })
+    check(not dup_drop.get("success", True),
+          "Anti-duplicata: segunda DROP_SHIFT para mesmo assignment bloqueada",
+          "BUG-5! Duplicata de request permitida")
 
     # Intern list own requests
     intern_reqs = api(INTERN_JAR, "/api/requests")
@@ -418,15 +426,40 @@ if len(intern_future_data) >= 1:
         check(len(cancelled) == 1,
               "Assignment cancelado após DROP aprovado",
               "Assignment NÃO cancelado após aprovação")
+
+        # Verify request status is COMPLETED (not just APPROVED)
+        after_reqs = api(INTERN_JAR, "/api/requests")
+        my_req = [r for r in after_reqs.get("data",[]) if r.get("id") == drop_id]
+        if my_req:
+            check(my_req[0].get("status") == "COMPLETED",
+                  "Request status → COMPLETED após processar DROP",
+                  f"BUG-10! Status ficou '{my_req[0].get('status')}' (deveria COMPLETED)")
 else:
     warn("Sem assignments futuros para testar DROP_SHIFT")
 
-# Leader sees faculty requests
+# BUG-9: Leader sees ONLY faculty requests
+section("ISOLAMENTO REQUESTS POR FACULDADE (LEADER)")
+
 leader_reqs = api(LEADER_JAR, "/api/requests")
 leader_req_data = leader_reqs.get("data", [])
 check(len(leader_req_data) >= 1,
-      f"Leader vê {len(leader_req_data)} solicitações da faculdade",
+      f"Leader vê {len(leader_req_data)} solicitações",
       "Leader sem solicitações")
+
+# Check: leader should only see own faculty's requests
+zarns_fac_id = leader_sess.get("user",{}).get("facultyId","")
+if zarns_fac_id and leader_req_data:
+    # Get all requester IDs and verify they belong to ZARNS
+    lreq_requesters = {r["requesterId"] for r in leader_req_data}
+    admin_users_data = api(ADMIN_JAR, "/api/admin/users").get("data",[])
+    foreign_requesters = []
+    for uid in lreq_requesters:
+        u = next((u for u in admin_users_data if u.get("id") == uid), None)
+        if u and u.get("facultyId") and u["facultyId"] != zarns_fac_id:
+            foreign_requesters.append(u.get("name","?"))
+    check(len(foreign_requesters) == 0,
+          "Leader vê apenas solicitações da própria faculdade",
+          f"BUG-9! Leader vê requests de outras faculdades: {foreign_requesters[:3]}")
 
 # Reject one pending
 pending = [r for r in leader_req_data if r.get("status") == "PENDING"]
@@ -439,20 +472,167 @@ if pending:
           f"Leader REJEITOU solicitação {pending[0].get('type')}",
           f"Rejeição falhou: {rej}")
 
-# Test EXTRA_SHIFT creation
+# ═══ EXTRA_SHIFT creation with correct schema ═══
+section("SOLICITAÇÕES (EXTRA_SHIFT)")
+
 if len(intern_future_data) >= 2:
     extra_ref = intern_future_data[-1]
     extra_res = api(INTERN_JAR, "/api/requests", "POST", {
         "type": "EXTRA_SHIFT",
-        "baseId": extra_ref.get("baseId", bases_data[0]["id"]),
-        "date": extra_ref["date"],
-        "period": "NIGHT" if extra_ref["period"] == "DAY" else "DAY",
+        "assignmentId": extra_ref["id"],
+        "extraBaseId": extra_ref.get("baseId", bases_data[0]["id"]),
+        "extraDate": extra_ref["date"],
+        "extraPeriod": "NIGHT" if extra_ref["period"] == "DAY" else "DAY",
     })
     if extra_res.get("success"):
         ok(f"EXTRA_SHIFT criado para {extra_ref['date']}")
+        extra_req_id = extra_res.get("data",{}).get("id")
+
+        # Approve and verify new assignment created
+        if extra_req_id:
+            rev2 = api(LEADER_JAR, "/api/requests", "PUT", {
+                "id": extra_req_id, "status": "APPROVED", "reviewNotes": "E2E extra OK",
+            })
+            check(rev2.get("success", False),
+                  "Leader APROVOU EXTRA_SHIFT",
+                  f"Aprovação EXTRA falhou: {rev2}")
     else:
-        info(f"EXTRA_SHIFT não criado: {extra_res.get('error','')} (pode ser regra de negócio)")
-        ok("EXTRA_SHIFT tratado corretamente")
+        ko(f"EXTRA_SHIFT falhou: {extra_res.get('error','')}")
+
+# BUG-3: Assignment ownership validation
+section("VALIDAÇÃO OWNERSHIP DE ASSIGNMENT")
+
+# Login a second intern (from different faculty — UFBA)
+INTERN2_JAR = jar()
+intern2_sess = login("000.000.001-42", "demo123", INTERN2_JAR)
+INTERN2_ID = intern2_sess.get("user",{}).get("id","")
+INTERN2_NAME = intern2_sess.get("user",{}).get("name","")
+if INTERN2_ID:
+    info(f"Segundo intern logado: {INTERN2_NAME}")
+    # Try to create DROP for an assignment that doesn't belong to this intern
+    if len(intern_future_data) >= 1:
+        stolen_a = intern_future_data[0]
+        stolen_res = api(INTERN2_JAR, "/api/requests", "POST", {
+            "type": "DROP_SHIFT", "assignmentId": stolen_a["id"],
+        })
+        check(not stolen_res.get("success", True),
+              "Intern NÃO pode criar request para assignment de outro",
+              f"BUG-3! Intern criou request para assignment alheio")
+else:
+    warn("Não foi possível logar segundo intern para teste de ownership")
+
+# ═══ SWAP LIFECYCLE — E2E COMPLETO ═══
+section("SWAP — CICLO DE VIDA COMPLETO")
+
+# Get two interns from same faculty (ZARNS) com assignments futuros
+zarns_active_ids = [i["id"] for i in zarns_active[:5]]
+info(f"Buscando assignments futuros de 2 internos ZARNS distintos...")
+
+INTERN_A_JAR = jar()
+intern_a_sess = login("000.000.001-02", "demo123", INTERN_A_JAR)
+INTERN_A_ID = intern_a_sess.get("user",{}).get("id","")
+INTERN_A_NAME = intern_a_sess.get("user",{}).get("name","")
+
+INTERN_B_JAR = jar()
+intern_b_sess = login("000.000.001-04", "demo123", INTERN_B_JAR)
+INTERN_B_ID = intern_b_sess.get("user",{}).get("id","")
+INTERN_B_NAME = intern_b_sess.get("user",{}).get("name","")
+
+swap_tested = False
+if INTERN_A_ID and INTERN_B_ID and INTERN_A_ID != INTERN_B_ID:
+    info(f"Intern A: {INTERN_A_NAME} ({INTERN_A_ID[:8]}...)")
+    info(f"Intern B: {INTERN_B_NAME} ({INTERN_B_ID[:8]}...)")
+
+    a_future = api(INTERN_A_JAR, f"/api/assignments?from={today_s}&to=2027-12-31")
+    a_scheduled = [a for a in a_future.get("data",[])
+                   if a.get("status") == "SCHEDULED" and a.get("date") > today_s]
+
+    b_future = api(INTERN_B_JAR, f"/api/assignments?from={today_s}&to=2027-12-31")
+    b_scheduled = [a for a in b_future.get("data",[])
+                   if a.get("status") == "SCHEDULED" and a.get("date") > today_s]
+
+    info(f"Intern A tem {len(a_scheduled)} SCHEDULED futuros")
+    info(f"Intern B tem {len(b_scheduled)} SCHEDULED futuros")
+
+    if a_scheduled and b_scheduled:
+        swap_a = a_scheduled[0]
+        swap_b = b_scheduled[0]
+
+        # Create SWAP request
+        swap_res = api(INTERN_A_JAR, "/api/requests", "POST", {
+            "type": "SWAP",
+            "assignmentId": swap_a["id"],
+            "targetInternId": INTERN_B_ID,
+            "targetAssignmentId": swap_b["id"],
+        })
+        swap_ok = swap_res.get("success", False)
+        swap_id = swap_res.get("data",{}).get("id")
+        check(swap_ok,
+              f"SWAP criado: A({swap_a['date']} {swap_a['period']}) ↔ B({swap_b['date']} {swap_b['period']})",
+              f"SWAP criação falhou: {swap_res}")
+
+        if swap_ok and swap_id:
+            swap_tested = True
+
+            # BUG-4: Validate target belongs to target intern
+            # Try SWAP with wrong targetInternId
+            if len(b_scheduled) >= 2:
+                bad_swap = api(INTERN_A_JAR, "/api/requests", "POST", {
+                    "type": "SWAP",
+                    "assignmentId": a_scheduled[-1]["id"] if len(a_scheduled) >= 2 else a_scheduled[0]["id"],
+                    "targetInternId": INTERN_B_ID,
+                    "targetAssignmentId": a_scheduled[0]["id"],  # <- belongs to A, not B!
+                })
+                check(not bad_swap.get("success", True),
+                      "SWAP com targetAssignment de outro intern bloqueado",
+                      "BUG-4! SWAP aceita assignment que não pertence ao target")
+
+            # Leader approves SWAP
+            swap_rev = api(LEADER_JAR, "/api/requests", "PUT", {
+                "id": swap_id, "status": "APPROVED", "reviewNotes": "E2E swap test",
+            })
+            check(swap_rev.get("success", False),
+                  "Leader APROVOU SWAP",
+                  f"SWAP aprovação falhou: {swap_rev}")
+
+            # Verify: original assignments should be CANCELLED
+            a_after = api(INTERN_A_JAR, f"/api/assignments?from={swap_a['date']}&to={swap_a['date']}")
+            orig_a_after = [a for a in a_after.get("data",[]) if a.get("id") == swap_a["id"]]
+            if orig_a_after:
+                check(orig_a_after[0].get("status") == "CANCELLED",
+                      f"Assignment original A → CANCELLED",
+                      f"Assignment A não cancelado: {orig_a_after[0].get('status')}")
+
+            b_after = api(INTERN_B_JAR, f"/api/assignments?from={swap_b['date']}&to={swap_b['date']}")
+            orig_b_after = [a for a in b_after.get("data",[]) if a.get("id") == swap_b["id"]]
+            if orig_b_after:
+                check(orig_b_after[0].get("status") == "CANCELLED",
+                      f"Assignment original B → CANCELLED",
+                      f"Assignment B não cancelado: {orig_b_after[0].get('status')}")
+
+            # Verify: new swapped assignments exist
+            a_new = [a for a in a_after.get("data",[])
+                     if a.get("date") == swap_b.get("date","X")
+                     and a.get("period") == swap_b.get("period","X")
+                     and a.get("status") != "CANCELLED"
+                     and a.get("id") != swap_a["id"]]
+            # A should now have B's slot
+            check(len(a_new) >= 1,
+                  f"Intern A recebeu slot de B ({swap_b['date']} {swap_b['period']})",
+                  "Intern A NÃO recebeu novo assignment após SWAP")
+
+            # Request should transition to COMPLETED
+            swap_reqs = api(INTERN_A_JAR, "/api/requests")
+            my_swap = [r for r in swap_reqs.get("data",[]) if r.get("id") == swap_id]
+            if my_swap:
+                check(my_swap[0].get("status") == "COMPLETED",
+                      "SWAP request → COMPLETED após processamento",
+                      f"BUG-10! SWAP status ficou '{my_swap[0].get('status')}' (deveria COMPLETED)")
+    else:
+        warn("Sem assignments futuros suficientes para testar SWAP")
+
+if not swap_tested:
+    warn("SWAP lifecycle não pôde ser testado (faltam dados)")
 
 # ══════════════════════════════════════════════════════════════════
 #  7. PLANTÃO AVULSO (SELF-CREATE)
