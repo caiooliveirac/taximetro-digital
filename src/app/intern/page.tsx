@@ -45,13 +45,14 @@ export default function InternHoje() {
   const [vacantSlots, setVacantSlots] = useState<Slot[]>([]);
   const [weekly, setWeekly] = useState<WeeklyCompliance | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const today = new Date().toISOString().slice(0, 10);
   const futureEnd = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
 
   useEffect(() => {
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${today}&to=${futureEnd}`).then((r) => r.json()),
+      fetch(`/taximetro/api/assignments?from=${today}&to=${futureEnd}`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/slots/available").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
     ]).then(([assignJson, slotsJson, complianceJson]) => {
@@ -60,6 +61,8 @@ export default function InternHoje() {
         const todayAssign = active.find((a: Assignment) => a.date === today);
         setAssignment(todayAssign ?? null);
         setUpcoming(active.filter((a: Assignment) => a.date > today).slice(0, 5));
+      } else {
+        setError("Não foi possível carregar seus plantões.");
       }
       if (slotsJson.success) {
         setVacantSlots(slotsJson.data.filter((s: Slot) => s.available > 0).slice(0, 6));
@@ -78,6 +81,7 @@ export default function InternHoje() {
   }, []);
 
   if (loading) return <p className="text-sm text-slate-400">Carregando...</p>;
+  if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
   const weeklyEffective = weekly ? weekly.thisWeekScheduled - weekly.thisWeekAbsent : 0;
   const weeklyOnTrack = weekly ? weeklyEffective >= weekly.targetShiftsPerWeek : false;

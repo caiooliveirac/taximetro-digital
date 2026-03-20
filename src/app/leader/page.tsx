@@ -87,26 +87,28 @@ export default function LeaderDashboard() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedGroup, setExpandedGroup] = useState<WeeklyCategory | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
-      const today = new Date().toISOString().slice(0, 10);
-      const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
-      const [usersRes, assignmentsRes, requestsRes, todayRes, complianceRes, alertsRes] = await Promise.all([
-        fetch("/taximetro/api/admin/users"),
-        fetch(`/taximetro/api/assignments?from=${today}&to=${weekEnd}`),
-        fetch("/taximetro/api/requests"),
-        fetch(`/taximetro/api/assignments?from=${today}&to=${today}`),
-        fetch("/taximetro/api/compliance"),
-        fetch("/taximetro/api/admin/alerts").catch(() => null),
-      ]);
+        const [usersRes, assignmentsRes, requestsRes, todayRes, complianceRes, alertsRes] = await Promise.all([
+          fetch("/taximetro/api/admin/users"),
+          fetch(`/taximetro/api/assignments?from=${today}&to=${weekEnd}`),
+          fetch("/taximetro/api/requests"),
+          fetch(`/taximetro/api/assignments?from=${today}&to=${today}`),
+          fetch("/taximetro/api/compliance"),
+          fetch("/taximetro/api/admin/alerts").catch(() => null),
+        ]);
 
-      const [usersJson, assignmentsJson, requestsJson, todayJson, complianceJson] = await Promise.all([
-        usersRes.json(), assignmentsRes.json(), requestsRes.json(), todayRes.json(), complianceRes.json(),
-      ]);
+        const [usersJson, assignmentsJson, requestsJson, todayJson, complianceJson] = await Promise.all([
+          usersRes.json(), assignmentsRes.json(), requestsRes.json(), todayRes.json(), complianceRes.json(),
+        ]);
 
-      const alertsJson = alertsRes ? await alertsRes.json().catch(() => ({ data: [] })) : { data: [] };
+        const alertsJson = alertsRes ? await alertsRes.json().catch(() => ({ data: [] })) : { data: [] };
 
       const todayActive = todayJson.success ? todayJson.data.filter((a: { status: string }) => a.status !== "CANCELLED") : [];
 
@@ -120,8 +122,8 @@ export default function LeaderDashboard() {
       });
 
       if (complianceJson.success) {
-        setCompliance(complianceJson.data);
-        setSummary(complianceJson.summary);
+        setCompliance(complianceJson.data ?? []);
+        setSummary(complianceJson.summary ?? null);
       }
 
       if (alertsJson.data) setAlerts(alertsJson.data.slice(0, 5));
@@ -138,6 +140,10 @@ export default function LeaderDashboard() {
         }
       }
       setIncidents(irregulars);
+      setError("");
+      } catch {
+        setError("Erro ao carregar dashboard. Tente recarregar a página.");
+      }
       setLoading(false);
     }
     load();
@@ -146,6 +152,7 @@ export default function LeaderDashboard() {
   }, []);
 
   if (loading) return <TableSkeleton rows={4} cols={5} />;
+  if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
   // Group compliance by weekly category
   const groups: Record<WeeklyCategory, ComplianceRow[]> = { com_falta: [], sub_alocado: [], na_meta: [] };

@@ -56,13 +56,15 @@ export default function AdminRelatorios() {
 
   async function load() {
     setLoading(true);
-    const [res, cRes] = await Promise.all([
-      fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
-      fetch("/taximetro/api/compliance"),
-    ]);
-    const [json, cJson] = await Promise.all([res.json(), cRes.json()]);
-    if (json.success) setAssignments(json.data);
-    if (cJson.success) setCompliance(cJson.data);
+    try {
+      const [res, cRes] = await Promise.all([
+        fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
+        fetch("/taximetro/api/compliance"),
+      ]);
+      const [json, cJson] = await Promise.all([res.json(), cRes.json()]);
+      if (json.success) setAssignments(json.data);
+      if (cJson.success) setCompliance(cJson.data);
+    } catch { /* network error – keep stale data */ }
     setLoading(false);
   }
 

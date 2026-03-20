@@ -75,48 +75,71 @@ export default function LeaderInternos() {
   const [copied, setCopied] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [actionMsg, setActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadData = useCallback(async () => {
-    const to = new Date().toISOString().slice(0, 10);
-    const from = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    try {
+      const to = new Date().toISOString().slice(0, 10);
+      const from = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-    const [usersRes, pendingRes, linksRes, complianceRes, assignRes] = await Promise.all([
-      fetch("/taximetro/api/admin/users").then((r) => r.json()),
-      fetch("/taximetro/api/leader/pendentes").then((r) => r.json()),
-      fetch("/taximetro/api/leader/convites").then((r) => r.json()),
-      fetch("/taximetro/api/compliance").then((r) => r.json()),
-      fetch(`/taximetro/api/assignments?from=${from}&to=${to}`).then((r) => r.json()),
-    ]);
-    if (usersRes.success) setUsers(usersRes.data.filter((u: UserRow) => u.role === "INTERN" && u.isActive));
-    if (pendingRes.success) setPending(pendingRes.data);
-    if (linksRes.success) setLinks(linksRes.data.filter((l: InviteLink) => l.isActive));
-    if (complianceRes.success) setCompliance(complianceRes.data);
-    if (assignRes.success) setAssignments(assignRes.data);
+      const [usersRes, pendingRes, linksRes, complianceRes, assignRes] = await Promise.all([
+        fetch("/taximetro/api/admin/users").then((r) => r.json()),
+        fetch("/taximetro/api/leader/pendentes").then((r) => r.json()),
+        fetch("/taximetro/api/leader/convites").then((r) => r.json()),
+        fetch("/taximetro/api/compliance").then((r) => r.json()),
+        fetch(`/taximetro/api/assignments?from=${from}&to=${to}`).then((r) => r.json()),
+      ]);
+      if (usersRes.success) setUsers(usersRes.data.filter((u: UserRow) => u.role === "INTERN" && u.isActive));
+      if (pendingRes.success) setPending(pendingRes.data);
+      if (linksRes.success) setLinks(linksRes.data.filter((l: InviteLink) => l.isActive));
+      if (complianceRes.success) setCompliance(complianceRes.data);
+      if (assignRes.success) setAssignments(assignRes.data);
+      setError("");
+    } catch {
+      setError("Erro ao carregar dados. Tente recarregar a página.");
+    }
     setLoading(false);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   async function generateLink() {
-    const res = await fetch("/taximetro/api/leader/convites", { method: "POST" });
-    const json = await res.json();
-    if (json.success) loadData();
+    try {
+      const res = await fetch("/taximetro/api/leader/convites", { method: "POST" });
+      const json = await res.json();
+      if (json.success) { loadData(); setActionMsg({ type: "success", text: "Link gerado!" }); }
+      else setActionMsg({ type: "error", text: json.error || "Erro ao gerar link." });
+    } catch {
+      setActionMsg({ type: "error", text: "Erro de conexão ao gerar link." });
+    }
   }
 
   async function deactivateLink(id: string) {
-    await fetch(`/taximetro/api/leader/convites?id=${id}`, { method: "DELETE" });
-    loadData();
+    try {
+      await fetch(`/taximetro/api/leader/convites?id=${id}`, { method: "DELETE" });
+      loadData();
+    } catch {
+      setActionMsg({ type: "error", text: "Erro ao desativar link." });
+    }
   }
 
   async function handleAction(userId: string, action: "approve" | "reject") {
     setActing(userId);
-    await fetch("/taximetro/api/leader/pendentes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, action }),
-    });
+    try {
+      const res = await fetch("/taximetro/api/leader/pendentes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, action }),
+      });
+      const json = await res.json();
+      if (!json.success) setActionMsg({ type: "error", text: json.error || "Erro ao processar." });
+      else setActionMsg({ type: "success", text: action === "approve" ? "Interno aprovado!" : "Interno rejeitado." });
+      loadData();
+    } catch {
+      setActionMsg({ type: "error", text: "Erro de conexão." });
+    }
     setActing(null);
-    loadData();
   }
 
   function copyLink(token: string) {
@@ -137,6 +160,7 @@ export default function LeaderInternos() {
   ];
 
   if (loading) return <p className="text-slate-500">Carregando...</p>;
+  if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
   return (
     <div className="space-y-4">
@@ -147,6 +171,12 @@ export default function LeaderInternos() {
           Gerar Link de Convite
         </Button>
       </div>
+
+      {actionMsg && (
+        <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${actionMsg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+          {actionMsg.text}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-lg bg-slate-100 p-1">

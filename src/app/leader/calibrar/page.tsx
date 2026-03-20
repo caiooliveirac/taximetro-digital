@@ -28,8 +28,9 @@ export default function LeaderCalibrar() {
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setBases(json.data.filter((b: Base) => b.type !== "CENTRAL"));
-        setLoading(false);
-      });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   function captureGPS() {
@@ -54,23 +55,27 @@ export default function LeaderCalibrar() {
   async function save() {
     if (!selected || !coords) return;
     setMsg(null);
-    const res = await fetch("/taximetro/api/admin/bases/calibrate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseId: selected.id, latitude: coords.lat, longitude: coords.lng }),
-    });
-    const json = await res.json();
-    if (json.success) {
-      setMsg({ type: "success", text: `Coordenadas de ${selected.code} atualizadas!` });
-      setBases((prev) =>
-        prev.map((b) =>
-          b.id === selected.id ? { ...b, latitude: coords.lat, longitude: coords.lng } : b
-        )
-      );
-      setSelected(null);
-      setCoords(null);
-    } else {
-      setMsg({ type: "error", text: json.error });
+    try {
+      const res = await fetch("/taximetro/api/admin/bases/calibrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseId: selected.id, latitude: coords.lat, longitude: coords.lng }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setMsg({ type: "success", text: `Coordenadas de ${selected.code} atualizadas!` });
+        setBases((prev) =>
+          prev.map((b) =>
+            b.id === selected.id ? { ...b, latitude: coords.lat, longitude: coords.lng } : b
+          )
+        );
+        setSelected(null);
+        setCoords(null);
+      } else {
+        setMsg({ type: "error", text: json.error });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
     }
   }
 

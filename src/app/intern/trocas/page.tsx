@@ -46,49 +46,55 @@ export default function InternTrocas() {
   const [submitting, setSubmitting] = useState(false);
 
   async function load() {
-    const from = new Date().toISOString().slice(0, 10);
-    const to = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-    const [aRes, bRes, rRes] = await Promise.all([
-      fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
-      fetch("/taximetro/api/admin/bases"),
-      fetch("/taximetro/api/requests"),
-    ]);
-    const [aJson, bJson, rJson] = await Promise.all([aRes.json(), bRes.json(), rRes.json()]);
-    if (aJson.success) setAssignments(aJson.data.filter((a: { status: string }) => a.status !== "CANCELLED"));
-    if (bJson.success) setBases(bJson.data.filter((b: { isActive: boolean }) => b.isActive));
-    if (rJson.success) setRequests(rJson.data);
+    try {
+      const from = new Date().toISOString().slice(0, 10);
+      const to = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+      const [aRes, bRes, rRes] = await Promise.all([
+        fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
+        fetch("/taximetro/api/admin/bases"),
+        fetch("/taximetro/api/requests"),
+      ]);
+      const [aJson, bJson, rJson] = await Promise.all([aRes.json(), bRes.json(), rRes.json()]);
+      if (aJson.success) setAssignments(aJson.data.filter((a: { status: string }) => a.status !== "CANCELLED"));
+      if (bJson.success) setBases(bJson.data.filter((b: { isActive: boolean }) => b.isActive));
+      if (rJson.success) setRequests(rJson.data);
+    } catch {
+      setMsg({ type: "error", text: "Erro ao carregar dados. Tente recarregar a página." });
+    }
     setLoading(false);
   }
 
   // Load faculty colleagues for SWAP
   async function loadFacultyInterns() {
-    const res = await fetch("/taximetro/api/slots/available");
-    const json = await res.json();
-    // We piggyback off leader/interns if available, or use compliance
-    const compRes = await fetch("/taximetro/api/compliance");
-    const compJson = await compRes.json();
-    if (compJson.success && Array.isArray(compJson.data)) {
-      // compliance returns all interns in the same faculty for an intern
-      const interns: Intern[] = compJson.data
-        .filter((c: { userId: string; name: string }) => c.userId && c.name)
-        .map((c: { userId: string; name: string }) => ({ id: c.userId, name: c.name }));
-      setFacultyInterns(interns);
+    try {
+      const compRes = await fetch("/taximetro/api/compliance");
+      const compJson = await compRes.json();
+      if (compJson.success && Array.isArray(compJson.data)) {
+        const interns: Intern[] = compJson.data
+          .filter((c: { userId: string; name: string }) => c.userId && c.name)
+          .map((c: { userId: string; name: string }) => ({ id: c.userId, name: c.name }));
+        setFacultyInterns(interns);
+      }
+    } catch {
+      setMsg({ type: "error", text: "Erro ao carregar colegas para troca." });
     }
   }
 
   // Load target intern's assignments
   async function loadTargetAssignments(internId: string) {
     if (!internId) { setTargetAssignments([]); return; }
-    const from = new Date().toISOString().slice(0, 10);
-    const to = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-    // Use admin endpoint with internId filter (coordinator flow) or
-    // the assignments endpoint. We need to see target's assignments.
-    const res = await fetch(`/taximetro/api/assignments?from=${from}&to=${to}&internId=${internId}`);
-    const json = await res.json();
-    if (json.success) {
-      setTargetAssignments(
-        json.data.filter((a: { status: string }) => a.status === "SCHEDULED" || a.status === "CONFIRMED")
-      );
+    try {
+      const from = new Date().toISOString().slice(0, 10);
+      const to = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+      const res = await fetch(`/taximetro/api/assignments?from=${from}&to=${to}&internId=${internId}`);
+      const json = await res.json();
+      if (json.success) {
+        setTargetAssignments(
+          json.data.filter((a: { status: string }) => a.status === "SCHEDULED" || a.status === "CONFIRMED")
+        );
+      }
+    } catch {
+      setMsg({ type: "error", text: "Erro ao carregar plantões do colega." });
     }
   }
 
@@ -106,30 +112,34 @@ export default function InternTrocas() {
   async function submit() {
     setMsg(null);
     setSubmitting(true);
-    const body: Record<string, string> = { type: reqType, assignmentId };
-    if (reqType === "EXTRA_SHIFT") {
-      body.extraBaseId = extraBaseId;
-      body.extraDate = extraDate;
-      body.extraPeriod = extraPeriod;
+    try {
+      const body: Record<string, string> = { type: reqType, assignmentId };
+      if (reqType === "EXTRA_SHIFT") {
+        body.extraBaseId = extraBaseId;
+        body.extraDate = extraDate;
+        body.extraPeriod = extraPeriod;
+      }
+      if (reqType === "SWAP") {
+        body.targetInternId = targetInternId;
+        body.targetAssignmentId = targetAssignmentId;
+      }
+      const res = await fetch("/taximetro/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setMsg({ type: "success", text: "Solicitação enviada!" });
+        setAssignmentId(""); setTargetInternId(""); setTargetAssignmentId("");
+        load();
+      } else {
+        setMsg({ type: "error", text: json.error || "Erro ao enviar solicitação." });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
     }
-    if (reqType === "SWAP") {
-      body.targetInternId = targetInternId;
-      body.targetAssignmentId = targetAssignmentId;
-    }
-    const res = await fetch("/taximetro/api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
     setSubmitting(false);
-    if (json.success) {
-      setMsg({ type: "success", text: "Solicitação enviada!" });
-      setAssignmentId(""); setTargetInternId(""); setTargetAssignmentId("");
-      load();
-    } else {
-      setMsg({ type: "error", text: json.error });
-    }
   }
 
   const selectClass = "mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500";

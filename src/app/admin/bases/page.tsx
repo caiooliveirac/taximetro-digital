@@ -34,9 +34,13 @@ export default function AdminBases() {
   const [capturing, setCapturing] = useState(false);
 
   async function load() {
-    const res = await fetch("/taximetro/api/admin/bases");
-    const json = await res.json();
-    if (json.success) setBases(json.data);
+    try {
+      const res = await fetch("/taximetro/api/admin/bases");
+      const json = await res.json();
+      if (json.success) setBases(json.data);
+    } catch {
+      setError("Erro ao carregar bases.");
+    }
     setLoading(false);
   }
 
@@ -45,16 +49,20 @@ export default function AdminBases() {
   async function save() {
     setError("");
     if (!editing) return;
-    const isNew = !editing.id;
-    const res = await fetch("/taximetro/api/admin/bases", {
-      method: isNew ? "POST" : "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editing),
-    });
-    const json = await res.json();
-    if (!json.success) { setError(json.error); return; }
-    setEditing(null);
-    load();
+    try {
+      const isNew = !editing.id;
+      const res = await fetch("/taximetro/api/admin/bases", {
+        method: isNew ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editing),
+      });
+      const json = await res.json();
+      if (!json.success) { setError(json.error); return; }
+      setEditing(null);
+      load();
+    } catch {
+      setError("Erro de conexão. Tente novamente.");
+    }
   }
 
   function captureGPS() {

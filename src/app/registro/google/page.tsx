@@ -72,8 +72,8 @@ function RegistroGoogleForm() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/taximetro/api/admin/faculties").then((r) => r.json()),
-      fetch("/taximetro/api/admin/bases").then((r) => r.json()),
+      fetch("/taximetro/api/admin/faculties").then((r) => r.json()).catch(() => ({ success: false })),
+      fetch("/taximetro/api/admin/bases").then((r) => r.json()).catch(() => ({ success: false })),
     ]).then(([fRes, bRes]) => {
       if (fRes.success) setFaculties(fRes.data);
       if (bRes.success) setBases(bRes.data);
@@ -116,28 +116,31 @@ function RegistroGoogleForm() {
     if (needsFaculty && !facultyId) { setError("Selecione uma faculdade."); return; }
     if (needsBase && !baseId) { setError("Selecione uma base."); return; }
     setSubmitting(true);
-
-    const res = await fetch("/taximetro/api/registro/google", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        email,
-        cpf: cpf || undefined,
-        phone,
-        role,
-        facultyId: needsFaculty ? facultyId : undefined,
-        baseId: needsBase ? baseId : undefined,
-        selfie,
-      }),
-    });
-    const json = await res.json();
-    setSubmitting(false);
-
-    if (!json.success) {
-      setError(json.error ?? "Erro ao registrar");
-    } else {
-      setSuccess(true);
+    try {
+      const res = await fetch("/taximetro/api/registro/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          cpf: cpf || undefined,
+          phone,
+          role,
+          facultyId: needsFaculty ? facultyId : undefined,
+          baseId: needsBase ? baseId : undefined,
+          selfie,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.error ?? "Erro ao registrar");
+      } else {
+        setSuccess(true);
+      }
+    } catch {
+      setError("Erro de conexão. Tente novamente.");
+    } finally {
+      setSubmitting(false);
     }
   }
 

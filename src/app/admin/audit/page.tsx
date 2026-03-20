@@ -115,7 +115,9 @@ export default function AdminAudit() {
   useEffect(() => {
     fetch("/taximetro/api/admin/audit")
       .then((r) => r.json())
-      .then((json) => { if (json.success) setEntries(json.data); setLoading(false); });
+      .then((json) => { if (json.success) setEntries(json.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const actions = [...new Set(entries.map((e) => e.action))].sort();

@@ -100,19 +100,22 @@ export default function RegistroPage() {
     if (!passwordValid) { setError("A senha não atende aos requisitos."); return; }
     if (!selfie) { setError("Selfie obrigatória para identificação."); return; }
     setSubmitting(true);
-
-    const res = await fetch(`/taximetro/api/registro/${token}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, cpf: cpf || undefined, email, phone, password, selfie }),
-    });
-    const json = await res.json();
-    setSubmitting(false);
-
-    if (!json.success) {
-      setError(json.error ?? "Erro ao registrar");
-    } else {
-      setSuccess(true);
+    try {
+      const res = await fetch(`/taximetro/api/registro/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, cpf: cpf || undefined, email, phone, password, selfie }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.error ?? "Erro ao registrar");
+      } else {
+        setSuccess(true);
+      }
+    } catch {
+      setError("Erro de conexão. Tente novamente.");
+    } finally {
+      setSubmitting(false);
     }
   }
 

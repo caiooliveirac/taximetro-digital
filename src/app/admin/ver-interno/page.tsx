@@ -77,11 +77,13 @@ export default function AdminVerComoInterno() {
           );
         }
       })
+      .catch(() => {})
       .finally(() => setLoadingList(false));
 
     fetch("/taximetro/api/admin/bases")
       .then((r) => r.json())
-      .then((json) => { if (json.success) setBases(json.data.filter((b: { isActive: boolean }) => b.isActive)); });
+      .then((json) => { if (json.success) setBases(json.data.filter((b: { isActive: boolean }) => b.isActive)); })
+      .catch(() => {});
   }, []);
 
   /* ── load data when intern selected ── */
@@ -113,8 +115,9 @@ export default function AdminVerComoInterno() {
       if (cJson.success && cJson.data.length > 0) setCompliance(cJson.data[0]);
       else setCompliance(null);
       if (rJson.success) setRequests(rJson.data);
-      setLoadingData(false);
-    });
+    })
+    .catch(() => {})
+    .finally(() => setLoadingData(false));
   }, [selected]);
 
   /* ── actions ── */
@@ -127,21 +130,28 @@ export default function AdminVerComoInterno() {
         ? { type: "DROP_SHIFT", assignmentId: actionAssignmentId, onBehalfOf: selected.id }
         : { type: "EXTRA_SHIFT", assignmentId: actionAssignmentId, extraBaseId, extraDate, extraPeriod, onBehalfOf: selected.id };
 
-    const res = await fetch("/taximetro/api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
-    setSubmitting(false);
-    if (json.success) {
-      setActionMsg({ type: "success", text: `Solicitação criada em nome de ${selected.name}` });
-      // Refresh requests
-      const rRes = await fetch(`/taximetro/api/requests?internId=${selected.id}`);
-      const rJson = await rRes.json();
-      if (rJson.success) setRequests(rJson.data);
-    } else {
-      setActionMsg({ type: "error", text: json.error });
+    try {
+      const res = await fetch("/taximetro/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setActionMsg({ type: "success", text: `Solicitação criada em nome de ${selected.name}` });
+        // Refresh requests
+        try {
+          const rRes = await fetch(`/taximetro/api/requests?internId=${selected.id}`);
+          const rJson = await rRes.json();
+          if (rJson.success) setRequests(rJson.data);
+        } catch { /* ignore refresh failure */ }
+      } else {
+        setActionMsg({ type: "error", text: json.error });
+      }
+    } catch {
+      setActionMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
+    } finally {
+      setSubmitting(false);
     }
   }
 

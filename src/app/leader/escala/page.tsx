@@ -79,19 +79,23 @@ export default function LeaderEscala() {
 
   /* ── Load data ── */
   const load = useCallback(async () => {
-    const from = weekDates[0];
-    const to = weekDates[6];
-    const [uRes, bRes, aRes, sRes] = await Promise.all([
-      fetch("/taximetro/api/admin/users"),
-      fetch("/taximetro/api/admin/bases"),
-      fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
-      fetch("/taximetro/api/slots/available"),
-    ]);
-    const [uJson, bJson, aJson, sJson] = await Promise.all([uRes.json(), bRes.json(), aRes.json(), sRes.json()]);
-    if (uJson.success) setInterns(uJson.data.filter((u: { role: string }) => u.role === "INTERN"));
-    if (bJson.success) setBases(bJson.data.filter((b: { isActive: boolean }) => b.isActive));
-    if (aJson.success) setAssignments(aJson.data);
-    if (sJson.success) setSlots(sJson.data);
+    try {
+      const from = weekDates[0];
+      const to = weekDates[6];
+      const [uRes, bRes, aRes, sRes] = await Promise.all([
+        fetch("/taximetro/api/admin/users"),
+        fetch("/taximetro/api/admin/bases"),
+        fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
+        fetch("/taximetro/api/slots/available"),
+      ]);
+      const [uJson, bJson, aJson, sJson] = await Promise.all([uRes.json(), bRes.json(), aRes.json(), sRes.json()]);
+      if (uJson.success) setInterns(uJson.data.filter((u: { role: string }) => u.role === "INTERN"));
+      if (bJson.success) setBases(bJson.data.filter((b: { isActive: boolean }) => b.isActive));
+      if (aJson.success) setAssignments(aJson.data);
+      if (sJson.success) setSlots(sJson.data);
+    } catch {
+      setLotteryMsg("❌ Erro ao carregar dados da escala.");
+    }
     setLoading(false);
   }, [weekDates]);
 
@@ -182,32 +186,40 @@ export default function LeaderEscala() {
   }
 
   async function handleRemoveIntern(id: string, permanent: boolean) {
-    if (permanent) {
-      await fetch("/taximetro/api/leader/interns", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: id, action: "deactivate" }),
-      });
-      setLotteryInterns((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, roleActive: false } : i)),
-      );
-    } else {
-      setLotteryExcluded((prev) => new Set(prev).add(id));
+    try {
+      if (permanent) {
+        await fetch("/taximetro/api/leader/interns", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: id, action: "deactivate" }),
+        });
+        setLotteryInterns((prev) =>
+          prev.map((i) => (i.id === id ? { ...i, roleActive: false } : i)),
+        );
+      } else {
+        setLotteryExcluded((prev) => new Set(prev).add(id));
+      }
+      setLotterySelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+      setConfirmRemove(null);
+    } catch {
+      setLotteryMsg("❌ Erro ao remover interno.");
     }
-    setLotterySelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
-    setConfirmRemove(null);
   }
 
   async function handleReactivateIntern(id: string) {
-    await fetch("/taximetro/api/leader/interns", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: id, action: "reactivate" }),
-    });
-    setLotteryInterns((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, roleActive: true } : i)),
-    );
-    setLotterySelected((prev) => new Set(prev).add(id));
+    try {
+      await fetch("/taximetro/api/leader/interns", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: id, action: "reactivate" }),
+      });
+      setLotteryInterns((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, roleActive: true } : i)),
+      );
+      setLotterySelected((prev) => new Set(prev).add(id));
+    } catch {
+      setLotteryMsg("❌ Erro ao reativar interno.");
+    }
   }
 
   async function runLottery() {

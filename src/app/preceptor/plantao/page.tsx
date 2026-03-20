@@ -37,8 +37,9 @@ export default function PreceptorPlantao() {
             .sort((a: Assignment, b: Assignment) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode));
           setAssignments(sorted);
         }
-        setLoading(false);
-      });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [base, shift]);
 
   return (
