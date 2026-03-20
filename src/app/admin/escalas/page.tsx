@@ -34,14 +34,18 @@ export default function AdminEscalas() {
   const [hlPeriod, setHlPeriod] = useState<"DAY" | "NIGHT" | null>(null);
 
   async function load() {
-    const [rRes, bRes, fRes] = await Promise.all([
-      fetch("/taximetro/api/admin/rules").then(r => r.json()),
-      fetch("/taximetro/api/admin/bases").then(r => r.json()),
-      fetch("/taximetro/api/admin/faculties").then(r => r.json()),
-    ]);
-    if (rRes.success) setRules(rRes.data.filter((r: Rule) => r.isActive));
-    if (bRes.success) setBases(bRes.data.filter((b: Base) => b.isActive !== false));
-    if (fRes.success) setFaculties(fRes.data);
+    try {
+      const [rRes, bRes, fRes] = await Promise.all([
+        fetch("/taximetro/api/admin/rules").then(r => r.json()),
+        fetch("/taximetro/api/admin/bases").then(r => r.json()),
+        fetch("/taximetro/api/admin/faculties").then(r => r.json()),
+      ]);
+      if (rRes.success) setRules(rRes.data.filter((r: Rule) => r.isActive));
+      if (bRes.success) setBases(bRes.data.filter((b: Base) => b.isActive !== false));
+      if (fRes.success) setFaculties(fRes.data);
+    } catch {
+      setError("Erro ao carregar grade de escalas.");
+    }
     setLoading(false);
   }
 
@@ -80,9 +84,13 @@ export default function AdminEscalas() {
   }
 
   async function removeRule(id: string) {
-    await fetch(`/taximetro/api/admin/rules?id=${id}`, { method: "DELETE" });
-    setEditing(null);
-    load();
+    try {
+      await fetch(`/taximetro/api/admin/rules?id=${id}`, { method: "DELETE" });
+      setEditing(null);
+      load();
+    } catch {
+      setError("Erro ao remover regra.");
+    }
   }
 
   const sortedBases = (filterBase ? bases.filter(b => b.id === filterBase) : bases)

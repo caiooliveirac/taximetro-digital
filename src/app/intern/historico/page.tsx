@@ -35,15 +35,17 @@ export default function InternHistorico() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [compliance, setCompliance] = useState<Compliance | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const to = new Date().toISOString().slice(0, 10);
     const from = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${from}&to=${to}`).then((r) => r.json()),
+      fetch(`/taximetro/api/assignments?from=${from}&to=${to}`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
     ]).then(([aJson, cJson]) => {
       if (aJson.success) setAssignments(aJson.data);
+      else setError("Não foi possível carregar seu histórico.");
       if (cJson.success && cJson.data.length > 0) setCompliance(cJson.data[0]);
       setLoading(false);
     });
@@ -53,6 +55,7 @@ export default function InternHistorico() {
   const totalHours = completed.length * 12;
 
   if (loading) return <p className="text-sm text-slate-400">Carregando...</p>;
+  if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
   const hoursPct = compliance?.targetHours ? Math.min(Math.round((totalHours / compliance.targetHours) * 100), 100) : null;
   const shiftsPct = compliance?.totalPct ?? null;

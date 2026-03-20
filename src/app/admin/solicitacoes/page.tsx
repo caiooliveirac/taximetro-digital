@@ -19,11 +19,19 @@ export default function AdminSolicitacoes() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState<{ id: string; status: string; reviewNotes: string } | null>(null);
+  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   async function load() {
-    const res = await fetch("/taximetro/api/requests");
-    const json = await res.json();
-    if (json.success) setRequests(json.data);
+    try {
+      const res = await fetch("/taximetro/api/requests");
+      const json = await res.json();
+      if (json.success) setRequests(json.data);
+      setError("");
+    } catch {
+      setError("Erro ao carregar solicitações.");
+    }
     setLoading(false);
   }
 
@@ -31,16 +39,30 @@ export default function AdminSolicitacoes() {
 
   async function review(action: string) {
     if (!reviewing) return;
-    await fetch("/taximetro/api/requests", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: reviewing.id, status: action, reviewNotes: reviewing.reviewNotes }),
-    });
-    setReviewing(null);
-    load();
+    setSaving(true);
+    setActionError("");
+    try {
+      const res = await fetch("/taximetro/api/requests", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: reviewing.id, status: action, reviewNotes: reviewing.reviewNotes }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setActionError(json.error || "Erro ao processar solicitação.");
+        setSaving(false);
+        return;
+      }
+      setReviewing(null);
+      load();
+    } catch {
+      setActionError("Erro de conexão. Tente novamente.");
+    }
+    setSaving(false);
   }
 
   if (loading) return <p className="text-slate-400">Carregando...</p>;
+  if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
   return (
     <div className="space-y-4">
@@ -55,10 +77,11 @@ export default function AdminSolicitacoes() {
               <input value={reviewing.reviewNotes} onChange={(e) => setReviewing({ ...reviewing, reviewNotes: e.target.value })} className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" />
             </label>
           </div>
+          {actionError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</div>}
           <div className="flex gap-2">
-            <button onClick={() => review("APPROVED")} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">Aprovar</button>
-            <button onClick={() => review("REJECTED")} className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700">Rejeitar</button>
-            <button onClick={() => setReviewing(null)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">Cancelar</button>
+            <button onClick={() => review("APPROVED")} disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50">{saving ? "Processando..." : "Aprovar"}</button>
+            <button onClick={() => review("REJECTED")} disabled={saving} className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50">{saving ? "Processando..." : "Rejeitar"}</button>
+            <button onClick={() => { setReviewing(null); setActionError(""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">Cancelar</button>
           </div>
         </div>
       )}

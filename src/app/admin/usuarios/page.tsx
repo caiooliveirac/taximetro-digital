@@ -102,14 +102,18 @@ export default function AdminUsuarios() {
   const historyRef = useRef<HTMLDivElement>(null);
 
   async function load() {
-    const [uRes, fRes, bRes] = await Promise.all([
-      fetch("/taximetro/api/admin/users").then((r) => r.json()),
-      fetch("/taximetro/api/admin/faculties").then((r) => r.json()),
-      fetch("/taximetro/api/admin/bases").then((r) => r.json()),
-    ]);
-    if (uRes.success) setUsers(uRes.data);
-    if (fRes.success) setFaculties(fRes.data);
-    if (bRes.success) setBases(bRes.data);
+    try {
+      const [uRes, fRes, bRes] = await Promise.all([
+        fetch("/taximetro/api/admin/users").then((r) => r.json()),
+        fetch("/taximetro/api/admin/faculties").then((r) => r.json()),
+        fetch("/taximetro/api/admin/bases").then((r) => r.json()),
+      ]);
+      if (uRes.success) setUsers(uRes.data);
+      if (fRes.success) setFaculties(fRes.data);
+      if (bRes.success) setBases(bRes.data);
+    } catch {
+      setError("Erro ao carregar usuários.");
+    }
     setLoading(false);
   }
 
@@ -117,9 +121,13 @@ export default function AdminUsuarios() {
 
   async function loadHistory(userId: string) {
     setHistoryLoading(true);
-    const res = await fetch(`/taximetro/api/admin/users/${userId}/history`);
-    const json = await res.json();
-    if (json.success) setHistory(json.data);
+    try {
+      const res = await fetch(`/taximetro/api/admin/users/${userId}/history`);
+      const json = await res.json();
+      if (json.success) setHistory(json.data);
+    } catch {
+      setHistory(null);
+    }
     setHistoryLoading(false);
   }
 
@@ -132,17 +140,21 @@ export default function AdminUsuarios() {
   async function save() {
     setError("");
     if (!editing) return;
-    const isNew = !editing.id;
-    const res = await fetch("/taximetro/api/admin/users", {
-      method: isNew ? "POST" : "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editing),
-    });
-    const json = await res.json();
-    if (!json.success) { setError(json.error); return; }
-    setEditing(null);
-    setHistory(null);
-    load();
+    try {
+      const isNew = !editing.id;
+      const res = await fetch("/taximetro/api/admin/users", {
+        method: isNew ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editing),
+      });
+      const json = await res.json();
+      if (!json.success) { setError(json.error); return; }
+      setEditing(null);
+      setHistory(null);
+      load();
+    } catch {
+      setError("Erro de conexão. Tente novamente.");
+    }
   }
 
   function formatCpf(value: string) {

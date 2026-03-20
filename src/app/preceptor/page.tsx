@@ -35,15 +35,17 @@ export default function PreceptorValidar() {
 
   async function load() {
     if (!base || !shift) return;
-    const params = new URLSearchParams({ from: today, to: today, baseId: base.id, period: shift });
-    const res = await fetch(`/taximetro/api/assignments?${params}`);
-    const json = await res.json();
-    if (json.success) {
-      const sorted = json.data
-        .filter((a: Assignment) => a.status !== "CANCELLED")
-        .sort((a: Assignment, b: Assignment) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode));
-      setAssignments(sorted);
-    }
+    try {
+      const params = new URLSearchParams({ from: today, to: today, baseId: base.id, period: shift });
+      const res = await fetch(`/taximetro/api/assignments?${params}`);
+      const json = await res.json();
+      if (json.success) {
+        const sorted = json.data
+          .filter((a: Assignment) => a.status !== "CANCELLED")
+          .sort((a: Assignment, b: Assignment) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode));
+        setAssignments(sorted);
+      }
+    } catch { /* silently retry on next interval */ }
     setLoading(false);
   }
 
@@ -52,28 +54,36 @@ export default function PreceptorValidar() {
 
   async function validateDirect(assignmentId: string) {
     setMsg(null);
-    const res = await fetch("/taximetro/api/attendance/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assignmentId }),
-    });
-    const json = await res.json();
-    if (json.success) { setMsg({ type: "success", text: "Presença validada" }); load(); }
-    else setMsg({ type: "error", text: json.error });
+    try {
+      const res = await fetch("/taximetro/api/attendance/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignmentId }),
+      });
+      const json = await res.json();
+      if (json.success) { setMsg({ type: "success", text: "Presença validada" }); load(); }
+      else setMsg({ type: "error", text: json.error });
+    } catch {
+      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
+    }
   }
 
   async function validateByCode() {
     if (codeInput.length !== 6) return;
     setValidatingCode(true);
     setMsg(null);
-    const res = await fetch("/taximetro/api/attendance/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: codeInput }),
-    });
-    const json = await res.json();
-    if (json.success) { setMsg({ type: "success", text: "Presença validada (código)" }); setCodeInput(""); load(); }
-    else setMsg({ type: "error", text: json.error });
+    try {
+      const res = await fetch("/taximetro/api/attendance/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: codeInput }),
+      });
+      const json = await res.json();
+      if (json.success) { setMsg({ type: "success", text: "Presença validada (código)" }); setCodeInput(""); load(); }
+      else setMsg({ type: "error", text: json.error });
+    } catch {
+      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
+    }
     setValidatingCode(false);
   }
 

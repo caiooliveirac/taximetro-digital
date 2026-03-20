@@ -60,8 +60,9 @@ export default function InternCheckin() {
           );
           setAssignment(active ?? null);
         }
-        setLoading(false);
-      });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (sseRef.current) sseRef.current.close();
@@ -153,9 +154,13 @@ export default function InternCheckin() {
   async function openSelfCreate() {
     setShowSelfCreate(true);
     if (bases.length === 0) {
-      const res = await fetch("/taximetro/api/admin/bases");
-      const json = await res.json();
-      if (json.success) setBases(json.data.filter((b: Base) => b.isActive !== false));
+      try {
+        const res = await fetch("/taximetro/api/admin/bases");
+        const json = await res.json();
+        if (json.success) setBases(json.data.filter((b: Base) => b.isActive !== false));
+      } catch {
+        setMsg({ type: "error", text: "Erro ao carregar bases." });
+      }
     }
   }
 
@@ -163,18 +168,22 @@ export default function InternCheckin() {
     if (!selectedBase) return;
     setCreating(true);
     setMsg(null);
-    const res = await fetch("/taximetro/api/assignments/self-create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseId: selectedBase, period: selectedPeriod }),
-    });
-    const json = await res.json();
-    if (json.success) {
-      setAssignment(json.data);
-      setShowSelfCreate(false);
-      setMsg(null);
-    } else {
-      setMsg({ type: "error", text: json.error });
+    try {
+      const res = await fetch("/taximetro/api/assignments/self-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseId: selectedBase, period: selectedPeriod }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setAssignment(json.data);
+        setShowSelfCreate(false);
+        setMsg(null);
+      } else {
+        setMsg({ type: "error", text: json.error });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
     }
     setCreating(false);
   }

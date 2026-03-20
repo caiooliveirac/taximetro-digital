@@ -39,9 +39,13 @@ export default function AdminPresencas() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/taximetro/api/assignments?from=${date}&to=${date}`);
-    const json = await res.json();
-    if (json.success) setAssignments(json.data);
+    try {
+      const res = await fetch(`/taximetro/api/assignments?from=${date}&to=${date}`);
+      const json = await res.json();
+      if (json.success) setAssignments(json.data);
+    } catch {
+      setAssignments([]);
+    }
     setLoading(false);
   }, [date]);
 

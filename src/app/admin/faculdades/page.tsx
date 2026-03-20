@@ -19,9 +19,13 @@ export default function AdminFaculdades() {
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    const res = await fetch("/taximetro/api/admin/faculties");
-    const json = await res.json();
-    if (json.success) setFaculties(json.data);
+    try {
+      const res = await fetch("/taximetro/api/admin/faculties");
+      const json = await res.json();
+      if (json.success) setFaculties(json.data);
+    } catch {
+      setError("Erro ao carregar faculdades.");
+    }
     setLoading(false);
   }
 
@@ -30,19 +34,24 @@ export default function AdminFaculdades() {
   async function save() {
     setError("");
     if (!editing) return;
-    const isNew = !editing.id;
-    const res = await fetch("/taximetro/api/admin/faculties", {
-      method: isNew ? "POST" : "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editing),
-    });
-    const json = await res.json();
-    if (!json.success) { setError(json.error); return; }
-    setEditing(null);
-    load();
+    try {
+      const isNew = !editing.id;
+      const res = await fetch("/taximetro/api/admin/faculties", {
+        method: isNew ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editing),
+      });
+      const json = await res.json();
+      if (!json.success) { setError(json.error); return; }
+      setEditing(null);
+      load();
+    } catch {
+      setError("Erro de conexão. Tente novamente.");
+    }
   }
 
   if (loading) return <p className="text-slate-400">Carregando...</p>;
+  if (!faculties.length && error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
   return (
     <div className="space-y-4">

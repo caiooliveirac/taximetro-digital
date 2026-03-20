@@ -10,6 +10,7 @@ type Assignment = { id: string; baseCode: string; date: string; period: string }
 export default function InternOcorrencias() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ assignmentId: "", nickname: "", description: "" });
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -21,24 +22,34 @@ export default function InternOcorrencias() {
       .then((json) => {
         if (json.success) setAssignments(json.data.filter((a: { status: string }) => a.status !== "CANCELLED"));
         setLoading(false);
+      })
+      .catch(() => {
+        setMsg({ type: "error", text: "Erro ao carregar plantões." });
+        setLoading(false);
       });
   }, []);
 
   async function submit() {
     if (!form.assignmentId || !form.nickname) return;
     setMsg(null);
-    const res = await fetch("/taximetro/api/case-records", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    const json = await res.json();
-    if (json.success) {
-      setMsg({ type: "success", text: "Ocorrência registrada!" });
-      setForm({ ...form, nickname: "", description: "" });
-    } else {
-      setMsg({ type: "error", text: json.error ?? "Erro ao registrar" });
+    setSubmitting(true);
+    try {
+      const res = await fetch("/taximetro/api/case-records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setMsg({ type: "success", text: "Ocorrência registrada!" });
+        setForm({ ...form, nickname: "", description: "" });
+      } else {
+        setMsg({ type: "error", text: json.error ?? "Erro ao registrar" });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
     }
+    setSubmitting(false);
   }
 
   if (loading) return <p className="text-sm text-slate-400">Carregando...</p>;
@@ -81,8 +92,8 @@ export default function InternOcorrencias() {
             className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
           />
         </label>
-        <Button onClick={submit} className="gap-2">
-          <ClipboardPlus className="h-4 w-4" strokeWidth={1.5} /> Registrar
+        <Button onClick={submit} disabled={submitting || !form.assignmentId || !form.nickname} className="gap-2">
+          <ClipboardPlus className="h-4 w-4" strokeWidth={1.5} /> {submitting ? "Registrando..." : "Registrar"}
         </Button>
 
         {msg && (
