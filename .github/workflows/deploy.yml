@@ -1,0 +1,110 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+
+env:
+  APP: taximetro-digital
+  REMOTE: ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}
+  DEPLOY_DIR: /home/ubuntu/taximetro-digital
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.PROD_SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Send source to server
+        run: |
+          rsync -az --delete \
+            --exclude node_modules --exclude .next --exclude .git \
+            --exclude '.env*' --include '.env.example' \
+            ./ ${{ env.REMOTE }}:${{ env.DEPLOY_DIR }}/
+
+      - name: Build and deploy on server (native ARM64)
+        run: |
+          ssh ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
+            set -euo pipefail
+            cd ${{ env.DEPLOY_DIR }}
+
+            echo "=== Building Docker image (native ARM64) ==="
+            docker build -t ${{ env.APP }} .
+
+            echo "=== Stopping old container ==="
+            docker stop ${{ env.APP }} 2>/dev/null || true
+            docker rm ${{ env.APP }} 2>/dev/null || true
+
+            echo "=== Building builder image ==="
+            docker build --target builder -t ${{ env.APP }}-builder .
+
+            echo "=== Cleaning data (avoids interactive constraint prompts) ==="
+            docker run --rm \
+              --add-host=host.docker.internal:host-gateway \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              ${{ env.APP }}-builder \
+              npx tsx src/db/clean-dev.ts
+
+            echo "=== Running migrations (push) ==="
+            docker run --rm \
+              --add-host=host.docker.internal:host-gateway \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              ${{ env.APP }}-builder \
+              npx drizzle-kit push --force
+
+            echo "=== Seeding production data ==="
+            docker run --rm \
+              --add-host=host.docker.internal:host-gateway \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              ${{ env.APP }}-builder \
+              sh -c "npx tsx src/db/seed.ts && npx tsx src/db/seed-prod.ts"
+
+            echo "=== Starting container ==="
+            docker run -d \
+              --name ${{ env.APP }} \
+              --restart unless-stopped \
+              --network repo_default \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              -e AUTH_SECRET="${{ secrets.AUTH_SECRET }}" \
+              -e AUTH_URL="https://mnrs.com.br" \
+              -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+              -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              -e TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+              -e TELEGRAM_GROUP_ID="${{ secrets.TELEGRAM_GROUP_ID }}" \
+              --add-host=host.docker.internal:host-gateway \
+              ${{ env.APP }}
+
+            echo "=== Waiting for healthcheck ==="
+            for i in $(seq 1 30); do
+              if docker exec ${{ env.APP }} wget -q -O- http://127.0.0.1:3000/taximetro/api/health 2>/dev/null | grep -q healthy; then
+                echo "✅ App healthy after ${i}s"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "❌ Health check failed after 30s"
+                docker logs --tail 20 ${{ env.APP }}
+                exit 1
+              fi
+              sleep 1
+            done
+
+            echo "=== Reloading nginx ==="
+            docker exec repo-nginx-1 nginx -s reload
+
+            echo "=== Smoke test via nginx ==="
+            if docker exec repo-nginx-1 wget -q -O- http://taximetro-digital:3000/taximetro/api/health 2>/dev/null | grep -q healthy; then
+              echo "✅ Nginx → App OK"
+            else
+              echo "⚠️ Nginx → App failed (app works but nginx may need restart)"
+            fi
+
+            echo "=== Cleaning old images ==="
+            docker image prune -f
+          REMOTE_SCRIPT
