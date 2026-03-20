@@ -29,12 +29,12 @@ export default function AdminSolicitacoes() {
 
   useEffect(() => { load(); }, []);
 
-  async function review() {
+  async function review(action: string) {
     if (!reviewing) return;
     await fetch("/taximetro/api/requests", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(reviewing),
+      body: JSON.stringify({ id: reviewing.id, status: action, reviewNotes: reviewing.reviewNotes }),
     });
     setReviewing(null);
     load();
@@ -56,8 +56,8 @@ export default function AdminSolicitacoes() {
             </label>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => { setReviewing({ ...reviewing, status: "APPROVED" }); review(); }} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">Aprovar</button>
-            <button onClick={() => { setReviewing({ ...reviewing, status: "REJECTED" }); review(); }} className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700">Rejeitar</button>
+            <button onClick={() => review("APPROVED")} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">Aprovar</button>
+            <button onClick={() => review("REJECTED")} className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700">Rejeitar</button>
             <button onClick={() => setReviewing(null)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">Cancelar</button>
           </div>
         </div>
@@ -83,7 +83,9 @@ export default function AdminSolicitacoes() {
                   <span className={`rounded px-2 py-0.5 text-xs font-medium ${
                     r.status === "PENDING" ? "bg-amber-50 text-amber-700" :
                     r.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" :
+                    r.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" :
                     r.status === "REJECTED" ? "bg-red-50 text-red-700" :
+                    r.status === "ESCALATED" ? "bg-orange-50 text-orange-700" :
                     "bg-slate-100 text-slate-600"
                   }`}>{STATUS_LABEL[r.status] ?? r.status}</span>
                 </td>
