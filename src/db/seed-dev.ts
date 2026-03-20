@@ -444,46 +444,97 @@ async function seedDev() {
   console.log(`   -> ${cRows.length} check-ins`);
 
   // ============================================================
-  // 10. Requests
+  // 10. Requests (realistic scenarios with history)
   // ============================================================
   console.log("🔄 Criando solicitacoes...");
   let reqCount = 0;
 
   for (let f = 0; f < 5; f++) {
     const fFuture = futureA.filter(a => a.facultyId === facIds[f]);
+    const fHistory = historyA.filter(a => a.facultyId === facIds[f] && a.status === "CHECKED_OUT");
     if (fFuture.length < 4) continue;
 
-    // DROP (pending)
+    // --- PENDING requests (to be reviewed) ---
+
+    // DROP (pending) — only for future SCHEDULED assignments
     await db.insert(requests).values({
       type: "DROP_SHIFT", requesterId: fFuture[0].internId,
       assignmentId: fFuture[0].id, status: "PENDING",
     }).onConflictDoNothing();
     reqCount++;
 
-    // SWAP (pending) — need two different interns
-    if (fFuture[1] && fFuture[2] && fFuture[1].internId !== fFuture[2].internId) {
+    // SWAP (pending) — ensure distinct interns and distinct assignments
+    const swapA = fFuture[1];
+    const swapB = fFuture.find(a => a.internId !== swapA?.internId && a.id !== swapA?.id);
+    if (swapA && swapB) {
       await db.insert(requests).values({
-        type: "SWAP", requesterId: fFuture[1].internId,
-        assignmentId: fFuture[1].id,
-        targetInternId: fFuture[2].internId,
-        targetAssignmentId: fFuture[2].id,
+        type: "SWAP", requesterId: swapA.internId,
+        assignmentId: swapA.id,
+        targetInternId: swapB.internId,
+        targetAssignmentId: swapB.id,
         status: "PENDING",
       }).onConflictDoNothing();
       reqCount++;
     }
 
     // EXTRA (pending)
-    if (fFuture[3]) {
+    // Use an assignment not already involved in another request
+    const extraCandidate = fFuture.find(a =>
+      a.id !== fFuture[0]?.id && a.id !== swapA?.id && a.id !== swapB?.id
+    );
+    if (extraCandidate) {
       const extraBase = baseByCode[BASE_RANK[(f + 3) % BASE_RANK.length]];
       await db.insert(requests).values({
-        type: "EXTRA_SHIFT", requesterId: fFuture[3].internId,
-        assignmentId: fFuture[3].id,
+        type: "EXTRA_SHIFT", requesterId: extraCandidate.internId,
+        assignmentId: extraCandidate.id,
         extraBaseId: extraBase?.id,
         extraDate: dateStr(addDays(today, 10)),
         extraPeriod: "NIGHT",
         status: "PENDING",
       }).onConflictDoNothing();
       reqCount++;
+    }
+
+    // --- Historical requests (already processed) ---
+
+    if (fHistory.length > 4) {
+      // Approved DROP
+      await db.insert(requests).values({
+        type: "DROP_SHIFT", requesterId: fHistory[0].internId,
+        assignmentId: fHistory[0].id, status: "COMPLETED",
+        reviewedBy: coordId, reviewedAt: addDays(today, -10),
+        reviewNotes: "Aprovado — atestado médico apresentado.",
+      }).onConflictDoNothing();
+      reqCount++;
+
+      // Rejected EXTRA
+      await db.insert(requests).values({
+        type: "EXTRA_SHIFT", requesterId: fHistory[1].internId,
+        assignmentId: fHistory[1].id,
+        extraBaseId: baseByCode[BASE_RANK[(f + 1) % BASE_RANK.length]]?.id,
+        extraDate: dateStr(addDays(today, -5)),
+        extraPeriod: "NIGHT",
+        status: "REJECTED",
+        reviewedBy: coordId, reviewedAt: addDays(today, -5),
+        reviewNotes: "Carga horária semanal já atingida.",
+      }).onConflictDoNothing();
+      reqCount++;
+
+      // Completed SWAP
+      const hSwapA = fHistory[3];
+      const hSwapB = fHistory.find(a => a.internId !== hSwapA.internId && a.id !== hSwapA.id);
+      if (hSwapB) {
+        await db.insert(requests).values({
+          type: "SWAP", requesterId: hSwapA.internId,
+          assignmentId: hSwapA.id,
+          targetInternId: hSwapB.internId,
+          targetAssignmentId: hSwapB.id,
+          status: "COMPLETED",
+          reviewedBy: coordId, reviewedAt: addDays(today, -7),
+          reviewNotes: "Troca deferida entre internos da mesma faculdade.",
+        }).onConflictDoNothing();
+        reqCount++;
+      }
     }
   }
   console.log(`   -> ${reqCount} solicitacoes`);
