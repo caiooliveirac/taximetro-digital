@@ -29,7 +29,7 @@ export default function LeaderCalibrar() {
       .then((json) => {
         if (json.success) setBases(json.data.filter((b: Base) => b.type !== "CENTRAL"));
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, []);
 
@@ -95,9 +95,8 @@ export default function LeaderCalibrar() {
       </div>
 
       {msg && (
-        <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-          msg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-        }`}>
+        <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${msg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+          }`}>
           {msg.type === "success"
             ? <CheckCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
             : <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />}
@@ -174,9 +173,8 @@ export default function LeaderCalibrar() {
         {bases.map((b) => (
           <div
             key={b.id}
-            className={`rounded-xl border bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:shadow-md ${
-              selected?.id === b.id ? "border-accent-500 ring-1 ring-accent-500" : "border-slate-200"
-            }`}
+            className={`rounded-xl border bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:shadow-md ${selected?.id === b.id ? "border-accent-500 ring-1 ring-accent-500" : "border-slate-200"
+              }`}
           >
             <div className="flex items-start justify-between">
               <div>

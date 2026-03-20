@@ -166,11 +166,11 @@ export default function AdminPresencas() {
                   // Row background by status/checkin errors
                   const rowBg =
                     a.status === "ABSENT" ? "bg-red-50" :
-                    ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) && a.checkinGeoValid === false ? "bg-purple-50" :
-                    ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) && a.checkinStatus === "EXPIRED" ? "bg-violet-50" :
-                    ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) && a.checkinMethod === "TELEGRAM_QR" && a.checkinStatus === "REJECTED" ? "bg-fuchsia-50" :
-                    ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) ? "bg-emerald-50" :
-                    "";
+                      ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) && a.checkinGeoValid === false ? "bg-purple-50" :
+                        ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) && a.checkinStatus === "EXPIRED" ? "bg-violet-50" :
+                          ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) && a.checkinMethod === "TELEGRAM_QR" && a.checkinStatus === "REJECTED" ? "bg-fuchsia-50" :
+                            ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) ? "bg-emerald-50" :
+                              "";
                   return (
                     <TableRow key={a.id} className={rowBg}>
                       <TableCell className="font-medium">{a.internName}</TableCell>

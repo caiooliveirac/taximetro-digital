@@ -77,13 +77,13 @@ export default function AdminVerComoInterno() {
           );
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoadingList(false));
 
     fetch("/taximetro/api/admin/bases")
       .then((r) => r.json())
       .then((json) => { if (json.success) setBases(json.data.filter((b: { isActive: boolean }) => b.isActive)); })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   /* ── load data when intern selected ── */
@@ -116,8 +116,8 @@ export default function AdminVerComoInterno() {
       else setCompliance(null);
       if (rJson.success) setRequests(rJson.data);
     })
-    .catch(() => {})
-    .finally(() => setLoadingData(false));
+      .catch(() => { })
+      .finally(() => setLoadingData(false));
   }, [selected]);
 
   /* ── actions ── */
@@ -399,9 +399,8 @@ export default function AdminVerComoInterno() {
                   {submitting ? "Enviando..." : "Criar Solicitação"}
                 </Button>
                 {actionMsg && (
-                  <div className={`rounded-lg px-3 py-2 text-sm ${
-                    actionMsg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-                  }`}>
+                  <div className={`rounded-lg px-3 py-2 text-sm ${actionMsg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                    }`}>
                     {actionMsg.text}
                   </div>
                 )}

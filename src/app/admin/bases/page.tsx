@@ -223,44 +223,44 @@ export default function AdminBases() {
               .filter(b => b.type === "USA")
               .sort((a, b) => baseViewIndex(a.code) - baseViewIndex(b.code))
               .map((b) => {
-              const cfg = TYPE_CONFIG[b.type];
-              const hasCoords = b.latitude !== 0 || b.longitude !== 0;
-              const coordsLook = b.latitude === 0 && b.longitude === 0;
-              return (
-                <TableRow key={b.id}>
-                  <TableCell className="font-mono font-medium text-slate-900">{b.code}</TableCell>
-                  <TableCell className="text-slate-900">{b.name}</TableCell>
-                  <TableCell><Badge variant={cfg.variant}>{cfg.label}</Badge></TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className={`font-mono text-xs ${coordsLook ? "text-red-500" : "text-slate-500"}`}>
-                        {b.latitude.toFixed(6)}, {b.longitude.toFixed(6)}
-                      </span>
-                      {hasCoords && (
-                        <a
-                          href={mapUrl(b.latitude, b.longitude)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-accent-500 hover:text-accent-700"
-                          title="Ver no mapa"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        </a>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-slate-500">{b.geoFenceMeters}m</TableCell>
-                  <TableCell>
-                    <button
-                      onClick={() => setEditing(b)}
-                      className="text-sm font-medium text-accent-600 hover:text-accent-700 hover:underline"
-                    >
-                      Editar
-                    </button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+                const cfg = TYPE_CONFIG[b.type];
+                const hasCoords = b.latitude !== 0 || b.longitude !== 0;
+                const coordsLook = b.latitude === 0 && b.longitude === 0;
+                return (
+                  <TableRow key={b.id}>
+                    <TableCell className="font-mono font-medium text-slate-900">{b.code}</TableCell>
+                    <TableCell className="text-slate-900">{b.name}</TableCell>
+                    <TableCell><Badge variant={cfg.variant}>{cfg.label}</Badge></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-mono text-xs ${coordsLook ? "text-red-500" : "text-slate-500"}`}>
+                          {b.latitude.toFixed(6)}, {b.longitude.toFixed(6)}
+                        </span>
+                        {hasCoords && (
+                          <a
+                            href={mapUrl(b.latitude, b.longitude)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-accent-500 hover:text-accent-700"
+                            title="Ver no mapa"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </a>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-slate-500">{b.geoFenceMeters}m</TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => setEditing(b)}
+                        className="text-sm font-medium text-accent-600 hover:text-accent-700 hover:underline"
+                      >
+                        Editar
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
           </TableBody>
         </Table>
       </div>

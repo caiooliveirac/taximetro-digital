@@ -139,6 +139,12 @@ function LoginForm() {
             <Button type="submit" disabled={loading} className="w-full">
               {loading ? "Entrando..." : "Entrar"}
             </Button>
+
+            <div className="text-right">
+              <a href="/taximetro/esqueci-senha" className="text-xs text-accent-600 hover:text-accent-500">
+                Esqueci minha senha
+              </a>
+            </div>
           </form>
 
           <div className="relative my-5">

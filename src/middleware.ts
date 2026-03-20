@@ -1,7 +1,7 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/auth", "/api/telegram", "/registro", "/api/registro", "/api/health"];
+const PUBLIC_PATHS = ["/login", "/esqueci-senha", "/redefinir-senha", "/api/auth", "/api/telegram", "/registro", "/api/registro", "/api/health"];
 
 const ROLE_PREFIX: Record<string, string> = {
   COORDINATOR: "/admin",

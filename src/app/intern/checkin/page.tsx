@@ -61,7 +61,7 @@ export default function InternCheckin() {
           setAssignment(active ?? null);
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -243,8 +243,8 @@ export default function InternCheckin() {
                     <button
                       onClick={() => setSelectedPeriod("DAY")}
                       className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${selectedPeriod === "DAY"
-                          ? "border-amber-300 bg-amber-100 text-amber-800"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        ? "border-amber-300 bg-amber-100 text-amber-800"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         }`}
                     >
                       <Sun className="h-4 w-4" strokeWidth={1.5} /> Diurno
@@ -252,8 +252,8 @@ export default function InternCheckin() {
                     <button
                       onClick={() => setSelectedPeriod("NIGHT")}
                       className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${selectedPeriod === "NIGHT"
-                          ? "border-indigo-300 bg-indigo-100 text-indigo-800"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        ? "border-indigo-300 bg-indigo-100 text-indigo-800"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         }`}
                     >
                       <Moon className="h-4 w-4" strokeWidth={1.5} /> Noturno

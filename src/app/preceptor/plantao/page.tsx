@@ -38,7 +38,7 @@ export default function PreceptorPlantao() {
           setAssignments(sorted);
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, [base, shift]);
 

@@ -120,9 +120,8 @@ export default function PreceptorValidar() {
       </div>
 
       {msg && (
-        <div className={`rounded-lg px-4 py-2.5 text-sm ${
-          msg.type === "success" ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10" : "bg-red-50 text-red-700 ring-1 ring-red-600/10"
-        }`}>
+        <div className={`rounded-lg px-4 py-2.5 text-sm ${msg.type === "success" ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10" : "bg-red-50 text-red-700 ring-1 ring-red-600/10"
+          }`}>
           {msg.text}
         </div>
       )}

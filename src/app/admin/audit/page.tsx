@@ -116,7 +116,7 @@ export default function AdminAudit() {
     fetch("/taximetro/api/admin/audit")
       .then((r) => r.json())
       .then((json) => { if (json.success) setEntries(json.data); })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, []);
 
