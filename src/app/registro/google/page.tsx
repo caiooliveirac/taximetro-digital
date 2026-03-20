@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Ambulance, CheckCircle, Camera, X, AlertCircle } from "lucide-react";
+import { Ambulance, CheckCircle, Camera, ImagePlus, X, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -65,7 +65,8 @@ function RegistroGoogleForm() {
   const [facultyId, setFacultyId] = useState("");
   const [baseId, setBaseId] = useState("");
   const [selfie, setSelfie] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [bases, setBases] = useState<Base[]>([]);
@@ -195,21 +196,29 @@ function RegistroGoogleForm() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Selfie */}
             <div className="flex flex-col items-center">
-              <input ref={fileInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={handleSelfieChange} />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={handleSelfieChange} />
+              <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handleSelfieChange} />
               {selfie ? (
                 <div className="relative">
                   <img src={selfie} alt="Selfie" className="h-28 w-28 rounded-full object-cover ring-2 ring-accent-200" />
-                  <button type="button" onClick={() => { setSelfie(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                  <button type="button" onClick={() => { setSelfie(null); if (cameraInputRef.current) cameraInputRef.current.value = ""; if (galleryInputRef.current) galleryInputRef.current.value = ""; }}
                     className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={() => fileInputRef.current?.click()}
-                  className="flex h-28 w-28 flex-col items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-slate-400 hover:border-accent-400 hover:text-accent-500 transition-colors">
-                  <Camera className="h-7 w-7 mb-1" />
-                  <span className="text-[10px] font-medium">Tirar selfie</span>
-                </button>
+                <div className="flex gap-4">
+                  <button type="button" onClick={() => cameraInputRef.current?.click()}
+                    className="flex h-28 w-28 flex-col items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-slate-400 hover:border-accent-400 hover:text-accent-500 transition-colors">
+                    <Camera className="h-7 w-7 mb-1" />
+                    <span className="text-[10px] font-medium">Câmera</span>
+                  </button>
+                  <button type="button" onClick={() => galleryInputRef.current?.click()}
+                    className="flex h-28 w-28 flex-col items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-slate-400 hover:border-accent-400 hover:text-accent-500 transition-colors">
+                    <ImagePlus className="h-7 w-7 mb-1" />
+                    <span className="text-[10px] font-medium">Galeria</span>
+                  </button>
+                </div>
               )}
               <p className="mt-1.5 text-xs text-slate-400">Foto para identificação</p>
             </div>
