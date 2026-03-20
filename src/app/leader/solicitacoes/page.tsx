@@ -16,7 +16,7 @@ type Request = {
 };
 
 const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra", DROP_SHIFT: "Descarte" };
-const STATUS_LABEL: Record<string, string> = { PENDING: "Pendente", APPROVED: "Aprovada", REJECTED: "Rejeitada", ESCALATED: "Escalada" };
+const STATUS_LABEL: Record<string, string> = { PENDING: "Pendente", APPROVED: "Aprovada", COMPLETED: "Concluída", REJECTED: "Rejeitada", ESCALATED: "Escalada" };
 
 export default function LeaderSolicitacoes() {
   const [requests, setRequests] = useState<Request[]>([]);
@@ -91,6 +91,7 @@ export default function LeaderSolicitacoes() {
                   <span className={`rounded px-2 py-0.5 text-xs font-medium ${
                     r.status === "PENDING" ? "bg-amber-50 text-amber-700" :
                     r.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" :
+                    r.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" :
                     r.status === "REJECTED" ? "bg-red-50 text-red-700" :
                     r.status === "ESCALATED" ? "bg-orange-50 text-orange-700" :
                     "bg-slate-100 text-slate-600"
