@@ -149,6 +149,17 @@ export async function PUT(req: NextRequest) {
   const { id, status, notes } = body;
   if (!id) return NextResponse.json({ success: false, error: "ID obrigatório" }, { status: 400 });
 
+  // Leader must own the assignment's faculty
+  if (token.role === "LEADER" && token.facultyId) {
+    const [target] = await db
+      .select({ facultyId: assignments.facultyId })
+      .from(assignments)
+      .where(eq(assignments.id, id));
+    if (!target || target.facultyId !== token.facultyId) {
+      return NextResponse.json({ success: false, error: "Assignment não pertence à sua faculdade" }, { status: 403 });
+    }
+  }
+
   const [updated] = await db
     .update(assignments)
     .set({ status, notes, updatedAt: new Date() })

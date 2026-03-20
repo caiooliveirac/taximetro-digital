@@ -9,6 +9,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
 
   const today = new Date().toISOString().split("T")[0]!;
+  const facultyFilter = token.role === "LEADER" && token.facultyId
+    ? sql`AND a.faculty_id = ${token.facultyId}`
+    : sql``;
 
   const rows = await db.execute(sql`
     SELECT
@@ -24,7 +27,7 @@ export async function GET(req: NextRequest) {
     JOIN users u ON u.id = a.intern_id
     JOIN faculties f ON f.id = a.faculty_id
     JOIN bases b ON b.id = a.base_id
-    WHERE a.status = 'ABSENT' AND a.date >= ${today}::date - INTERVAL '7 days'
+    WHERE a.status = 'ABSENT' AND a.date >= ${today}::date - INTERVAL '7 days' ${facultyFilter}
 
     UNION ALL
 
@@ -42,7 +45,7 @@ export async function GET(req: NextRequest) {
     JOIN users u ON u.id = c.intern_id
     JOIN faculties f ON f.id = a.faculty_id
     JOIN bases b ON b.id = a.base_id
-    WHERE c.geo_valid = false AND c.created_at >= ${today}::date - INTERVAL '7 days'
+    WHERE c.geo_valid = false AND c.created_at >= ${today}::date - INTERVAL '7 days' ${facultyFilter}
 
     UNION ALL
 
@@ -60,7 +63,7 @@ export async function GET(req: NextRequest) {
     JOIN users u ON u.id = c.intern_id
     JOIN faculties f ON f.id = a.faculty_id
     JOIN bases b ON b.id = a.base_id
-    WHERE c.status = 'EXPIRED' AND c.created_at >= ${today}::date - INTERVAL '7 days'
+    WHERE c.status = 'EXPIRED' AND c.created_at >= ${today}::date - INTERVAL '7 days' ${facultyFilter}
 
     UNION ALL
 
@@ -77,7 +80,7 @@ export async function GET(req: NextRequest) {
     JOIN users u ON u.id = a.intern_id
     JOIN faculties f ON f.id = a.faculty_id
     JOIN bases b ON b.id = a.base_id
-    WHERE a.notes = '[AUTO_CRIADO]' AND a.date >= ${today}::date - INTERVAL '7 days'
+    WHERE a.notes = '[AUTO_CRIADO]' AND a.date >= ${today}::date - INTERVAL '7 days' ${facultyFilter}
 
     ORDER BY date DESC
   `);
