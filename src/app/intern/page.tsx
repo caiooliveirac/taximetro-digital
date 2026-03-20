@@ -98,11 +98,10 @@ export default function InternHoje() {
           </p>
         </div>
         {weekly && weekly.targetShiftsPerWeek > 0 && (
-          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${
-            weeklyOnTrack
+          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${weeklyOnTrack
               ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
               : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
-          }`}>
+            }`}>
             <Target className="h-4 w-4" strokeWidth={2} />
             {weeklyEffective}/{weekly.targetShiftsPerWeek}
           </div>

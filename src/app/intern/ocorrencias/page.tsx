@@ -97,9 +97,8 @@ export default function InternOcorrencias() {
         </Button>
 
         {msg && (
-          <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-            msg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-          }`}>
+          <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${msg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+            }`}>
             {msg.type === "success"
               ? <CheckCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
               : <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />}

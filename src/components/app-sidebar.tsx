@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
-import { LogOut, Ambulance, Eye, Users, Stethoscope, GraduationCap, Menu, X, type LucideIcon } from "lucide-react";
+import { LogOut, Ambulance, Eye, Users, Stethoscope, GraduationCap, Menu, X, KeyRound, type LucideIcon } from "lucide-react";
 
 export type NavItem = {
   href: string;
@@ -42,6 +42,36 @@ export function AppSidebar({
     .toUpperCase();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pwModalOpen, setPwModalOpen] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+
+  function openPwModal() {
+    setPwCurrent(""); setPwNew(""); setPwConfirm("");
+    setPwError(""); setPwSuccess(false); setPwModalOpen(true);
+  }
+
+  async function handleChangePw(e: React.FormEvent) {
+    e.preventDefault();
+    if (pwNew.length < 8) { setPwError("Nova senha deve ter no mínimo 8 caracteres."); return; }
+    if (pwNew !== pwConfirm) { setPwError("Senhas não conferem."); return; }
+    setPwError(""); setPwLoading(true);
+    try {
+      const res = await fetch("/taximetro/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNew }),
+      });
+      const json = await res.json();
+      if (!json.success) setPwError(json.error ?? "Erro ao alterar senha.");
+      else setPwSuccess(true);
+    } catch { setPwError("Erro de conexão."); }
+    finally { setPwLoading(false); }
+  }
 
   const viewLinks = [
     { href: "/leader", label: "Líder", icon: Users },
@@ -152,6 +182,13 @@ export function AppSidebar({
               <p className="truncate text-sm font-medium text-slate-200">{userName || "Usuário"}</p>
             </div>
             <button
+              onClick={openPwModal}
+              className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-navy-800 hover:text-slate-300 transition-colors duration-150"
+              title="Alterar senha"
+            >
+              <KeyRound className="h-4 w-4" strokeWidth={1.5} />
+            </button>
+            <button
               onClick={() => signOut({ callbackUrl: "/login" })}
               className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-navy-800 hover:text-slate-300 transition-colors duration-150"
               title="Sair"
@@ -249,12 +286,59 @@ export function AppSidebar({
                 <p className="truncate text-sm font-medium text-slate-900">{userName || "Usuário"}</p>
                 <p className="text-[10px] text-slate-400">{role}</p>
               </div>
+              <button onClick={() => { setMobileMenuOpen(false); openPwModal(); }}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                <KeyRound className="h-4 w-4" strokeWidth={1.5} />
+              </button>
               <button onClick={() => signOut({ callbackUrl: "/login" })}
                 className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
               >
                 <LogOut className="h-4 w-4" strokeWidth={1.5} />Sair
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password change modal */}
+      {pwModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => setPwModalOpen(false)} />
+          <div className="relative w-full max-w-sm mx-4 rounded-2xl bg-white p-6 shadow-xl">
+            <button onClick={() => setPwModalOpen(false)} className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+              <X className="h-4 w-4" strokeWidth={1.5} />
+            </button>
+            <h2 className="text-lg font-semibold text-slate-900 mb-4">Alterar Senha</h2>
+            {pwSuccess ? (
+              <div className="text-center space-y-3">
+                <p className="text-sm text-green-700 font-medium">Senha alterada com sucesso!</p>
+                <button onClick={() => setPwModalOpen(false)} className="text-sm text-accent-600 hover:text-accent-500 font-medium">Fechar</button>
+              </div>
+            ) : (
+              <form onSubmit={handleChangePw} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Senha atual</label>
+                  <input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} required autoComplete="current-password"
+                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Nova senha</label>
+                  <input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} required autoComplete="new-password" placeholder="Mín. 8 caracteres"
+                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Confirmar nova senha</label>
+                  <input type="password" value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)} required autoComplete="new-password"
+                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500" />
+                </div>
+                {pwError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{pwError}</p>}
+                <button type="submit" disabled={pwLoading}
+                  className="w-full rounded-lg bg-accent-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-500 transition-colors disabled:opacity-50">
+                  {pwLoading ? "Alterando..." : "Alterar Senha"}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}

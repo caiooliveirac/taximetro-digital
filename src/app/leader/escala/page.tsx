@@ -594,9 +594,8 @@ export default function LeaderEscala() {
                     return (
                       <div
                         key={intern.id}
-                        className={`flex items-center gap-3 rounded-lg px-3 py-2 transition ${
-                          excluded ? "bg-slate-50 opacity-50" : selected ? "bg-emerald-50/70" : "bg-slate-50"
-                        }`}
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 transition ${excluded ? "bg-slate-50 opacity-50" : selected ? "bg-emerald-50/70" : "bg-slate-50"
+                          }`}
                       >
                         <input
                           type="checkbox"

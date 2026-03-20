@@ -17,6 +17,7 @@ async function fetchRole(userId: string) {
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  basePath: "/taximetro/api/auth",
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID ?? "",

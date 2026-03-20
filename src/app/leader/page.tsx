@@ -74,9 +74,9 @@ function categorize(c: ComplianceRow): WeeklyCategory {
 }
 
 const CATEGORY_CONFIG: Record<WeeklyCategory, { label: string; border: string; bg: string; text: string; icon: typeof XCircle }> = {
-  com_falta:   { label: "Com falta",    border: "border-red-200",   bg: "bg-red-50/50",    text: "text-red-700",   icon: XCircle },
-  sub_alocado: { label: "Sub-alocados", border: "border-amber-200", bg: "bg-amber-50/50",  text: "text-amber-700", icon: AlertTriangle },
-  na_meta:     { label: "Na meta",      border: "border-emerald-200", bg: "bg-emerald-50/30", text: "text-emerald-700", icon: CheckCircle },
+  com_falta: { label: "Com falta", border: "border-red-200", bg: "bg-red-50/50", text: "text-red-700", icon: XCircle },
+  sub_alocado: { label: "Sub-alocados", border: "border-amber-200", bg: "bg-amber-50/50", text: "text-amber-700", icon: AlertTriangle },
+  na_meta: { label: "Na meta", border: "border-emerald-200", bg: "bg-emerald-50/30", text: "text-emerald-700", icon: CheckCircle },
 };
 
 export default function LeaderDashboard() {
@@ -110,37 +110,37 @@ export default function LeaderDashboard() {
 
         const alertsJson = alertsRes ? await alertsRes.json().catch(() => ({ data: [] })) : { data: [] };
 
-      const todayActive = todayJson.success ? todayJson.data.filter((a: { status: string }) => a.status !== "CANCELLED") : [];
+        const todayActive = todayJson.success ? todayJson.data.filter((a: { status: string }) => a.status !== "CANCELLED") : [];
 
-      setStats({
-        totalInterns: usersJson.success ? usersJson.data.filter((u: { role: string }) => u.role === "INTERN").length : 0,
-        scheduledThisWeek: assignmentsJson.success ? assignmentsJson.data.filter((a: { status: string }) => a.status !== "CANCELLED").length : 0,
-        pendingRequests: requestsJson.success ? requestsJson.data.filter((r: { status: string }) => r.status === "PENDING").length : 0,
-        confirmedToday: todayActive.filter((a: { status: string }) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status)).length,
-        absentToday: todayActive.filter((a: { status: string }) => a.status === "ABSENT").length,
-        checkedInToday: todayActive.filter((a: { status: string }) => a.status === "CHECKED_IN").length,
-      });
+        setStats({
+          totalInterns: usersJson.success ? usersJson.data.filter((u: { role: string }) => u.role === "INTERN").length : 0,
+          scheduledThisWeek: assignmentsJson.success ? assignmentsJson.data.filter((a: { status: string }) => a.status !== "CANCELLED").length : 0,
+          pendingRequests: requestsJson.success ? requestsJson.data.filter((r: { status: string }) => r.status === "PENDING").length : 0,
+          confirmedToday: todayActive.filter((a: { status: string }) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status)).length,
+          absentToday: todayActive.filter((a: { status: string }) => a.status === "ABSENT").length,
+          checkedInToday: todayActive.filter((a: { status: string }) => a.status === "CHECKED_IN").length,
+        });
 
-      if (complianceJson.success) {
-        setCompliance(complianceJson.data ?? []);
-        setSummary(complianceJson.summary ?? null);
-      }
-
-      if (alertsJson.data) setAlerts(alertsJson.data.slice(0, 5));
-
-      // Compute check-in irregularities from today's assignments
-      type TodayRow = { internName: string; baseCode: string; period: string; status: string; checkinGeoValid: boolean | null; checkinStatus: string | null };
-      const todayAll: TodayRow[] = todayJson.success ? todayJson.data : [];
-      const irregulars: Incident[] = [];
-      for (const a of todayAll) {
-        if (a.checkinGeoValid === false) {
-          irregulars.push({ internName: a.internName, baseCode: a.baseCode, period: a.period, reason: "Check-in fora do georreferenciamento" });
-        } else if (a.checkinStatus === "EXPIRED") {
-          irregulars.push({ internName: a.internName, baseCode: a.baseCode, period: a.period, reason: "TOTP expirado — sem validação" });
+        if (complianceJson.success) {
+          setCompliance(complianceJson.data ?? []);
+          setSummary(complianceJson.summary ?? null);
         }
-      }
-      setIncidents(irregulars);
-      setError("");
+
+        if (alertsJson.data) setAlerts(alertsJson.data.slice(0, 5));
+
+        // Compute check-in irregularities from today's assignments
+        type TodayRow = { internName: string; baseCode: string; period: string; status: string; checkinGeoValid: boolean | null; checkinStatus: string | null };
+        const todayAll: TodayRow[] = todayJson.success ? todayJson.data : [];
+        const irregulars: Incident[] = [];
+        for (const a of todayAll) {
+          if (a.checkinGeoValid === false) {
+            irregulars.push({ internName: a.internName, baseCode: a.baseCode, period: a.period, reason: "Check-in fora do georreferenciamento" });
+          } else if (a.checkinStatus === "EXPIRED") {
+            irregulars.push({ internName: a.internName, baseCode: a.baseCode, period: a.period, reason: "TOTP expirado — sem validação" });
+          }
+        }
+        setIncidents(irregulars);
+        setError("");
       } catch {
         setError("Erro ao carregar dashboard. Tente recarregar a página.");
       }
@@ -368,11 +368,10 @@ export default function LeaderDashboard() {
           {alerts.map((a, i) => (
             <div
               key={i}
-              className={`flex items-center gap-2 rounded-lg border-l-3 px-4 py-2.5 text-sm ${
-                a.type === "ABSENCE"
+              className={`flex items-center gap-2 rounded-lg border-l-3 px-4 py-2.5 text-sm ${a.type === "ABSENCE"
                   ? "border-red-500 bg-red-50 text-red-700"
                   : "border-amber-500 bg-amber-50 text-amber-700"
-              }`}
+                }`}
             >
               {a.type === "ABSENCE" ? (
                 <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />

@@ -205,11 +205,10 @@ export default function AdminRelatorios() {
             <button
               key={key}
               onClick={() => toggleSection(key)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                sections[key]
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${sections[key]
                   ? "bg-accent-50 text-accent-700 ring-1 ring-accent-600/10"
                   : "bg-slate-100 text-slate-400"
-              }`}
+                }`}
             >
               {label}
             </button>
@@ -292,12 +291,11 @@ export default function AdminRelatorios() {
                               </TableCell>
                               <TableCell className="text-center">
                                 {c ? (
-                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                    c.status === "ok" ? "bg-emerald-50 text-emerald-700" :
-                                    c.status === "compensating" ? "bg-blue-50 text-blue-700" :
-                                    c.status === "partial" ? "bg-amber-50 text-amber-700" :
-                                    "bg-red-50 text-red-700"
-                                  }`}>{STATUS_LABEL[c.status]}</span>
+                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${c.status === "ok" ? "bg-emerald-50 text-emerald-700" :
+                                      c.status === "compensating" ? "bg-blue-50 text-blue-700" :
+                                        c.status === "partial" ? "bg-amber-50 text-amber-700" :
+                                          "bg-red-50 text-red-700"
+                                    }`}>{STATUS_LABEL[c.status]}</span>
                                 ) : "—"}
                               </TableCell>
                             </TableRow>
@@ -478,8 +476,8 @@ export default function AdminRelatorios() {
                       <span>Meta semanal: {individualCompliance.thisWeekCompleted}/{individualCompliance.targetShiftsPerWeek}</span>
                       <span>Status: <strong className={
                         individualCompliance.status === "ok" ? "text-emerald-600" :
-                        individualCompliance.status === "compensating" ? "text-blue-600" :
-                        individualCompliance.status === "partial" ? "text-amber-600" : "text-red-600"
+                          individualCompliance.status === "compensating" ? "text-blue-600" :
+                            individualCompliance.status === "partial" ? "text-amber-600" : "text-red-600"
                       }>{STATUS_LABEL[individualCompliance.status]}</strong></span>
                       {individualCompliance.rawDeficit > 0 && (
                         <span>Déficit: {individualCompliance.rawDeficit} ({individualCompliance.futureScheduled} agendados)</span>

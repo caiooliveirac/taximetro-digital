@@ -200,11 +200,10 @@ export default function AdminUsuarios() {
           {pendingCount > 0 && (
             <button
               onClick={() => setShowPending(!showPending)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                showPending
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${showPending
                   ? "bg-amber-500 text-white hover:bg-amber-600"
                   : "bg-amber-50 text-amber-700 hover:bg-amber-100"
-              }`}
+                }`}
             >
               Pendentes ({pendingCount})
             </button>
@@ -406,12 +405,11 @@ export default function AdminUsuarios() {
                 <td className="py-2 pr-4">{u.name}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{u.cpf}</td>
                 <td className="py-2 pr-4">
-                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${
-                    u.role === "COORDINATOR" ? "bg-purple-50 text-purple-700" :
-                    u.role === "LEADER" ? "bg-emerald-50 text-emerald-700" :
-                    u.role === "PRECEPTOR" ? "bg-amber-50 text-amber-700" :
-                    "bg-blue-50 text-blue-700"
-                  }`}>{ROLE_LABEL[u.role ?? ""] ?? u.role ?? "—"}</span>
+                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${u.role === "COORDINATOR" ? "bg-purple-50 text-purple-700" :
+                      u.role === "LEADER" ? "bg-emerald-50 text-emerald-700" :
+                        u.role === "PRECEPTOR" ? "bg-amber-50 text-amber-700" :
+                          "bg-blue-50 text-blue-700"
+                    }`}>{ROLE_LABEL[u.role ?? ""] ?? u.role ?? "—"}</span>
                 </td>
                 <td className="py-2 pr-4">
                   {u.facultyAbbr ? (() => {
