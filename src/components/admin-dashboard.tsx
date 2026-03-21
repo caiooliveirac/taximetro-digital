@@ -236,55 +236,55 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
           !search || r.name.toLowerCase().includes(search.toLowerCase())
         );
         return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setModal(null); setSearch(""); }}>
-          <div className="relative mx-4 max-h-[70vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <h3 className="text-base font-semibold text-slate-900">{modal.title}</h3>
-              <button onClick={() => { setModal(null); setSearch(""); }} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            {modal.rows.length > 5 && (
-              <div className="px-5 pt-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Buscar por nome..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
-                  />
-                </div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setModal(null); setSearch(""); }}>
+            <div className="relative mx-4 max-h-[70vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <h3 className="text-base font-semibold text-slate-900">{modal.title}</h3>
+                <button onClick={() => { setModal(null); setSearch(""); }} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-            )}
-            <div className="max-h-[55vh] overflow-y-auto px-5 py-3">
-              {filteredRows.length === 0 ? (
-                <p className="py-8 text-center text-sm text-slate-400">Nenhum registro.</p>
-              ) : (
-                <ul className="divide-y divide-slate-100">
-                  {filteredRows.map((r, i) => {
-                    const fst = getFacultyStyle(r.faculty);
-                    return (
-                    <li key={i} className="flex items-center justify-between py-2.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
-                        {r.faculty && (
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
-                            {r.faculty}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs text-slate-500 shrink-0 ml-2">{r.extra}</span>
-                    </li>
-                    );
-                  })}
-                </ul>
+              {modal.rows.length > 5 && (
+                <div className="px-5 pt-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por nome..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
+                    />
+                  </div>
+                </div>
               )}
+              <div className="max-h-[55vh] overflow-y-auto px-5 py-3">
+                {filteredRows.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-400">Nenhum registro.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {filteredRows.map((r, i) => {
+                      const fst = getFacultyStyle(r.faculty);
+                      return (
+                        <li key={i} className="flex items-center justify-between py-2.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                            {r.faculty && (
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
+                                {r.faculty}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-slate-500 shrink-0 ml-2">{r.extra}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
-        </div>
         );
       })()}
 
