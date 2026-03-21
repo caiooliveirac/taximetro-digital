@@ -143,10 +143,11 @@ export default function AdminUsuarios() {
     if (!editing) return;
     try {
       const isNew = !editing.id;
+      const { selfie, selfieUploadedAt, facultyAbbr, baseCode, createdAt, ...payload } = editing as Record<string, unknown>;
       const res = await fetch("/taximetro/api/admin/users", {
         method: isNew ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editing),
+        body: JSON.stringify(payload),
       });
       const json = await res.json();
       if (!json.success) { setError(json.error); return; }
@@ -155,6 +156,21 @@ export default function AdminUsuarios() {
       load();
     } catch {
       setError("Erro de conexão. Tente novamente.");
+    }
+  }
+
+  async function approve(userId: string) {
+    try {
+      const res = await fetch("/taximetro/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId, isActive: true }),
+      });
+      const json = await res.json();
+      if (!json.success) { alert(json.error); return; }
+      load();
+    } catch {
+      alert("Erro de conexão.");
     }
   }
 
@@ -431,7 +447,10 @@ export default function AdminUsuarios() {
                     <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700">Pendente</span>
                   )}
                 </td>
-                <td className="py-2">
+                <td className="py-2 flex gap-2">
+                  {!u.isActive && (
+                    <button onClick={() => approve(u.id)} className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">Aprovar</button>
+                  )}
                   <button onClick={() => openEdit(u)} className="text-accent-600 hover:text-accent-500">Editar</button>
                 </td>
               </tr>
