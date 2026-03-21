@@ -104,28 +104,33 @@ export async function PUT(req: NextRequest) {
   const token = await requireCoordinator(req);
   if (!token) return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
 
-  const body = await req.json();
-  const parsed = updateUserSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
+  try {
+    const body = await req.json();
+    const parsed = updateUserSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
-  const { id, password, role, facultyId, baseId, ...userData } = parsed.data;
+    const { id, password, role, facultyId, baseId, ...userData } = parsed.data;
 
-  const updateData: Record<string, unknown> = { ...userData, updatedAt: new Date() };
-  if (password) updateData.passwordHash = await hash(password, 12);
+    const updateData: Record<string, unknown> = { ...userData, updatedAt: new Date() };
+    if (password) updateData.passwordHash = await hash(password, 12);
 
-  const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
-  if (!updated) return NextResponse.json({ success: false, error: "Usuário não encontrado" }, { status: 404 });
+    const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
+    if (!updated) return NextResponse.json({ success: false, error: "Usuário não encontrado" }, { status: 404 });
 
-  if (role !== undefined) {
-    await db.update(userRoles).set({ isActive: false }).where(eq(userRoles.userId, id));
-    await db.insert(userRoles).values({
-      userId: id,
-      role,
-      facultyId: facultyId ?? null,
-      baseId: baseId ?? null,
-    });
+    if (role !== undefined) {
+      await db.delete(userRoles).where(eq(userRoles.userId, id));
+      await db.insert(userRoles).values({
+        userId: id,
+        role,
+        facultyId: facultyId ?? null,
+        baseId: baseId ?? null,
+      });
+    }
+
+    await logAudit({ userId: token.id as string, action: "UPDATE_USER", entity: "user", entityId: id, payload: { role, facultyId } });
+    return NextResponse.json({ success: true, data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Erro interno";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-
-  await logAudit({ userId: token.id as string, action: "UPDATE_USER", entity: "user", entityId: id, payload: { role, facultyId } });
-  return NextResponse.json({ success: true, data: updated });
 }
