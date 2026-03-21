@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { getAvailableSlots } from "@/lib/slots";
+import { getEffectiveUser } from "@/lib/impersonate";
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+  const user = await getEffectiveUser(req);
+  if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const facultyId = (token.role === "LEADER" || token.role === "INTERN")
-    ? (token.facultyId as string)
+  const facultyId = (user.role === "LEADER" || user.role === "INTERN")
+    ? (user.facultyId ?? undefined)
     : searchParams.get("facultyId") ?? undefined;
 
   const slots = await getAvailableSlots(facultyId);

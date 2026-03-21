@@ -6,6 +6,7 @@ import {
   Dices, X, RotateCcw, UserX, Plus,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 
 /* ────────── Types ────────── */
@@ -40,6 +41,8 @@ const STATUS_RING: Record<string, string> = {
 
 export default function LeaderEscala() {
   const { data: session } = useSession();
+  const { target: impersonateTarget } = useImpersonate();
+  const effectiveFacultyId = impersonateTarget?.facultyId ?? session?.user?.facultyId;
   /* ── Data ── */
   const [interns, setInterns] = useState<Intern[]>([]);
   const [bases, setBases] = useState<Base[]>([]);
@@ -266,7 +269,7 @@ export default function LeaderEscala() {
   }
 
   async function submitAllocation() {
-    if (!allocSlot || !allocInternId || !session?.user?.facultyId) return;
+    if (!allocSlot || !allocInternId || !effectiveFacultyId) return;
     setAllocLoading(true);
     setAllocMsg("");
     try {
@@ -275,7 +278,7 @@ export default function LeaderEscala() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           internId: allocInternId,
-          facultyId: session.user.facultyId,
+          facultyId: effectiveFacultyId,
           baseId: allocSlot.baseId,
           date: allocSlot.date,
           period: allocSlot.period,

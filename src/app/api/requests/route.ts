@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { requests, assignments, users, bases, userRoles, checkins } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { checkSlotAvailability } from "@/lib/slots";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { z } from "zod/v4";
 import { alias } from "drizzle-orm/pg-core";
 
@@ -32,8 +32,8 @@ const requestSchema = z.discriminatedUnion("type", [swapSchema, extraShiftSchema
 /* ═══════════ GET — list requests ═══════════ */
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+  const user = await getEffectiveUser(req);
+  if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const scope = searchParams.get("scope");
@@ -83,37 +83,37 @@ export async function GET(req: NextRequest) {
     .orderBy(requests.createdAt);
 
   // Scope: open-swaps → OPEN swaps from same faculty, excluding own
-  if (scope === "open-swaps" && token.role === "INTERN" && token.facultyId) {
+  if (scope === "open-swaps" && user.role === "INTERN" && user.facultyId) {
     const facultyInterns = await db
       .select({ userId: userRoles.userId })
       .from(userRoles)
-      .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.facultyId, token.facultyId as string), eq(userRoles.isActive, true)));
+      .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.facultyId, user.facultyId), eq(userRoles.isActive, true)));
     const facultyInternIds = new Set(facultyInterns.map((r) => r.userId));
 
     const filtered = rows.filter((r) =>
       r.type === "SWAP" &&
       r.status === "OPEN" &&
       facultyInternIds.has(r.requesterId) &&
-      r.requesterId !== token.id,
+      r.requesterId !== user.id,
     );
     return NextResponse.json({ success: true, data: filtered });
   }
 
   // Default role-based filtering
   let filtered = rows;
-  if (token.role === "INTERN") {
-    filtered = rows.filter((r) => r.requesterId === token.id || r.targetInternId === token.id);
-  } else if (token.role === "LEADER" && token.facultyId) {
+  if (user.role === "INTERN") {
+    filtered = rows.filter((r) => r.requesterId === user.id || r.targetInternId === user.id);
+  } else if (user.role === "LEADER" && user.facultyId) {
     const facultyInterns = await db
       .select({ userId: userRoles.userId })
       .from(userRoles)
-      .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.facultyId, token.facultyId as string)));
+      .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.facultyId, user.facultyId)));
     const facultyInternIds = new Set(facultyInterns.map((r) => r.userId));
     filtered = rows.filter((r) => facultyInternIds.has(r.requesterId));
   }
 
   const internId = searchParams.get("internId");
-  if (token.role === "COORDINATOR" && internId) {
+  if (user.role === "COORDINATOR" && internId) {
     filtered = rows.filter((r) => r.requesterId === internId);
   }
 
@@ -123,15 +123,15 @@ export async function GET(req: NextRequest) {
 /* ═══════════ POST — create request ═══════════ */
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+  const user = await getEffectiveUser(req);
+  if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const body = await req.json();
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
   const data = parsed.data;
-  const requesterId = token.id as string;
+  const requesterId = user.id;
   const todayStr = new Date().toISOString().slice(0, 10);
 
   if (data.type === "SWAP" || data.type === "DROP_SHIFT") {
@@ -162,8 +162,8 @@ export async function POST(req: NextRequest) {
 
   if (data.type === "EXTRA_SHIFT") {
     if (data.extraDate < todayStr) return NextResponse.json({ success: false, error: "Data do plantão extra deve ser futura" }, { status: 400 });
-    if (!token.facultyId) return NextResponse.json({ success: false, error: "Sem faculdade vinculada" }, { status: 400 });
-    const slot = await checkSlotAvailability(data.extraBaseId, data.extraDate, data.extraPeriod, token.facultyId as string);
+    if (!user.facultyId) return NextResponse.json({ success: false, error: "Sem faculdade vinculada" }, { status: 400 });
+    const slot = await checkSlotAvailability(data.extraBaseId, data.extraDate, data.extraPeriod, user.facultyId);
     if (!slot.available) {
       return NextResponse.json({ success: false, error: `Sem vaga disponível (${slot.assigned}/${slot.capacity})` }, { status: 409 });
     }
@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
   };
 
   const [created] = await db.insert(requests).values(insertData).returning();
-  await logAudit({ userId: requesterId, action: "CREATE_REQUEST", entity: "request", entityId: created.id, payload: data });
+  await logAudit({ userId: user.realUserId ?? user.id, action: "CREATE_REQUEST", entity: "request", entityId: created.id, payload: { ...data, ...(user.isImpersonating ? { impersonating: user.id, impersonateRole: user.role } : {}) } });
   return NextResponse.json({ success: true, data: created }, { status: 201 });
 }
 
@@ -196,15 +196,15 @@ const patchSchema = z.discriminatedUnion("action", [
 ]);
 
 export async function PATCH(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+  const user = await getEffectiveUser(req);
+  if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const body = await req.json();
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
   const data = parsed.data;
-  const userId = token.id as string;
+  const userId = user.id;
 
   const [request] = await db.select().from(requests).where(eq(requests.id, data.id)).limit(1);
   if (!request) return NextResponse.json({ success: false, error: "Solicitação não encontrada" }, { status: 404 });
@@ -341,8 +341,8 @@ export async function PATCH(req: NextRequest) {
 /* ═══════════ PUT — leader/coordinator review (DROP & EXTRA only) ═══════════ */
 
 export async function PUT(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
+  const user = await getEffectiveUser(req);
+  if (!user || !["COORDINATOR", "LEADER"].includes(user.role)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -363,13 +363,13 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: false, error: `Solicitação já processada (${request.status})` }, { status: 409 });
   }
 
-  if (token.role === "LEADER" && token.facultyId) {
+  if (user.role === "LEADER" && user.facultyId) {
     const [reqRole] = await db
       .select({ facultyId: userRoles.facultyId })
       .from(userRoles)
       .where(and(eq(userRoles.userId, request.requesterId), eq(userRoles.role, "INTERN")))
       .limit(1);
-    if (!reqRole || reqRole.facultyId !== token.facultyId) {
+    if (!reqRole || reqRole.facultyId !== user.facultyId) {
       return NextResponse.json({ success: false, error: "Sem permissão para analisar esta solicitação" }, { status: 403 });
     }
   }
@@ -403,7 +403,7 @@ export async function PUT(req: NextRequest) {
         baseId: request.extraBaseId,
         date: request.extraDate,
         period: request.extraPeriod,
-        createdBy: token.id as string,
+        createdBy: user.realUserId ?? user.id,
         notes: "Plantão extra aprovado",
       });
       finalStatus = "COMPLETED";
@@ -424,10 +424,10 @@ export async function PUT(req: NextRequest) {
 
   const [updated] = await db
     .update(requests)
-    .set({ status: finalStatus, reviewedBy: token.id as string, reviewedAt: new Date(), reviewNotes })
+    .set({ status: finalStatus, reviewedBy: user.realUserId ?? user.id, reviewedAt: new Date(), reviewNotes })
     .where(eq(requests.id, id))
     .returning();
 
-  await logAudit({ userId: token.id as string, action: `REVIEW_REQUEST_${status}`, entity: "request", entityId: id, payload: { status: finalStatus, reviewNotes } });
+  await logAudit({ userId: user.realUserId ?? user.id, action: `REVIEW_REQUEST_${status}`, entity: "request", entityId: id, payload: { status: finalStatus, reviewNotes, ...(user.isImpersonating ? { impersonating: user.id, impersonateRole: user.role } : {}) } });
   return NextResponse.json({ success: true, data: updated });
 }

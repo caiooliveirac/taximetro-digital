@@ -19,6 +19,11 @@ export async function POST(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
+  // Block impersonation — check-in requires physical presence
+  if (req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user")) {
+    return NextResponse.json({ success: false, error: "Check-in requer presença física e não pode ser feito via impersonate" }, { status: 403 });
+  }
+
   const body = await req.json();
   const parsed = checkinSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });

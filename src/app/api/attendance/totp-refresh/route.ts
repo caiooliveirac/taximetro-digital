@@ -12,6 +12,11 @@ export async function POST(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
+  // Block impersonation — TOTP is part of the physical check-in flow
+  if (req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user")) {
+    return NextResponse.json({ success: false, error: "TOTP não pode ser usado via impersonate" }, { status: 403 });
+  }
+
   const body = await req.json();
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: "Dados inválidos" }, { status: 400 });

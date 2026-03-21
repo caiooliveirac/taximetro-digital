@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { slotRules, assignments, bases, userRoles } from "@/db/schema";
 import { eq, and, gte, lte, ne, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { getCruBlockedSlots } from "@/lib/slots";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { z } from "zod/v4";
 
 /**
@@ -27,12 +27,12 @@ const lotterySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || token.role !== "LEADER") {
+  const user = await getEffectiveUser(req);
+  if (!user || user.role !== "LEADER") {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
-  const facultyId = token.facultyId as string;
+  const facultyId = user.facultyId;
   if (!facultyId) {
     return NextResponse.json({ success: false, error: "Líder sem faculdade vinculada" }, { status: 400 });
   }
@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
         baseId: pos.baseId,
         date: pos.date,
         period: pos.period,
-        createdBy: token.id as string,
+        createdBy: user.realUserId ?? user.id,
       });
     }
   }
@@ -255,11 +255,11 @@ export async function POST(req: NextRequest) {
   if (toCreate.length > 0) {
     await db.insert(assignments).values(toCreate).onConflictDoNothing();
     await logAudit({
-      userId: token.id as string,
+      userId: user.realUserId ?? user.id,
       action: "LOTTERY",
       entity: "assignment",
       entityId: toCreate[0].internId,
-      payload: { weekStart, maxShifts, selected: safeIds.length, created: toCreate.length },
+      payload: { weekStart, maxShifts, selected: safeIds.length, created: toCreate.length, ...(user.isImpersonating ? { impersonating: user.id } : {}) },
     });
   }
 
