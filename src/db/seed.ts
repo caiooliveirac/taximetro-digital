@@ -1,7 +1,8 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { hash } from "bcryptjs";
-import { bases, faculties, users, userRoles } from "./schema";
+import { bases, faculties, users, userRoles, slotRules } from "./schema";
+import { eq } from "drizzle-orm";
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://localhost:5432/taximetro";
 
@@ -62,6 +63,22 @@ async function seed() {
         role: "COORDINATOR",
       })
       .onConflictDoNothing();
+  }
+
+  /* ── CRU slot rules for EBMSP ── */
+  console.log("🌱 Seed: inserindo vagas CRU/EBMSP...");
+  const [cruBase] = await db.select({ id: bases.id }).from(bases).where(eq(bases.code, "CRU"));
+  const [ebmsp] = await db.select({ id: faculties.id }).from(faculties).where(eq(faculties.abbreviation, "EBMSP"));
+  if (cruBase && ebmsp) {
+    const CRU_RULES: { day: "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT"; cap: number }[] = [
+      { day: "MON", cap: 11 }, { day: "TUE", cap: 11 }, { day: "WED", cap: 6 },
+      { day: "THU", cap: 11 }, { day: "FRI", cap: 8 }, { day: "SAT", cap: 5 },
+    ];
+    for (const r of CRU_RULES) {
+      await db.insert(slotRules).values({
+        baseId: cruBase.id, dayOfWeek: r.day, period: "DAY", facultyId: ebmsp.id, capacity: r.cap,
+      }).onConflictDoNothing();
+    }
   }
 
   console.log("✅ Seed concluído!");

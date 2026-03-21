@@ -259,6 +259,27 @@ export default function LeaderEscala() {
     });
   }, [interns, searchIntern, filterBase, filterPeriod, searchBase, assignments]);
 
+  /* ── CRU ±12h conflict detection (client-side) ── */
+  const cruConflicts = useMemo(() => {
+    // Map: "internId|date|period" → true if that slot is blocked by a CRU assignment
+    const blocked = new Set<string>();
+    for (const a of assignments) {
+      if (a.status === "CANCELLED" || a.baseType !== "CENTRAL") continue;
+      // The CRU assignment itself is fine — mark adjacent slots as blocked
+      const d = new Date(a.date + "T12:00:00Z");
+      if (a.period === "DAY") {
+        const prev = new Date(d); prev.setUTCDate(prev.getUTCDate() - 1);
+        blocked.add(`${a.internId}|${prev.toISOString().slice(0, 10)}|NIGHT`);
+        blocked.add(`${a.internId}|${a.date}|NIGHT`);
+      } else {
+        const next = new Date(d); next.setUTCDate(next.getUTCDate() + 1);
+        blocked.add(`${a.internId}|${a.date}|DAY`);
+        blocked.add(`${a.internId}|${next.toISOString().slice(0, 10)}|DAY`);
+      }
+    }
+    return blocked;
+  }, [assignments]);
+
   const today = new Date().toISOString().slice(0, 10);
   const selectedCount = [...lotterySelected].filter((id) => !lotteryExcluded.has(id)).length;
 
@@ -349,12 +370,14 @@ export default function LeaderEscala() {
                       {filtered.map((a) => {
                         const ps = getPeriodStyle(a.period);
                         const ring = STATUS_RING[a.status] ?? "";
+                        const isCruBlocked = cruConflicts.has(`${a.internId}|${a.date}|${a.period}`);
                         return (
                           <div
                             key={a.id}
-                            className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1 ${ps.bg} ${ps.text} ${ring}`}
-                            title={`${a.internName} · ${ps.label} · ${a.status}`}
+                            className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1 ${ps.bg} ${ps.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
+                            title={`${a.internName} · ${ps.label} · ${a.status}${isCruBlocked ? " ⚠️ CONFLITO CRU ±12h" : ""}`}
                           >
+                            {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
                             <span>{ps.emoji}</span>
                             <span className="truncate">{a.internName.split(" ").slice(0, 2).join(" ")}</span>
                           </div>
@@ -409,6 +432,28 @@ export default function LeaderEscala() {
                 })}
               </Fragment>
             ))}
+            {/* CRU row in vacancy section */}
+            {cruBase && (() => {
+              return (
+                <Fragment key={`v-${cruBase.id}`}>
+                  <div className="sticky left-0 z-10 bg-violet-50 border-b border-r border-amber-100 px-3 py-1.5 text-sm font-bold text-violet-700">CRU</div>
+                  {weekDates.map((d) => {
+                    const v = vacancyByBaseDay.get(`${cruBase.id}|${d}`);
+                    if (!v) return <div key={`v-cru|${d}`} className="border-b border-amber-50 px-1 py-1 min-h-[38px] bg-violet-50/20" />;
+                    const dayOpen = v.DAY.cap - v.DAY.fill;
+                    return (
+                      <div key={`v-cru|${d}`} className={`border-b border-amber-50 px-1 py-1 min-h-[38px] flex flex-col gap-0.5 justify-center bg-violet-50/20 ${d === today ? "bg-violet-50/40" : ""}`}>
+                        {v.DAY.cap > 0 && (
+                          <div className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 ${dayOpen > 0 ? "bg-violet-50 text-violet-700" : "bg-emerald-50 text-emerald-700"}`}>
+                            ☀️ {v.DAY.fill}/{v.DAY.cap}{dayOpen > 0 && <span className="text-violet-500 font-bold">({dayOpen})</span>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </Fragment>
+              );
+            })()}
           </div>
         </div>
       </section>
@@ -536,12 +581,14 @@ export default function LeaderEscala() {
                           const bs = getBaseStyle(a.baseType);
                           const ps = getPeriodStyle(a.period);
                           const ring = STATUS_RING[a.status] ?? "";
+                          const isCruBlocked = cruConflicts.has(`${intern.id}|${d}|${a.period}`);
                           return (
                             <div
                               key={a.id}
-                              className={`rounded-md px-1.5 py-1 text-[11px] font-medium mb-0.5 flex items-center justify-center gap-1 ${bs.pill} ${ring}`}
-                              title={`${a.baseCode} — ${a.baseName} · ${ps.label}`}
+                              className={`rounded-md px-1.5 py-1 text-[11px] font-medium mb-0.5 flex items-center justify-center gap-1 ${bs.pill} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
+                              title={`${a.baseCode} — ${a.baseName} · ${ps.label}${isCruBlocked ? " ⚠️ CONFLITO CRU ±12h" : ""}`}
                             >
+                              {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
                               <span className={`inline-block h-1.5 w-1.5 rounded-full ${bs.dot}`} />
                               {a.baseCode}
                               <span className="text-[10px]">{ps.emoji}</span>
