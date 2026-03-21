@@ -8,7 +8,30 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "Taxímetro Digital — SAMU Salvador",
-  description: "Controle de presença, escala e ocorrências clínicas",
+  description: "Tecnologia e eficiência no registro de presença — SAMU 192",
+  metadataBase: new URL("https://mnrs.com.br"),
+  openGraph: {
+    title: "Taxímetro Digital — SAMU 192",
+    description: "Tecnologia e eficiência no registro de presença. Conectando dados, salvando vidas.",
+    url: "https://mnrs.com.br/taximetro",
+    siteName: "Taxímetro SAMU",
+    images: [
+      {
+        url: "/taximetro/icons/image.png",
+        width: 1024,
+        height: 559,
+        alt: "Taxímetro SAMU — Registro de presença digital",
+      },
+    ],
+    locale: "pt_BR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Taxímetro Digital — SAMU 192",
+    description: "Tecnologia e eficiência no registro de presença. Conectando dados, salvando vidas.",
+    images: ["/taximetro/icons/image.png"],
+  },
 };
 
 export const viewport: Viewport = {
