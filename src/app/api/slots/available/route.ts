@@ -7,7 +7,9 @@ export async function GET(req: NextRequest) {
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const facultyId = token.role === "LEADER" ? (token.facultyId as string) : searchParams.get("facultyId") ?? undefined;
+  const facultyId = (token.role === "LEADER" || token.role === "INTERN")
+    ? (token.facultyId as string)
+    : searchParams.get("facultyId") ?? undefined;
 
   const slots = await getAvailableSlots(facultyId);
   return NextResponse.json({ success: true, data: slots });
