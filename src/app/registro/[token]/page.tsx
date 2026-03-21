@@ -154,6 +154,9 @@ export default function RegistroPage() {
             Seu cadastro foi recebido e está aguardando aprovação do líder de escala.
             Você será notificado quando for aprovado.
           </p>
+          <a href="/taximetro/login" className="mt-4 inline-block text-sm font-medium text-accent-600 hover:text-accent-700 transition-colors">
+            ← Voltar ao login
+          </a>
         </div>
       </div>
     );

@@ -46,9 +46,9 @@ async function seed() {
   const [admin] = await db
     .insert(users)
     .values({
-      name: "Coordenador Geral",
+      name: "Caio Oliveira",
       cpf: "000.000.000-00",
-      email: "admin@taximetro.app",
+      email: "caio.olive94@gmail.com",
       passwordHash,
     })
     .onConflictDoNothing()
