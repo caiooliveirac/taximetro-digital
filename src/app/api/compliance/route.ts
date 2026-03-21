@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { users, userRoles, faculties, assignments } from "@/db/schema";
 import { eq, and, gte, lte, inArray, sql } from "drizzle-orm";
+import { getEffectiveUser } from "@/lib/impersonate";
 
 function weekBounds(offset: number) {
   const now = new Date();
@@ -30,8 +30,8 @@ const COMPLETED = ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"] as const;
 const today = () => new Date().toISOString().slice(0, 10);
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token) {
+  const user = await getEffectiveUser(req);
+  if (!user) {
     return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
   }
 
@@ -40,15 +40,15 @@ export async function GET(req: NextRequest) {
   const internId = searchParams.get("internId");
 
   // Leaders auto-filter by their faculty
-  if (token.role === "LEADER" && token.facultyId) {
-    facultyId = token.facultyId as string;
+  if (user.role === "LEADER" && user.facultyId) {
+    facultyId = user.facultyId;
   }
 
   // Interns see only themselves; Coordinator can view a specific intern
   let internOnly: string | null = null;
-  if (token.role === "INTERN") {
-    internOnly = token.id as string;
-  } else if (token.role === "COORDINATOR" && internId) {
+  if (user.role === "INTERN") {
+    internOnly = user.id;
+  } else if (user.role === "COORDINATOR" && internId) {
     internOnly = internId;
   }
 

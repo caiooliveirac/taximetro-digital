@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { assignments, users, bases, faculties, checkins } from "@/db/schema";
 import { eq, and, gte, lte, ne } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { checkSlotAvailability, checkCruConflict } from "@/lib/slots";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { z } from "zod/v4";
 
 const createAssignmentSchema = z.object({
@@ -17,8 +17,8 @@ const createAssignmentSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+  const user = await getEffectiveUser(req);
+  if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const dateFrom = searchParams.get("from");
@@ -63,24 +63,24 @@ export async function GET(req: NextRequest) {
   if (dateTo) conditions.push(lte(assignments.date, dateTo));
 
   // Leaders see only their faculty
-  if (token.role === "LEADER" && token.facultyId) {
-    conditions.push(eq(assignments.facultyId, token.facultyId as string));
+  if (user.role === "LEADER" && user.facultyId) {
+    conditions.push(eq(assignments.facultyId, user.facultyId));
   } else if (facultyId) {
     conditions.push(eq(assignments.facultyId, facultyId));
   }
 
   // Interns see only their own
-  if (token.role === "INTERN") {
-    conditions.push(eq(assignments.internId, token.id as string));
+  if (user.role === "INTERN") {
+    conditions.push(eq(assignments.internId, user.id));
   }
 
-  // Coordinator can filter by specific intern
-  if (token.role === "COORDINATOR" && internId) {
+  // Coordinator (not impersonating) can filter by specific intern
+  if (user.role === "COORDINATOR" && internId) {
     conditions.push(eq(assignments.internId, internId));
   }
 
   // Preceptors must filter by base (declared base sent from client)
-  if (token.role === "PRECEPTOR") {
+  if (user.role === "PRECEPTOR") {
     if (baseId) {
       conditions.push(eq(assignments.baseId, baseId));
     }
@@ -98,8 +98,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
+  const user = await getEffectiveUser(req);
+  if (!user || !["COORDINATOR", "LEADER"].includes(user.role)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
   // Leader can only create for their faculty
-  if (token.role === "LEADER" && parsed.data.facultyId !== token.facultyId) {
+  if (user.role === "LEADER" && parsed.data.facultyId !== user.facultyId) {
     return NextResponse.json({ success: false, error: "Só pode alocar internos da sua faculdade" }, { status: 403 });
   }
 
@@ -131,23 +131,23 @@ export async function POST(req: NextRequest) {
 
   const [created] = await db
     .insert(assignments)
-    .values({ ...parsed.data, createdBy: token.id as string })
+    .values({ ...parsed.data, createdBy: user.realUserId ?? user.id })
     .returning();
 
   await logAudit({
-    userId: token.id as string,
+    userId: user.realUserId ?? user.id,
     action: "CREATE_ASSIGNMENT",
     entity: "assignment",
     entityId: created.id,
-    payload: parsed.data,
+    payload: { ...parsed.data, ...(user.isImpersonating ? { impersonating: user.id } : {}) },
   });
 
   return NextResponse.json({ success: true, data: created }, { status: 201 });
 }
 
 export async function PUT(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
+  const user = await getEffectiveUser(req);
+  if (!user || !["COORDINATOR", "LEADER"].includes(user.role)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -156,12 +156,12 @@ export async function PUT(req: NextRequest) {
   if (!id) return NextResponse.json({ success: false, error: "ID obrigatório" }, { status: 400 });
 
   // Leader must own the assignment's faculty
-  if (token.role === "LEADER" && token.facultyId) {
+  if (user.role === "LEADER" && user.facultyId) {
     const [target] = await db
       .select({ facultyId: assignments.facultyId })
       .from(assignments)
       .where(eq(assignments.id, id));
-    if (!target || target.facultyId !== token.facultyId) {
+    if (!target || target.facultyId !== user.facultyId) {
       return NextResponse.json({ success: false, error: "Assignment não pertence à sua faculdade" }, { status: 403 });
     }
   }
@@ -174,6 +174,6 @@ export async function PUT(req: NextRequest) {
 
   if (!updated) return NextResponse.json({ success: false, error: "Assignment não encontrado" }, { status: 404 });
 
-  await logAudit({ userId: token.id as string, action: "UPDATE_ASSIGNMENT", entity: "assignment", entityId: id, payload: { status, notes } });
+  await logAudit({ userId: user.realUserId ?? user.id, action: "UPDATE_ASSIGNMENT", entity: "assignment", entityId: id, payload: { status, notes, ...(user.isImpersonating ? { impersonating: user.id } : {}) } });
   return NextResponse.json({ success: true, data: updated });
 }

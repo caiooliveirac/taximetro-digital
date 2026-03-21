@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { LogOut, Ambulance, Eye, Users, Stethoscope, GraduationCap, Menu, X, KeyRound, type LucideIcon } from "lucide-react";
+import { ImpersonateSelector } from "@/components/impersonate/impersonate-selector";
+import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 
 export type NavItem = {
   href: string;
@@ -42,6 +44,8 @@ export function AppSidebar({
     .toUpperCase();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [selectorRole, setSelectorRole] = useState<"LEADER" | "PRECEPTOR" | "INTERN" | null>(null);
+  const { target: impersonateTarget, deactivate: stopImpersonate } = useImpersonate();
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew, setPwNew] = useState("");
@@ -73,10 +77,10 @@ export function AppSidebar({
     finally { setPwLoading(false); }
   }
 
-  const viewLinks = [
-    { href: "/leader", label: "Líder", icon: Users },
-    { href: "/preceptor", label: "Preceptor", icon: Stethoscope },
-    { href: "/intern", label: "Interno", icon: GraduationCap },
+  const viewRoles: { role: "LEADER" | "PRECEPTOR" | "INTERN"; label: string; icon: typeof Users }[] = [
+    { role: "LEADER", label: "Líder", icon: Users },
+    { role: "PRECEPTOR", label: "Preceptor", icon: Stethoscope },
+    { role: "INTERN", label: "Interno", icon: GraduationCap },
   ];
 
   const renderItem = (item: NavItem) => {
@@ -159,16 +163,25 @@ export function AppSidebar({
                 <Eye className="h-3 w-3" />
                 Visualizar como
               </p>
-              {viewLinks.map((vl) => (
-                <Link
-                  key={vl.href}
-                  href={vl.href}
+              {viewRoles.map((vr) => (
+                <button
+                  key={vr.role}
+                  onClick={() => setSelectorRole(vr.role)}
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:bg-navy-800 hover:text-slate-200 transition-colors duration-150"
                 >
-                  <vl.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
-                  {vl.label}
-                </Link>
+                  <vr.icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+                  {vr.label}
+                </button>
               ))}
+              {impersonateTarget && (
+                <button
+                  onClick={stopImpersonate}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-amber-400 hover:bg-navy-800 hover:text-amber-200 transition-colors duration-150"
+                >
+                  <X className="h-[18px] w-[18px]" strokeWidth={1.5} />
+                  Parar impersonate
+                </button>
+              )}
               <div className="border-t border-navy-800 my-1" />
             </>
           )}
@@ -271,13 +284,20 @@ export function AppSidebar({
                 <p className="flex items-center gap-2 px-3 pt-3 pb-1 text-[10px] uppercase tracking-widest text-slate-400 font-medium">
                   <Eye className="h-3 w-3" />Visualizar como
                 </p>
-                {viewLinks.map((vl) => (
-                  <Link key={vl.href} href={vl.href} onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                {viewRoles.map((vr) => (
+                  <button key={vr.role} onClick={() => { setMobileMenuOpen(false); setSelectorRole(vr.role); }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
                   >
-                    <vl.icon className="h-5 w-5 shrink-0" strokeWidth={1.5} />{vl.label}
-                  </Link>
+                    <vr.icon className="h-5 w-5 shrink-0" strokeWidth={1.5} />{vr.label}
+                  </button>
                 ))}
+                {impersonateTarget && (
+                  <button onClick={() => { setMobileMenuOpen(false); stopImpersonate(); }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm text-amber-600 hover:bg-amber-50 transition-colors"
+                  >
+                    <X className="h-5 w-5 shrink-0" strokeWidth={1.5} />Parar impersonate
+                  </button>
+                )}
               </div>
             )}
             <div className="border-t border-slate-100 px-5 py-4 flex items-center gap-3">
@@ -341,6 +361,15 @@ export function AppSidebar({
             )}
           </div>
         </div>
+      )}
+
+      {/* Impersonate user selector */}
+      {selectorRole && (
+        <ImpersonateSelector
+          role={selectorRole}
+          open={!!selectorRole}
+          onClose={() => setSelectorRole(null)}
+        />
       )}
     </>
   );

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { users, userRoles } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { z } from "zod/v4";
 
 /** GET — all interns (active + inactive roles) for the leader's faculty */
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || token.role !== "LEADER" || !token.facultyId) {
+  const user = await getEffectiveUser(req);
+  if (!user || user.role !== "LEADER" || !user.facultyId) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
       userRoles,
       and(eq(userRoles.userId, users.id), eq(userRoles.role, "INTERN")),
     )
-    .where(eq(userRoles.facultyId, token.facultyId as string))
+    .where(eq(userRoles.facultyId, user.facultyId))
     .orderBy(users.name);
 
   return NextResponse.json({ success: true, data: rows });
@@ -38,8 +38,8 @@ const patchSchema = z.object({
 
 /** PATCH — deactivate / reactivate an intern role (soft‑delete) */
 export async function PATCH(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || token.role !== "LEADER" || !token.facultyId) {
+  const user = await getEffectiveUser(req);
+  if (!user || user.role !== "LEADER" || !user.facultyId) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -59,16 +59,16 @@ export async function PATCH(req: NextRequest) {
       and(
         eq(userRoles.userId, userId),
         eq(userRoles.role, "INTERN"),
-        eq(userRoles.facultyId, token.facultyId as string),
+        eq(userRoles.facultyId, user.facultyId),
       ),
     );
 
   await logAudit({
-    userId: token.id as string,
+    userId: user.realUserId ?? user.id,
     action: action === "deactivate" ? "DEACTIVATE_INTERN" : "REACTIVATE_INTERN",
     entity: "user_role",
     entityId: userId,
-    payload: { facultyId: token.facultyId },
+    payload: { facultyId: user.facultyId, ...(user.isImpersonating ? { impersonating: user.id } : {}) },
   });
 
   return NextResponse.json({ success: true });

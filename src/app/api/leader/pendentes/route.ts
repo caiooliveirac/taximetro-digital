@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { users, userRoles, faculties } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { z } from "zod/v4";
 
 const actionSchema = z.object({
@@ -12,8 +12,8 @@ const actionSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
+  const user = await getEffectiveUser(req);
+  if (!user || !["COORDINATOR", "LEADER"].includes(user.role)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -36,16 +36,16 @@ export async function GET(req: NextRequest) {
     .where(eq(users.isActive, false))
     .orderBy(users.createdAt);
 
-  const filtered = token.role === "LEADER"
-    ? rows.filter((r) => r.facultyId === token.facultyId && r.role === "INTERN")
+  const filtered = user.role === "LEADER"
+    ? rows.filter((r) => r.facultyId === user.facultyId && r.role === "INTERN")
     : rows;
 
   return NextResponse.json({ success: true, data: filtered });
 }
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
+  const user = await getEffectiveUser(req);
+  if (!user || !["COORDINATOR", "LEADER"].includes(user.role)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -58,12 +58,12 @@ export async function POST(req: NextRequest) {
   const { userId, action } = parsed.data;
 
   // For leader, verify the user belongs to their faculty
-  if (token.role === "LEADER") {
+  if (user.role === "LEADER") {
     const [role] = await db
       .select({ facultyId: userRoles.facultyId })
       .from(userRoles)
       .where(eq(userRoles.userId, userId));
-    if (!role || role.facultyId !== token.facultyId) {
+    if (!role || role.facultyId !== user.facultyId) {
       return NextResponse.json({ success: false, error: "Sem permissão para este usuário" }, { status: 403 });
     }
   }
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
   }
 
   await logAudit({
-    userId: token.id as string,
+    userId: user.realUserId ?? user.id,
     action: action === "approve" ? "APPROVE_USER" : "REJECT_USER",
     entity: "user",
     entityId: userId,

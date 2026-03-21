@@ -7,6 +7,7 @@ import {
   ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight, Plus, X,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { getFacultyStyle } from "@/lib/base-colors";
@@ -75,6 +76,8 @@ const DAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
 export default function LeaderInternos() {
   const { data: session } = useSession();
+  const { target: impersonateTarget } = useImpersonate();
+  const effectiveFacultyId = impersonateTarget?.facultyId ?? session?.user?.facultyId;
   const [tab, setTab] = useState<Tab>("ativos");
   const [users, setUsers] = useState<UserRow[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
@@ -186,7 +189,7 @@ export default function LeaderInternos() {
   }
 
   async function submitAllocation() {
-    if (!allocIntern || !allocBaseId || !allocDate || !session?.user?.facultyId) return;
+    if (!allocIntern || !allocBaseId || !allocDate || !effectiveFacultyId) return;
     setAllocLoading(true);
     setAllocMsg("");
     try {
@@ -195,7 +198,7 @@ export default function LeaderInternos() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           internId: allocIntern.id,
-          facultyId: session.user.facultyId,
+          facultyId: effectiveFacultyId,
           baseId: allocBaseId,
           date: allocDate,
           period: allocPeriod,

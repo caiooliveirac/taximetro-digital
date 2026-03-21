@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
+import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import {
   Send, CheckCircle, AlertCircle, ArrowLeftRight,
   Trash2, PlusCircle, RefreshCw, Sun, Moon, X,
@@ -67,7 +68,8 @@ function PeriodIcon({ period }: { period: string }) {
 
 export default function InternTrocas() {
   const { data: session } = useSession();
-  const userId = session?.user?.id;
+  const { target: impersonateTarget } = useImpersonate();
+  const userId = impersonateTarget?.userId ?? session?.user?.id;
 
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);

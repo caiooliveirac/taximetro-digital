@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { assignments, bases, userRoles, faculties } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { checkCruConflict } from "@/lib/slots";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { z } from "zod/v4";
 
 const selfCreateSchema = z.object({
@@ -13,8 +13,8 @@ const selfCreateSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || token.role !== "INTERN") {
+  const user = await getEffectiveUser(req);
+  if (!user || user.role !== "INTERN") {
     return NextResponse.json({ success: false, error: "Apenas internos podem criar plantão avulso" }, { status: 403 });
   }
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
   const { baseId, period } = parsed.data;
-  const internId = token.id as string;
+  const internId = user.id;
   const today = new Date().toISOString().slice(0, 10);
 
   // Validate base exists and is active
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     .limit(1);
 
   await logAudit({
-    userId: internId,
+    userId: user.realUserId ?? user.id,
     action: "SELF_CREATE_ASSIGNMENT",
     entity: "assignment",
     entityId: created.id,
@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
       baseName: base.name,
       period,
       faculty: fac?.abbreviation ?? "",
+      ...(user.isImpersonating ? { impersonating: user.id } : {}),
     },
   });
 

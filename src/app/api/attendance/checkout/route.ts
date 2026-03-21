@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { assignments, checkins } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { z } from "zod/v4";
 
 const checkoutSchema = z.object({
@@ -38,8 +39,8 @@ export async function POST(req: NextRequest) {
 
 // Preceptor confirms checkout (PUT)
 export async function PUT(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-  if (!token || !["COORDINATOR", "PRECEPTOR"].includes(token.role as string)) {
+  const user = await getEffectiveUser(req);
+  if (!user || !["COORDINATOR", "PRECEPTOR"].includes(user.role)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -64,15 +65,16 @@ export async function PUT(req: NextRequest) {
   // Update checkin record
   await db.update(checkins).set({
     checkoutAt: new Date(),
-    checkoutConfirmedBy: token.id as string,
+    checkoutConfirmedBy: user.realUserId ?? user.id,
     checkoutNotes: notes ?? null,
   }).where(eq(checkins.assignmentId, assignmentId));
 
   await logAudit({
-    userId: token.id as string,
+    userId: user.realUserId ?? user.id,
     action: "CHECKOUT_CONFIRMED",
     entity: "assignment",
     entityId: assignmentId,
+    ...(user.isImpersonating ? { payload: { impersonating: user.id } } : {}),
   });
 
   return NextResponse.json({ success: true });
