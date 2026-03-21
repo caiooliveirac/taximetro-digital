@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { users, userRoles, faculties } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { z } from "zod/v4";
 
@@ -26,17 +26,18 @@ export async function GET(req: NextRequest) {
       phone: users.phone,
       isActive: users.isActive,
       createdAt: users.createdAt,
+      role: userRoles.role,
       facultyId: userRoles.facultyId,
       facultyAbbr: faculties.abbreviation,
     })
     .from(users)
-    .innerJoin(userRoles, and(eq(userRoles.userId, users.id), eq(userRoles.role, "INTERN")))
+    .innerJoin(userRoles, eq(userRoles.userId, users.id))
     .leftJoin(faculties, eq(faculties.id, userRoles.facultyId))
     .where(eq(users.isActive, false))
     .orderBy(users.createdAt);
 
   const filtered = token.role === "LEADER"
-    ? rows.filter((r) => r.facultyId === token.facultyId)
+    ? rows.filter((r) => r.facultyId === token.facultyId && r.role === "INTERN")
     : rows;
 
   return NextResponse.json({ success: true, data: filtered });
@@ -61,9 +62,9 @@ export async function POST(req: NextRequest) {
     const [role] = await db
       .select({ facultyId: userRoles.facultyId })
       .from(userRoles)
-      .where(and(eq(userRoles.userId, userId), eq(userRoles.role, "INTERN")));
+      .where(eq(userRoles.userId, userId));
     if (!role || role.facultyId !== token.facultyId) {
-      return NextResponse.json({ success: false, error: "Sem permissão para este interno" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "Sem permissão para este usuário" }, { status: 403 });
     }
   }
 
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
 
   await logAudit({
     userId: token.id as string,
-    action: action === "approve" ? "APPROVE_INTERN" : "REJECT_INTERN",
+    action: action === "approve" ? "APPROVE_USER" : "REJECT_USER",
     entity: "user",
     entityId: userId,
   });
