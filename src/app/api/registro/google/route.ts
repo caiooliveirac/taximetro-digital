@@ -3,7 +3,6 @@ import { db } from "@/db";
 import { users, userRoles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { hash } from "bcryptjs";
-import { randomUUID } from "crypto";
 import { logAudit } from "@/lib/audit";
 import { z } from "zod/v4";
 
@@ -16,6 +15,10 @@ const registerSchema = z.object({
   facultyId: z.string().uuid().optional(),
   baseId: z.string().uuid().optional(),
   selfie: z.string().min(1),
+  password: z.string().min(8).refine(
+    (v) => /[A-Z]/.test(v) && /[a-z]/.test(v) && /\d/.test(v),
+    "Senha deve ter maiúscula, minúscula e número",
+  ),
 });
 
 export async function POST(req: NextRequest) {
@@ -25,7 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
   }
 
-  const { name, email, cpf, phone, role, facultyId, baseId, selfie } = parsed.data;
+  const { name, email, cpf, phone, role, facultyId, baseId, selfie, password } = parsed.data;
 
   // Validate faculty/base requirements
   if ((role === "INTERN" || role === "LEADER") && !facultyId) {
@@ -49,8 +52,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Google-only users get an unusable password hash
-  const passwordHash = await hash(randomUUID(), 12);
+  const passwordHash = await hash(password, 12);
 
   const [user] = await db.insert(users).values({
     name,
