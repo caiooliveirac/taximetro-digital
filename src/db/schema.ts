@@ -34,7 +34,7 @@ export const requestTypeEnum = pgEnum("request_type", [
 ]);
 
 export const requestStatusEnum = pgEnum("request_status", [
-  "PENDING", "APPROVED", "REJECTED", "ESCALATED", "COMPLETED",
+  "PENDING", "APPROVED", "REJECTED", "ESCALATED", "COMPLETED", "OPEN", "CANCELLED",
 ]);
 
 // ==================== TABELAS ====================
@@ -142,7 +142,7 @@ export const requests = pgTable("requests", {
   id: uuid("id").primaryKey().defaultRandom(),
   type: requestTypeEnum("type").notNull(),
   requesterId: uuid("requester_id").notNull().references(() => users.id),
-  assignmentId: uuid("assignment_id").notNull().references(() => assignments.id),
+  assignmentId: uuid("assignment_id").references(() => assignments.id),
   targetInternId: uuid("target_intern_id").references(() => users.id),
   targetAssignmentId: uuid("target_assignment_id").references(() => assignments.id),
   extraBaseId: uuid("extra_base_id").references(() => bases.id),

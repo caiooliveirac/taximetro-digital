@@ -2,21 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { requests, assignments, users, bases, userRoles, checkins } from "@/db/schema";
-import { eq, and, ne, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { checkSlotAvailability } from "@/lib/slots";
 import { z } from "zod/v4";
+import { alias } from "drizzle-orm/pg-core";
+
+/* ═══════════ Validation Schemas ═══════════ */
 
 const swapSchema = z.object({
   type: z.literal("SWAP"),
   assignmentId: z.string().uuid(),
-  targetInternId: z.string().uuid(),
-  targetAssignmentId: z.string().uuid(),
 });
 
 const extraShiftSchema = z.object({
   type: z.literal("EXTRA_SHIFT"),
-  assignmentId: z.string().uuid(),
   extraBaseId: z.string().uuid(),
   extraDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   extraPeriod: z.enum(["DAY", "NIGHT"]),
@@ -29,9 +29,19 @@ const dropShiftSchema = z.object({
 
 const requestSchema = z.discriminatedUnion("type", [swapSchema, extraShiftSchema, dropShiftSchema]);
 
+/* ═══════════ GET — list requests ═══════════ */
+
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const scope = searchParams.get("scope");
+
+  const targetUser = alias(users, "target_user");
+  const targetAssign = alias(assignments, "target_assign");
+  const targetBase = alias(bases, "target_base");
+  const extraBase = alias(bases, "extra_base");
 
   const rows = await db
     .select({
@@ -43,9 +53,19 @@ export async function GET(req: NextRequest) {
       assignmentDate: assignments.date,
       assignmentPeriod: assignments.period,
       baseCode: bases.code,
+      baseName: bases.name,
+      baseType: bases.type,
+      facultyId: assignments.facultyId,
       targetInternId: requests.targetInternId,
+      targetInternName: targetUser.name,
       targetAssignmentId: requests.targetAssignmentId,
+      targetAssignmentDate: targetAssign.date,
+      targetAssignmentPeriod: targetAssign.period,
+      targetBaseCode: targetBase.code,
+      targetBaseName: targetBase.name,
       extraBaseId: requests.extraBaseId,
+      extraBaseCode: extraBase.code,
+      extraBaseName: extraBase.name,
       extraDate: requests.extraDate,
       extraPeriod: requests.extraPeriod,
       status: requests.status,
@@ -56,14 +76,34 @@ export async function GET(req: NextRequest) {
     .innerJoin(users, eq(users.id, requests.requesterId))
     .leftJoin(assignments, eq(assignments.id, requests.assignmentId))
     .leftJoin(bases, eq(bases.id, assignments.baseId))
+    .leftJoin(targetUser, eq(targetUser.id, requests.targetInternId))
+    .leftJoin(targetAssign, eq(targetAssign.id, requests.targetAssignmentId))
+    .leftJoin(targetBase, eq(targetBase.id, targetAssign.baseId))
+    .leftJoin(extraBase, eq(extraBase.id, requests.extraBaseId))
     .orderBy(requests.createdAt);
 
-  // Filter by role
+  // Scope: open-swaps → OPEN swaps from same faculty, excluding own
+  if (scope === "open-swaps" && token.role === "INTERN" && token.facultyId) {
+    const facultyInterns = await db
+      .select({ userId: userRoles.userId })
+      .from(userRoles)
+      .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.facultyId, token.facultyId as string), eq(userRoles.isActive, true)));
+    const facultyInternIds = new Set(facultyInterns.map((r) => r.userId));
+
+    const filtered = rows.filter((r) =>
+      r.type === "SWAP" &&
+      r.status === "OPEN" &&
+      facultyInternIds.has(r.requesterId) &&
+      r.requesterId !== token.id,
+    );
+    return NextResponse.json({ success: true, data: filtered });
+  }
+
+  // Default role-based filtering
   let filtered = rows;
   if (token.role === "INTERN") {
-    filtered = rows.filter((r) => r.requesterId === token.id);
+    filtered = rows.filter((r) => r.requesterId === token.id || r.targetInternId === token.id);
   } else if (token.role === "LEADER" && token.facultyId) {
-    // Leader sees only requests from interns of their own faculty
     const facultyInterns = await db
       .select({ userId: userRoles.userId })
       .from(userRoles)
@@ -72,8 +112,6 @@ export async function GET(req: NextRequest) {
     filtered = rows.filter((r) => facultyInternIds.has(r.requesterId));
   }
 
-  // Coordinator can filter by specific intern
-  const { searchParams } = new URL(req.url);
   const internId = searchParams.get("internId");
   if (token.role === "COORDINATOR" && internId) {
     filtered = rows.filter((r) => r.requesterId === internId);
@@ -81,6 +119,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ success: true, data: filtered });
 }
+
+/* ═══════════ POST — create request ═══════════ */
 
 export async function POST(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
@@ -91,112 +131,215 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
   const data = parsed.data;
-
-  // Coordinator can create requests on behalf of an intern
-  let requesterId = token.id as string;
-  const onBehalfOf = (body as { onBehalfOf?: string }).onBehalfOf;
-  if (token.role === "COORDINATOR" && onBehalfOf) {
-    requesterId = onBehalfOf;
-  }
-
-  // BUG-3 FIX: Validate assignment belongs to the requester
-  const [ownerAssignment] = await db
-    .select({ id: assignments.id, internId: assignments.internId, status: assignments.status, date: assignments.date })
-    .from(assignments)
-    .where(eq(assignments.id, data.assignmentId))
-    .limit(1);
-
-  if (!ownerAssignment) {
-    return NextResponse.json({ success: false, error: "Assignment não encontrado" }, { status: 404 });
-  }
-  if (ownerAssignment.internId !== requesterId) {
-    return NextResponse.json({ success: false, error: "Esse plantão não pertence a você" }, { status: 403 });
-  }
-
-  // Validate assignment is in the future and SCHEDULED
+  const requesterId = token.id as string;
   const todayStr = new Date().toISOString().slice(0, 10);
-  if (ownerAssignment.date < todayStr) {
-    return NextResponse.json({ success: false, error: "Não é possível solicitar alteração de plantão passado" }, { status: 400 });
-  }
-  if (!["SCHEDULED", "CONFIRMED"].includes(ownerAssignment.status)) {
-    return NextResponse.json({ success: false, error: `Plantão com status '${ownerAssignment.status}' não pode ser alterado` }, { status: 400 });
-  }
 
-  // BUG-5 FIX: Prevent duplicate pending requests for same assignment
-  const [existingReq] = await db
-    .select({ id: requests.id })
-    .from(requests)
-    .where(
-      and(
-        eq(requests.assignmentId, data.assignmentId),
-        eq(requests.status, "PENDING"),
-      ),
-    )
-    .limit(1);
-
-  if (existingReq) {
-    return NextResponse.json({ success: false, error: "Já existe uma solicitação pendente para este plantão" }, { status: 409 });
-  }
-
-  // BUG-4 FIX: Validate SWAP target
-  if (data.type === "SWAP") {
-    if (data.targetInternId === requesterId) {
-      return NextResponse.json({ success: false, error: "Não é possível trocar consigo mesmo" }, { status: 400 });
-    }
-
-    const [targetAssignment] = await db
+  if (data.type === "SWAP" || data.type === "DROP_SHIFT") {
+    const [ownerAssignment] = await db
       .select({ id: assignments.id, internId: assignments.internId, status: assignments.status, date: assignments.date })
       .from(assignments)
-      .where(eq(assignments.id, data.targetAssignmentId))
+      .where(eq(assignments.id, data.assignmentId))
       .limit(1);
 
-    if (!targetAssignment) {
-      return NextResponse.json({ success: false, error: "Assignment alvo não encontrado" }, { status: 404 });
-    }
-    if (targetAssignment.internId !== data.targetInternId) {
-      return NextResponse.json({ success: false, error: "O plantão alvo não pertence ao interno indicado" }, { status: 400 });
-    }
-    if (targetAssignment.date < todayStr) {
-      return NextResponse.json({ success: false, error: "O plantão alvo já passou" }, { status: 400 });
-    }
-    if (!["SCHEDULED", "CONFIRMED"].includes(targetAssignment.status)) {
-      return NextResponse.json({ success: false, error: `Plantão alvo com status '${targetAssignment.status}' não pode ser trocado` }, { status: 400 });
+    if (!ownerAssignment) return NextResponse.json({ success: false, error: "Plantão não encontrado" }, { status: 404 });
+    if (ownerAssignment.internId !== requesterId) return NextResponse.json({ success: false, error: "Esse plantão não pertence a você" }, { status: 403 });
+    if (ownerAssignment.date < todayStr) return NextResponse.json({ success: false, error: "Não é possível solicitar alteração de plantão passado" }, { status: 400 });
+    if (!["SCHEDULED", "CONFIRMED"].includes(ownerAssignment.status)) {
+      return NextResponse.json({ success: false, error: `Plantão com status '${ownerAssignment.status}' não pode ser alterado` }, { status: 400 });
     }
 
-    // Check no pending request on target assignment either
-    const [existingTargetReq] = await db
+    const [existingReq] = await db
       .select({ id: requests.id })
       .from(requests)
-      .where(
-        and(
-          eq(requests.assignmentId, data.targetAssignmentId),
-          eq(requests.status, "PENDING"),
-        ),
-      )
+      .where(and(
+        eq(requests.assignmentId, data.assignmentId),
+        inArray(requests.status, ["PENDING", "OPEN"]),
+      ))
       .limit(1);
 
-    if (existingTargetReq) {
-      return NextResponse.json({ success: false, error: "O plantão alvo já tem uma solicitação pendente" }, { status: 409 });
+    if (existingReq) return NextResponse.json({ success: false, error: "Já existe uma solicitação pendente para este plantão" }, { status: 409 });
+  }
+
+  if (data.type === "EXTRA_SHIFT") {
+    if (data.extraDate < todayStr) return NextResponse.json({ success: false, error: "Data do plantão extra deve ser futura" }, { status: 400 });
+    if (!token.facultyId) return NextResponse.json({ success: false, error: "Sem faculdade vinculada" }, { status: 400 });
+    const slot = await checkSlotAvailability(data.extraBaseId, data.extraDate, data.extraPeriod, token.facultyId as string);
+    if (!slot.available) {
+      return NextResponse.json({ success: false, error: `Sem vaga disponível (${slot.assigned}/${slot.capacity})` }, { status: 409 });
     }
   }
 
   const insertData = {
     type: data.type,
     requesterId,
-    assignmentId: data.assignmentId,
-    targetInternId: data.type === "SWAP" ? data.targetInternId : null,
-    targetAssignmentId: data.type === "SWAP" ? data.targetAssignmentId : null,
+    assignmentId: data.type !== "EXTRA_SHIFT" ? data.assignmentId : null,
+    targetInternId: null,
+    targetAssignmentId: null,
     extraBaseId: data.type === "EXTRA_SHIFT" ? data.extraBaseId : null,
     extraDate: data.type === "EXTRA_SHIFT" ? data.extraDate : null,
     extraPeriod: data.type === "EXTRA_SHIFT" ? data.extraPeriod : null,
+    status: data.type === "SWAP" ? ("OPEN" as const) : ("PENDING" as const),
   };
 
   const [created] = await db.insert(requests).values(insertData).returning();
-  await logAudit({ userId: token.id as string, action: onBehalfOf ? "CREATE_REQUEST_ON_BEHALF" : "CREATE_REQUEST", entity: "request", entityId: created.id, payload: { ...data, onBehalfOf: onBehalfOf ?? null } });
+  await logAudit({ userId: requesterId, action: "CREATE_REQUEST", entity: "request", entityId: created.id, payload: data });
   return NextResponse.json({ success: true, data: created }, { status: 201 });
 }
 
-// Leader/Coordinator review
+/* ═══════════ PATCH — peer-to-peer swap actions ═══════════ */
+
+const patchSchema = z.discriminatedUnion("action", [
+  z.object({ id: z.string().uuid(), action: z.literal("propose"), assignmentId: z.string().uuid() }),
+  z.object({ id: z.string().uuid(), action: z.literal("confirm") }),
+  z.object({ id: z.string().uuid(), action: z.literal("reject_proposal") }),
+  z.object({ id: z.string().uuid(), action: z.literal("cancel") }),
+]);
+
+export async function PATCH(req: NextRequest) {
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+
+  const body = await req.json();
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
+
+  const data = parsed.data;
+  const userId = token.id as string;
+
+  const [request] = await db.select().from(requests).where(eq(requests.id, data.id)).limit(1);
+  if (!request) return NextResponse.json({ success: false, error: "Solicitação não encontrada" }, { status: 404 });
+  if (request.type !== "SWAP") return NextResponse.json({ success: false, error: "Ação só permitida para trocas" }, { status: 400 });
+
+  /* ── propose: peer offers their shift as counter ── */
+  if (data.action === "propose") {
+    if (request.status !== "OPEN") return NextResponse.json({ success: false, error: "Esta troca não está aberta para propostas" }, { status: 400 });
+    if (request.requesterId === userId) return NextResponse.json({ success: false, error: "Não é possível propor troca consigo mesmo" }, { status: 400 });
+
+    const [proposerAssignment] = await db
+      .select({ id: assignments.id, internId: assignments.internId, status: assignments.status, date: assignments.date, facultyId: assignments.facultyId })
+      .from(assignments)
+      .where(eq(assignments.id, data.assignmentId))
+      .limit(1);
+
+    if (!proposerAssignment) return NextResponse.json({ success: false, error: "Plantão não encontrado" }, { status: 404 });
+    if (proposerAssignment.internId !== userId) return NextResponse.json({ success: false, error: "Esse plantão não pertence a você" }, { status: 403 });
+    if (!["SCHEDULED", "CONFIRMED"].includes(proposerAssignment.status)) {
+      return NextResponse.json({ success: false, error: "Plantão não pode ser trocado" }, { status: 400 });
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (proposerAssignment.date < todayStr) return NextResponse.json({ success: false, error: "Plantão já passou" }, { status: 400 });
+
+    if (request.assignmentId) {
+      const [origAssignment] = await db
+        .select({ facultyId: assignments.facultyId })
+        .from(assignments)
+        .where(eq(assignments.id, request.assignmentId))
+        .limit(1);
+      if (origAssignment && origAssignment.facultyId !== proposerAssignment.facultyId) {
+        return NextResponse.json({ success: false, error: "Troca só é permitida dentro da mesma faculdade" }, { status: 400 });
+      }
+    }
+
+    const [existingReq] = await db
+      .select({ id: requests.id })
+      .from(requests)
+      .where(and(
+        eq(requests.assignmentId, data.assignmentId),
+        inArray(requests.status, ["PENDING", "OPEN"]),
+      ))
+      .limit(1);
+    if (existingReq) return NextResponse.json({ success: false, error: "Seu plantão já está envolvido em outra solicitação pendente" }, { status: 409 });
+
+    await db.update(requests).set({
+      targetInternId: userId,
+      targetAssignmentId: data.assignmentId,
+      status: "PENDING",
+    }).where(eq(requests.id, data.id));
+
+    await logAudit({ userId, action: "PROPOSE_SWAP", entity: "request", entityId: data.id, payload: { assignmentId: data.assignmentId } });
+    return NextResponse.json({ success: true });
+  }
+
+  /* ── confirm: requester accepts the counter-offer → swap executes ── */
+  if (data.action === "confirm") {
+    if (request.requesterId !== userId) return NextResponse.json({ success: false, error: "Só o solicitante pode confirmar" }, { status: 403 });
+    if (request.status !== "PENDING") return NextResponse.json({ success: false, error: "Nenhuma proposta para confirmar" }, { status: 400 });
+    if (!request.targetAssignmentId || !request.targetInternId || !request.assignmentId) {
+      return NextResponse.json({ success: false, error: "Proposta incompleta" }, { status: 400 });
+    }
+
+    const [origAssignment] = await db.select().from(assignments).where(eq(assignments.id, request.assignmentId));
+    const [targetAssignment] = await db.select().from(assignments).where(eq(assignments.id, request.targetAssignmentId));
+
+    if (!origAssignment || !targetAssignment) return NextResponse.json({ success: false, error: "Plantões não encontrados" }, { status: 404 });
+    if (!["SCHEDULED", "CONFIRMED"].includes(origAssignment.status) || !["SCHEDULED", "CONFIRMED"].includes(targetAssignment.status)) {
+      return NextResponse.json({ success: false, error: "Um dos plantões já foi alterado" }, { status: 409 });
+    }
+
+    const [origCheckin] = await db.select({ id: checkins.id }).from(checkins).where(eq(checkins.assignmentId, origAssignment.id)).limit(1);
+    const [targetCheckin] = await db.select({ id: checkins.id }).from(checkins).where(eq(checkins.assignmentId, targetAssignment.id)).limit(1);
+    if (origCheckin || targetCheckin) {
+      return NextResponse.json({ success: false, error: "Um dos plantões já possui check-in" }, { status: 409 });
+    }
+
+    await db.update(assignments).set({ status: "CANCELLED", updatedAt: new Date(), notes: "Trocado via solicitação" }).where(eq(assignments.id, origAssignment.id));
+    await db.update(assignments).set({ status: "CANCELLED", updatedAt: new Date(), notes: "Trocado via solicitação" }).where(eq(assignments.id, targetAssignment.id));
+
+    await db.insert(assignments).values({
+      internId: origAssignment.internId,
+      facultyId: origAssignment.facultyId,
+      baseId: targetAssignment.baseId,
+      date: targetAssignment.date,
+      period: targetAssignment.period,
+      createdBy: userId,
+      notes: "Troca entre internos",
+    });
+    await db.insert(assignments).values({
+      internId: targetAssignment.internId,
+      facultyId: targetAssignment.facultyId,
+      baseId: origAssignment.baseId,
+      date: origAssignment.date,
+      period: origAssignment.period,
+      createdBy: userId,
+      notes: "Troca entre internos",
+    });
+
+    await db.update(requests).set({ status: "COMPLETED", reviewedAt: new Date(), reviewNotes: "Troca confirmada por ambas partes" }).where(eq(requests.id, data.id));
+    await logAudit({ userId, action: "CONFIRM_SWAP", entity: "request", entityId: data.id, payload: { origAssignmentId: origAssignment.id, targetAssignmentId: targetAssignment.id } });
+    return NextResponse.json({ success: true });
+  }
+
+  /* ── reject_proposal: requester rejects the counter, reopen offer ── */
+  if (data.action === "reject_proposal") {
+    if (request.requesterId !== userId) return NextResponse.json({ success: false, error: "Só o solicitante pode rejeitar propostas" }, { status: 403 });
+    if (request.status !== "PENDING") return NextResponse.json({ success: false, error: "Nenhuma proposta para rejeitar" }, { status: 400 });
+
+    await db.update(requests).set({
+      targetInternId: null,
+      targetAssignmentId: null,
+      status: "OPEN",
+    }).where(eq(requests.id, data.id));
+
+    await logAudit({ userId, action: "REJECT_SWAP_PROPOSAL", entity: "request", entityId: data.id, payload: {} });
+    return NextResponse.json({ success: true });
+  }
+
+  /* ── cancel: requester cancels their request ── */
+  if (data.action === "cancel") {
+    if (request.requesterId !== userId) return NextResponse.json({ success: false, error: "Só o solicitante pode cancelar" }, { status: 403 });
+    if (!["OPEN", "PENDING"].includes(request.status)) return NextResponse.json({ success: false, error: "Não é possível cancelar neste estado" }, { status: 400 });
+
+    await db.update(requests).set({ status: "CANCELLED" }).where(eq(requests.id, data.id));
+    await logAudit({ userId, action: "CANCEL_REQUEST", entity: "request", entityId: data.id, payload: {} });
+    return NextResponse.json({ success: true });
+  }
+
+  return NextResponse.json({ success: false, error: "Ação inválida" }, { status: 400 });
+}
+
+/* ═══════════ PUT — leader/coordinator review (DROP & EXTRA only) ═══════════ */
+
 export async function PUT(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
   if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
@@ -211,11 +354,15 @@ export async function PUT(req: NextRequest) {
 
   const [request] = await db.select().from(requests).where(eq(requests.id, id)).limit(1);
   if (!request) return NextResponse.json({ success: false, error: "Solicitação não encontrada" }, { status: 404 });
-  if (request.status !== "PENDING" && request.status !== "ESCALATED") {
-    return NextResponse.json({ success: false, error: `Solicitação já processada (status: ${request.status})` }, { status: 409 });
+
+  if (request.type === "SWAP") {
+    return NextResponse.json({ success: false, error: "Trocas são auto-geridas entre internos" }, { status: 400 });
   }
 
-  // Leader can only review requests from their faculty
+  if (request.status !== "PENDING" && request.status !== "ESCALATED") {
+    return NextResponse.json({ success: false, error: `Solicitação já processada (${request.status})` }, { status: 409 });
+  }
+
   if (token.role === "LEADER" && token.facultyId) {
     const [reqRole] = await db
       .select({ facultyId: userRoles.facultyId })
@@ -227,94 +374,40 @@ export async function PUT(req: NextRequest) {
     }
   }
 
-  // Determine final status (COMPLETED if APPROVED and successfully processed)
   let finalStatus = status;
 
-  // Process approval
   if (status === "APPROVED") {
-    if (request.type === "SWAP" && request.targetAssignmentId) {
-      const [origAssignment] = await db.select().from(assignments).where(eq(assignments.id, request.assignmentId));
-      const [targetAssignment] = await db.select().from(assignments).where(eq(assignments.id, request.targetAssignmentId));
-
-      if (!origAssignment || !targetAssignment) {
-        return NextResponse.json({ success: false, error: "Assignments originais não encontrados" }, { status: 404 });
-      }
-
-      // Validate both are still SCHEDULED/CONFIRMED
-      if (!["SCHEDULED", "CONFIRMED"].includes(origAssignment.status) ||
-        !["SCHEDULED", "CONFIRMED"].includes(targetAssignment.status)) {
-        return NextResponse.json({ success: false, error: "Um dos plantões já foi alterado e não pode ser trocado" }, { status: 409 });
-      }
-
-      // BUG-12: Check no active checkins on either assignment  
-      const [origCheckin] = await db
-        .select({ id: checkins.id })
-        .from(checkins)
-        .where(eq(checkins.assignmentId, origAssignment.id))
+    if (request.type === "EXTRA_SHIFT" && request.extraBaseId && request.extraDate && request.extraPeriod) {
+      const [reqRole] = await db
+        .select({ facultyId: userRoles.facultyId })
+        .from(userRoles)
+        .where(and(eq(userRoles.userId, request.requesterId), eq(userRoles.role, "INTERN")))
         .limit(1);
-      const [targetCheckin] = await db
-        .select({ id: checkins.id })
-        .from(checkins)
-        .where(eq(checkins.assignmentId, targetAssignment.id))
-        .limit(1);
-      if (origCheckin || targetCheckin) {
-        return NextResponse.json({ success: false, error: "Um dos plantões já possui check-in e não pode ser trocado" }, { status: 409 });
+      if (!reqRole?.facultyId) {
+        return NextResponse.json({ success: false, error: "Interno sem faculdade vinculada" }, { status: 400 });
       }
 
-      // Cancel both originals and create swapped ones
-      await db.update(assignments).set({ status: "CANCELLED", updatedAt: new Date() }).where(eq(assignments.id, origAssignment.id));
-      await db.update(assignments).set({ status: "CANCELLED", updatedAt: new Date() }).where(eq(assignments.id, targetAssignment.id));
-
-      await db.insert(assignments).values({
-        internId: origAssignment.internId,
-        facultyId: origAssignment.facultyId,
-        baseId: targetAssignment.baseId,
-        date: targetAssignment.date,
-        period: targetAssignment.period,
-        createdBy: token.id as string,
-      });
-      await db.insert(assignments).values({
-        internId: targetAssignment.internId,
-        facultyId: targetAssignment.facultyId,
-        baseId: origAssignment.baseId,
-        date: origAssignment.date,
-        period: origAssignment.period,
-        createdBy: token.id as string,
-      });
-
-      finalStatus = "COMPLETED";
-    } else if (request.type === "EXTRA_SHIFT" && request.extraBaseId && request.extraDate && request.extraPeriod) {
-      const [origAssignment] = await db.select().from(assignments).where(eq(assignments.id, request.assignmentId));
-      if (!origAssignment) {
-        return NextResponse.json({ success: false, error: "Assignment original não encontrado" }, { status: 404 });
-      }
-
-      // BUG-7 FIX: Check slot availability for the extra shift
       const slot = await checkSlotAvailability(
         request.extraBaseId,
         request.extraDate,
         request.extraPeriod as "DAY" | "NIGHT",
-        origAssignment.facultyId,
+        reqRole.facultyId,
       );
       if (!slot.available) {
-        return NextResponse.json({
-          success: false,
-          error: `Sem vaga disponível para o plantão extra (${slot.assigned}/${slot.capacity})`,
-        }, { status: 409 });
+        return NextResponse.json({ success: false, error: `Sem vaga disponível (${slot.assigned}/${slot.capacity})` }, { status: 409 });
       }
 
       await db.insert(assignments).values({
         internId: request.requesterId,
-        facultyId: origAssignment.facultyId,
+        facultyId: reqRole.facultyId,
         baseId: request.extraBaseId,
         date: request.extraDate,
         period: request.extraPeriod,
         createdBy: token.id as string,
+        notes: "Plantão extra aprovado",
       });
-
       finalStatus = "COMPLETED";
-    } else if (request.type === "DROP_SHIFT") {
-      // BUG-12: Check no active checkin
+    } else if (request.type === "DROP_SHIFT" && request.assignmentId) {
       const [existingCheckin] = await db
         .select({ id: checkins.id })
         .from(checkins)
@@ -324,7 +417,7 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ success: false, error: "Plantão já possui check-in e não pode ser descartado" }, { status: 409 });
       }
 
-      await db.update(assignments).set({ status: "CANCELLED", updatedAt: new Date() }).where(eq(assignments.id, request.assignmentId));
+      await db.update(assignments).set({ status: "CANCELLED", updatedAt: new Date(), notes: "Descartado via solicitação" }).where(eq(assignments.id, request.assignmentId));
       finalStatus = "COMPLETED";
     }
   }
