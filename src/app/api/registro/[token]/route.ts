@@ -106,9 +106,11 @@ export async function POST(
     isActive: false, // Pending leader approval
   }).returning();
 
+  const assignedRole = (invite.targetRole as "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") ?? "INTERN";
+
   await db.insert(userRoles).values({
     userId: user.id,
-    role: (invite.targetRole as "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") ?? "INTERN",
+    role: assignedRole,
     facultyId: invite.facultyId,
     baseId: invite.baseId,
   });
@@ -117,7 +119,7 @@ export async function POST(
     action: "SELF_REGISTER",
     entity: "user",
     entityId: user.id,
-    payload: { inviteLinkId: invite.id, facultyId: invite.facultyId },
+    payload: { inviteLinkId: invite.id, role: assignedRole, facultyId: invite.facultyId, baseId: invite.baseId },
   });
 
   return NextResponse.json({ success: true }, { status: 201 });

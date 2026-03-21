@@ -43,33 +43,25 @@ export async function POST(req: NextRequest) {
   const token = await requireLeaderOrCoordinator(req);
   if (!token) return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
 
-  const facultyId = token.role === "LEADER" ? (token.facultyId as string) : null;
+  const body = await req.json().catch(() => ({}));
+  const targetRole = (body.targetRole as string) || "INTERN";
+
+  const facultyId = token.role === "LEADER" ? (token.facultyId as string) : (body.facultyId as string | undefined);
   if (!facultyId) {
-    // Coordinator must specify facultyId
-    const body = await req.json().catch(() => ({}));
-    if (!body.facultyId) {
-      return NextResponse.json({ success: false, error: "facultyId obrigatório" }, { status: 400 });
-    }
-    const linkToken = randomBytes(12).toString("base64url");
-    const [link] = await db.insert(inviteLinks).values({
-      token: linkToken,
-      createdBy: token.id as string,
-      facultyId: body.facultyId,
-    }).returning();
-    await logAudit({ userId: token.id as string, action: "CREATE_INVITE", entity: "invite_link", entityId: link.id, payload: { facultyId: body.facultyId } });
-    return NextResponse.json({ success: true, data: link }, { status: 201 });
+    return NextResponse.json({ success: false, error: "facultyId obrigatório" }, { status: 400 });
   }
 
   const linkToken = randomBytes(12).toString("base64url");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   const [link] = await db.insert(inviteLinks).values({
     token: linkToken,
+    targetRole,
     createdBy: token.id as string,
     facultyId,
     expiresAt,
   }).returning();
 
-  await logAudit({ userId: token.id as string, action: "CREATE_INVITE", entity: "invite_link", entityId: link.id, payload: { facultyId } });
+  await logAudit({ userId: token.id as string, action: "CREATE_INVITE", entity: "invite_link", entityId: link.id, payload: { targetRole, facultyId } });
   return NextResponse.json({ success: true, data: link }, { status: 201 });
 }
 
