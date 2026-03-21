@@ -132,7 +132,7 @@ async function seedProd() {
   const facByAbbr = Object.fromEntries(allFac.map(f => [f.abbreviation, f])) as Record<string, typeof allFac[0]>;
   const facIds = FAC_ABBR.map(a => facByAbbr[a].id);
   const cruBase = allBases.find(b => b.type === "CENTRAL")!;
-  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.email, "admin@taximetro.app"));
+  const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.email, "caio.olive94@gmail.com"));
   const coordId = admin!.id;
 
   // 2. Faculty targets
