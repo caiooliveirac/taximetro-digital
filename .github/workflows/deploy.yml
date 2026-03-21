@@ -42,29 +42,20 @@ jobs:
             docker stop ${{ env.APP }} 2>/dev/null || true
             docker rm ${{ env.APP }} 2>/dev/null || true
 
-            echo "=== Building builder image ==="
+            echo "=== Running migrations ==="
             docker build --target builder -t ${{ env.APP }}-builder .
-
-            echo "=== Cleaning data (avoids interactive constraint prompts) ==="
-            docker run --rm \
-              --add-host=host.docker.internal:host-gateway \
-              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-              ${{ env.APP }}-builder \
-              npx tsx src/db/clean-dev.ts
-
-            echo "=== Running migrations (push) ==="
             docker run --rm \
               --add-host=host.docker.internal:host-gateway \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               ${{ env.APP }}-builder \
               npx drizzle-kit push --force
 
-            echo "=== Seeding production data ==="
+            echo "=== Seeding reference data (idempotent) ==="
             docker run --rm \
               --add-host=host.docker.internal:host-gateway \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               ${{ env.APP }}-builder \
-              sh -c "npx tsx src/db/seed.ts && npx tsx src/db/seed-prod.ts"
+              npx tsx src/db/seed.ts
 
             echo "=== Starting container ==="
             docker run -d \
@@ -78,6 +69,11 @@ jobs:
               -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
               -e TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" \
               -e TELEGRAM_GROUP_ID="${{ secrets.TELEGRAM_GROUP_ID }}" \
+              -e SMTP_HOST="${{ secrets.SMTP_HOST }}" \
+              -e SMTP_PORT="${{ secrets.SMTP_PORT }}" \
+              -e SMTP_USER="${{ secrets.SMTP_USER }}" \
+              -e SMTP_PASS="${{ secrets.SMTP_PASS }}" \
+              -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
               --add-host=host.docker.internal:host-gateway \
               ${{ env.APP }}
 
