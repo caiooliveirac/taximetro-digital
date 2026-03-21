@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { inviteLinks, faculties, users, userRoles } from "@/db/schema";
+import { inviteLinks, faculties, bases, users, userRoles } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { hash } from "bcryptjs";
 import { logAudit } from "@/lib/audit";
@@ -22,14 +22,19 @@ async function getValidInvite(token: string) {
   const [invite] = await db
     .select({
       id: inviteLinks.id,
+      targetRole: inviteLinks.targetRole,
       facultyId: inviteLinks.facultyId,
       facultyName: faculties.name,
       facultyAbbr: faculties.abbreviation,
+      baseId: inviteLinks.baseId,
+      baseCode: bases.code,
+      baseName: bases.name,
       isActive: inviteLinks.isActive,
       expiresAt: inviteLinks.expiresAt,
     })
     .from(inviteLinks)
     .leftJoin(faculties, eq(faculties.id, inviteLinks.facultyId))
+    .leftJoin(bases, eq(bases.id, inviteLinks.baseId))
     .where(and(eq(inviteLinks.token, token), eq(inviteLinks.isActive, true)));
 
   if (!invite) return null;
@@ -48,7 +53,13 @@ export async function GET(
   }
   return NextResponse.json({
     success: true,
-    data: { facultyName: invite.facultyName, facultyAbbr: invite.facultyAbbr },
+    data: {
+      targetRole: invite.targetRole ?? "INTERN",
+      facultyName: invite.facultyName,
+      facultyAbbr: invite.facultyAbbr,
+      baseCode: invite.baseCode,
+      baseName: invite.baseName,
+    },
   });
 }
 
@@ -97,8 +108,9 @@ export async function POST(
 
   await db.insert(userRoles).values({
     userId: user.id,
-    role: "INTERN",
+    role: (invite.targetRole as "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") ?? "INTERN",
     facultyId: invite.facultyId,
+    baseId: invite.baseId,
   });
 
   await logAudit({
