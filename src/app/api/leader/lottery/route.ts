@@ -23,6 +23,7 @@ const DOW_INDEX: Record<string, number> = {
 const lotterySchema = z.object({
   weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   internIds: z.array(z.string().uuid()).min(1),
+  maxShifts: z.number().int().min(1).max(7).default(1),
 });
 
 export async function POST(req: NextRequest) {
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
   }
 
-  const { weekStart, internIds } = parsed.data;
+  const { weekStart, internIds, maxShifts } = parsed.data;
 
   /* ── Validate intern ownership ── */
   const validRows = await db
@@ -155,55 +156,99 @@ export async function POST(req: NextRequest) {
   /* ── CRU ±12h blocked slots ── */
   const cruBlocked = await getCruBlockedSlots(safeIds, weekDates[0], weekDates[6]);
 
-  /* ── Assign picking intern with fewest shifts so far ── */
+  /* ── Count existing shifts per intern (towards maxShifts) ── */
+  const existingShiftCount = new Map<string, number>();
+  for (const id of safeIds) existingShiftCount.set(id, 0);
+  for (const a of existing) {
+    if (existingShiftCount.has(a.internId)) {
+      existingShiftCount.set(a.internId, (existingShiftCount.get(a.internId) ?? 0) + 1);
+    }
+  }
+
+  /**
+   * Smart round-robin allocation with maxShifts limit.
+   * Instead of filling ALL positions greedily, we do multiple rounds:
+   * Round 1: give each intern their 1st shift
+   * Round 2: give each intern their 2nd shift (if maxShifts >= 2)
+   * ... up to maxShifts rounds
+   * This ensures fair distribution before filling extra capacity.
+   */
+
+  function canAssign(internId: string, pos: Pos, shiftCount: number): boolean {
+    const key = `${pos.date}|${pos.period}`;
+    if (usedSlots.get(internId)?.has(key)) return false;
+    if (cruBlocked.get(internId)?.has(key)) return false;
+    if (shiftCount >= maxShifts) return false;
+    return true;
+  }
+
+  function addCruBlocking(internId: string, pos: Pos) {
+    if (pos.baseType !== "CENTRAL") return;
+    if (!cruBlocked.has(internId)) cruBlocked.set(internId, new Set());
+    const blocked = cruBlocked.get(internId)!;
+    const key = `${pos.date}|${pos.period}`;
+    blocked.add(key);
+    if (pos.period === "DAY") {
+      const prevDay = new Date(pos.date + "T12:00:00Z");
+      prevDay.setUTCDate(prevDay.getUTCDate() - 1);
+      blocked.add(`${prevDay.toISOString().slice(0, 10)}|NIGHT`);
+      blocked.add(`${pos.date}|NIGHT`);
+    } else {
+      const nextDay = new Date(pos.date + "T12:00:00Z");
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+      blocked.add(`${pos.date}|DAY`);
+      blocked.add(`${nextDay.toISOString().slice(0, 10)}|DAY`);
+    }
+  }
+
   const toCreate: {
     internId: string; facultyId: string; baseId: string;
     date: string; period: "DAY" | "NIGHT"; createdBy: string;
   }[] = [];
 
-  for (const pos of positions) {
-    const key = `${pos.date}|${pos.period}`;
-    const candidates = shuffled.filter((id) => {
-      if (usedSlots.get(id)?.has(key)) return false;
-      // CRU ±12h: skip if this slot is blocked by an existing CRU assignment
-      if (cruBlocked.get(id)?.has(key)) return false;
-      return true;
-    });
-    if (candidates.length === 0) continue;
+  // Track new shifts per intern in this lottery
+  const newShiftCount = new Map<string, number>();
+  for (const id of safeIds) newShiftCount.set(id, 0);
 
-    const pick = candidates.reduce((best, id) =>
-      (usedSlots.get(id)?.size ?? 0) < (usedSlots.get(best)?.size ?? 0) ? id : best,
-    );
+  // Track which positions are still available (index → taken)
+  const positionTaken = new Array(positions.length).fill(false);
 
-    usedSlots.get(pick)!.add(key);
+  // Round-robin across maxShifts rounds
+  for (let round = 0; round < maxShifts; round++) {
+    // Each round: iterate shuffled interns, each gets at most 1 shift
+    for (const internId of shuffled) {
+      const totalShifts = (existingShiftCount.get(internId) ?? 0) + (newShiftCount.get(internId) ?? 0);
+      if (totalShifts >= maxShifts) continue;
 
-    // If assigning to a CENTRAL base (CRU), block adjacent slots for this intern
-    if (pos.baseType === "CENTRAL") {
-      if (!cruBlocked.has(pick)) cruBlocked.set(pick, new Set());
-      const blocked = cruBlocked.get(pick)!;
-      blocked.add(key);
-      // Block adjacent ±12h slots
-      if (pos.period === "DAY") {
-        const prevDay = new Date(pos.date + "T12:00:00Z");
-        prevDay.setUTCDate(prevDay.getUTCDate() - 1);
-        blocked.add(`${prevDay.toISOString().slice(0, 10)}|NIGHT`);
-        blocked.add(`${pos.date}|NIGHT`);
-      } else {
-        const nextDay = new Date(pos.date + "T12:00:00Z");
-        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-        blocked.add(`${pos.date}|DAY`);
-        blocked.add(`${nextDay.toISOString().slice(0, 10)}|DAY`);
+      // Find best available position for this intern
+      // Prefer CRU first (harder to fill), then by base priority
+      let bestIdx = -1;
+      for (let i = 0; i < positions.length; i++) {
+        if (positionTaken[i]) continue;
+        if (!canAssign(internId, positions[i], totalShifts)) continue;
+        bestIdx = i;
+        break;
       }
-    }
 
-    toCreate.push({
-      internId: pick,
-      facultyId,
-      baseId: pos.baseId,
-      date: pos.date,
-      period: pos.period,
-      createdBy: token.id as string,
-    });
+      if (bestIdx === -1) continue;
+
+      const pos = positions[bestIdx];
+      const key = `${pos.date}|${pos.period}`;
+
+      positionTaken[bestIdx] = true;
+      usedSlots.get(internId)!.add(key);
+      newShiftCount.set(internId, (newShiftCount.get(internId) ?? 0) + 1);
+      addCruBlocking(internId, pos);
+
+      toCreate.push({
+        internId,
+        facultyId,
+        baseId: pos.baseId,
+        date: pos.date,
+        period: pos.period,
+        createdBy: token.id as string,
+      });
+    }
   }
 
   /* ── Batch insert (skip conflicts) ── */
@@ -214,12 +259,23 @@ export async function POST(req: NextRequest) {
       action: "LOTTERY",
       entity: "assignment",
       entityId: toCreate[0].internId,
-      payload: { weekStart, selected: safeIds.length, created: toCreate.length },
+      payload: { weekStart, maxShifts, selected: safeIds.length, created: toCreate.length },
     });
   }
 
+  // Count how many interns got assignments
+  const internsAllocated = new Set(toCreate.map((t) => t.internId)).size;
+  const remainingPositions = positionTaken.filter((t) => !t).length;
+
   return NextResponse.json({
     success: true,
-    data: { total: toCreate.length, weekStart },
+    data: {
+      total: toCreate.length,
+      weekStart,
+      maxShifts,
+      internsAllocated,
+      internsTotal: safeIds.length,
+      remainingPositions,
+    },
   });
 }

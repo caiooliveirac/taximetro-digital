@@ -3,8 +3,9 @@
 import { Fragment, useEffect, useMemo, useState, useCallback } from "react";
 import {
   Search, Filter, ChevronLeft, ChevronRight,
-  Dices, X, RotateCcw, UserX,
+  Dices, X, RotateCcw, UserX, Plus,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 
 /* ────────── Types ────────── */
@@ -38,6 +39,7 @@ const STATUS_RING: Record<string, string> = {
 /* ────────── Component ────────── */
 
 export default function LeaderEscala() {
+  const { data: session } = useSession();
   /* ── Data ── */
   const [interns, setInterns] = useState<Intern[]>([]);
   const [bases, setBases] = useState<Base[]>([]);
@@ -76,6 +78,13 @@ export default function LeaderEscala() {
   const [lotteryLoading, setLotteryLoading] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
   const [lotteryMsg, setLotteryMsg] = useState("");
+  const [maxShifts, setMaxShifts] = useState(1);
+
+  /* ── Manual allocation modal ── */
+  const [allocSlot, setAllocSlot] = useState<{ baseId: string; baseCode: string; date: string; period: "DAY" | "NIGHT" } | null>(null);
+  const [allocInternId, setAllocInternId] = useState("");
+  const [allocLoading, setAllocLoading] = useState(false);
+  const [allocMsg, setAllocMsg] = useState("");
 
   /* ── Load data ── */
   const load = useCallback(async () => {
@@ -229,16 +238,57 @@ export default function LeaderEscala() {
     const res = await fetch("/taximetro/api/leader/lottery", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ weekStart, internIds: ids }),
+      body: JSON.stringify({ weekStart, internIds: ids, maxShifts }),
     });
     const json = await res.json();
     if (json.success) {
-      setLotteryMsg(`✅ ${json.data.total} alocações criadas!`);
+      const d = json.data;
+      setLotteryMsg(
+        `✅ ${d.total} alocações criadas — ${d.internsAllocated}/${d.internsTotal} internos alocados` +
+        (d.remainingPositions > 0 ? ` · ${d.remainingPositions} vagas remanescentes` : " · Sem vagas remanescentes")
+      );
       await load();
     } else {
       setLotteryMsg(`❌ ${json.error}`);
     }
     setLotteryLoading(false);
+  }
+
+  /* ── Manual allocation ── */
+  function openAllocModal(baseId: string, baseCode: string, date: string, period: "DAY" | "NIGHT") {
+    setAllocSlot({ baseId, baseCode, date, period });
+    setAllocInternId("");
+    setAllocMsg("");
+  }
+
+  async function submitAllocation() {
+    if (!allocSlot || !allocInternId || !session?.user?.facultyId) return;
+    setAllocLoading(true);
+    setAllocMsg("");
+    try {
+      const res = await fetch("/taximetro/api/assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          internId: allocInternId,
+          facultyId: session.user.facultyId,
+          baseId: allocSlot.baseId,
+          date: allocSlot.date,
+          period: allocSlot.period,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setAllocMsg("✅ Alocado com sucesso!");
+        await load();
+        setTimeout(() => setAllocSlot(null), 800);
+      } else {
+        setAllocMsg(`❌ ${json.error}`);
+      }
+    } catch {
+      setAllocMsg("❌ Erro de conexão.");
+    }
+    setAllocLoading(false);
   }
 
   /* ── Grid 3 filtered interns ── */
@@ -418,14 +468,24 @@ export default function LeaderEscala() {
                   return (
                     <div key={`v-${base.id}|${d}`} className={`border-b border-amber-50 px-1 py-1 min-h-[38px] flex flex-col gap-0.5 justify-center ${d === today ? "bg-amber-50/20" : ""}`}>
                       {v.DAY.cap > 0 && (
-                        <div className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 ${dayOpen > 0 ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
+                        <button
+                          onClick={() => dayOpen > 0 ? openAllocModal(base.id, base.code, d, "DAY") : undefined}
+                          disabled={dayOpen <= 0}
+                          className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 w-full transition ${dayOpen > 0 ? "bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer" : "bg-emerald-50 text-emerald-700 cursor-default"}`}
+                        >
                           ☀️ {v.DAY.fill}/{v.DAY.cap}{dayOpen > 0 && <span className="text-amber-500 font-bold">({dayOpen})</span>}
-                        </div>
+                          {dayOpen > 0 && <Plus className="h-3 w-3 ml-auto text-amber-500" />}
+                        </button>
                       )}
                       {v.NIGHT.cap > 0 && (
-                        <div className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 ${nightOpen > 0 ? "bg-indigo-50 text-indigo-700" : "bg-emerald-50 text-emerald-700"}`}>
+                        <button
+                          onClick={() => nightOpen > 0 ? openAllocModal(base.id, base.code, d, "NIGHT") : undefined}
+                          disabled={nightOpen <= 0}
+                          className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 w-full transition ${nightOpen > 0 ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer" : "bg-emerald-50 text-emerald-700 cursor-default"}`}
+                        >
                           🌙 {v.NIGHT.fill}/{v.NIGHT.cap}{nightOpen > 0 && <span className="text-indigo-500 font-bold">({nightOpen})</span>}
-                        </div>
+                          {nightOpen > 0 && <Plus className="h-3 w-3 ml-auto text-indigo-500" />}
+                        </button>
                       )}
                     </div>
                   );
@@ -444,9 +504,14 @@ export default function LeaderEscala() {
                     return (
                       <div key={`v-cru|${d}`} className={`border-b border-amber-50 px-1 py-1 min-h-[38px] flex flex-col gap-0.5 justify-center bg-violet-50/20 ${d === today ? "bg-violet-50/40" : ""}`}>
                         {v.DAY.cap > 0 && (
-                          <div className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 ${dayOpen > 0 ? "bg-violet-50 text-violet-700" : "bg-emerald-50 text-emerald-700"}`}>
+                          <button
+                            onClick={() => dayOpen > 0 ? openAllocModal(cruBase.id, "CRU", d, "DAY") : undefined}
+                            disabled={dayOpen <= 0}
+                            className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 w-full transition ${dayOpen > 0 ? "bg-violet-50 text-violet-700 hover:bg-violet-100 cursor-pointer" : "bg-emerald-50 text-emerald-700 cursor-default"}`}
+                          >
                             ☀️ {v.DAY.fill}/{v.DAY.cap}{dayOpen > 0 && <span className="text-violet-500 font-bold">({dayOpen})</span>}
-                          </div>
+                            {dayOpen > 0 && <Plus className="h-3 w-3 ml-auto text-violet-500" />}
+                          </button>
                         )}
                       </div>
                     );
@@ -728,6 +793,22 @@ export default function LeaderEscala() {
               <div className="flex items-center justify-between mb-3 text-xs text-slate-500">
                 <span>Selecionados: <strong className="text-slate-700">{selectedCount}</strong></span>
               </div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-medium text-slate-600">Plantões por interno:</span>
+                {[1, 2, 3].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setMaxShifts(n)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${
+                      maxShifts === n
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
               {lotteryMsg && <p className="text-sm mb-3">{lotteryMsg}</p>}
               <button
                 onClick={runLottery}
@@ -735,6 +816,68 @@ export default function LeaderEscala() {
                 className="w-full rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 py-3.5 text-base font-extrabold text-white shadow-[0_6px_20px_rgba(16,185,129,0.35)] hover:shadow-[0_8px_30px_rgba(16,185,129,0.5)] transition disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
               >
                 <Dices className="h-5 w-5" /> SORTEAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ═══════════ Allocation Modal ═══════════ */}
+      {allocSlot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4 text-white flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Plus className="h-5 w-5" /> Alocar Interno
+                </h2>
+                <p className="text-sm text-blue-100">
+                  {allocSlot.baseCode} · {new Date(allocSlot.date + "T12:00:00").toLocaleDateString("pt-BR")} · {allocSlot.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
+                </p>
+              </div>
+              <button onClick={() => setAllocSlot(null)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <label className="block text-sm font-medium text-slate-700">Selecionar interno:</label>
+              <select
+                value={allocInternId}
+                onChange={(e) => setAllocInternId(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">— Escolher —</option>
+                {interns
+                  .filter((intern) => {
+                    // Exclude interns already assigned to this date+period
+                    const key = `${intern.id}|${allocSlot.date}`;
+                    const existing = assignmentsByInternDate.get(key) ?? [];
+                    return !existing.some((a) => a.period === allocSlot.period);
+                  })
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((intern) => {
+                    const isCruBlocked = cruConflicts.has(`${intern.id}|${allocSlot.date}|${allocSlot.period}`);
+                    return (
+                      <option key={intern.id} value={intern.id}>
+                        {intern.name}{isCruBlocked ? " ⚠️ CRU ±12h" : ""}
+                      </option>
+                    );
+                  })}
+              </select>
+              {allocMsg && <p className="text-sm">{allocMsg}</p>}
+            </div>
+            <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
+              <button
+                onClick={() => setAllocSlot(null)}
+                className="flex-1 rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={submitAllocation}
+                disabled={allocLoading || !allocInternId}
+                className="flex-1 rounded-lg bg-blue-600 py-2 text-sm font-bold text-white hover:bg-blue-700 transition disabled:opacity-50"
+              >
+                {allocLoading ? "Alocando..." : "Confirmar"}
               </button>
             </div>
           </div>
