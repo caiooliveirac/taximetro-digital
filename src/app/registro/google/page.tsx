@@ -176,6 +176,9 @@ function RegistroGoogleForm() {
             Seu cadastro foi recebido e está aguardando aprovação do coordenador.
             Após aprovado, basta fazer login com Google.
           </p>
+          <a href="/taximetro/login" className="mt-4 inline-block text-sm font-medium text-accent-600 hover:text-accent-700 transition-colors">
+            ← Voltar ao login
+          </a>
         </div>
       </div>
     );
