@@ -13,8 +13,8 @@ const transporter = nodemailer.createTransport({
 const FROM = process.env.SMTP_FROM ?? "Taxímetro Digital <noreply@mnrs.com.br>";
 
 export async function sendPasswordResetEmail(to: string, name: string, token: string) {
-    const baseUrl = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "https://mnrs.com.br/taximetro";
-    const resetUrl = `${baseUrl}/redefinir-senha/${token}`;
+    const baseUrl = (process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "https://mnrs.com.br").replace(/\/$/, "");
+    const resetUrl = `${baseUrl}/taximetro/redefinir-senha/${token}`;
 
     await transporter.sendMail({
         from: FROM,
