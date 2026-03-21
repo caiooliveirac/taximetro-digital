@@ -4,8 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   UserPlus, Link2, Copy, Check, Clock, UserCheck, UserX, Trash2, Target,
-  ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight,
+  ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight, Plus, X,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { getFacultyStyle } from "@/lib/base-colors";
@@ -63,7 +64,17 @@ type InviteLink = {
 
 type Tab = "ativos" | "pendentes" | "convites";
 
+type AvailableSlot = {
+  baseId: string; baseCode: string; baseName: string; baseType: string;
+  dayOfWeek: string; period: string; capacity: number; filled: number; available: number;
+  nextDate: string;
+};
+
+const DOW_IDX: Record<string, number> = { MON: 0, TUE: 1, WED: 2, THU: 3, FRI: 4, SAT: 5, SUN: 6 };
+const DAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
 export default function LeaderInternos() {
+  const { data: session } = useSession();
   const [tab, setTab] = useState<Tab>("ativos");
   const [users, setUsers] = useState<UserRow[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
@@ -77,6 +88,15 @@ export default function LeaderInternos() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [actionMsg, setActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  /* ── Allocation modal ── */
+  const [allocIntern, setAllocIntern] = useState<{ id: string; name: string } | null>(null);
+  const [allocSlots, setAllocSlots] = useState<AvailableSlot[]>([]);
+  const [allocBaseId, setAllocBaseId] = useState("");
+  const [allocDate, setAllocDate] = useState("");
+  const [allocPeriod, setAllocPeriod] = useState<"DAY" | "NIGHT">("DAY");
+  const [allocLoading, setAllocLoading] = useState(false);
+  const [allocMsg, setAllocMsg] = useState("");
 
   const loadData = useCallback(async () => {
     try {
@@ -148,6 +168,69 @@ export default function LeaderInternos() {
     setCopied(token);
     setTimeout(() => setCopied(null), 2000);
   }
+
+  async function openAllocModal(intern: { id: string; name: string }) {
+    setAllocIntern(intern);
+    setAllocBaseId("");
+    setAllocDate("");
+    setAllocPeriod("DAY");
+    setAllocMsg("");
+    // Fetch available slots
+    try {
+      const res = await fetch("/taximetro/api/slots/available");
+      const json = await res.json();
+      if (json.success) setAllocSlots(json.data.filter((s: AvailableSlot) => s.available > 0));
+    } catch {
+      setAllocSlots([]);
+    }
+  }
+
+  async function submitAllocation() {
+    if (!allocIntern || !allocBaseId || !allocDate || !session?.user?.facultyId) return;
+    setAllocLoading(true);
+    setAllocMsg("");
+    try {
+      const res = await fetch("/taximetro/api/assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          internId: allocIntern.id,
+          facultyId: session.user.facultyId,
+          baseId: allocBaseId,
+          date: allocDate,
+          period: allocPeriod,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setAllocMsg("✅ Alocado com sucesso!");
+        await loadData();
+        setTimeout(() => setAllocIntern(null), 800);
+      } else {
+        setAllocMsg(`❌ ${json.error}`);
+      }
+    } catch {
+      setAllocMsg("❌ Erro de conexão.");
+    }
+    setAllocLoading(false);
+  }
+
+  /* ── Derive available dates from selected base ── */
+  const allocDatesForBase = allocSlots
+    .filter((s) => s.baseId === allocBaseId)
+    .map((s) => {
+      // Get the next Monday
+      const now = new Date();
+      const mondayOffset = (now.getDay() + 6) % 7;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - mondayOffset);
+      const dayIdx = DOW_IDX[s.dayOfWeek];
+      if (dayIdx === undefined) return null;
+      const d = new Date(monday);
+      d.setDate(d.getDate() + dayIdx);
+      return { date: d.toISOString().slice(0, 10), period: s.period as "DAY" | "NIGHT", dayLabel: DAY_LABELS[dayIdx] };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
 
   const filtered = users.filter(
     (u) => !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.cpf.includes(search)
@@ -360,9 +443,16 @@ export default function LeaderInternos() {
 
                             {/* Actions */}
                             <div className="flex gap-2">
+                              <button
+                                onClick={() => openAllocModal({ id: u.id, name: u.name })}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                              >
+                                <Plus className="h-4 w-4" strokeWidth={2} />
+                                Alocar
+                              </button>
                               <Link href="/leader/escala" className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-2 text-sm font-medium text-white hover:bg-accent-700 transition-colors">
                                 <Calendar className="h-4 w-4" strokeWidth={1.5} />
-                                Alocar na escala
+                                Ver escala
                                 <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
                               </Link>
                             </div>
@@ -474,6 +564,84 @@ export default function LeaderInternos() {
               );
             })
           )}
+        </div>
+      )}
+
+      {/* ═══════════ Allocation Modal ═══════════ */}
+      {allocIntern && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4 text-white flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Plus className="h-5 w-5" /> Alocar Interno
+                </h2>
+                <p className="text-sm text-blue-100">{allocIntern.name}</p>
+              </div>
+              <button onClick={() => setAllocIntern(null)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Base:</label>
+                <select
+                  value={allocBaseId}
+                  onChange={(e) => { setAllocBaseId(e.target.value); setAllocDate(""); }}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value="">— Escolher base —</option>
+                  {[...new Map(allocSlots.map((s) => [s.baseId, s])).values()]
+                    .sort((a, b) => a.baseCode.localeCompare(b.baseCode))
+                    .map((s) => (
+                      <option key={s.baseId} value={s.baseId}>
+                        {s.baseCode} — {s.baseName} ({s.baseType})
+                      </option>
+                    ))}
+                </select>
+              </div>
+              {allocBaseId && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Dia e turno:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {allocDatesForBase.map((slot) => (
+                      <button
+                        key={`${slot.date}|${slot.period}`}
+                        onClick={() => { setAllocDate(slot.date); setAllocPeriod(slot.period); }}
+                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                          allocDate === slot.date && allocPeriod === slot.period
+                            ? "border-blue-500 bg-blue-50 text-blue-700"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {slot.dayLabel} {new Date(slot.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                        <span className="ml-1">{slot.period === "DAY" ? "☀️" : "🌙"}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {allocDatesForBase.length === 0 && (
+                    <p className="text-xs text-slate-400 mt-1">Nenhuma vaga disponível nesta base para a semana atual.</p>
+                  )}
+                </div>
+              )}
+              {allocMsg && <p className="text-sm">{allocMsg}</p>}
+            </div>
+            <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
+              <button
+                onClick={() => setAllocIntern(null)}
+                className="flex-1 rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={submitAllocation}
+                disabled={allocLoading || !allocBaseId || !allocDate}
+                className="flex-1 rounded-lg bg-blue-600 py-2 text-sm font-bold text-white hover:bg-blue-700 transition disabled:opacity-50"
+              >
+                {allocLoading ? "Alocando..." : "Confirmar"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
