@@ -26,6 +26,8 @@ COPY --from=builder /app/drizzle ./drizzle
 # drizzle-orm + postgres driver for runtime migrations
 COPY --from=deps /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=deps /app/node_modules/postgres ./node_modules/postgres
+# nodemailer for password reset emails
+COPY --from=deps /app/node_modules/nodemailer ./node_modules/nodemailer
 
 EXPOSE 3000
 CMD ["node", "server.js"]

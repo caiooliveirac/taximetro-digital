@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Ambulance, CheckCircle, Camera, ImagePlus, X, AlertCircle } from "lucide-react";
+import { Ambulance, CheckCircle, Camera, ImagePlus, X, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -29,6 +29,13 @@ function compressImage(file: File, maxSize = 400): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+const PASSWORD_RULES = [
+  { test: (v: string) => v.length >= 8, label: "Mínimo 8 caracteres" },
+  { test: (v: string) => /[A-Z]/.test(v), label: "Uma letra maiúscula" },
+  { test: (v: string) => /[a-z]/.test(v), label: "Uma letra minúscula" },
+  { test: (v: string) => /\d/.test(v), label: "Um número" },
+];
 
 const ROLES = [
   { value: "INTERN", label: "Interno" },
@@ -64,6 +71,8 @@ function RegistroGoogleForm() {
   const [role, setRole] = useState("INTERN");
   const [facultyId, setFacultyId] = useState("");
   const [baseId, setBaseId] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [selfie, setSelfie] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -109,11 +118,13 @@ function RegistroGoogleForm() {
 
   const needsFaculty = role === "INTERN" || role === "LEADER";
   const needsBase = role === "PRECEPTOR";
+  const passwordValid = PASSWORD_RULES.every((r) => r.test(password));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!selfie) { setError("Selfie obrigatória para identificação."); return; }
+    if (!passwordValid) { setError("A senha não atende aos requisitos."); return; }
     if (needsFaculty && !facultyId) { setError("Selecione uma faculdade."); return; }
     if (needsBase && !baseId) { setError("Selecione uma base."); return; }
     setSubmitting(true);
@@ -126,6 +137,7 @@ function RegistroGoogleForm() {
           email,
           cpf: cpf || undefined,
           phone,
+          password,
           role,
           facultyId: needsFaculty ? facultyId : undefined,
           baseId: needsBase ? baseId : undefined,
@@ -301,13 +313,35 @@ function RegistroGoogleForm() {
               </div>
             )}
 
+            {/* Senha */}
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">Senha</label>
+              <div className="relative">
+                <Input id="password" type={showPassword ? "text" : "password"} value={password}
+                  onChange={(e) => setPassword(e.target.value)} placeholder="Mín. 8 caracteres" required className="pr-10" />
+                <button type="button" tabIndex={-1} onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {password && (
+                <ul className="mt-1.5 space-y-0.5">
+                  {PASSWORD_RULES.map((r) => (
+                    <li key={r.label} className={`text-xs flex items-center gap-1 ${r.test(password) ? "text-green-600" : "text-slate-400"}`}>
+                      <span>{r.test(password) ? "✓" : "○"}</span> {r.label}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-600/10">
                 {error}
               </p>
             )}
 
-            <Button type="submit" disabled={submitting} className="w-full">
+            <Button type="submit" disabled={submitting || !passwordValid} className="w-full">
               {submitting ? "Enviando..." : "Solicitar Acesso"}
             </Button>
           </form>
