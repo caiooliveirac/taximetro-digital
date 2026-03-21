@@ -37,9 +37,16 @@ const PASSWORD_RULES = [
   { test: (v: string) => /\d/.test(v), label: "Um número" },
 ];
 
+const ROLE_LABEL: Record<string, string> = {
+  COORDINATOR: "Coordenador",
+  LEADER: "Líder de Escala",
+  PRECEPTOR: "Preceptor",
+  INTERN: "Interno",
+};
+
 export default function RegistroPage() {
   const { token } = useParams<{ token: string }>();
-  const [faculty, setFaculty] = useState<{ facultyName: string; facultyAbbr: string } | null>(null);
+  const [faculty, setFaculty] = useState<{ targetRole: string; facultyName: string; facultyAbbr: string; baseCode: string | null; baseName: string | null } | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -170,10 +177,17 @@ export default function RegistroPage() {
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-50 mb-3">
               <Ambulance className="h-6 w-6 text-accent-600" strokeWidth={1.5} />
             </div>
-            <h1 className="text-xl font-semibold text-slate-900">Registro de Interno</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Faculdade: <span className="font-medium text-slate-900">{faculty?.facultyName}</span>
-            </p>
+            <h1 className="text-xl font-semibold text-slate-900">Registro — {ROLE_LABEL[faculty?.targetRole ?? "INTERN"] ?? "Interno"}</h1>
+            {faculty?.facultyName && (
+              <p className="mt-1 text-sm text-slate-500">
+                Faculdade: <span className="font-medium text-slate-900">{faculty.facultyName}</span>
+              </p>
+            )}
+            {faculty?.baseName && (
+              <p className="mt-1 text-sm text-slate-500">
+                Base: <span className="font-medium text-slate-900">{faculty.baseCode} — {faculty.baseName}</span>
+              </p>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

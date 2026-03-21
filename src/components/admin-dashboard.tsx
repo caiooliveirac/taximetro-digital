@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Users, Calendar, CalendarDays, CheckCircle, Activity, XCircle, AlertTriangle, Building2, GraduationCap, X, Search, Sun, Moon, UserPlus, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { MetricCard } from "@/components/metric-card";
+import { InviteButton } from "@/components/invite-button";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 
 type DetailRow = {
@@ -118,13 +119,16 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
   return (
     <div className="space-y-6 animate-[fadeInUp_200ms_ease-out]">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="mt-1 flex items-center gap-3 text-sm text-slate-500">
-          <span className="capitalize">{dateLabel}</span>
-          <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" strokeWidth={1.5} />{s["base_count"] ?? 0} bases</span>
-          <span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" strokeWidth={1.5} />{s["faculty_count"] ?? 0} faculdades</span>
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
+          <p className="mt-1 flex items-center gap-3 text-sm text-slate-500">
+            <span className="capitalize">{dateLabel}</span>
+            <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" strokeWidth={1.5} />{s["base_count"] ?? 0} bases</span>
+            <span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" strokeWidth={1.5} />{s["faculty_count"] ?? 0} faculdades</span>
+          </p>
+        </div>
+        <InviteButton />
       </div>
 
       {/* KPI — Operação */}

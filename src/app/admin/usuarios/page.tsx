@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { FileDown } from "lucide-react";
+import { InviteButton } from "@/components/invite-button";
 
 type User = {
   id: string;
@@ -196,7 +197,8 @@ export default function AdminUsuarios() {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Usuários</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <InviteButton />
           {pendingCount > 0 && (
             <button
               onClick={() => setShowPending(!showPending)}
