@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { assignments, users, bases, faculties, checkins } from "@/db/schema";
 import { eq, and, gte, lte, ne } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
-import { checkSlotAvailability } from "@/lib/slots";
+import { checkSlotAvailability, checkCruConflict } from "@/lib/slots";
 import { z } from "zod/v4";
 
 const createAssignmentSchema = z.object({
@@ -121,6 +121,12 @@ export async function POST(req: NextRequest) {
   );
   if (!slot.available) {
     return NextResponse.json({ success: false, error: `Sem vaga (${slot.assigned}/${slot.capacity})` }, { status: 409 });
+  }
+
+  // Check CRU ±12h conflict
+  const cruCheck = await checkCruConflict(parsed.data.internId, parsed.data.date, parsed.data.period);
+  if (cruCheck.conflicted) {
+    return NextResponse.json({ success: false, error: cruCheck.reason }, { status: 409 });
   }
 
   const [created] = await db

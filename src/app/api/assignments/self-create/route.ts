@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { assignments, bases, userRoles, faculties } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
+import { checkCruConflict } from "@/lib/slots";
 import { z } from "zod/v4";
 
 const selfCreateSchema = z.object({
@@ -64,6 +65,12 @@ export async function POST(req: NextRequest) {
     .limit(1);
   if (existing)
     return NextResponse.json({ success: false, error: "Você já tem um plantão neste turno hoje" }, { status: 409 });
+
+  // Check CRU ±12h conflict
+  const cruCheck = await checkCruConflict(internId, today, period);
+  if (cruCheck.conflicted) {
+    return NextResponse.json({ success: false, error: cruCheck.reason }, { status: 409 });
+  }
 
   // Create self-assignment with marker in notes
   const [created] = await db

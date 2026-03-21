@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { slotRules, assignments, bases, userRoles } from "@/db/schema";
 import { eq, and, gte, lte, ne, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
+import { getCruBlockedSlots } from "@/lib/slots";
 import { z } from "zod/v4";
 
 /**
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
       id: slotRules.id,
       baseId: slotRules.baseId,
       baseCode: bases.code,
+      baseType: bases.type,
       dayOfWeek: slotRules.dayOfWeek,
       period: slotRules.period,
       capacity: slotRules.capacity,
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
     );
 
   /* ── Build list of open positions ── */
-  type Pos = { baseId: string; baseCode: string; date: string; period: "DAY" | "NIGHT" };
+  type Pos = { baseId: string; baseCode: string; baseType: string; date: string; period: "DAY" | "NIGHT" };
   const positions: Pos[] = [];
 
   for (const rule of rules) {
@@ -119,6 +121,7 @@ export async function POST(req: NextRequest) {
       positions.push({
         baseId: rule.baseId,
         baseCode: rule.baseCode,
+        baseType: rule.baseType,
         date: dateStr,
         period: rule.period as "DAY" | "NIGHT",
       });
@@ -149,6 +152,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  /* ── CRU ±12h blocked slots ── */
+  const cruBlocked = await getCruBlockedSlots(safeIds, weekDates[0], weekDates[6]);
+
   /* ── Assign picking intern with fewest shifts so far ── */
   const toCreate: {
     internId: string; facultyId: string; baseId: string;
@@ -157,7 +163,12 @@ export async function POST(req: NextRequest) {
 
   for (const pos of positions) {
     const key = `${pos.date}|${pos.period}`;
-    const candidates = shuffled.filter((id) => !usedSlots.get(id)?.has(key));
+    const candidates = shuffled.filter((id) => {
+      if (usedSlots.get(id)?.has(key)) return false;
+      // CRU ±12h: skip if this slot is blocked by an existing CRU assignment
+      if (cruBlocked.get(id)?.has(key)) return false;
+      return true;
+    });
     if (candidates.length === 0) continue;
 
     const pick = candidates.reduce((best, id) =>
@@ -165,6 +176,26 @@ export async function POST(req: NextRequest) {
     );
 
     usedSlots.get(pick)!.add(key);
+
+    // If assigning to a CENTRAL base (CRU), block adjacent slots for this intern
+    if (pos.baseType === "CENTRAL") {
+      if (!cruBlocked.has(pick)) cruBlocked.set(pick, new Set());
+      const blocked = cruBlocked.get(pick)!;
+      blocked.add(key);
+      // Block adjacent ±12h slots
+      if (pos.period === "DAY") {
+        const prevDay = new Date(pos.date + "T12:00:00Z");
+        prevDay.setUTCDate(prevDay.getUTCDate() - 1);
+        blocked.add(`${prevDay.toISOString().slice(0, 10)}|NIGHT`);
+        blocked.add(`${pos.date}|NIGHT`);
+      } else {
+        const nextDay = new Date(pos.date + "T12:00:00Z");
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+        blocked.add(`${pos.date}|DAY`);
+        blocked.add(`${nextDay.toISOString().slice(0, 10)}|DAY`);
+      }
+    }
+
     toCreate.push({
       internId: pick,
       facultyId,
