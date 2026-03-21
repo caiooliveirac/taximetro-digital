@@ -189,7 +189,7 @@ export function AppSidebar({
               <KeyRound className="h-4 w-4" strokeWidth={1.5} />
             </button>
             <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
+              onClick={() => signOut({ callbackUrl: "/taximetro/login" })}
               className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-navy-800 hover:text-slate-300 transition-colors duration-150"
               title="Sair"
             >
@@ -291,7 +291,7 @@ export function AppSidebar({
               >
                 <KeyRound className="h-4 w-4" strokeWidth={1.5} />
               </button>
-              <button onClick={() => signOut({ callbackUrl: "/login" })}
+              <button onClick={() => signOut({ callbackUrl: "/taximetro/login" })}
                 className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
               >
                 <LogOut className="h-4 w-4" strokeWidth={1.5} />Sair

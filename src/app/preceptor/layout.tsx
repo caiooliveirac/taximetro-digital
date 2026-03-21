@@ -144,7 +144,7 @@ function PreceptorInnerLayout({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() => signOut({ callbackUrl: "/taximetro/login" })}
             className="ml-2 flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600 transition-colors"
           >
             <LogOut className="h-4 w-4" strokeWidth={1.5} />

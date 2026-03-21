@@ -25,7 +25,7 @@ export default function InternLayout({ children }: { children: React.ReactNode }
           <h2 className="font-semibold text-slate-900 text-sm">Taxímetro</h2>
         </div>
         <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={() => signOut({ callbackUrl: "/taximetro/login" })}
           className="flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600 transition-colors"
         >
           <LogOut className="h-4 w-4" strokeWidth={1.5} />
