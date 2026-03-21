@@ -22,9 +22,10 @@ const createUserSchema = z.object({
 const updateUserSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(2).max(255).optional(),
+  cpf: z.string().regex(/^\d{3}\.\d{3}\.\d{3}-\d{2}$/).nullable().optional(),
   email: z.string().email().optional(),
-  phone: z.string().max(20).optional(),
-  registrationCode: z.string().max(20).optional(),
+  phone: z.string().max(20).nullable().optional(),
+  registrationCode: z.string().max(20).nullable().optional(),
   isActive: z.boolean().optional(),
   password: z.string().min(6).optional(),
   role: z.enum(["COORDINATOR", "LEADER", "PRECEPTOR", "INTERN"]).optional(),
