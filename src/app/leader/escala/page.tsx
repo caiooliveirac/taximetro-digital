@@ -86,6 +86,10 @@ export default function LeaderEscala() {
   const [allocLoading, setAllocLoading] = useState(false);
   const [allocMsg, setAllocMsg] = useState("");
 
+  /* ── Remove assignment (cancel) ── */
+  const [removeTarget, setRemoveTarget] = useState<Assignment | null>(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
+
   /* ── Load data ── */
   const load = useCallback(async () => {
     try {
@@ -291,6 +295,29 @@ export default function LeaderEscala() {
     setAllocLoading(false);
   }
 
+  /* ── Remove assignment handler ── */
+  async function confirmRemoveAssignment() {
+    if (!removeTarget) return;
+    setRemoveLoading(true);
+    try {
+      const res = await fetch("/taximetro/api/assignments", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: removeTarget.id,
+          status: "CANCELLED",
+          notes: `Removido da escala pelo líder em ${new Date().toLocaleDateString("pt-BR")}`,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await load();
+      }
+    } catch { /* silently fail */ }
+    setRemoveTarget(null);
+    setRemoveLoading(false);
+  }
+
   /* ── Grid 3 filtered interns ── */
   const filteredInterns = useMemo(() => {
     return interns.filter((intern) => {
@@ -424,12 +451,21 @@ export default function LeaderEscala() {
                         return (
                           <div
                             key={a.id}
-                            className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1 ${ps.bg} ${ps.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
+                            className={`group rounded-md px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1 ${ps.bg} ${ps.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
                             title={`${a.internName} · ${ps.label} · ${a.status}${isCruBlocked ? " ⚠️ CONFLITO CRU ±12h" : ""}`}
                           >
                             {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
                             <span>{ps.emoji}</span>
                             <span className="truncate">{a.internName.split(" ").slice(0, 2).join(" ")}</span>
+                            {a.status === "SCHEDULED" && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setRemoveTarget(a); }}
+                                className="ml-auto hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
+                                title="Remover da escala"
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -557,10 +593,19 @@ export default function LeaderEscala() {
                       return (
                         <div
                           key={a.id}
-                          className="rounded-md bg-violet-50 text-violet-700 px-2 py-1 text-xs font-medium mb-1 flex items-center gap-1"
+                          className="group rounded-md bg-violet-50 text-violet-700 px-2 py-1 text-xs font-medium mb-1 flex items-center gap-1"
                         >
                           <span>{ps.emoji}</span>
                           <span className="truncate">{a.internName}</span>
+                          {a.status === "SCHEDULED" && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setRemoveTarget(a); }}
+                              className="ml-auto hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
+                              title="Remover da escala"
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -650,13 +695,22 @@ export default function LeaderEscala() {
                           return (
                             <div
                               key={a.id}
-                              className={`rounded-md px-1.5 py-1 text-[11px] font-medium mb-0.5 flex items-center justify-center gap-1 ${bs.pill} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
+                              className={`group rounded-md px-1.5 py-1 text-[11px] font-medium mb-0.5 flex items-center justify-center gap-1 ${bs.pill} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
                               title={`${a.baseCode} — ${a.baseName} · ${ps.label}${isCruBlocked ? " ⚠️ CONFLITO CRU ±12h" : ""}`}
                             >
                               {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
                               <span className={`inline-block h-1.5 w-1.5 rounded-full ${bs.dot}`} />
                               {a.baseCode}
                               <span className="text-[10px]">{ps.emoji}</span>
+                              {a.status === "SCHEDULED" && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setRemoveTarget(a); }}
+                                  className="hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
+                                  title="Remover da escala"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              )}
                             </div>
                           );
                         })}
@@ -799,11 +853,10 @@ export default function LeaderEscala() {
                   <button
                     key={n}
                     onClick={() => setMaxShifts(n)}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${
-                      maxShifts === n
+                    className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${maxShifts === n
                         ? "bg-emerald-600 text-white shadow-sm"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
+                      }`}
                   >
                     {n}
                   </button>
@@ -821,6 +874,50 @@ export default function LeaderEscala() {
           </div>
         </div>
       )}
+      {/* ═══════════ Remove Confirmation Modal ═══════════ */}
+      {removeTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-red-500 to-rose-600 px-6 py-4 text-white">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <X className="h-5 w-5" /> Remover da Escala
+              </h2>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm text-slate-700">
+                Tem certeza que deseja remover <strong>{removeTarget.internName}</strong> do plantão?
+              </p>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm">
+                <span className="font-medium">{removeTarget.baseCode}</span>
+                {" · "}
+                {new Date(removeTarget.date + "T12:00:00").toLocaleDateString("pt-BR")}
+                {" · "}
+                {removeTarget.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
+              </div>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                ⚠️ Atenção: o plantão será cancelado e o interno precisará compensar com outro plantão para manter a meta.
+              </div>
+            </div>
+            <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
+              <button
+                onClick={() => setRemoveTarget(null)}
+                disabled={removeLoading}
+                className="flex-1 rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmRemoveAssignment}
+                disabled={removeLoading}
+                className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-bold text-white hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {removeLoading ? "Removendo..." : "Confirmar Remoção"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══════════ Allocation Modal ═══════════ */}
       {allocSlot && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">

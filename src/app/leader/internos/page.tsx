@@ -268,15 +268,15 @@ export default function LeaderInternos() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${tab === t.key
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-900"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-900"
               }`}
           >
             {t.label}
             {t.count > 0 && (
               <span className={`ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs font-medium ${t.key === "pendentes" && t.count > 0
-                  ? "bg-amber-100 text-amber-700"
-                  : "bg-slate-200 text-slate-500"
+                ? "bg-amber-100 text-amber-700"
+                : "bg-slate-200 text-slate-500"
                 }`}>
                 {t.count}
               </span>
@@ -608,11 +608,10 @@ export default function LeaderInternos() {
                       <button
                         key={`${slot.date}|${slot.period}`}
                         onClick={() => { setAllocDate(slot.date); setAllocPeriod(slot.period); }}
-                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                          allocDate === slot.date && allocPeriod === slot.period
+                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${allocDate === slot.date && allocPeriod === slot.period
                             ? "border-blue-500 bg-blue-50 text-blue-700"
                             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
+                          }`}
                       >
                         {slot.dayLabel} {new Date(slot.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
                         <span className="ml-1">{slot.period === "DAY" ? "☀️" : "🌙"}</span>
