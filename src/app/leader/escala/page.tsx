@@ -8,34 +8,84 @@ import {
 import { useSession } from "next-auth/react";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { addDaysToDateStr, localDateStr, startOfWeekDateStr } from "@/lib/utils";
 
 /* ────────── Types ────────── */
 
-type Intern = { id: string; name: string };
 type InternRole = { id: string; name: string; userActive: boolean; roleActive: boolean };
 type Base = { id: string; code: string; name: string; type: string };
 type Assignment = {
   id: string; internId: string; internName: string;
   baseId: string; baseCode: string; baseName: string; baseType: string;
   date: string; period: string; status: string;
+  checkinGeoValid?: boolean | null;
 };
 type Slot = {
   ruleId: string; baseId: string; baseCode: string; baseName: string; baseType: string;
   dayOfWeek: string; period: string; capacity: number; filled: number; available: number;
   nextDate: string;
 };
+type CruFixed = {
+  id: string; intern_id: string; intern_name: string;
+  day_of_week: string; period: string; valid_until: string;
+};
 
-const DOW_IDX: Record<string, number> = { MON: 0, TUE: 1, WED: 2, THU: 3, FRI: 4, SAT: 5, SUN: 6 };
+const PERIODS = ["DAY", "NIGHT"] as const;
 const DAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+const DOW_KEYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const;
+const DOW_IDX: Record<(typeof DOW_KEYS)[number], number> = {
+  MON: 0,
+  TUE: 1,
+  WED: 2,
+  THU: 3,
+  FRI: 4,
+  SAT: 5,
+  SUN: 6,
+};
 const BASE_ORDER = ["SM01", "PM04", "PM40", "CN10", "PR03", "CC70", "BR60", "CB02", "IT30", "CZ50", "BR05", "PP20"];
 
-const STATUS_RING: Record<string, string> = {
-  CHECKED_IN: "ring-2 ring-emerald-400",
-  CHECKED_OUT: "ring-2 ring-blue-400",
-  CONFIRMED: "ring-2 ring-emerald-400",
-  ABSENT: "ring-2 ring-red-400",
-  SCHEDULED: "",
-};
+function compareBaseOrder(left: Base, right: Base) {
+  const typeRank = (type: string) => {
+    if (type === "USA") return 0;
+    if (type === "CENTRAL") return 1;
+    if (type === "CRL") return 2;
+    return 3;
+  };
+
+  const byType = typeRank(left.type) - typeRank(right.type);
+  if (byType !== 0) return byType;
+
+  if (left.type === "USA" && right.type === "USA") {
+    const leftIdx = BASE_ORDER.indexOf(left.code);
+    const rightIdx = BASE_ORDER.indexOf(right.code);
+    return (leftIdx === -1 ? 999 : leftIdx) - (rightIdx === -1 ? 999 : rightIdx);
+  }
+
+  return left.code.localeCompare(right.code);
+}
+
+function getDayLabel(dayOfWeek: string) {
+  return DAY_LABELS[DOW_IDX[dayOfWeek as keyof typeof DOW_IDX] ?? 0];
+}
+
+function getStatusRing(a: { status: string; checkinGeoValid?: boolean | null }): string {
+  if (a.status === "ABSENT") return "ring-2 ring-red-400";
+  if (a.status === "CHECKED_IN" || a.status === "CHECKED_OUT") {
+    return a.checkinGeoValid === false ? "ring-2 ring-sky-400" : "ring-2 ring-emerald-400";
+  }
+  if (a.status === "CONFIRMED") return "ring-2 ring-emerald-400";
+  return "";
+}
+
+function formatDateLabel(
+  dateStr: string,
+  options: Intl.DateTimeFormatOptions = { day: "2-digit", month: "2-digit" },
+) {
+  return new Date(`${dateStr}T12:00:00Z`).toLocaleDateString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    ...options,
+  });
+}
 
 /* ────────── Component ────────── */
 
@@ -43,8 +93,14 @@ export default function LeaderEscala() {
   const { data: session } = useSession();
   const { target: impersonateTarget } = useImpersonate();
   const effectiveFacultyId = impersonateTarget?.facultyId ?? session?.user?.facultyId;
+
+  async function fetchJsonNoStore(url: string) {
+    const response = await fetch(url, { cache: "no-store" });
+    return response.json();
+  }
+
   /* ── Data ── */
-  const [interns, setInterns] = useState<Intern[]>([]);
+  const [interns, setInterns] = useState<InternRole[]>([]);
   const [bases, setBases] = useState<Base[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -52,22 +108,15 @@ export default function LeaderEscala() {
 
   /* ── Week ── */
   const [weekStart, setWeekStart] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    return d.toISOString().slice(0, 10);
+    return startOfWeekDateStr(localDateStr());
   });
 
   const weekDates = useMemo(() =>
-    Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(weekStart + "T12:00:00");
-      d.setDate(d.getDate() + i);
-      return d.toISOString().slice(0, 10);
-    }),
+    Array.from({ length: 7 }, (_, i) => addDaysToDateStr(weekStart, i)),
     [weekStart],
   );
 
   /* ── Filters ── */
-  const [searchUSA, setSearchUSA] = useState("");
   const [searchIntern, setSearchIntern] = useState("");
   const [filterBase, setFilterBase] = useState("");
   const [filterPeriod, setFilterPeriod] = useState<"" | "DAY" | "NIGHT">("");
@@ -93,55 +142,64 @@ export default function LeaderEscala() {
   const [removeTarget, setRemoveTarget] = useState<Assignment | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
 
+  /* ── CRU fixed weekly ── */
+  const [cruFixed, setCruFixed] = useState<CruFixed[]>([]);
+  const [cruFixedAdd, setCruFixedAdd] = useState<{ dayOfWeek: string; period: "DAY" | "NIGHT" } | null>(null);
+  const [cruFixedInternId, setCruFixedInternId] = useState("");
+  const [cruFixedWeeks, setCruFixedWeeks] = useState(6);
+  const [cruFixedLoading, setCruFixedLoading] = useState(false);
+  const [cruFixedMsg, setCruFixedMsg] = useState("");
+  const [cruGenMsg, setCruGenMsg] = useState("");
+
+  /* ── Intern detail modal ── */
+  const [internDetail, setInternDetail] = useState<{ id: string; name: string } | null>(null);
+  const internWeekAssignments = useMemo(() => {
+    if (!internDetail) return [];
+    return assignments.filter(a => a.internId === internDetail.id && a.status !== "CANCELLED");
+  }, [internDetail, assignments]);
+
   /* ── Load data ── */
   const load = useCallback(async () => {
     try {
       const from = weekDates[0];
       const to = weekDates[6];
-      const [uRes, bRes, aRes, sRes] = await Promise.all([
-        fetch("/taximetro/api/admin/users"),
-        fetch("/taximetro/api/admin/bases"),
-        fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
-        fetch("/taximetro/api/slots/available"),
+
+      const [uRes, bRes, aRes, sRes, cfRes] = await Promise.all([
+        fetchJsonNoStore("/taximetro/api/leader/interns"),
+        fetchJsonNoStore("/taximetro/api/admin/bases"),
+        fetchJsonNoStore(`/taximetro/api/assignments?from=${from}&to=${to}`),
+        fetchJsonNoStore(`/taximetro/api/slots/available?weekStart=${weekStart}`),
+        fetchJsonNoStore("/taximetro/api/leader/cru-fixed"),
       ]);
-      const [uJson, bJson, aJson, sJson] = await Promise.all([uRes.json(), bRes.json(), aRes.json(), sRes.json()]);
-      if (uJson.success) setInterns(uJson.data.filter((u: { role: string }) => u.role === "INTERN"));
+      const [uJson, bJson, aJson, sJson, cfJson] = await Promise.all([uRes, bRes, aRes, sRes, cfRes]);
+      if (uJson.success) setInterns(uJson.data);
       if (bJson.success) setBases(bJson.data.filter((b: { isActive: boolean }) => b.isActive));
       if (aJson.success) setAssignments(aJson.data);
       if (sJson.success) setSlots(sJson.data);
+      if (cfJson.success) setCruFixed(cfJson.data);
     } catch {
       setLotteryMsg("❌ Erro ao carregar dados da escala.");
     }
     setLoading(false);
-  }, [weekDates]);
+  }, [weekDates, weekStart]);
 
   useEffect(() => { load(); }, [load]);
 
   /* ── Derived ── */
-  const usaBases = useMemo(() =>
-    [...bases.filter((b) => b.type === "USA")].sort((a, b) => {
-      const ai = BASE_ORDER.indexOf(a.code);
-      const bi = BASE_ORDER.indexOf(b.code);
-      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-    }),
-    [bases],
-  );
+  const sortedBases = useMemo(() => [...bases].sort(compareBaseOrder), [bases]);
   const cruBase = useMemo(() => bases.find((b) => b.type === "CENTRAL"), [bases]);
+  const crlBase = useMemo(() => bases.find((b) => b.type === "CRL"), [bases]);
 
   /* ── Vacancy matrix from slots ── */
   const vacancyByBaseDay = useMemo(() => {
-    const m = new Map<string, { DAY: { cap: number; fill: number }; NIGHT: { cap: number; fill: number } }>();
+    const m = new Map<string, { DAY: { cap: number }; NIGHT: { cap: number } }>();
     for (const s of slots) {
-      const dayIdx = DOW_IDX[s.dayOfWeek];
-      if (dayIdx === undefined) continue;
-      const dateStr = weekDates[dayIdx];
-      if (!dateStr) continue;
-      const key = `${s.baseId}|${dateStr}`;
-      if (!m.has(key)) m.set(key, { DAY: { cap: 0, fill: 0 }, NIGHT: { cap: 0, fill: 0 } });
+      if (!s.nextDate || !weekDates.includes(s.nextDate)) continue;
+      const key = `${s.baseId}|${s.nextDate}`;
+      if (!m.has(key)) m.set(key, { DAY: { cap: 0 }, NIGHT: { cap: 0 } });
       const entry = m.get(key)!;
       const p = s.period as "DAY" | "NIGHT";
       entry[p].cap += s.capacity;
-      entry[p].fill += Number(s.filled);
     }
     return m;
   }, [slots, weekDates]);
@@ -168,11 +226,59 @@ export default function LeaderEscala() {
     return m;
   }, [assignments]);
 
+  const activeInterns = useMemo(
+    () => interns.filter((intern) => intern.userActive && intern.roleActive),
+    [interns],
+  );
+
+  const visibleScheduleBases = useMemo(() => {
+    const baseIds = new Set<string>();
+    for (const slot of slots) baseIds.add(slot.baseId);
+    for (const assignment of assignments) {
+      if (assignment.status !== "CANCELLED") baseIds.add(assignment.baseId);
+    }
+
+    const internQuery = searchIntern.trim().toLowerCase();
+    const baseQuery = searchBase.trim().toLowerCase();
+    const periods = filterPeriod ? [filterPeriod] as const : PERIODS;
+
+    return bases
+      .filter((base) => baseIds.has(base.id))
+      .filter((base) => !filterBase || base.id === filterBase)
+      .filter((base) => !baseQuery || `${base.code} ${base.name}`.toLowerCase().includes(baseQuery))
+      .filter((base) => {
+        const hasVisibleContent = weekDates.some((date) => {
+          const slotState = vacancyByBaseDay.get(`${base.id}|${date}`);
+          const cellAssignments = (assignmentsByBaseDate.get(`${base.id}|${date}`) ?? []).filter(
+            (assignment) => assignment.status !== "CANCELLED",
+          );
+
+          return periods.some((period) => {
+            const periodAssignments = cellAssignments.filter((assignment) => assignment.period === period);
+            const cap = slotState?.[period].cap ?? 0;
+            return cap > 0 || periodAssignments.length > 0;
+          });
+        });
+
+        if (!hasVisibleContent) return false;
+        if (!internQuery) return true;
+
+        return weekDates.some((date) => {
+          const cellAssignments = assignmentsByBaseDate.get(`${base.id}|${date}`) ?? [];
+          return cellAssignments.some((assignment) => assignment.internName.toLowerCase().includes(internQuery));
+        });
+      })
+      .sort(compareBaseOrder);
+  }, [assignments, assignmentsByBaseDate, bases, filterBase, filterPeriod, searchBase, searchIntern, slots, vacancyByBaseDay, weekDates]);
+
+  const mainScheduleBases = useMemo(
+    () => visibleScheduleBases.filter((base) => base.type === "USA"),
+    [visibleScheduleBases],
+  );
+
   /* ── Week nav ── */
   function shiftWeek(dir: number) {
-    const d = new Date(weekStart + "T12:00:00");
-    d.setDate(d.getDate() + dir * 7);
-    setWeekStart(d.toISOString().slice(0, 10));
+    setWeekStart(addDaysToDateStr(weekStart, dir * 7));
   }
 
   /* ── Lottery handlers ── */
@@ -284,16 +390,22 @@ export default function LeaderEscala() {
           period: allocSlot.period,
         }),
       });
-      const json = await res.json();
+
+      const contentType = res.headers.get("content-type") ?? "";
+      const json = contentType.includes("application/json") ? await res.json() : null;
+
       if (json.success) {
-        setAllocMsg("✅ Alocado com sucesso!");
+        setAllocMsg(json.reusedCancelled ? "✅ Plantão cancelado reativado com sucesso!" : "✅ Alocado com sucesso!");
         await load();
         setTimeout(() => setAllocSlot(null), 800);
       } else {
-        setAllocMsg(`❌ ${json.error}`);
+        const fallback = res.ok
+          ? "Falha ao processar a alocação."
+          : `Falha ao processar a alocação (HTTP ${res.status}).`;
+        setAllocMsg(`❌ ${json?.error ?? fallback}`);
       }
-    } catch {
-      setAllocMsg("❌ Erro de conexão.");
+    } catch (error) {
+      setAllocMsg(`❌ ${error instanceof Error ? error.message : "Falha ao processar a alocação."}`);
     }
     setAllocLoading(false);
   }
@@ -309,7 +421,7 @@ export default function LeaderEscala() {
         body: JSON.stringify({
           id: removeTarget.id,
           status: "CANCELLED",
-          notes: `Removido da escala pelo líder em ${new Date().toLocaleDateString("pt-BR")}`,
+          notes: `Removido da escala pelo líder em ${formatDateLabel(localDateStr(), { day: "2-digit", month: "2-digit", year: "numeric" })}`,
         }),
       });
       const json = await res.json();
@@ -321,46 +433,98 @@ export default function LeaderEscala() {
     setRemoveLoading(false);
   }
 
-  /* ── Grid 3 filtered interns ── */
-  const filteredInterns = useMemo(() => {
-    return interns.filter((intern) => {
-      if (searchIntern && !intern.name.toLowerCase().includes(searchIntern.toLowerCase())) return false;
-      if (filterBase || filterPeriod || searchBase) {
-        const has = assignments.some((a) => {
-          if (a.internId !== intern.id || a.status === "CANCELLED") return false;
-          if (filterBase && a.baseId !== filterBase) return false;
-          if (filterPeriod && a.period !== filterPeriod) return false;
-          if (searchBase && !a.baseCode.toLowerCase().includes(searchBase.toLowerCase())) return false;
-          return true;
-        });
-        if (!has) return false;
+  /* ── CRU fixed handlers ── */
+  async function addCruFixed() {
+    if (!cruFixedAdd || !cruFixedInternId) return;
+    setCruFixedLoading(true);
+    setCruFixedMsg("");
+    try {
+      const res = await fetch("/taximetro/api/leader/cru-fixed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          internId: cruFixedInternId,
+          dayOfWeek: cruFixedAdd.dayOfWeek,
+          period: cruFixedAdd.period,
+          weeks: cruFixedWeeks,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCruFixedMsg("✅ Adicionado!");
+        await load();
+        setTimeout(() => { setCruFixedAdd(null); setCruFixedMsg(""); }, 600);
+      } else {
+        setCruFixedMsg(`❌ ${json.error}`);
       }
-      return true;
-    });
-  }, [interns, searchIntern, filterBase, filterPeriod, searchBase, assignments]);
+    } catch {
+      setCruFixedMsg("❌ Erro de conexão.");
+    }
+    setCruFixedLoading(false);
+  }
 
-  /* ── CRU ±12h conflict detection (client-side) ── */
+  async function removeCruFixed(id: string) {
+    try {
+      await fetch(`/taximetro/api/leader/cru-fixed?id=${id}`, { method: "DELETE" });
+      await load();
+    } catch { /* silent */ }
+  }
+
+  async function generateCruWeek() {
+    setCruGenMsg("");
+    try {
+      const res = await fetch("/taximetro/api/leader/cru-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekStart }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCruGenMsg(`✅ ${json.created} de ${json.total} alocações CRU criadas`);
+        await load();
+      } else {
+        setCruGenMsg(`❌ ${json.error}`);
+      }
+    } catch {
+      setCruGenMsg("❌ Erro de conexão.");
+    }
+  }
+
+  /* ── CRU/CRL ±12h conflict detection (client-side) ── */
   const cruConflicts = useMemo(() => {
-    // Map: "internId|date|period" → true if that slot is blocked by a CRU assignment
+    // Map: "internId|date|period" → true if that slot is blocked by a CRU/CRL assignment
     const blocked = new Set<string>();
     for (const a of assignments) {
-      if (a.status === "CANCELLED" || a.baseType !== "CENTRAL") continue;
+      if (a.status === "CANCELLED" || (a.baseType !== "CENTRAL" && a.baseType !== "CRL")) continue;
       // The CRU assignment itself is fine — mark adjacent slots as blocked
-      const d = new Date(a.date + "T12:00:00Z");
       if (a.period === "DAY") {
-        const prev = new Date(d); prev.setUTCDate(prev.getUTCDate() - 1);
-        blocked.add(`${a.internId}|${prev.toISOString().slice(0, 10)}|NIGHT`);
+        blocked.add(`${a.internId}|${addDaysToDateStr(a.date, -1)}|NIGHT`);
         blocked.add(`${a.internId}|${a.date}|NIGHT`);
       } else {
-        const next = new Date(d); next.setUTCDate(next.getUTCDate() + 1);
         blocked.add(`${a.internId}|${a.date}|DAY`);
-        blocked.add(`${a.internId}|${next.toISOString().slice(0, 10)}|DAY`);
+        blocked.add(`${a.internId}|${addDaysToDateStr(a.date, 1)}|DAY`);
       }
     }
     return blocked;
   }, [assignments]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const eligibleAllocInterns = useMemo(() => {
+    if (!allocSlot) return [] as Array<InternRole & { isCruBlocked: boolean }>;
+
+    return activeInterns
+      .filter((intern) => {
+        const key = `${intern.id}|${allocSlot.date}`;
+        const existing = assignmentsByInternDate.get(key) ?? [];
+        return !existing.some((assignment) => assignment.period === allocSlot.period);
+      })
+      .map((intern) => ({
+        ...intern,
+        isCruBlocked: cruConflicts.has(`${intern.id}|${allocSlot.date}|${allocSlot.period}`),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [activeInterns, allocSlot, assignmentsByInternDate, cruConflicts]);
+
+  const today = localDateStr();
   const selectedCount = [...lotterySelected].filter((id) => !lotteryExcluded.has(id)).length;
 
   if (loading) return <p className="p-8 text-slate-400">Carregando...</p>;
@@ -387,231 +551,291 @@ export default function LeaderEscala() {
           <ChevronLeft className="h-4 w-4" /> Anterior
         </button>
         <span className="text-sm font-semibold text-slate-700">
-          Semana de {new Date(weekStart + "T12:00:00").toLocaleDateString("pt-BR")}
+          Semana de {formatDateLabel(weekStart, { day: "2-digit", month: "2-digit", year: "numeric" })}
         </span>
         <button onClick={() => shiftWeek(1)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 flex items-center gap-1">
           Próxima <ChevronRight className="h-4 w-4" />
         </button>
       </div>
 
-      {/* ═══════════ Grid 1: USA Base × Dia ═══════════ */}
+      {/* ═══════════ Planilha Única da Semana ═══════════ */}
       <section className="space-y-3">
         <div className="flex items-center gap-3 flex-wrap">
-          <h2 className="text-lg font-semibold text-red-700 flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-red-500" />
-            USA — Base × Dia
+          <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+            <span className="inline-block h-3 w-3 rounded-full bg-accent-500" />
+            Planilha Única da Semana
           </h2>
+          <span className="text-xs text-slate-500">
+            Cada célula representa a vaga da sua faculdade nas bases USA. Quando há interno escalado, o nome aparece; quando sobra vaga, a célula fica como vaga disponível.
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <Filter className="h-4 w-4 text-slate-400" />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <input
               type="text"
               placeholder="Buscar interno..."
-              value={searchUSA}
-              onChange={(e) => setSearchUSA(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm w-52 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
+              value={searchIntern}
+              onChange={(e) => setSearchIntern(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm w-44 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
             />
           </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar base..."
+              value={searchBase}
+              onChange={(e) => setSearchBase(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm w-44 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+            />
+          </div>
+          <select
+            value={filterBase}
+            onChange={(e) => setFilterBase(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+          >
+            <option value="">Todas as bases</option>
+            {sortedBases.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
+          </select>
+          <select
+            value={filterPeriod}
+            onChange={(e) => setFilterPeriod(e.target.value as "" | "DAY" | "NIGHT")}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+          >
+            <option value="">Todos os turnos</option>
+            <option value="DAY">☀️ Diurno</option>
+            <option value="NIGHT">🌙 Noturno</option>
+          </select>
+          <span className="ml-auto text-xs text-slate-400">{mainScheduleBases.length} bases visíveis</span>
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div
-            className="min-w-[800px]"
-            style={{ display: "grid", gridTemplateColumns: "110px repeat(7, 1fr)" }}
-          >
-            {/* Header row */}
-            <div className="sticky left-0 z-10 bg-slate-50 border-b border-r border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500">
+          <div className="min-w-[1180px]" style={{ display: "grid", gridTemplateColumns: "150px repeat(7, minmax(146px, 1fr))" }}>
+            <div className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
               Base
             </div>
             {weekDates.map((d, i) => (
               <div
                 key={d}
-                className={`border-b border-slate-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? "bg-red-50/50 text-red-700" : "text-slate-500 bg-slate-50"}`}
+                className={`border-b border-slate-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? "bg-accent-50/50 text-accent-700" : "bg-slate-50 text-slate-500"}`}
               >
                 {DAY_LABELS[i]}<br /><span className="font-normal">{d.slice(5)}</span>
               </div>
             ))}
 
-            {/* Base rows */}
-            {usaBases.map((base) => (
-              <Fragment key={base.id}>
-                <div className="sticky left-0 z-10 bg-white border-b border-r border-slate-100 px-3 py-2 text-sm font-bold text-slate-900 flex items-center">
-                  {base.code}
-                </div>
-                {weekDates.map((d) => {
-                  const all = assignmentsByBaseDate.get(`${base.id}|${d}`) ?? [];
-                  const filtered = searchUSA
-                    ? all.filter((a) => a.internName.toLowerCase().includes(searchUSA.toLowerCase()))
-                    : all;
-                  return (
-                    <div
-                      key={`${base.id}|${d}`}
-                      className={`border-b border-slate-100 px-1 py-1 min-h-[44px] ${d === today ? "bg-red-50/20" : ""}`}
-                    >
-                      {filtered.map((a) => {
-                        const ps = getPeriodStyle(a.period);
-                        const ring = STATUS_RING[a.status] ?? "";
-                        const isCruBlocked = cruConflicts.has(`${a.internId}|${a.date}|${a.period}`);
-                        return (
-                          <div
-                            key={a.id}
-                            className={`group rounded-md px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1 ${ps.bg} ${ps.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
-                            title={`${a.internName} · ${ps.label} · ${a.status}${isCruBlocked ? " ⚠️ CONFLITO CRU ±12h" : ""}`}
-                          >
-                            {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
-                            <span>{ps.emoji}</span>
-                            <span className="truncate">{a.internName.split(" ").slice(0, 2).join(" ")}</span>
-                            {a.status === "SCHEDULED" && (
+            {mainScheduleBases.map((base) => {
+              const baseStyle = getBaseStyle(base.type);
+              return (
+                <Fragment key={`schedule-${base.id}`}>
+                  <div className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900">{base.code}</span>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${baseStyle.pill}`}>
+                        {baseStyle.label}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{base.name}</p>
+                  </div>
+
+                  {weekDates.map((d) => {
+                    const slotState = vacancyByBaseDay.get(`${base.id}|${d}`);
+                    const cellAssignments = (assignmentsByBaseDate.get(`${base.id}|${d}`) ?? []).filter((assignment) => assignment.status !== "CANCELLED");
+                    const periods = filterPeriod ? [filterPeriod] as const : PERIODS;
+                    const periodBlocks = periods.map((period) => {
+                      const periodAssignments = cellAssignments
+                        .filter((assignment) => assignment.period === period)
+                        .sort((left, right) => left.internName.localeCompare(right.internName));
+                      const capacity = slotState?.[period].cap ?? 0;
+                      const openCount = Math.max(capacity - periodAssignments.length, 0);
+
+                      if (capacity === 0 && periodAssignments.length === 0) return null;
+
+                      const periodStyle = getPeriodStyle(period);
+                      const containerStyle = capacity === 0
+                        ? "border-rose-200 bg-rose-50/60"
+                        : openCount > 0
+                          ? "border-amber-200 bg-amber-50/60"
+                          : "border-emerald-200 bg-emerald-50/50";
+
+                      return (
+                        <div key={`${base.id}|${d}|${period}`} className={`rounded-lg border p-1.5 ${containerStyle}`}>
+                          <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            <span className="flex items-center gap-1">{periodStyle.emoji} {periodStyle.label}</span>
+                            <span>{periodAssignments.length}/{capacity || periodAssignments.length}</span>
+                          </div>
+
+                          <div className="space-y-1">
+                            {periodAssignments.map((assignment) => {
+                              const ring = getStatusRing(assignment);
+                              const isCruBlocked = cruConflicts.has(`${assignment.internId}|${assignment.date}|${assignment.period}`);
+                              return (
+                                <div
+                                  key={assignment.id}
+                                  onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
+                                  className={`group rounded-md px-2 py-1 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition hover:opacity-80 ${periodStyle.bg} ${periodStyle.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
+                                  title={`${assignment.internName} · ${assignment.status}${capacity === 0 ? " · sem vaga configurada" : ""}${isCruBlocked ? " · conflito CRU ±12h" : ""}`}
+                                >
+                                  {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
+                                  <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
+                                  {assignment.status === "SCHEDULED" && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setRemoveTarget(assignment); }}
+                                      className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
+                                      title="Remover da escala"
+                                    >
+                                      <X className="h-2.5 w-2.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                            {Array.from({ length: openCount }, (_, vacancyIndex) => (
                               <button
-                                onClick={(e) => { e.stopPropagation(); setRemoveTarget(a); }}
-                                className="ml-auto hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
-                                title="Remover da escala"
+                                key={`${base.id}|${d}|${period}|vacancy-${vacancyIndex + 1}`}
+                                onClick={() => openAllocModal(base.id, base.code, d, period)}
+                                className="flex w-full items-center gap-2 rounded-md border border-dashed border-amber-300 bg-white/90 px-2 py-1 text-left text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100"
                               >
-                                <X className="h-2.5 w-2.5" />
+                                <Plus className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">Vago</span>
+                                {openCount > 1 && (
+                                  <span className="ml-auto shrink-0 text-[10px] text-amber-600">
+                                    {vacancyIndex + 1}/{openCount}
+                                  </span>
+                                )}
                               </button>
+                            ))}
+
+                            {capacity === 0 && periodAssignments.length > 0 && (
+                              <p className="rounded-md bg-white/70 px-2 py-1 text-[10px] font-medium text-rose-700">
+                                Plantão preservado sem regra ativa de vaga.
+                              </p>
                             )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </Fragment>
-            ))}
-          </div>
-        </div>
-      </section>
+                        </div>
+                      );
+                    }).filter(Boolean);
 
-      {/* ═══════════ Vagas — Resumo de ocupação ═══════════ */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-amber-700 flex items-center gap-2">
-          <span className="inline-block h-3 w-3 rounded-full bg-amber-500" />
-          Vagas — Ocupação por Base
-        </h2>
-        <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white shadow-sm">
-          <div className="min-w-[800px]" style={{ display: "grid", gridTemplateColumns: "110px repeat(7, 1fr)" }}>
-            <div className="sticky left-0 z-10 bg-amber-50/50 border-b border-r border-amber-200 px-3 py-2 text-xs font-semibold text-amber-700">Base</div>
-            {weekDates.map((d, i) => (
-              <div key={d} className={`border-b border-amber-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? "bg-amber-50/60 text-amber-800" : "text-slate-500 bg-amber-50/30"}`}>
-                {DAY_LABELS[i]}<br /><span className="font-normal">{d.slice(5)}</span>
-              </div>
-            ))}
-            {usaBases.map((base) => (
-              <Fragment key={`v-${base.id}`}>
-                <div className="sticky left-0 z-10 bg-white border-b border-r border-amber-100 px-3 py-1.5 text-sm font-bold text-slate-900">{base.code}</div>
-                {weekDates.map((d) => {
-                  const v = vacancyByBaseDay.get(`${base.id}|${d}`);
-                  if (!v) return <div key={`v-${base.id}|${d}`} className="border-b border-amber-50 px-1 py-1 min-h-[38px]" />;
-                  const dayOpen = v.DAY.cap - v.DAY.fill;
-                  const nightOpen = v.NIGHT.cap - v.NIGHT.fill;
-                  const total = dayOpen + nightOpen;
-                  return (
-                    <div key={`v-${base.id}|${d}`} className={`border-b border-amber-50 px-1 py-1 min-h-[38px] flex flex-col gap-0.5 justify-center ${d === today ? "bg-amber-50/20" : ""}`}>
-                      {v.DAY.cap > 0 && (
-                        <button
-                          onClick={() => dayOpen > 0 ? openAllocModal(base.id, base.code, d, "DAY") : undefined}
-                          disabled={dayOpen <= 0}
-                          className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 w-full transition ${dayOpen > 0 ? "bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer" : "bg-emerald-50 text-emerald-700 cursor-default"}`}
-                        >
-                          ☀️ {v.DAY.fill}/{v.DAY.cap}{dayOpen > 0 && <span className="text-amber-500 font-bold">({dayOpen})</span>}
-                          {dayOpen > 0 && <Plus className="h-3 w-3 ml-auto text-amber-500" />}
-                        </button>
-                      )}
-                      {v.NIGHT.cap > 0 && (
-                        <button
-                          onClick={() => nightOpen > 0 ? openAllocModal(base.id, base.code, d, "NIGHT") : undefined}
-                          disabled={nightOpen <= 0}
-                          className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 w-full transition ${nightOpen > 0 ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer" : "bg-emerald-50 text-emerald-700 cursor-default"}`}
-                        >
-                          🌙 {v.NIGHT.fill}/{v.NIGHT.cap}{nightOpen > 0 && <span className="text-indigo-500 font-bold">({nightOpen})</span>}
-                          {nightOpen > 0 && <Plus className="h-3 w-3 ml-auto text-indigo-500" />}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </Fragment>
-            ))}
-            {/* CRU row in vacancy section */}
-            {cruBase && (() => {
-              return (
-                <Fragment key={`v-${cruBase.id}`}>
-                  <div className="sticky left-0 z-10 bg-violet-50 border-b border-r border-amber-100 px-3 py-1.5 text-sm font-bold text-violet-700">CRU</div>
-                  {weekDates.map((d) => {
-                    const v = vacancyByBaseDay.get(`${cruBase.id}|${d}`);
-                    if (!v) return <div key={`v-cru|${d}`} className="border-b border-amber-50 px-1 py-1 min-h-[38px] bg-violet-50/20" />;
-                    const dayOpen = v.DAY.cap - v.DAY.fill;
                     return (
-                      <div key={`v-cru|${d}`} className={`border-b border-amber-50 px-1 py-1 min-h-[38px] flex flex-col gap-0.5 justify-center bg-violet-50/20 ${d === today ? "bg-violet-50/40" : ""}`}>
-                        {v.DAY.cap > 0 && (
-                          <button
-                            onClick={() => dayOpen > 0 ? openAllocModal(cruBase.id, "CRU", d, "DAY") : undefined}
-                            disabled={dayOpen <= 0}
-                            className={`rounded px-1 py-0.5 text-[10px] font-medium flex items-center gap-1 w-full transition ${dayOpen > 0 ? "bg-violet-50 text-violet-700 hover:bg-violet-100 cursor-pointer" : "bg-emerald-50 text-emerald-700 cursor-default"}`}
-                          >
-                            ☀️ {v.DAY.fill}/{v.DAY.cap}{dayOpen > 0 && <span className="text-violet-500 font-bold">({dayOpen})</span>}
-                            {dayOpen > 0 && <Plus className="h-3 w-3 ml-auto text-violet-500" />}
-                          </button>
-                        )}
+                      <div
+                        key={`${base.id}|${d}`}
+                        className={`border-b border-slate-100 px-2 py-2 min-h-[132px] ${d === today ? "bg-accent-50/20" : ""}`}
+                      >
+                        <div className="space-y-1.5">
+                          {periodBlocks.length > 0 ? periodBlocks : <span className="text-xs italic text-slate-300">—</span>}
+                        </div>
                       </div>
                     );
                   })}
                 </Fragment>
               );
-            })()}
+            })}
           </div>
         </div>
       </section>
 
-      {/* ═══════════ Grid 2: CRU — Central ═══════════ */}
-      {cruBase && (
+      {/* ═══════════ CRL — Regulação de Leitos ═══════════ */}
+      {crlBase && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-violet-700 flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-violet-500" />
-            CRU — Central de Regulação
-          </h2>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-lg font-semibold text-rose-700 flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-full bg-rose-500" />
+              CRL — Regulação de Leitos (SUREM)
+            </h2>
+            <span className="text-xs text-slate-500">
+              A CRL continua separada da planilha principal para não misturar a régua específica de regulação com as bases USA.
+            </span>
+          </div>
 
-          <div className="overflow-x-auto rounded-xl border border-violet-200 bg-white shadow-sm">
-            <div
-              className="min-w-[600px]"
-              style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}
-            >
+          <div className="overflow-x-auto rounded-xl border border-rose-200 bg-white shadow-sm">
+            <div className="min-w-[980px]" style={{ display: "grid", gridTemplateColumns: "140px repeat(7, minmax(118px, 1fr))" }}>
+              <div className="sticky left-0 z-10 border-b border-r border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                Base
+              </div>
               {weekDates.map((d, i) => (
                 <div
-                  key={d}
-                  className={`border-b border-violet-100 px-2 py-2 text-center text-xs font-semibold ${d === today ? "bg-violet-50/60 text-violet-700" : "text-slate-500 bg-violet-50/30"}`}
+                  key={`crl-head-${d}`}
+                  className={`border-b border-rose-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? "bg-rose-50/80 text-rose-700" : "bg-rose-50/40 text-slate-500"}`}
                 >
                   {DAY_LABELS[i]}<br /><span className="font-normal">{d.slice(5)}</span>
                 </div>
               ))}
+
+              <div className="sticky left-0 z-10 border-b border-r border-rose-100 bg-white px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-900">{crlBase.code}</span>
+                  <span className="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 ring-1 ring-rose-600/20">
+                    CRL
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-slate-500">{crlBase.name}</p>
+              </div>
+
               {weekDates.map((d) => {
-                const cell = assignmentsByBaseDate.get(`${cruBase.id}|${d}`) ?? [];
+                const slotState = vacancyByBaseDay.get(`${crlBase.id}|${d}`);
+                const cellAssignments = (assignmentsByBaseDate.get(`${crlBase.id}|${d}`) ?? [])
+                  .filter((assignment) => assignment.status !== "CANCELLED")
+                  .sort((left, right) => left.internName.localeCompare(right.internName));
+                const dayCapacity = slotState?.DAY.cap ?? 0;
+                const openCount = Math.max(dayCapacity - cellAssignments.filter((assignment) => assignment.period === "DAY").length, 0);
+
                 return (
                   <div
-                    key={d}
-                    className={`px-2 py-2 min-h-[56px] border-r last:border-r-0 border-violet-50 ${d === today ? "bg-violet-50/20" : ""}`}
+                    key={`crl-cell-${d}`}
+                    className={`border-b border-rose-50 px-2 py-2 min-h-[110px] ${d === today ? "bg-rose-50/20" : ""}`}
                   >
-                    {cell.length === 0 && <span className="text-xs text-slate-300 italic">—</span>}
-                    {cell.map((a) => {
-                      const ps = getPeriodStyle(a.period);
-                      return (
-                        <div
-                          key={a.id}
-                          className="group rounded-md bg-violet-50 text-violet-700 px-2 py-1 text-xs font-medium mb-1 flex items-center gap-1"
-                        >
-                          <span>{ps.emoji}</span>
-                          <span className="truncate">{a.internName}</span>
-                          {a.status === "SCHEDULED" && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setRemoveTarget(a); }}
-                              className="ml-auto hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
-                              title="Remover da escala"
-                            >
-                              <X className="h-2.5 w-2.5" />
-                            </button>
-                          )}
+                    <div className="space-y-1.5">
+                      {cellAssignments.length === 0 && dayCapacity === 0 && (
+                        <span className="text-xs italic text-slate-300">—</span>
+                      )}
+
+                      {(cellAssignments.length > 0 || dayCapacity > 0) && (
+                        <div className={`rounded-lg border p-1.5 ${openCount > 0 ? "border-amber-200 bg-amber-50/60" : "border-emerald-200 bg-emerald-50/50"}`}>
+                          <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            <span className="flex items-center gap-1">☀️ Diurno</span>
+                            <span>{cellAssignments.filter((assignment) => assignment.period === "DAY").length}/{dayCapacity || cellAssignments.length}</span>
+                          </div>
+
+                          <div className="space-y-1">
+                            {cellAssignments.map((assignment) => {
+                              const ring = getStatusRing(assignment);
+                              return (
+                                <div
+                                  key={assignment.id}
+                                  onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
+                                  className={`group flex cursor-pointer items-center gap-1 rounded-md bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700 transition hover:opacity-80 ${ring}`}
+                                  title={`${assignment.internName} · ${assignment.status}`}
+                                >
+                                  <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
+                                  {assignment.status === "SCHEDULED" && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setRemoveTarget(assignment); }}
+                                      className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
+                                      title="Remover da escala"
+                                    >
+                                      <X className="h-2.5 w-2.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                            {openCount > 0 && (!filterPeriod || filterPeriod === "DAY") && (
+                              <button
+                                onClick={() => openAllocModal(crlBase.id, crlBase.code, d, "DAY")}
+                                className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                                {openCount === 1 ? "Vaga disponível" : `${openCount} vagas disponíveis`}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      );
-                    })}
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -620,117 +844,112 @@ export default function LeaderEscala() {
         </section>
       )}
 
-      {/* ═══════════ Grid 3: Interno × Dia ═══════════ */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-900">👤 Interno × Dia</h2>
-
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <Filter className="h-4 w-4 text-slate-400" />
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="text" placeholder="Buscar interno..."
-              value={searchIntern} onChange={(e) => setSearchIntern(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm w-44 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-            />
+      {/* ═══════════ CRU Fixo Semanal ═══════════ */}
+      {cruBase && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-lg font-semibold text-violet-700 flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-full bg-violet-500" />
+              CRU — Fixos Semanais
+            </h2>
+            <button
+              onClick={generateCruWeek}
+              className="rounded-lg bg-violet-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-violet-700 transition shadow-sm"
+            >
+              Gerar assignments da CRU nesta semana
+            </button>
+            {cruGenMsg && <span className="text-sm">{cruGenMsg}</span>}
           </div>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="text" placeholder="Buscar base..."
-              value={searchBase} onChange={(e) => setSearchBase(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm w-36 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-            />
-          </div>
-          <select
-            value={filterBase} onChange={(e) => setFilterBase(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-          >
-            <option value="">Todas as bases</option>
-            {bases.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
-          </select>
-          <select
-            value={filterPeriod} onChange={(e) => setFilterPeriod(e.target.value as "" | "DAY" | "NIGHT")}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-          >
-            <option value="">Todos os turnos</option>
-            <option value="DAY">☀️ Diurno</option>
-            <option value="NIGHT">🌙 Noturno</option>
-          </select>
-          <span className="text-xs text-slate-400 ml-auto">{filteredInterns.length} internos</span>
-        </div>
+          <p className="text-xs text-slate-500">
+            Os fixos da CRU ficam cadastrados aqui, mas só viram assignments reais quando você clicar no botão acima. O número ao lado do nome mostra semanas restantes.
+          </p>
 
-        {/* Table */}
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm min-w-[800px]">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/50 text-left text-slate-500">
-                <th className="py-2.5 pl-4 pr-4 font-medium sticky left-0 bg-slate-50 z-10">Interno</th>
-                {weekDates.map((d, i) => (
-                  <th key={d} className={`py-2.5 px-2 text-center min-w-[110px] font-medium ${d === today ? "bg-accent-50/40" : ""}`}>
-                    {DAY_LABELS[i]}<br /><span className="text-xs font-normal">{d.slice(5)}</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredInterns.map((intern) => (
-                <tr key={intern.id} className="border-b border-slate-100 hover:bg-slate-50/30 transition-colors">
-                  <td className="py-2 pl-4 pr-4 font-medium whitespace-nowrap text-slate-900 sticky left-0 bg-white z-10">
-                    {intern.name}
-                  </td>
-                  {weekDates.map((d) => {
-                    let dayA = assignmentsByInternDate.get(`${intern.id}|${d}`) ?? [];
-                    dayA = dayA.filter((a) => {
-                      if (filterBase && a.baseId !== filterBase) return false;
-                      if (filterPeriod && a.period !== filterPeriod) return false;
-                      if (searchBase && !a.baseCode.toLowerCase().includes(searchBase.toLowerCase())) return false;
-                      return true;
-                    });
-                    return (
-                      <td key={d} className={`py-1.5 px-1.5 text-center ${d === today ? "bg-accent-50/40" : ""}`}>
-                        {dayA.map((a) => {
-                          const bs = getBaseStyle(a.baseType);
-                          const ps = getPeriodStyle(a.period);
-                          const ring = STATUS_RING[a.status] ?? "";
-                          const isCruBlocked = cruConflicts.has(`${intern.id}|${d}|${a.period}`);
-                          return (
-                            <div
-                              key={a.id}
-                              className={`group rounded-md px-1.5 py-1 text-[11px] font-medium mb-0.5 flex items-center justify-center gap-1 ${bs.pill} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
-                              title={`${a.baseCode} — ${a.baseName} · ${ps.label}${isCruBlocked ? " ⚠️ CONFLITO CRU ±12h" : ""}`}
-                            >
-                              {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
-                              <span className={`inline-block h-1.5 w-1.5 rounded-full ${bs.dot}`} />
-                              {a.baseCode}
-                              <span className="text-[10px]">{ps.emoji}</span>
-                              {a.status === "SCHEDULED" && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setRemoveTarget(a); }}
-                                  className="hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
-                                  title="Remover da escala"
-                                >
-                                  <X className="h-2.5 w-2.5" />
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </td>
-                    );
-                  })}
-                </tr>
+          <div className="overflow-x-auto rounded-xl border border-violet-200 bg-white shadow-sm">
+            <div
+              className="min-w-[700px]"
+              style={{ display: "grid", gridTemplateColumns: "70px repeat(7, 1fr)" }}
+            >
+              {/* Header */}
+              <div className="bg-violet-50 border-b border-r border-violet-200 px-2 py-2 text-xs font-semibold text-violet-600">
+                Turno
+              </div>
+              {DAY_LABELS.map((lbl, i) => (
+                <div key={lbl} className="bg-violet-50 border-b border-violet-200 px-2 py-2 text-center text-xs font-semibold text-violet-600">
+                  {lbl}
+                </div>
               ))}
-              {filteredInterns.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">Nenhum interno encontrado</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+
+              {/* DAY row */}
+              <div className="bg-white border-b border-r border-violet-100 px-2 py-2 text-xs font-bold text-amber-600 flex items-center">
+                ☀️ Dia
+              </div>
+              {(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const).map((dow) => {
+                const cell = cruFixed.filter((c) => c.day_of_week === dow && c.period === "DAY");
+                return (
+                  <div key={`day-${dow}`} className="border-b border-violet-50 px-1 py-1 min-h-[44px]">
+                    {cell.map((c) => {
+                      const weeksLeft = Math.max(0, Math.ceil((new Date(c.valid_until + "T12:00:00").getTime() - Date.now()) / (7 * 86400000)));
+                      return (
+                        <div key={c.id} className="group rounded-md bg-amber-50 text-amber-800 px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1">
+                          <span className="truncate">{c.intern_name.split(" ").slice(0, 2).join(" ")}</span>
+                          <span className="text-[9px] text-amber-500 shrink-0">{weeksLeft}s</span>
+                          <button
+                            onClick={() => removeCruFixed(c.id)}
+                            className="ml-auto hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
+                            title="Remover fixo"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <button
+                      onClick={() => { setCruFixedAdd({ dayOfWeek: dow, period: "DAY" }); setCruFixedInternId(""); setCruFixedWeeks(6); setCruFixedMsg(""); }}
+                      className="rounded px-1 py-0.5 text-[10px] text-violet-400 hover:bg-violet-50 hover:text-violet-600 transition w-full flex items-center justify-center gap-0.5"
+                    >
+                      <Plus className="h-3 w-3" /> Adicionar
+                    </button>
+                  </div>
+                );
+              })}
+
+              {/* NIGHT row */}
+              <div className="bg-white border-b border-r border-violet-100 px-2 py-2 text-xs font-bold text-indigo-600 flex items-center">
+                🌙 Noite
+              </div>
+              {(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const).map((dow) => {
+                const cell = cruFixed.filter((c) => c.day_of_week === dow && c.period === "NIGHT");
+                return (
+                  <div key={`night-${dow}`} className="border-b border-violet-50 px-1 py-1 min-h-[44px]">
+                    {cell.map((c) => {
+                      const weeksLeft = Math.max(0, Math.ceil((new Date(c.valid_until + "T12:00:00").getTime() - Date.now()) / (7 * 86400000)));
+                      return (
+                        <div key={c.id} className="group rounded-md bg-indigo-50 text-indigo-800 px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1">
+                          <span className="truncate">{c.intern_name.split(" ").slice(0, 2).join(" ")}</span>
+                          <span className="text-[9px] text-indigo-500 shrink-0">{weeksLeft}s</span>
+                          <button
+                            onClick={() => removeCruFixed(c.id)}
+                            className="ml-auto hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
+                            title="Remover fixo"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <button
+                      onClick={() => { setCruFixedAdd({ dayOfWeek: dow, period: "NIGHT" }); setCruFixedInternId(""); setCruFixedWeeks(6); setCruFixedMsg(""); }}
+                      className="rounded px-1 py-0.5 text-[10px] text-violet-400 hover:bg-violet-50 hover:text-violet-600 transition w-full flex items-center justify-center gap-0.5"
+                    >
+                      <Plus className="h-3 w-3" /> Adicionar
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ═══════════ Lottery Modal ═══════════ */}
       {showLottery && (
@@ -743,7 +962,7 @@ export default function LeaderEscala() {
                   <Dices className="h-5 w-5" /> Sortear Internos
                 </h2>
                 <p className="text-sm text-emerald-100">
-                  Semana de {new Date(weekStart + "T12:00:00").toLocaleDateString("pt-BR")}
+                  Semana de {formatDateLabel(weekStart, { day: "2-digit", month: "2-digit", year: "numeric" })}
                 </p>
               </div>
               <button onClick={() => setShowLottery(false)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
@@ -857,8 +1076,8 @@ export default function LeaderEscala() {
                     key={n}
                     onClick={() => setMaxShifts(n)}
                     className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${maxShifts === n
-                        ? "bg-emerald-600 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                       }`}
                   >
                     {n}
@@ -893,7 +1112,7 @@ export default function LeaderEscala() {
               <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm">
                 <span className="font-medium">{removeTarget.baseCode}</span>
                 {" · "}
-                {new Date(removeTarget.date + "T12:00:00").toLocaleDateString("pt-BR")}
+                {formatDateLabel(removeTarget.date, { day: "2-digit", month: "2-digit", year: "numeric" })}
                 {" · "}
                 {removeTarget.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
               </div>
@@ -931,7 +1150,7 @@ export default function LeaderEscala() {
                   <Plus className="h-5 w-5" /> Alocar Interno
                 </h2>
                 <p className="text-sm text-blue-100">
-                  {allocSlot.baseCode} · {new Date(allocSlot.date + "T12:00:00").toLocaleDateString("pt-BR")} · {allocSlot.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
+                  {allocSlot.baseCode} · {formatDateLabel(allocSlot.date, { day: "2-digit", month: "2-digit", year: "numeric" })} · {allocSlot.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
                 </p>
               </div>
               <button onClick={() => setAllocSlot(null)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
@@ -946,23 +1165,17 @@ export default function LeaderEscala() {
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
               >
                 <option value="">— Escolher —</option>
-                {interns
-                  .filter((intern) => {
-                    // Exclude interns already assigned to this date+period
-                    const key = `${intern.id}|${allocSlot.date}`;
-                    const existing = assignmentsByInternDate.get(key) ?? [];
-                    return !existing.some((a) => a.period === allocSlot.period);
-                  })
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((intern) => {
-                    const isCruBlocked = cruConflicts.has(`${intern.id}|${allocSlot.date}|${allocSlot.period}`);
-                    return (
-                      <option key={intern.id} value={intern.id}>
-                        {intern.name}{isCruBlocked ? " ⚠️ CRU ±12h" : ""}
-                      </option>
-                    );
-                  })}
+                {eligibleAllocInterns.map((intern) => (
+                  <option key={intern.id} value={intern.id}>
+                    {intern.name}{intern.isCruBlocked ? " ⚠️ CRU ±12h" : ""}
+                  </option>
+                ))}
               </select>
+              <p className="text-xs text-slate-500">
+                {eligibleAllocInterns.length === 0
+                  ? "Nenhum interno livre para este dia e turno."
+                  : `${eligibleAllocInterns.length} interno(s) elegível(is) para este plantão.`}
+              </p>
               {allocMsg && <p className="text-sm">{allocMsg}</p>}
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
@@ -979,6 +1192,134 @@ export default function LeaderEscala() {
               >
                 {allocLoading ? "Alocando..." : "Confirmar"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ CRU Fixed Add Modal ═══════════ */}
+      {cruFixedAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-violet-500 to-purple-600 px-6 py-4 text-white flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Plus className="h-5 w-5" /> CRU Fixo Semanal
+                </h2>
+                <p className="text-sm text-violet-100">
+                  {getDayLabel(cruFixedAdd.dayOfWeek)} · {cruFixedAdd.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
+                </p>
+              </div>
+              <button onClick={() => setCruFixedAdd(null)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <label className="block text-sm font-medium text-slate-700">Selecionar interno:</label>
+              <select
+                value={cruFixedInternId}
+                onChange={(e) => setCruFixedInternId(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+              >
+                <option value="">— Escolher —</option>
+                {activeInterns
+                  .filter((intern) => {
+                    // Exclude interns already fixed for this day+period
+                    return !cruFixed.some(
+                      (c) =>
+                        c.intern_id === intern.id &&
+                        c.day_of_week === cruFixedAdd.dayOfWeek &&
+                        c.period === cruFixedAdd.period,
+                    );
+                  })
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((intern) => (
+                    <option key={intern.id} value={intern.id}>
+                      {intern.name}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-slate-500">
+                O interno será fixo na CRU toda {getDayLabel(cruFixedAdd.dayOfWeek)} ({cruFixedAdd.period === "DAY" ? "Diurno" : "Noturno"}).
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Duração (semanas):</label>
+                <div className="flex items-center gap-1.5">
+                  {[1, 2, 3, 4, 6, 8, 12].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setCruFixedWeeks(n)}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${cruFixedWeeks === n
+                        ? "bg-violet-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {cruFixedMsg && <p className="text-sm">{cruFixedMsg}</p>}
+            </div>
+            <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
+              <button
+                onClick={() => setCruFixedAdd(null)}
+                className="flex-1 rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={addCruFixed}
+                disabled={cruFixedLoading || !cruFixedInternId}
+                className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-bold text-white hover:bg-violet-700 transition disabled:opacity-50"
+              >
+                {cruFixedLoading ? "Salvando..." : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ Intern Detail Modal ═══════════ */}
+      {internDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setInternDetail(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">👤 {internDetail.name}</h3>
+              <button onClick={() => setInternDetail(null)} className="rounded-full p-1 hover:bg-slate-100 transition"><X className="h-4 w-4 text-slate-400" /></button>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <div className="flex items-center gap-4 text-sm">
+                <span className="bg-amber-50 text-amber-700 px-2 py-1 rounded-lg font-medium">☀️ {internWeekAssignments.filter(a => a.period === "DAY").length} diurnos</span>
+                <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg font-medium">🌙 {internWeekAssignments.filter(a => a.period === "NIGHT").length} noturnos</span>
+                <span className="text-slate-500 ml-auto">{internWeekAssignments.length} total</span>
+              </div>
+              {internWeekAssignments.length > 0 ? (
+                <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
+                  {internWeekAssignments
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .map((a) => {
+                      const ps = getPeriodStyle(a.period);
+                      const bs = getBaseStyle(a.baseType as "USA" | "CENTRAL" | "CRL");
+                      return (
+                        <div key={a.id} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${ps.bg}`}>
+                          <span className="text-sm">{ps.emoji}</span>
+                          <span className={`text-xs font-bold ${ps.text}`}>{a.date.slice(5)}</span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${bs.pill}`}>{a.baseCode}</span>
+                          <span className={`ml-auto text-[10px] font-medium ${a.status === "CHECKED_IN" ? "text-emerald-600" : a.status === "ABSENT" ? "text-red-600" : "text-slate-400"}`}>{a.status}</span>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400 text-center py-4">Nenhum plantão nesta semana</p>
+              )}
+              <a
+                href={`/taximetro/leader/internos`}
+                className="block w-full text-center rounded-lg bg-slate-900 py-2.5 text-sm font-bold text-white hover:bg-slate-800 transition mt-2"
+              >
+                Ver perfil completo →
+              </a>
             </div>
           </div>
         </div>

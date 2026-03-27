@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { localDateStr } from "@/lib/utils";
 
 type UserRow = {
   id: string;
@@ -71,7 +72,6 @@ type AvailableSlot = {
   nextDate: string;
 };
 
-const DOW_IDX: Record<string, number> = { MON: 0, TUE: 1, WED: 2, THU: 3, FRI: 4, SAT: 5, SUN: 6 };
 const DAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
 export default function LeaderInternos() {
@@ -103,8 +103,8 @@ export default function LeaderInternos() {
 
   const loadData = useCallback(async () => {
     try {
-      const to = new Date().toISOString().slice(0, 10);
-      const from = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const to = localDateStr();
+      const from = localDateStr(new Date(Date.now() - 30 * 86400000));
 
       const [usersRes, pendingRes, linksRes, complianceRes, assignRes] = await Promise.all([
         fetch("/taximetro/api/admin/users").then((r) => r.json()),
@@ -220,18 +220,12 @@ export default function LeaderInternos() {
 
   /* ── Derive available dates from selected base ── */
   const allocDatesForBase = allocSlots
-    .filter((s) => s.baseId === allocBaseId)
+    .filter((s) => s.baseId === allocBaseId && Boolean(s.nextDate))
     .map((s) => {
-      // Get the next Monday
-      const now = new Date();
-      const mondayOffset = (now.getDay() + 6) % 7;
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - mondayOffset);
-      const dayIdx = DOW_IDX[s.dayOfWeek];
-      if (dayIdx === undefined) return null;
-      const d = new Date(monday);
-      d.setDate(d.getDate() + dayIdx);
-      return { date: d.toISOString().slice(0, 10), period: s.period as "DAY" | "NIGHT", dayLabel: DAY_LABELS[dayIdx] };
+      const date = s.nextDate;
+      const jsDay = new Date(`${date}T12:00:00Z`).getUTCDay();
+      const dayIdx = jsDay === 0 ? 6 : jsDay - 1;
+      return { date, period: s.period as "DAY" | "NIGHT", dayLabel: DAY_LABELS[dayIdx] };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
@@ -612,8 +606,8 @@ export default function LeaderInternos() {
                         key={`${slot.date}|${slot.period}`}
                         onClick={() => { setAllocDate(slot.date); setAllocPeriod(slot.period); }}
                         className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${allocDate === slot.date && allocPeriod === slot.period
-                            ? "border-blue-500 bg-blue-50 text-blue-700"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                           }`}
                       >
                         {slot.dayLabel} {new Date(slot.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}

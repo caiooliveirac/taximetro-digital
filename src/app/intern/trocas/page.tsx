@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { localDateStr } from "@/lib/utils";
 
 /* ═══════════ Types ═══════════ */
 
@@ -56,7 +57,7 @@ const STATUS_COLOR: Record<string, string> = {
 const DAY_LABEL: Record<string, string> = { MON: "Seg", TUE: "Ter", WED: "Qua", THU: "Qui", FRI: "Sex", SAT: "Sáb", SUN: "Dom" };
 
 function fmtDate(d: string) {
-  return new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  return new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 function PeriodIcon({ period }: { period: string }) {
   return period === "DAY"
@@ -93,8 +94,8 @@ export default function InternTrocas() {
 
   const load = useCallback(async () => {
     try {
-      const from = new Date().toISOString().slice(0, 10);
-      const to = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+      const from = localDateStr();
+      const to = localDateStr(new Date(Date.now() + 30 * 86400000));
       const [aRes, sRes, rRes, osRes] = await Promise.all([
         fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
         fetch("/taximetro/api/slots/available"),
