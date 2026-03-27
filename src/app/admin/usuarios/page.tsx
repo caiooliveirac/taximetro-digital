@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { Fragment, useEffect, useState, useRef } from "react";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { FileDown } from "lucide-react";
+import { FileDown, KeyRound, Mail, ChevronDown, ChevronUp } from "lucide-react";
 import { InviteButton } from "@/components/invite-button";
+import { formatBrazilTime } from "@/lib/utils";
 
 type User = {
   id: string;
@@ -19,6 +20,7 @@ type User = {
   facultyAbbr: string | null;
   baseId: string | null;
   baseCode: string | null;
+  alsoPreceptor?: boolean;
 };
 
 type Faculty = { id: string; abbreviation: string };
@@ -44,8 +46,16 @@ type HistoryRequest = {
   status: string;
   created_at: string;
   review_notes: string | null;
-  assignment_date: string;
-  base_code: string;
+  assignment_date: string | null;
+  base_code: string | null;
+  extra_base_code: string | null;
+  extra_date: string | null;
+  extra_period: string | null;
+};
+
+type DuplicateGroup = {
+  key: string;
+  users: User[];
 };
 
 const ROLES = ["COORDINATOR", "LEADER", "PRECEPTOR", "INTERN"] as const;
@@ -100,7 +110,30 @@ export default function AdminUsuarios() {
   const [showPending, setShowPending] = useState(false);
   const [history, setHistory] = useState<{ assignments: HistoryAssignment[]; requests: HistoryRequest[] } | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [accessRowUserId, setAccessRowUserId] = useState<string | null>(null);
+  const [accessEmail, setAccessEmail] = useState("");
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [accessMessage, setAccessMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [mergeSourceId, setMergeSourceId] = useState("");
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [mergeSaving, setMergeSaving] = useState(false);
+  const [mergeMessage, setMergeMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+
+  function applyRoleDefaults(nextRole: string) {
+    if (!editing) return;
+    if (nextRole === "INTERN" || nextRole === "LEADER") {
+      setEditing({ ...editing, role: nextRole, baseId: null, alsoPreceptor: nextRole === "LEADER" ? Boolean(editing.alsoPreceptor) : false });
+      return;
+    }
+
+    if (nextRole === "PRECEPTOR") {
+      setEditing({ ...editing, role: nextRole, facultyId: null, baseId: null, alsoPreceptor: false });
+      return;
+    }
+
+    setEditing({ ...editing, role: nextRole, facultyId: null, baseId: null, alsoPreceptor: Boolean(editing.alsoPreceptor) });
+  }
 
   async function load() {
     try {
@@ -132,10 +165,31 @@ export default function AdminUsuarios() {
     setHistoryLoading(false);
   }
 
-  function openEdit(user: User) {
-    setEditing({ ...user, password: undefined });
+  async function openEdit(user: User) {
+    setEditing({ ...user, password: undefined, selfie: null });
     setHistory(null);
+    try {
+      const res = await fetch(`/taximetro/api/admin/users?id=${user.id}&includeSelfie=1`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data) && json.data[0]) {
+        setEditing({ ...json.data[0], password: undefined });
+      }
+    } catch {
+      /* keep lightweight row data */
+    }
     if (user.role === "INTERN") loadHistory(user.id);
+  }
+
+  function toggleAccessRow(user: User) {
+    if (accessRowUserId === user.id) {
+      setAccessRowUserId(null);
+      setAccessEmail("");
+      setAccessMessage(null);
+      return;
+    }
+    setAccessRowUserId(user.id);
+    setAccessEmail(user.email ?? "");
+    setAccessMessage(null);
   }
 
   async function save() {
@@ -143,11 +197,15 @@ export default function AdminUsuarios() {
     if (!editing) return;
     try {
       const isNew = !editing.id;
-      const { selfie, selfieUploadedAt, facultyAbbr, baseCode, createdAt, ...payload } = editing as Record<string, unknown>;
+      const { selfie, selfieUploadedAt, facultyAbbr, baseCode, createdAt, password, ...payload } = editing as Record<string, unknown>;
+      const finalPayload = {
+        ...payload,
+        ...(typeof password === "string" && password.trim() ? { password: password.trim() } : {}),
+      };
       const res = await fetch("/taximetro/api/admin/users", {
         method: isNew ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(finalPayload),
       });
       const json = await res.json();
       if (!json.success) { setError(json.error); return; }
@@ -171,6 +229,67 @@ export default function AdminUsuarios() {
       load();
     } catch {
       alert("Erro de conexão.");
+    }
+  }
+
+  async function deactivateUser(user: User) {
+    const confirmed = window.confirm(`Desativar ${user.name}? O histórico será preservado, mas o login ficará bloqueado.`);
+    if (!confirmed) return;
+    try {
+      const res = await fetch("/taximetro/api/admin/users", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: user.id }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        alert(json.error);
+        return;
+      }
+      if (editing?.id === user.id) {
+        setEditing(null);
+        setHistory(null);
+      }
+      load();
+    } catch {
+      alert("Erro de conexão.");
+    }
+  }
+
+  async function quickResetAccess(user: User) {
+    const normalizedEmail = accessEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setAccessMessage({ type: "error", text: "Informe o email alternativo." });
+      return;
+    }
+
+    const confirmed = window.confirm(`Atualizar o login de ${user.name} para ${normalizedEmail} e redefinir a senha para 123456?`);
+    if (!confirmed) return;
+
+    setAccessSaving(true);
+    setAccessMessage(null);
+    try {
+      const res = await fetch("/taximetro/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: user.id,
+          email: normalizedEmail,
+          password: "123456",
+          isActive: true,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setAccessMessage({ type: "error", text: json.error || "Não foi possível redefinir o acesso." });
+        return;
+      }
+      setAccessMessage({ type: "success", text: `Login atualizado para ${normalizedEmail}. Senha temporária definida como 123456.` });
+      await load();
+    } catch {
+      setAccessMessage({ type: "error", text: "Erro de conexão ao redefinir acesso." });
+    } finally {
+      setAccessSaving(false);
     }
   }
 
@@ -200,12 +319,86 @@ export default function AdminUsuarios() {
 
   const pendingCount = users.filter((u) => !u.isActive).length;
 
+  const searchTerm = search.trim().toLowerCase();
   const filtered = users.filter((u) => {
     if (showPending && u.isActive) return false;
-    return u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.cpf.includes(search) ||
-      (u.role ?? "").toLowerCase().includes(search.toLowerCase());
+    if (!searchTerm) return true;
+
+    const haystack = [
+      u.name,
+      u.cpf ?? "",
+      u.email,
+      u.phone ?? "",
+      u.registrationCode ?? "",
+      u.role ?? "",
+      u.facultyAbbr ?? "",
+      u.baseCode ?? "",
+    ].map((value) => value.toLowerCase());
+
+    return haystack.some((value) => value.includes(searchTerm));
   });
+
+  const duplicateGroups = users.reduce<DuplicateGroup[]>((groups, user) => {
+    const key = user.name.trim().toLowerCase();
+    if (!key) return groups;
+
+    const existing = groups.find((group) => group.key === key);
+    if (existing) {
+      existing.users.push(user);
+      return groups;
+    }
+
+    groups.push({ key, users: [user] });
+    return groups;
+  }, []).filter((group) => group.users.length > 1)
+    .map((group) => ({
+      ...group,
+      users: [...group.users].sort((left, right) => {
+        if (left.isActive !== right.isActive) return left.isActive ? -1 : 1;
+        return left.name.localeCompare(right.name) || left.email.localeCompare(right.email);
+      }),
+    }));
+
+  async function mergeUsers() {
+    if (!mergeSourceId || !mergeTargetId || mergeSourceId === mergeTargetId) {
+      setMergeMessage({ type: "error", text: "Escolha um cadastro para remover e outro para manter." });
+      return;
+    }
+
+    const sourceUser = users.find((user) => user.id === mergeSourceId);
+    const targetUser = users.find((user) => user.id === mergeTargetId);
+    if (!sourceUser || !targetUser) {
+      setMergeMessage({ type: "error", text: "Cadastros selecionados não foram encontrados." });
+      return;
+    }
+
+    const confirmed = window.confirm(`Mesclar ${sourceUser.name} (${sourceUser.email}) em ${targetUser.name} (${targetUser.email})? O cadastro removido deixará de existir e os vínculos serão migrados.`);
+    if (!confirmed) return;
+
+    setMergeSaving(true);
+    setMergeMessage(null);
+    try {
+      const res = await fetch("/taximetro/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceUserId: mergeSourceId, targetUserId: mergeTargetId }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setMergeMessage({ type: "error", text: json.error || "Não foi possível mesclar os cadastros." });
+        return;
+      }
+
+      setMergeMessage({ type: "success", text: "Cadastros mesclados com sucesso." });
+      setMergeSourceId("");
+      setMergeTargetId("");
+      await load();
+    } catch {
+      setMergeMessage({ type: "error", text: "Erro de conexão ao mesclar os cadastros." });
+    } finally {
+      setMergeSaving(false);
+    }
+  }
 
   if (loading) return <p className="text-slate-400">Carregando...</p>;
 
@@ -227,11 +420,62 @@ export default function AdminUsuarios() {
             </button>
           )}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar..." className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" />
-          <button onClick={() => { setEditing({ name: "", cpf: "", email: "", phone: "", password: "", role: "INTERN", facultyId: "", registrationCode: "" }); setHistory(null); }} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 whitespace-nowrap">
+          <button onClick={() => { setEditing({ name: "", cpf: "", email: "", phone: "", password: "", role: "INTERN", facultyId: "", baseId: null, registrationCode: "", alsoPreceptor: false }); setHistory(null); }} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 whitespace-nowrap">
             + Novo
           </button>
         </div>
       </div>
+
+      {duplicateGroups.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-amber-900">Possíveis cadastros duplicados</h2>
+            <p className="text-xs text-amber-800">A lista abaixo agrupa nomes idênticos. Mesclar move plantões e vínculos para o cadastro que vai sobreviver, mas a operação bloqueia se houver conflito de plantão no mesmo dia e turno.</p>
+          </div>
+
+          <div className="space-y-3">
+            {duplicateGroups.map((group) => (
+              <div key={group.key} className="rounded-lg border border-amber-200 bg-white p-3 space-y-2">
+                <p className="text-sm font-medium text-slate-900">{group.users[0]?.name}</p>
+                <div className="space-y-2">
+                  {group.users.map((user) => (
+                    <label key={user.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                      <div>
+                        <p className="font-medium text-slate-900">{user.email}</p>
+                        <p className="text-xs text-slate-500">CPF: {user.cpf ?? "—"} · Papel: {ROLE_LABEL[user.role ?? ""] ?? user.role ?? "—"} · {user.isActive ? "Ativo" : "Pendente"}</p>
+                      </div>
+                      <div className="flex gap-2 text-xs">
+                        <button type="button" onClick={() => setMergeTargetId(user.id)} className={`rounded px-2 py-1 ${mergeTargetId === user.id ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-700"}`}>
+                          Manter
+                        </button>
+                        <button type="button" onClick={() => setMergeSourceId(user.id)} className={`rounded px-2 py-1 ${mergeSourceId === user.id ? "bg-red-600 text-white" : "bg-red-50 text-red-700"}`}>
+                          Remover
+                        </button>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">
+              <p>Cadastro a remover: {users.find((user) => user.id === mergeSourceId)?.email ?? "—"}</p>
+              <p>Cadastro a manter: {users.find((user) => user.id === mergeTargetId)?.email ?? "—"}</p>
+            </div>
+            <button onClick={mergeUsers} disabled={mergeSaving || !mergeSourceId || !mergeTargetId || mergeSourceId === mergeTargetId} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
+              {mergeSaving ? "Mesclando..." : "Mesclar cadastros"}
+            </button>
+          </div>
+
+          {mergeMessage && (
+            <div className={`rounded-lg px-3 py-2 text-sm ${mergeMessage.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+              {mergeMessage.text}
+            </div>
+          )}
+        </div>
+      )}
 
       {editing && (
         <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
@@ -254,13 +498,21 @@ export default function AdminUsuarios() {
             <Inp label="Email" value={editing.email as string ?? ""} onChange={(v) => setEditing({ ...editing, email: v })} />
             <Inp label="Telefone" value={editing.phone as string ?? ""} onChange={(v) => setEditing({ ...editing, phone: v })} />
             <Inp label="Cód. Cadastro" value={editing.registrationCode as string ?? ""} onChange={(v) => setEditing({ ...editing, registrationCode: v })} />
-            {!editing.id && <Inp label="Senha" value={editing.password as string ?? ""} onChange={(v) => setEditing({ ...editing, password: v })} />}
-            <Sel label="Papel" value={editing.role as string ?? "INTERN"} options={[...ROLES]} labels={ROLES.map((r) => ROLE_LABEL[r])} onChange={(v) => setEditing({ ...editing, role: v })} />
+            <Inp label={editing.id ? "Nova senha" : "Senha"} value={editing.password as string ?? ""} onChange={(v) => setEditing({ ...editing, password: v })} />
+            <Sel label="Papel" value={editing.role as string ?? "INTERN"} options={[...ROLES]} labels={ROLES.map((r) => ROLE_LABEL[r])} onChange={applyRoleDefaults} />
             {(editing.role === "INTERN" || editing.role === "LEADER") && (
               <Sel label="Faculdade" value={editing.facultyId as string ?? ""} options={["", ...faculties.map((f) => f.id)]} labels={["—", ...faculties.map((f) => f.abbreviation)]} onChange={(v) => setEditing({ ...editing, facultyId: v || null })} />
             )}
-            {editing.role === "PRECEPTOR" && (
-              <Sel label="Base" value={editing.baseId as string ?? ""} options={["", ...bases.map((b) => b.id)]} labels={["—", ...bases.map((b) => `${b.code} - ${b.name}`)]} onChange={(v) => setEditing({ ...editing, baseId: v || null })} />
+            {(editing.role === "LEADER" || editing.role === "COORDINATOR") && (
+              <label className="flex items-center gap-2 pt-5">
+                <input
+                  type="checkbox"
+                  checked={!!editing.alsoPreceptor}
+                  onChange={(e) => setEditing({ ...editing, alsoPreceptor: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-300 text-accent-600"
+                />
+                <span className="text-sm text-slate-700">Também atua como preceptor</span>
+              </label>
             )}
             {!!editing.id && (
               <label className="flex items-center gap-2 pt-5">
@@ -278,6 +530,9 @@ export default function AdminUsuarios() {
           <div className="flex gap-2">
             <button onClick={save} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">Salvar</button>
             <button onClick={() => { setEditing(null); setHistory(null); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">Cancelar</button>
+            {!!editing.id && !!editing.isActive && (
+              <button onClick={() => deactivateUser(editing as User)} className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700">Desativar</button>
+            )}
           </div>
         </div>
       )}
@@ -336,8 +591,8 @@ export default function AdminUsuarios() {
                               <td className="py-1.5 pr-3 text-xs font-medium">{a.base_code}</td>
                               <td className="py-1.5 pr-3 text-xs">{a.period === "DAY" ? "Diurno" : "Noturno"}</td>
                               <td className="py-1.5 pr-3"><span className="text-xs font-medium">{outcome.label}</span></td>
-                              <td className="py-1.5 pr-3 text-xs text-slate-500">{a.checkin_at ? new Date(a.checkin_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
-                              <td className="py-1.5 text-xs text-slate-500">{a.checkout_at ? new Date(a.checkout_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                              <td className="py-1.5 pr-3 text-xs text-slate-500">{a.checkin_at ? formatBrazilTime(a.checkin_at) : "—"}</td>
+                              <td className="py-1.5 text-xs text-slate-500">{a.checkout_at ? formatBrazilTime(a.checkout_at) : "—"}</td>
                             </tr>
                           );
                         })}
@@ -367,7 +622,11 @@ export default function AdminUsuarios() {
                           <tr key={r.id} className="border-b border-slate-50">
                             <td className="py-1.5 pr-3 text-xs">{new Date(r.created_at).toLocaleDateString("pt-BR")}</td>
                             <td className="py-1.5 pr-3 text-xs font-medium">{REQ_TYPE_LABEL[r.type] ?? r.type}</td>
-                            <td className="py-1.5 pr-3 text-xs">{r.base_code}</td>
+                            <td className="py-1.5 pr-3 text-xs">
+                              {r.type === "EXTRA_SHIFT"
+                                ? [r.extra_base_code, r.extra_date].filter(Boolean).join(" · ") || "—"
+                                : r.base_code ?? "—"}
+                            </td>
                             <td className="py-1.5 pr-3">
                               <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-medium ${REQ_STATUS_COLOR[r.status] ?? ""}`}>
                                 {REQ_STATUS_LABEL[r.status] ?? r.status}
@@ -410,50 +669,103 @@ export default function AdminUsuarios() {
           </thead>
           <tbody>
             {filtered.map((u) => (
-              <tr key={u.id} className={`border-b border-slate-100 ${!u.isActive ? "bg-amber-50/50" : ""}`}>
-                <td className="py-2 pr-2">
-                  {u.selfie ? (
-                    <img src={u.selfie} alt="" className="h-8 w-8 rounded-full object-cover" />
-                  ) : (
+              <Fragment key={u.id}>
+                <tr key={u.id} className={`border-b border-slate-100 ${!u.isActive ? "bg-amber-50/50" : ""}`}>
+                  <td className="py-2 pr-2">
                     <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-xs font-medium">
                       {u.name.charAt(0)}
                     </div>
-                  )}
-                </td>
-                <td className="py-2 pr-4">{u.name}</td>
-                <td className="py-2 pr-4 font-mono text-xs">{u.cpf}</td>
-                <td className="py-2 pr-4">
-                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${u.role === "COORDINATOR" ? "bg-purple-50 text-purple-700" :
-                    u.role === "LEADER" ? "bg-emerald-50 text-emerald-700" :
-                      u.role === "PRECEPTOR" ? "bg-amber-50 text-amber-700" :
-                        "bg-blue-50 text-blue-700"
-                    }`}>{ROLE_LABEL[u.role ?? ""] ?? u.role ?? "—"}</span>
-                </td>
-                <td className="py-2 pr-4">
-                  {u.facultyAbbr ? (() => {
-                    const fst = getFacultyStyle(u.facultyAbbr);
-                    return (
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
-                        {u.facultyAbbr}
-                      </span>
-                    );
-                  })() : "—"}
-                </td>
-                <td className="py-2 pr-4">
-                  {u.isActive ? (
-                    <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700">Ativo</span>
-                  ) : (
-                    <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700">Pendente</span>
-                  )}
-                </td>
-                <td className="py-2 flex gap-2">
-                  {!u.isActive && (
-                    <button onClick={() => approve(u.id)} className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">Aprovar</button>
-                  )}
-                  <button onClick={() => openEdit(u)} className="text-accent-600 hover:text-accent-500">Editar</button>
-                </td>
-              </tr>
+                  </td>
+                  <td className="py-2 pr-4">{u.name}</td>
+                  <td className="py-2 pr-4 font-mono text-xs">{u.cpf}</td>
+                  <td className="py-2 pr-4">
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${u.role === "COORDINATOR" ? "bg-purple-50 text-purple-700" :
+                        u.role === "LEADER" ? "bg-emerald-50 text-emerald-700" :
+                          u.role === "PRECEPTOR" ? "bg-amber-50 text-amber-700" :
+                            "bg-blue-50 text-blue-700"
+                        }`}>{ROLE_LABEL[u.role ?? ""] ?? u.role ?? "—"}</span>
+                      {u.alsoPreceptor && <span className="rounded px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700">Também preceptor</span>}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-4">
+                    {u.facultyAbbr ? (() => {
+                      const fst = getFacultyStyle(u.facultyAbbr);
+                      return (
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
+                          {u.facultyAbbr}
+                        </span>
+                      );
+                    })() : "—"}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {u.isActive ? (
+                      <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700">Ativo</span>
+                    ) : (
+                      <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700">Pendente</span>
+                    )}
+                  </td>
+                  <td className="py-2 flex gap-2 flex-wrap">
+                    {!u.isActive && (
+                      <button onClick={() => approve(u.id)} className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">Aprovar</button>
+                    )}
+                    <button onClick={() => toggleAccessRow(u)} className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-600">
+                      <KeyRound className="h-3.5 w-3.5" />
+                      Acesso
+                      {accessRowUserId === u.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
+                    <button onClick={() => openEdit(u)} className="text-accent-600 hover:text-accent-500">Editar</button>
+                    {u.isActive && <button onClick={() => deactivateUser(u)} className="text-red-600 hover:text-red-500">Desativar</button>}
+                  </td>
+                </tr>
+                {accessRowUserId === u.id && (
+                  <tr className="border-b border-slate-100 bg-sky-50/50">
+                    <td colSpan={7} className="px-4 py-4">
+                      <div className="rounded-xl border border-sky-200 bg-white p-4 shadow-sm space-y-3">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">Acesso rápido</p>
+                            <p className="text-xs text-slate-500">Troca o email de login e redefine a senha temporária sem abrir o editor grande.</p>
+                          </div>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 border border-sky-200">
+                            Senha temporária: 123456
+                          </span>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                          <label className="block">
+                            <span className="text-xs text-slate-500">Novo email de login</span>
+                            <div className="mt-1 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                              <Mail className="h-4 w-4 text-slate-400" />
+                              <input
+                                value={accessEmail}
+                                onChange={(e) => setAccessEmail(e.target.value)}
+                                placeholder="email alternativo informado pelo interno"
+                                className="w-full bg-transparent text-sm text-slate-900 outline-none"
+                              />
+                            </div>
+                          </label>
+
+                          <button
+                            onClick={() => quickResetAccess(u)}
+                            disabled={accessSaving}
+                            className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {accessSaving ? "Aplicando..." : "Trocar login e resetar senha"}
+                          </button>
+                        </div>
+
+                        {accessMessage && (
+                          <div className={`rounded-lg px-3 py-2 text-sm ${accessMessage.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                            {accessMessage.text}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>

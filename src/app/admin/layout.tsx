@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   CheckCircle,
   Calendar,
+  ArrowRightLeft,
   Building2,
   GraduationCap,
   Users,
@@ -17,7 +18,8 @@ import {
 const NAV: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/presencas", label: "Presenças", icon: CheckCircle },
-  { href: "/admin/escalas", label: "Escalas", icon: Calendar },
+  { href: "/admin/escalas", label: "Grade", icon: Calendar },
+  { href: "/admin/remanejamento", label: "Remanejamento", icon: ArrowRightLeft },
   { href: "/admin/ver-interno", label: "Ver Interno", icon: Eye },
   { href: "/admin/relatorios", label: "Relatórios", icon: BarChart3 },
   { href: "/admin/bases", label: "Bases", icon: Building2 },
@@ -34,9 +36,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         nav={NAV}
         role="Coordenação"
         navGroups={[
-          { label: "Operação", items: NAV.slice(0, 5) },
-          { label: "Estrutura", items: NAV.slice(5, 8) },
-          { label: "Governança", items: NAV.slice(8) },
+          { label: "Operação", items: NAV.slice(0, 6) },
+          { label: "Estrutura", items: NAV.slice(6, 9) },
+          { label: "Governança", items: NAV.slice(9) },
         ]}
       />
       <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">{children}</main>

@@ -49,7 +49,7 @@ export function ImpersonateSelector({ role, open, onClose }: Props) {
         setSearch("");
         setSelectedFaculty(null);
         setLoading(true);
-        fetch("/taximetro/api/admin/users", {
+        fetch(`/taximetro/api/admin/users?impersonateRole=${role}`, {
             headers: { "x-no-impersonate": "1" },
         })
             .then((r) => r.json())
@@ -59,10 +59,7 @@ export function ImpersonateSelector({ role, open, onClose }: Props) {
             .finally(() => setLoading(false));
     }, [open]);
 
-    const roleUsers = useMemo(
-        () => allUsers.filter((u) => u.role === role && u.isActive),
-        [allUsers, role],
-    );
+    const roleUsers = useMemo(() => allUsers.filter((u) => u.isActive), [allUsers]);
 
     const faculties = useMemo(() => {
         const map = new Map<string, { id: string; abbr: string; count: number }>();
