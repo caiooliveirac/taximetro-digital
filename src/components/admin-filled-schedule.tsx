@@ -112,6 +112,44 @@ function formatPeriod(period: "DAY" | "NIGHT") {
     return period === "DAY" ? "Diurno" : "Noturno";
 }
 
+function formatAssignmentCardName(name: string) {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length <= 2) return parts.join(" ");
+    return `${parts[0]} ${parts[1]}`;
+}
+
+function formatAssignmentCardStatus(status: string) {
+    switch (status) {
+        case "CHECKED_IN":
+            return "Check-in";
+        case "CHECKED_OUT":
+            return "Checkout";
+        case "CONFIRMED":
+            return "Confirmado";
+        case "SCHEDULED":
+            return "Escalado";
+        case "ABSENT":
+            return "Ausente";
+        default:
+            return status;
+    }
+}
+
+function getAssignmentCardStatusClass(status: string) {
+    switch (status) {
+        case "CHECKED_IN":
+            return "bg-sky-100 text-sky-700";
+        case "CHECKED_OUT":
+            return "bg-emerald-100 text-emerald-700";
+        case "CONFIRMED":
+            return "bg-emerald-100 text-emerald-700";
+        case "ABSENT":
+            return "bg-red-100 text-red-700";
+        default:
+            return "bg-slate-100 text-slate-600";
+    }
+}
+
 export function AdminFilledSchedule() {
     const [bases, setBases] = useState<Base[]>([]);
     const [rules, setRules] = useState<Rule[]>([]);
@@ -448,11 +486,15 @@ export function AdminFilledSchedule() {
                                                                                         key={assignment.id}
                                                                                         type="button"
                                                                                         onClick={() => setSelectedAssignmentId(assignment.id)}
-                                                                                        className={`group flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11px] font-medium transition hover:opacity-80 ${getPeriodStyle(period).bg} ${getPeriodStyle(period).text} ${getStatusRing(assignment)}`}
+                                                                                        className={`group flex w-full flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left transition hover:opacity-80 ${getPeriodStyle(period).bg} ${getPeriodStyle(period).text} ${getStatusRing(assignment)}`}
                                                                                         title={`${assignment.intern_name} · ${assignment.status}`}
                                                                                     >
-                                                                                        <span className="truncate">{assignment.intern_name.split(" ").slice(0, 2).join(" ")}</span>
-                                                                                        <span className="ml-auto text-[10px] text-slate-500">{assignment.status}</span>
+                                                                                        <span className="block w-full overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold leading-tight text-slate-900">
+                                                                                            {formatAssignmentCardName(assignment.intern_name)}
+                                                                                        </span>
+                                                                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${getAssignmentCardStatusClass(assignment.status)}`}>
+                                                                                            {formatAssignmentCardStatus(assignment.status)}
+                                                                                        </span>
                                                                                     </button>
                                                                                 ))}
 
