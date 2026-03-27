@@ -1,11 +1,22 @@
 import { db } from "@/db";
-import { slotRules, assignments, bases, faculties } from "@/db/schema";
+import { slotRules, assignments, bases, faculties, requests } from "@/db/schema";
 import { eq, and, sql, ne, gte, lte, inArray } from "drizzle-orm";
+import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 
-export async function getAvailableSlots(facultyId?: string) {
-  const today = new Date().toISOString().slice(0, 10);
+export async function getAvailableSlots(facultyId?: string, weekStart?: string) {
+  const rangeStart = weekStart ?? localDateStr();
+  const rangeEnd = addDaysToDateStr(rangeStart, 6);
+  const isoDow = sql<number>`CASE ${slotRules.dayOfWeek}
+    WHEN 'MON' THEN 1
+    WHEN 'TUE' THEN 2
+    WHEN 'WED' THEN 3
+    WHEN 'THU' THEN 4
+    WHEN 'FRI' THEN 5
+    WHEN 'SAT' THEN 6
+    WHEN 'SUN' THEN 7
+  END`;
 
-  // Find next occurrence of each day-of-week from today, then count assignments for that specific date
+  // Find the occurrence of each day-of-week inside the requested week
   const query = db
     .select({
       ruleId: slotRules.id,
@@ -20,14 +31,11 @@ export async function getAvailableSlots(facultyId?: string) {
       capacity: slotRules.capacity,
       nextDate: sql<string>`(
         SELECT d::date::text FROM generate_series(
-          ${today}::date,
-          ${today}::date + INTERVAL '6 days',
+          ${rangeStart}::date,
+          ${rangeEnd}::date,
           '1 day'
         ) d
-        WHERE TRIM(TO_CHAR(d, 'DY')) = CASE ${slotRules.dayOfWeek}
-          WHEN 'MON' THEN 'Mon' WHEN 'TUE' THEN 'Tue' WHEN 'WED' THEN 'Wed'
-          WHEN 'THU' THEN 'Thu' WHEN 'FRI' THEN 'Fri' WHEN 'SAT' THEN 'Sat'
-          WHEN 'SUN' THEN 'Sun' END
+        WHERE EXTRACT(ISODOW FROM d) = ${isoDow}
         LIMIT 1
       )`.as("next_date"),
       filled: sql<number>`COALESCE(
@@ -38,14 +46,11 @@ export async function getAvailableSlots(facultyId?: string) {
            AND a.status NOT IN ('CANCELLED', 'ABSENT')
            AND a.date = (
              SELECT d::date FROM generate_series(
-               ${today}::date,
-               ${today}::date + INTERVAL '6 days',
+               ${rangeStart}::date,
+               ${rangeEnd}::date,
                '1 day'
              ) d
-             WHERE TRIM(TO_CHAR(d, 'DY')) = CASE ${slotRules.dayOfWeek}
-               WHEN 'MON' THEN 'Mon' WHEN 'TUE' THEN 'Tue' WHEN 'WED' THEN 'Wed'
-               WHEN 'THU' THEN 'Thu' WHEN 'FRI' THEN 'Fri' WHEN 'SAT' THEN 'Sat'
-               WHEN 'SUN' THEN 'Sun' END
+             WHERE EXTRACT(ISODOW FROM d) = ${isoDow}
              LIMIT 1
            )),
         0
@@ -62,10 +67,107 @@ export async function getAvailableSlots(facultyId?: string) {
 
   const rows = await query.where(condition);
 
-  return rows.map((r) => ({
-    ...r,
-    available: r.capacity - Number(r.filled),
-  }));
+  const deduped = new Map<string, {
+    ruleId: string;
+    baseId: string;
+    baseCode: string;
+    baseName: string;
+    baseType: string;
+    dayOfWeek: string;
+    period: string;
+    facultyId: string;
+    facultyAbbr: string;
+    capacity: number;
+    nextDate: string;
+    filled: number;
+  }>();
+
+  for (const row of rows) {
+    if (!row.nextDate) continue;
+
+    const key = `${row.baseId}|${row.nextDate}|${row.period}|${row.facultyId}`;
+    const current = deduped.get(key);
+    if (current) {
+      current.capacity += row.capacity;
+      current.filled += Number(row.filled);
+      continue;
+    }
+    deduped.set(key, {
+      ...row,
+      filled: Number(row.filled),
+    });
+  }
+
+  return Array.from(deduped.values())
+    .map((r) => ({
+      ...r,
+      available: r.capacity - Number(r.filled),
+    }))
+    .sort((left, right) => {
+      const byDate = left.nextDate.localeCompare(right.nextDate);
+      if (byDate !== 0) return byDate;
+
+      if (left.period !== right.period) {
+        return left.period === "DAY" ? -1 : 1;
+      }
+
+      return left.baseCode.localeCompare(right.baseCode);
+    });
+}
+
+export async function getRequestableSlots(facultyId: string, internId: string) {
+  const slots = (await getAvailableSlots(facultyId)).filter((slot) => slot.available > 0 && Boolean(slot.nextDate));
+  if (slots.length === 0) return [];
+
+  const slotDates = [...new Set(slots.map((slot) => slot.nextDate))].sort();
+  const firstDate = slotDates[0];
+  const lastDate = slotDates[slotDates.length - 1];
+
+  const activeAssignments = await db
+    .select({
+      date: assignments.date,
+      period: assignments.period,
+    })
+    .from(assignments)
+    .where(and(
+      eq(assignments.internId, internId),
+      gte(assignments.date, firstDate),
+      lte(assignments.date, lastDate),
+      ne(assignments.status, "CANCELLED"),
+    ));
+
+  const blockedByAssignment = new Set(activeAssignments.map((assignment) => `${assignment.date}|${assignment.period}`));
+
+  const pendingExtraRequests = await db
+    .select({
+      date: requests.extraDate,
+      period: requests.extraPeriod,
+    })
+    .from(requests)
+    .where(and(
+      eq(requests.requesterId, internId),
+      eq(requests.type, "EXTRA_SHIFT"),
+      inArray(requests.status, ["PENDING", "ESCALATED"]),
+      gte(requests.extraDate, firstDate),
+      lte(requests.extraDate, lastDate),
+    ));
+
+  const blockedByPendingExtra = new Set(
+    pendingExtraRequests
+      .filter((request) => request.date && request.period)
+      .map((request) => `${request.date}|${request.period}`),
+  );
+
+  const cruBlocked = await getCruBlockedSlots([internId], firstDate, lastDate);
+  const blockedByCru = cruBlocked.get(internId) ?? new Set<string>();
+
+  return slots.filter((slot) => {
+    const key = `${slot.nextDate}|${slot.period}`;
+    if (blockedByAssignment.has(key)) return false;
+    if (blockedByPendingExtra.has(key)) return false;
+    if (blockedByCru.has(key)) return false;
+    return true;
+  });
 }
 
 export async function checkSlotAvailability(
@@ -123,21 +225,15 @@ function getDayOfWeek(dateStr: string): "MON" | "TUE" | "WED" | "THU" | "FRI" | 
  * CRU NIGHT on date X → blocks: (X DAY) and (X+1 DAY)
  */
 function getAdjacentBlockedSlots(date: string, period: "DAY" | "NIGHT"): string[] {
-  const d = new Date(date + "T12:00:00Z");
   if (period === "DAY") {
-    const prevDay = new Date(d);
-    prevDay.setUTCDate(prevDay.getUTCDate() - 1);
     return [
-      `${prevDay.toISOString().slice(0, 10)}|NIGHT`,
+      `${addDaysToDateStr(date, -1)}|NIGHT`,
       `${date}|NIGHT`,
     ];
   }
-  // NIGHT
-  const nextDay = new Date(d);
-  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
   return [
     `${date}|DAY`,
-    `${nextDay.toISOString().slice(0, 10)}|DAY`,
+    `${addDaysToDateStr(date, 1)}|DAY`,
   ];
 }
 
@@ -153,11 +249,8 @@ export async function getCruBlockedSlots(
   const blocked = new Map<string, Set<string>>();
   if (internIds.length === 0) return blocked;
 
-  // Expand range by 1 day on each side to catch edge effects
-  const from = new Date(dateFrom + "T12:00:00Z");
-  from.setUTCDate(from.getUTCDate() - 1);
-  const to = new Date(dateTo + "T12:00:00Z");
-  to.setUTCDate(to.getUTCDate() + 1);
+  const from = addDaysToDateStr(dateFrom, -1);
+  const to = addDaysToDateStr(dateTo, 1);
 
   const cruAssignments = await db
     .select({
@@ -169,10 +262,10 @@ export async function getCruBlockedSlots(
     .innerJoin(bases, eq(bases.id, assignments.baseId))
     .where(
       and(
-        eq(bases.type, "CENTRAL"),
+        inArray(bases.type, ["CENTRAL", "CRL"]),
         inArray(assignments.internId, internIds),
-        gte(assignments.date, from.toISOString().slice(0, 10)),
-        lte(assignments.date, to.toISOString().slice(0, 10)),
+        gte(assignments.date, from),
+        lte(assignments.date, to),
         ne(assignments.status, "CANCELLED"),
       ),
     );
@@ -199,11 +292,39 @@ export async function checkCruConflict(
   internId: string,
   date: string,
   period: "DAY" | "NIGHT",
+  excludeAssignmentId?: string,
 ): Promise<{ conflicted: boolean; reason?: string }> {
-  const blocked = await getCruBlockedSlots([internId], date, date);
-  const set = blocked.get(internId);
-  if (set?.has(`${date}|${period}`)) {
-    return { conflicted: true, reason: "Conflito CRU: interno possui plantão na Central de Regulação em turno adjacente (±12h)" };
+  const from = addDaysToDateStr(date, -1);
+  const to = addDaysToDateStr(date, 1);
+
+  const conditions = [
+    inArray(bases.type, ["CENTRAL", "CRL"]),
+    eq(assignments.internId, internId),
+    gte(assignments.date, from),
+    lte(assignments.date, to),
+    ne(assignments.status, "CANCELLED"),
+  ];
+
+  if (excludeAssignmentId) {
+    conditions.push(ne(assignments.id, excludeAssignmentId));
+  }
+
+  const cruAssignments = await db
+    .select({ date: assignments.date, period: assignments.period })
+    .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
+    .where(and(...conditions));
+
+  const blocked = new Set<string>();
+  for (const assignment of cruAssignments) {
+    blocked.add(`${assignment.date}|${assignment.period}`);
+    for (const slot of getAdjacentBlockedSlots(assignment.date, assignment.period as "DAY" | "NIGHT")) {
+      blocked.add(slot);
+    }
+  }
+
+  if (blocked.has(`${date}|${period}`)) {
+    return { conflicted: true, reason: "Conflito: interno possui plantão em regulação (CRU/CRL) em turno adjacente (±12h)" };
   }
   return { conflicted: false };
 }

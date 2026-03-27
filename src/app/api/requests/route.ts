@@ -3,8 +3,9 @@ import { db } from "@/db";
 import { requests, assignments, users, bases, userRoles, checkins } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
-import { checkSlotAvailability } from "@/lib/slots";
 import { getEffectiveUser } from "@/lib/impersonate";
+import { operationalDateStr } from "@/lib/utils";
+import { checkCruConflict, checkSlotAvailability } from "@/lib/slots";
 import { z } from "zod/v4";
 import { alias } from "drizzle-orm/pg-core";
 
@@ -28,6 +29,25 @@ const dropShiftSchema = z.object({
 });
 
 const requestSchema = z.discriminatedUnion("type", [swapSchema, extraShiftSchema, dropShiftSchema]);
+
+function getRequestValidationError(error: z.ZodError): string {
+  const extraDateIssue = error.issues.find((issue) => issue.path.join(".") === "extraDate");
+  if (extraDateIssue) {
+    return "Data do plantão extra é obrigatória";
+  }
+
+  const extraBaseIssue = error.issues.find((issue) => issue.path.join(".") === "extraBaseId");
+  if (extraBaseIssue) {
+    return "Base do plantão extra é obrigatória";
+  }
+
+  const extraPeriodIssue = error.issues.find((issue) => issue.path.join(".") === "extraPeriod");
+  if (extraPeriodIssue) {
+    return "Turno do plantão extra é obrigatório";
+  }
+
+  return error.message;
+}
 
 /* ═══════════ GET — list requests ═══════════ */
 
@@ -128,11 +148,13 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const parsed = requestSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ success: false, error: getRequestValidationError(parsed.error) }, { status: 400 });
+  }
 
   const data = parsed.data;
-  const requesterId = user.id;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const requesterId = (typeof body.onBehalfOf === "string" && ["COORDINATOR", "LEADER"].includes(user.role)) ? body.onBehalfOf : user.id;
+  const todayStr = operationalDateStr();
 
   if (data.type === "SWAP" || data.type === "DROP_SHIFT") {
     const [ownerAssignment] = await db
@@ -162,10 +184,59 @@ export async function POST(req: NextRequest) {
 
   if (data.type === "EXTRA_SHIFT") {
     if (data.extraDate < todayStr) return NextResponse.json({ success: false, error: "Data do plantão extra deve ser futura" }, { status: 400 });
-    if (!user.facultyId) return NextResponse.json({ success: false, error: "Sem faculdade vinculada" }, { status: 400 });
-    const slot = await checkSlotAvailability(data.extraBaseId, data.extraDate, data.extraPeriod, user.facultyId);
+
+    const [reqRole] = await db
+      .select({ facultyId: userRoles.facultyId })
+      .from(userRoles)
+      .where(and(
+        eq(userRoles.userId, requesterId),
+        eq(userRoles.role, "INTERN"),
+        eq(userRoles.isActive, true),
+      ))
+      .limit(1);
+
+    if (!reqRole?.facultyId) {
+      return NextResponse.json({ success: false, error: "Interno sem faculdade vinculada" }, { status: 400 });
+    }
+
+    const [existingAssignment] = await db
+      .select({ id: assignments.id, status: assignments.status })
+      .from(assignments)
+      .where(and(
+        eq(assignments.internId, requesterId),
+        eq(assignments.date, data.extraDate),
+        eq(assignments.period, data.extraPeriod),
+      ))
+      .limit(1);
+
+    if (existingAssignment && existingAssignment.status !== "CANCELLED") {
+      return NextResponse.json({ success: false, error: "Você já possui plantão nessa data e turno" }, { status: 409 });
+    }
+
+    const slot = await checkSlotAvailability(data.extraBaseId, data.extraDate, data.extraPeriod, reqRole.facultyId);
     if (!slot.available) {
       return NextResponse.json({ success: false, error: `Sem vaga disponível (${slot.assigned}/${slot.capacity})` }, { status: 409 });
+    }
+
+    const cruCheck = await checkCruConflict(requesterId, data.extraDate, data.extraPeriod);
+    if (cruCheck.conflicted) {
+      return NextResponse.json({ success: false, error: cruCheck.reason ?? "Conflito com plantão em regulação" }, { status: 409 });
+    }
+
+    const [existingReq] = await db
+      .select({ id: requests.id })
+      .from(requests)
+      .where(and(
+        eq(requests.requesterId, requesterId),
+        eq(requests.type, "EXTRA_SHIFT"),
+        eq(requests.extraDate, data.extraDate),
+        eq(requests.extraPeriod, data.extraPeriod),
+        inArray(requests.status, ["PENDING", "ESCALATED"]),
+      ))
+      .limit(1);
+
+    if (existingReq) {
+      return NextResponse.json({ success: false, error: "Já existe solicitação pendente de extra para essa data e turno" }, { status: 409 });
     }
   }
 
@@ -182,7 +253,7 @@ export async function POST(req: NextRequest) {
   };
 
   const [created] = await db.insert(requests).values(insertData).returning();
-  await logAudit({ userId: user.realUserId ?? user.id, action: "CREATE_REQUEST", entity: "request", entityId: created.id, payload: { ...data, ...(user.isImpersonating ? { impersonating: user.id, impersonateRole: user.role } : {}) } });
+  await logAudit({ userId: user.realUserId ?? user.id, action: "CREATE_REQUEST", entity: "request", entityId: created.id, payload: { ...data, requesterId, ...(user.isImpersonating ? { impersonating: user.id, impersonateRole: user.role } : {}) } });
   return NextResponse.json({ success: true, data: created }, { status: 201 });
 }
 
@@ -227,7 +298,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Plantão não pode ser trocado" }, { status: 400 });
     }
 
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = operationalDateStr();
     if (proposerAssignment.date < todayStr) return NextResponse.json({ success: false, error: "Plantão já passou" }, { status: 400 });
 
     if (request.assignmentId) {
@@ -376,58 +447,99 @@ export async function PUT(req: NextRequest) {
 
   let finalStatus = status;
 
-  if (status === "APPROVED") {
-    if (request.type === "EXTRA_SHIFT" && request.extraBaseId && request.extraDate && request.extraPeriod) {
-      const [reqRole] = await db
-        .select({ facultyId: userRoles.facultyId })
-        .from(userRoles)
-        .where(and(eq(userRoles.userId, request.requesterId), eq(userRoles.role, "INTERN")))
-        .limit(1);
-      if (!reqRole?.facultyId) {
-        return NextResponse.json({ success: false, error: "Interno sem faculdade vinculada" }, { status: 400 });
-      }
+  try {
+    if (status === "APPROVED") {
+      if (request.type === "EXTRA_SHIFT") {
+        if (!request.extraBaseId || !request.extraDate || !request.extraPeriod) {
+          return NextResponse.json({ success: false, error: "Solicitação de plantão extra está incompleta" }, { status: 400 });
+        }
 
-      const slot = await checkSlotAvailability(
-        request.extraBaseId,
-        request.extraDate,
-        request.extraPeriod as "DAY" | "NIGHT",
-        reqRole.facultyId,
-      );
-      if (!slot.available) {
-        return NextResponse.json({ success: false, error: `Sem vaga disponível (${slot.assigned}/${slot.capacity})` }, { status: 409 });
-      }
+        const [extraBaseRow] = await db
+          .select({ id: bases.id, isActive: bases.isActive })
+          .from(bases)
+          .where(eq(bases.id, request.extraBaseId))
+          .limit(1);
+        if (!extraBaseRow || !extraBaseRow.isActive) {
+          return NextResponse.json({ success: false, error: "Base do plantão extra não está disponível" }, { status: 400 });
+        }
 
-      await db.insert(assignments).values({
-        internId: request.requesterId,
-        facultyId: reqRole.facultyId,
-        baseId: request.extraBaseId,
-        date: request.extraDate,
-        period: request.extraPeriod,
-        createdBy: user.realUserId ?? user.id,
-        notes: "Plantão extra aprovado",
-      });
-      finalStatus = "COMPLETED";
-    } else if (request.type === "DROP_SHIFT" && request.assignmentId) {
-      const [existingCheckin] = await db
-        .select({ id: checkins.id })
-        .from(checkins)
-        .where(eq(checkins.assignmentId, request.assignmentId))
-        .limit(1);
-      if (existingCheckin) {
-        return NextResponse.json({ success: false, error: "Plantão já possui check-in e não pode ser descartado" }, { status: 409 });
-      }
+        const [reqRole] = await db
+          .select({ facultyId: userRoles.facultyId })
+          .from(userRoles)
+          .where(and(eq(userRoles.userId, request.requesterId), eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true)))
+          .limit(1);
+        if (!reqRole?.facultyId) {
+          return NextResponse.json({ success: false, error: "Interno sem faculdade vinculada" }, { status: 400 });
+        }
 
-      await db.update(assignments).set({ status: "CANCELLED", updatedAt: new Date(), notes: "Descartado via solicitação" }).where(eq(assignments.id, request.assignmentId));
-      finalStatus = "COMPLETED";
+        const [existingAssignment] = await db
+          .select({ id: assignments.id, status: assignments.status })
+          .from(assignments)
+          .where(and(
+            eq(assignments.internId, request.requesterId),
+            eq(assignments.date, request.extraDate),
+            eq(assignments.period, request.extraPeriod as "DAY" | "NIGHT"),
+          ))
+          .limit(1);
+
+        if (existingAssignment?.status === "CANCELLED") {
+          await db.update(assignments).set({
+            facultyId: reqRole.facultyId,
+            baseId: request.extraBaseId,
+            status: "SCHEDULED",
+            updatedAt: new Date(),
+            createdBy: user.realUserId ?? user.id,
+            notes: "Plantão extra aprovado",
+          }).where(eq(assignments.id, existingAssignment.id));
+        } else if (existingAssignment) {
+          return NextResponse.json({ success: false, error: "O interno já possui plantão ativo nessa data e turno" }, { status: 409 });
+        } else {
+          await db.insert(assignments).values({
+            internId: request.requesterId,
+            facultyId: reqRole.facultyId,
+            baseId: request.extraBaseId,
+            date: request.extraDate,
+            period: request.extraPeriod,
+            createdBy: user.realUserId ?? user.id,
+            notes: "Plantão extra aprovado",
+          });
+        }
+        finalStatus = "COMPLETED";
+      } else if (request.type === "DROP_SHIFT" && request.assignmentId) {
+        const [existingCheckin] = await db
+          .select({ id: checkins.id })
+          .from(checkins)
+          .where(eq(checkins.assignmentId, request.assignmentId))
+          .limit(1);
+        if (existingCheckin) {
+          return NextResponse.json({ success: false, error: "Plantão já possui check-in e não pode ser descartado" }, { status: 409 });
+        }
+
+        await db.update(assignments).set({ status: "CANCELLED", updatedAt: new Date(), notes: "Descartado via solicitação" }).where(eq(assignments.id, request.assignmentId));
+        finalStatus = "COMPLETED";
+      }
     }
+
+    const [updated] = await db
+      .update(requests)
+      .set({ status: finalStatus, reviewedBy: user.realUserId ?? user.id, reviewedAt: new Date(), reviewNotes })
+      .where(eq(requests.id, id))
+      .returning();
+
+    await logAudit({ userId: user.realUserId ?? user.id, action: `REVIEW_REQUEST_${status}`, entity: "request", entityId: id, payload: { status: finalStatus, reviewNotes, ...(user.isImpersonating ? { impersonating: user.id, impersonateRole: user.role } : {}) } });
+    return NextResponse.json({ success: true, data: updated });
+  } catch (err: unknown) {
+    const cause = typeof err === "object" && err !== null && "cause" in err ? (err as { cause?: { code?: string } }).cause : undefined;
+    const code = cause?.code;
+    if (code === "23502") {
+      return NextResponse.json({ success: false, error: "Dados incompletos ao tentar alocar o plantão extra" }, { status: 400 });
+    }
+    if (code === "23503") {
+      return NextResponse.json({ success: false, error: "Dados de vínculo inválidos para criar o plantão extra" }, { status: 400 });
+    }
+    if (code === "23505") {
+      return NextResponse.json({ success: false, error: "O interno já possui plantão nessa data e turno" }, { status: 409 });
+    }
+    throw err;
   }
-
-  const [updated] = await db
-    .update(requests)
-    .set({ status: finalStatus, reviewedBy: user.realUserId ?? user.id, reviewedAt: new Date(), reviewNotes })
-    .where(eq(requests.id, id))
-    .returning();
-
-  await logAudit({ userId: user.realUserId ?? user.id, action: `REVIEW_REQUEST_${status}`, entity: "request", entityId: id, payload: { status: finalStatus, reviewNotes, ...(user.isImpersonating ? { impersonating: user.id, impersonateRole: user.role } : {}) } });
-  return NextResponse.json({ success: true, data: updated });
 }

@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MapPin, Sun, Moon, Calendar, ArrowRight, Clock, CalendarDays, CircleDot, Target } from "lucide-react";
+import { MapPin, Sun, Moon, Calendar, ArrowRight, Clock, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { addDaysToDateStr, formatBrazilTime, isCurrentOperationalAssignment, isWithinAttendanceWindow, operationalDateStr, operationalPeriod } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -37,30 +38,63 @@ type WeeklyCompliance = {
   targetShiftsPerWeek: number;
 };
 
+type CheckoutStatus = {
+  state: "NONE" | "PENDING" | "AWAITING" | "COMPLETED";
+  assignment: Assignment | null;
+  checkinAt: string | null;
+  checkoutAt: string | null;
+  session: {
+    checkinId: string;
+    currentCode: string;
+    expiresAt: string;
+  } | null;
+};
+
+type CurrentAttendancePayload = {
+  current: {
+    uiState: "NONE" | "IDLE" | "AWAITING" | "VALIDATED" | "CHECKOUT_AWAITING" | "CHECKED_OUT";
+    assignment: Assignment;
+  } | null;
+  checkoutStatus: CheckoutStatus;
+};
+
 const DAY_LABEL: Record<string, string> = { MON: "Seg", TUE: "Ter", WED: "Qua", THU: "Qui", FRI: "Sex", SAT: "Sáb", SUN: "Dom" };
+
+function formatShortDate(dateStr: string) {
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
 
 export default function InternHoje() {
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [upcoming, setUpcoming] = useState<Assignment[]>([]);
   const [vacantSlots, setVacantSlots] = useState<Slot[]>([]);
   const [weekly, setWeekly] = useState<WeeklyCompliance | null>(null);
+  const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const today = new Date().toISOString().slice(0, 10);
-  const futureEnd = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+  const today = operationalDateStr();
+  const currentPeriod = operationalPeriod();
+  const futureEnd = addDaysToDateStr(today, 14);
 
   useEffect(() => {
     Promise.all([
       fetch(`/taximetro/api/assignments?from=${today}&to=${futureEnd}`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/slots/available").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
-    ]).then(([assignJson, slotsJson, complianceJson]) => {
+      fetch("/taximetro/api/attendance/current").then((r) => r.json()).catch(() => ({ success: false, data: null })),
+    ]).then(([assignJson, slotsJson, complianceJson, attendanceJson]) => {
       if (assignJson.success) {
         const active = assignJson.data.filter((a: Assignment) => a.status !== "CANCELLED");
-        const todayAssign = active.find((a: Assignment) => a.date === today);
+        const todayAssign = active.find((a: Assignment) => a.status === "CHECKED_IN" && isWithinAttendanceWindow(a.date, a.period as "DAY" | "NIGHT"))
+          ?? active.find((a: Assignment) => isCurrentOperationalAssignment(a.date, a.period as "DAY" | "NIGHT"))
+          ?? active.find((a: Assignment) => a.date === today);
         setAssignment(todayAssign ?? null);
-        setUpcoming(active.filter((a: Assignment) => a.date > today).slice(0, 5));
+        setUpcoming(
+          active
+            .filter((a: Assignment) => a.date > today || (a.date === today && a.period !== currentPeriod))
+            .slice(0, 5),
+        );
       } else {
         setError("Não foi possível carregar seus plantões.");
       }
@@ -76,6 +110,10 @@ export default function InternHoje() {
           targetShiftsPerWeek: c.targetShiftsPerWeek,
         });
       }
+      if (attendanceJson.success && attendanceJson.data) {
+        const attendance = attendanceJson.data as CurrentAttendancePayload;
+        setCheckoutStatus(attendance.checkoutStatus);
+      }
       setLoading(false);
     });
   }, []);
@@ -85,6 +123,8 @@ export default function InternHoje() {
 
   const weeklyEffective = weekly ? weekly.thisWeekScheduled - weekly.thisWeekAbsent : 0;
   const weeklyOnTrack = weekly ? weeklyEffective >= weekly.targetShiftsPerWeek : false;
+  const pendingCheckout = checkoutStatus?.state === "PENDING" || checkoutStatus?.state === "AWAITING" ? checkoutStatus : null;
+  const completedCheckout = checkoutStatus?.state === "COMPLETED" ? checkoutStatus : null;
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
@@ -99,14 +139,70 @@ export default function InternHoje() {
         </div>
         {weekly && weekly.targetShiftsPerWeek > 0 && (
           <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${weeklyOnTrack
-              ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-              : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+            ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+            : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
             }`}>
             <Target className="h-4 w-4" strokeWidth={2} />
             {weeklyEffective}/{weekly.targetShiftsPerWeek}
           </div>
         )}
       </div>
+
+      {pendingCheckout?.assignment && (
+        <div className={`rounded-xl border p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${pendingCheckout.state === "AWAITING" ? "border-blue-300 bg-blue-50" : "border-amber-300 bg-amber-50"}`}>
+          <div className="flex items-start gap-3">
+            {pendingCheckout.state === "AWAITING" ? (
+              <ShieldAlert className="mt-0.5 h-5 w-5 text-blue-600" strokeWidth={1.8} />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-600" strokeWidth={1.8} />
+            )}
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <p className={`text-sm font-semibold ${pendingCheckout.state === "AWAITING" ? "text-blue-900" : "text-amber-900"}`}>
+                {pendingCheckout.state === "AWAITING" ? "Checkout em validação" : "Checkout pendente"}
+              </p>
+              <p className={`text-sm ${pendingCheckout.state === "AWAITING" ? "text-blue-800" : "text-amber-800"}`}>
+                {pendingCheckout.assignment.baseCode} — {pendingCheckout.assignment.baseName}
+              </p>
+              <p className={`text-xs ${pendingCheckout.state === "AWAITING" ? "text-blue-700" : "text-amber-700"}`}>
+                {new Date(pendingCheckout.assignment.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                {" · "}
+                {pendingCheckout.assignment.period === "DAY" ? "Diurno" : "Noturno"}
+                {pendingCheckout.checkinAt ? ` · check-in às ${formatBrazilTime(pendingCheckout.checkinAt)}` : ""}
+              </p>
+              <p className={`text-xs ${pendingCheckout.state === "AWAITING" ? "text-blue-700" : "text-amber-700"}`}>
+                {pendingCheckout.state === "AWAITING"
+                  ? "O checkout já foi solicitado e está aguardando confirmação do preceptor."
+                  : "Seu plantão anterior ainda não teve checkout. Isso não impede o próximo check-in, mas precisa ser encerrado."}
+              </p>
+            </div>
+          </div>
+          <Link href={`/intern/checkin?assignmentId=${pendingCheckout.assignment.id}`} className="mt-4 block">
+            <Button className={`w-full gap-2 ${pendingCheckout.state === "AWAITING" ? "bg-blue-600 hover:bg-blue-700" : "bg-amber-600 hover:bg-amber-700"}`}>
+              <LogOut className="h-4 w-4" strokeWidth={1.8} />
+              {pendingCheckout.state === "AWAITING" ? "Acompanhar checkout" : "Finalizar checkout pendente"}
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {!pendingCheckout && completedCheckout?.assignment && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 text-sky-600" strokeWidth={1.8} />
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-sky-900">Último checkout concluído</p>
+              <p className="text-sm text-sky-800">
+                {completedCheckout.assignment.baseCode} — {completedCheckout.assignment.baseName}
+              </p>
+              <p className="text-xs text-sky-700">
+                {completedCheckout.checkoutAt
+                  ? `Encerrado às ${formatBrazilTime(completedCheckout.checkoutAt)}`
+                  : "Plantão encerrado recentemente."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Today's assignment */}
       {assignment ? (
@@ -139,8 +235,8 @@ export default function InternHoje() {
             longitude={assignment.baseLongitude}
             label={`${assignment.baseCode} - ${assignment.baseName}`}
           />
-          {assignment.status === "SCHEDULED" && (
-            <Link href="/intern/checkin">
+          {(assignment.status === "SCHEDULED" || assignment.status === "CONFIRMED") && (
+            <Link href={`/intern/checkin?assignmentId=${assignment.id}`}>
               <Button className="w-full gap-2">
                 <MapPin className="h-4 w-4" strokeWidth={1.5} />
                 Fazer Check-in
@@ -172,7 +268,7 @@ export default function InternHoje() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{a.baseCode} — {a.baseName}</p>
                     <p className="text-xs text-slate-500">
-                      {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                      {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
                     </p>
                   </div>
                   <div className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ${ps.bg} ${ps.text}`}>
@@ -213,7 +309,9 @@ export default function InternHoje() {
                       ? <Sun className={`h-3 w-3 ml-auto ${ps.icon}`} strokeWidth={1.5} />
                       : <Moon className={`h-3 w-3 ml-auto ${ps.icon}`} strokeWidth={1.5} />}
                   </div>
-                  <p className="mt-0.5 text-[11px] text-slate-500">{DAY_LABEL[s.dayOfWeek]} — {s.available} vaga{s.available > 1 ? "s" : ""}</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {formatShortDate(s.nextDate)} · {DAY_LABEL[s.dayOfWeek]} · {s.available} vaga{s.available > 1 ? "s" : ""}
+                  </p>
                 </div>
               );
             })}

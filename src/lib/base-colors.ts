@@ -5,8 +5,8 @@
 
 /** Canonical view order — sorted by numeric suffix */
 export const BASE_VIEW_ORDER = [
-  "SM01","CB02","PR03","PM04","BR05","CN10",
-  "PP20","IT30","PM40","CZ50","BR60","CC70",
+  "SM01", "CB02", "PR03", "PM04", "BR05", "CN10",
+  "PP20", "IT30", "PM40", "CZ50", "BR60", "CC70",
 ] as const;
 
 export function baseViewIndex(code: string): number {
@@ -14,7 +14,7 @@ export function baseViewIndex(code: string): number {
   return idx >= 0 ? idx : 999;
 }
 
-export type BaseType = "USA" | "CENTRAL";
+export type BaseType = "USA" | "CENTRAL" | "CRL";
 
 const BASE_STYLES: Record<BaseType, {
   dot: string;      // colored dot / indicator
@@ -39,6 +39,14 @@ const BASE_STYLES: Record<BaseType, {
     border: "border-violet-200",
     pill: "bg-violet-50 text-violet-700 ring-1 ring-violet-600/20",
     label: "Central",
+  },
+  CRL: {
+    dot: "bg-rose-500",
+    bg: "bg-rose-50",
+    text: "text-rose-700",
+    border: "border-rose-200",
+    pill: "bg-rose-50 text-rose-700 ring-1 ring-rose-600/20",
+    label: "CRL",
   },
 };
 

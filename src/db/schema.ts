@@ -15,7 +15,7 @@ export const dayOfWeekEnum = pgEnum("day_of_week", [
   "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN",
 ]);
 
-export const baseTypeEnum = pgEnum("base_type", ["USA", "CENTRAL"]);
+export const baseTypeEnum = pgEnum("base_type", ["USA", "CENTRAL", "CRL"]);
 
 export const assignmentStatusEnum = pgEnum("assignment_status", [
   "SCHEDULED", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "ABSENT", "CANCELLED",
@@ -226,4 +226,20 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("idx_prt_token").on(t.token),
+]);
+
+// CRU fixed weekly assignments — auto-repeating template
+export const cruFixedAssignments = pgTable("cru_fixed_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  internId: uuid("intern_id").notNull().references(() => users.id),
+  facultyId: uuid("faculty_id").notNull().references(() => faculties.id),
+  dayOfWeek: dayOfWeekEnum("day_of_week").notNull(),
+  period: shiftPeriodEnum("period").notNull(),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  validUntil: date("valid_until").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_cru_fixed").on(t.internId, t.dayOfWeek, t.period),
+  index("idx_cru_fixed_faculty").on(t.facultyId),
 ]);
