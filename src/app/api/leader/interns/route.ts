@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { users, userRoles } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { z } from "zod/v4";
@@ -23,12 +23,27 @@ export async function GET(req: NextRequest) {
     .from(users)
     .innerJoin(
       userRoles,
-      and(eq(userRoles.userId, users.id), eq(userRoles.role, "INTERN")),
+      and(eq(userRoles.userId, users.id), inArray(userRoles.role, ["INTERN", "LEADER"])),
     )
     .where(eq(userRoles.facultyId, user.facultyId))
     .orderBy(users.name);
 
-  return NextResponse.json({ success: true, data: rows });
+  const deduped = new Map<string, { id: string; name: string; userActive: boolean; roleActive: boolean }>();
+  for (const row of rows) {
+    const existing = deduped.get(row.id);
+    if (!existing) {
+      deduped.set(row.id, row);
+      continue;
+    }
+
+    deduped.set(row.id, {
+      ...existing,
+      userActive: existing.userActive || row.userActive,
+      roleActive: existing.roleActive || row.roleActive,
+    });
+  }
+
+  return NextResponse.json({ success: true, data: [...deduped.values()] });
 }
 
 const patchSchema = z.object({

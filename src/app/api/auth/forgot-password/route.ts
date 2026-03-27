@@ -3,7 +3,21 @@ import { randomBytes } from "crypto";
 import { eq, and, gt } from "drizzle-orm";
 import { db } from "@/db";
 import { users, passwordResetTokens } from "@/db/schema";
-import { sendPasswordResetEmail } from "@/lib/email";
+import { logAudit } from "@/lib/audit";
+import { getEmailErrorSummary, sendPasswordResetEmail } from "@/lib/email";
+
+function getRequestIp(req: Request) {
+    return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+        || req.headers.get("x-real-ip")
+        || null;
+}
+
+function maskEmail(email: string) {
+    const [local, domain] = email.split("@");
+    if (!domain) return "***";
+    const safeLocal = local.length <= 2 ? "***" : `${local.slice(0, 2)}***`;
+    return `${safeLocal}@${domain}`;
+}
 
 export async function POST(req: Request) {
     const { email } = await req.json();
@@ -36,6 +50,7 @@ export async function POST(req: Request) {
 
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const ipAddress = getRequestIp(req);
 
     await db.insert(passwordResetTokens).values({
         userId: user.id,
@@ -46,9 +61,53 @@ export async function POST(req: Request) {
     try {
         await sendPasswordResetEmail(user.email, user.name, token);
     } catch (err) {
-        console.error("Failed to send password reset email:", err);
-        return NextResponse.json({ success: false, error: "Erro ao enviar e-mail. Tente novamente." }, { status: 500 });
+        const emailError = getEmailErrorSummary(err);
+
+        try {
+            await db.delete(passwordResetTokens).where(eq(passwordResetTokens.token, token));
+        } catch (cleanupError) {
+            console.error("[forgot-password] failed to cleanup unsent reset token", {
+                userId: user.id,
+                email: maskEmail(user.email),
+                tokenPreview: `${token.slice(0, 6)}...`,
+                cleanupError,
+            });
+        }
+
+        console.error("[forgot-password] password reset email failed", {
+            userId: user.id,
+            email: maskEmail(user.email),
+            code: emailError.code,
+            retryable: emailError.retryable,
+            diagnostic: emailError.diagnostic,
+            ipAddress,
+        });
+
+        await logAudit({
+            userId: user.id,
+            action: "PASSWORD_RESET_EMAIL_FAILED",
+            entity: "password_reset_token",
+            payload: {
+                email: maskEmail(user.email),
+                code: emailError.code,
+                retryable: emailError.retryable,
+                diagnostic: emailError.diagnostic,
+            },
+            ipAddress: ipAddress ?? undefined,
+        });
+
+        return NextResponse.json({ success: false, error: emailError.message }, { status: emailError.statusCode });
     }
+
+    await logAudit({
+        userId: user.id,
+        action: "PASSWORD_RESET_EMAIL_SENT",
+        entity: "password_reset_token",
+        payload: {
+            email: maskEmail(user.email),
+        },
+        ipAddress: ipAddress ?? undefined,
+    });
 
     return NextResponse.json(ok);
 }

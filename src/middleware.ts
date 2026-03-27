@@ -44,6 +44,11 @@ export async function middleware(req: NextRequest) {
   if (allowedPrefix && !pathname.startsWith(allowedPrefix)) {
     if (role === "COORDINATOR") return NextResponse.next();
 
+    // LEADER can also use intern self-service flows to fulfill their own shifts.
+    if (role === "LEADER" && pathname.startsWith("/intern")) {
+      return NextResponse.next();
+    }
+
     if (!pathname.startsWith("/api/")) {
       const url = req.nextUrl.clone();
       url.pathname = allowedPrefix;

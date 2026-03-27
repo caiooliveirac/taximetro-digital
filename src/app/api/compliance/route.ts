@@ -3,31 +3,18 @@ import { db } from "@/db";
 import { users, userRoles, faculties, assignments } from "@/db/schema";
 import { eq, and, gte, lte, inArray, sql } from "drizzle-orm";
 import { getEffectiveUser } from "@/lib/impersonate";
+import { addDaysToDateStr, operationalDateStr, startOfWeekDateStr, weeksBetweenDateStr } from "@/lib/utils";
 
 function weekBounds(offset: number) {
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun
-  const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMon + offset * 7);
-  monday.setHours(0, 0, 0, 0);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
+  const operationalToday = operationalDateStr();
+  const monday = addDaysToDateStr(startOfWeekDateStr(operationalToday), offset * 7);
   return {
-    from: monday.toISOString().slice(0, 10),
-    to: sunday.toISOString().slice(0, 10),
+    from: monday,
+    to: addDaysToDateStr(monday, 6),
   };
 }
 
-/** Number of ISO weeks between two Monday-based week starts */
-function weeksBetween(dateA: string, dateB: string) {
-  const a = new Date(dateA);
-  const b = new Date(dateB);
-  return Math.floor((b.getTime() - a.getTime()) / (7 * 86_400_000));
-}
-
 const COMPLETED = ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"] as const;
-const today = () => new Date().toISOString().slice(0, 10);
 
 export async function GET(req: NextRequest) {
   const user = await getEffectiveUser(req);
@@ -36,33 +23,43 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
+  const selfOnly = searchParams.get("selfOnly") === "true";
   let facultyId = searchParams.get("facultyId");
   const internId = searchParams.get("internId");
 
   // Leaders auto-filter by their faculty
-  if (user.role === "LEADER" && user.facultyId) {
+  if (user.role === "LEADER" && user.facultyId && !selfOnly) {
     facultyId = user.facultyId;
   }
 
-  // Interns see only themselves; Coordinator can view a specific intern
-  let internOnly: string | null = null;
-  if (user.role === "INTERN") {
-    internOnly = user.id;
+  // Self-service leader pages should see the leader's own compliance using whichever
+  // active role row exists first: INTERN if present, otherwise LEADER.
+  let personOnly: string | null = null;
+  let roleFilter: Array<"INTERN" | "LEADER"> = ["INTERN"];
+  if (selfOnly && (user.role === "INTERN" || user.role === "LEADER")) {
+    personOnly = user.id;
+    roleFilter = user.role === "LEADER" ? ["INTERN", "LEADER"] : ["INTERN"];
+  } else if (user.role === "INTERN") {
+    personOnly = user.id;
   } else if (user.role === "COORDINATOR" && internId) {
-    internOnly = internId;
+    personOnly = internId;
   }
 
   // 1. Fetch active interns (optionally filtered by faculty or specific intern)
   const internConditions = [
-    eq(userRoles.role, "INTERN"),
+    inArray(userRoles.role, roleFilter),
     eq(userRoles.isActive, true),
   ];
   if (facultyId) internConditions.push(eq(userRoles.facultyId, facultyId));
+  if (personOnly) internConditions.push(eq(userRoles.userId, personOnly));
 
-  const internRows = await db
+  const roleRank = sql<number>`CASE ${userRoles.role} WHEN 'INTERN' THEN 0 WHEN 'LEADER' THEN 1 ELSE 2 END`;
+
+  const rawInternRows = await db
     .select({
       userId: users.id,
       name: users.name,
+      role: userRoles.role,
       facultyId: userRoles.facultyId,
       facultyAbbr: faculties.abbreviation,
       targetShifts: faculties.targetShifts,
@@ -72,11 +69,18 @@ export async function GET(req: NextRequest) {
     .from(userRoles)
     .innerJoin(users, and(eq(users.id, userRoles.userId), eq(users.isActive, true)))
     .innerJoin(faculties, eq(faculties.id, userRoles.facultyId))
-    .where(and(...internConditions));
+    .where(and(...internConditions))
+    .orderBy(roleRank, users.name);
 
-  let interns = internOnly
-    ? internRows.filter((r) => r.userId === internOnly)
-    : internRows;
+  const internMap = new Map<string, Omit<(typeof rawInternRows)[number], "role">>();
+  for (const row of rawInternRows) {
+    if (!internMap.has(row.userId)) {
+      const { role: _role, ...intern } = row;
+      internMap.set(row.userId, intern);
+    }
+  }
+
+  const interns = [...internMap.values()];
 
   if (interns.length === 0) {
     return NextResponse.json({ success: true, data: [], summary: { totalInterns: 0, belowWeeklyTarget: 0, belowTotalTarget: 0, compensating: 0, weekRange: { thisWeek: weekBounds(0), lastWeek: weekBounds(-1) } } });
@@ -100,7 +104,7 @@ export async function GET(req: NextRequest) {
   // 3. Compute week bounds
   const thisWeek = weekBounds(0);
   const lastWeek = weekBounds(-1);
-  const todayStr = today();
+  const todayStr = operationalDateStr();
 
   // 4. Build per-intern compliance
   const assignmentsByIntern = new Map<string, typeof allAssignments>();
@@ -139,15 +143,10 @@ export async function GET(req: NextRequest) {
     let expectedToNow = 0;
     if (weeklyTarget > 0 && rows.length > 0) {
       const earliest = rows.reduce((min, r) => r.date < min ? r.date : min, rows[0].date);
-      // Get Monday of earliest week
-      const earlyDate = new Date(earliest);
-      const earlyDay = earlyDate.getDay();
-      const earlyMon = new Date(earlyDate);
-      earlyMon.setDate(earlyDate.getDate() - (earlyDay === 0 ? 6 : earlyDay - 1));
-      const earlyMonStr = earlyMon.toISOString().slice(0, 10);
+      const earlyMonStr = startOfWeekDateStr(earliest);
 
       // Weeks elapsed (including current week)
-      const weeksElapsed = weeksBetween(earlyMonStr, thisWeek.from) + 1;
+      const weeksElapsed = weeksBetweenDateStr(earlyMonStr, thisWeek.from) + 1;
       expectedToNow = weeksElapsed * weeklyTarget;
     }
 

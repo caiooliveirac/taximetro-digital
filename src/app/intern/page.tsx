@@ -79,9 +79,9 @@ export default function InternHoje() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${today}&to=${futureEnd}`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
-      fetch("/taximetro/api/slots/available").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
-      fetch("/taximetro/api/compliance").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      fetch(`/taximetro/api/assignments?from=${today}&to=${futureEnd}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      fetch("/taximetro/api/slots/available?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      fetch("/taximetro/api/compliance?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/attendance/current").then((r) => r.json()).catch(() => ({ success: false, data: null })),
     ]).then(([assignJson, slotsJson, complianceJson, attendanceJson]) => {
       if (assignJson.success) {

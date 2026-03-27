@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const scope = searchParams.get("scope");
+  const selfOnly = searchParams.get("selfOnly") === "true";
 
   const targetUser = alias(users, "target_user");
   const targetAssign = alias(assignments, "target_assign");
@@ -103,11 +104,11 @@ export async function GET(req: NextRequest) {
     .orderBy(requests.createdAt);
 
   // Scope: open-swaps → OPEN swaps from same faculty, excluding own
-  if (scope === "open-swaps" && user.role === "INTERN" && user.facultyId) {
+  if (scope === "open-swaps" && (user.role === "INTERN" || user.role === "LEADER") && user.facultyId) {
     const facultyInterns = await db
       .select({ userId: userRoles.userId })
       .from(userRoles)
-      .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.facultyId, user.facultyId), eq(userRoles.isActive, true)));
+      .where(and(inArray(userRoles.role, ["INTERN", "LEADER"]), eq(userRoles.facultyId, user.facultyId), eq(userRoles.isActive, true)));
     const facultyInternIds = new Set(facultyInterns.map((r) => r.userId));
 
     const filtered = rows.filter((r) =>
@@ -121,13 +122,15 @@ export async function GET(req: NextRequest) {
 
   // Default role-based filtering
   let filtered = rows;
-  if (user.role === "INTERN") {
+  if (selfOnly && (user.role === "INTERN" || user.role === "LEADER")) {
+    filtered = rows.filter((r) => r.requesterId === user.id || r.targetInternId === user.id);
+  } else if (user.role === "INTERN") {
     filtered = rows.filter((r) => r.requesterId === user.id || r.targetInternId === user.id);
   } else if (user.role === "LEADER" && user.facultyId) {
     const facultyInterns = await db
       .select({ userId: userRoles.userId })
       .from(userRoles)
-      .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.facultyId, user.facultyId)));
+      .where(and(inArray(userRoles.role, ["INTERN", "LEADER"]), eq(userRoles.facultyId, user.facultyId), eq(userRoles.isActive, true)));
     const facultyInternIds = new Set(facultyInterns.map((r) => r.userId));
     filtered = rows.filter((r) => facultyInternIds.has(r.requesterId));
   }
@@ -190,13 +193,13 @@ export async function POST(req: NextRequest) {
       .from(userRoles)
       .where(and(
         eq(userRoles.userId, requesterId),
-        eq(userRoles.role, "INTERN"),
+        inArray(userRoles.role, ["INTERN", "LEADER"]),
         eq(userRoles.isActive, true),
       ))
       .limit(1);
 
     if (!reqRole?.facultyId) {
-      return NextResponse.json({ success: false, error: "Interno sem faculdade vinculada" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Usuário sem faculdade vinculada" }, { status: 400 });
     }
 
     const [existingAssignment] = await db
@@ -438,7 +441,7 @@ export async function PUT(req: NextRequest) {
     const [reqRole] = await db
       .select({ facultyId: userRoles.facultyId })
       .from(userRoles)
-      .where(and(eq(userRoles.userId, request.requesterId), eq(userRoles.role, "INTERN")))
+      .where(and(eq(userRoles.userId, request.requesterId), inArray(userRoles.role, ["INTERN", "LEADER"]), eq(userRoles.isActive, true)))
       .limit(1);
     if (!reqRole || reqRole.facultyId !== user.facultyId) {
       return NextResponse.json({ success: false, error: "Sem permissão para analisar esta solicitação" }, { status: 403 });
@@ -466,10 +469,10 @@ export async function PUT(req: NextRequest) {
         const [reqRole] = await db
           .select({ facultyId: userRoles.facultyId })
           .from(userRoles)
-          .where(and(eq(userRoles.userId, request.requesterId), eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true)))
+          .where(and(eq(userRoles.userId, request.requesterId), inArray(userRoles.role, ["INTERN", "LEADER"]), eq(userRoles.isActive, true)))
           .limit(1);
         if (!reqRole?.facultyId) {
-          return NextResponse.json({ success: false, error: "Interno sem faculdade vinculada" }, { status: 400 });
+          return NextResponse.json({ success: false, error: "Usuário sem faculdade vinculada" }, { status: 400 });
         }
 
         const [existingAssignment] = await db
