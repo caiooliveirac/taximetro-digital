@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
+import { localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -35,7 +36,7 @@ export default function AdminPresencas() {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPeriod, setFilterPeriod] = useState("");
   const [search, setSearch] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localDateStr());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,10 +55,10 @@ export default function AdminPresencas() {
   function shiftDate(days: number) {
     const d = new Date(date + "T12:00:00");
     d.setDate(d.getDate() + days);
-    setDate(d.toISOString().slice(0, 10));
+    setDate(localDateStr(d));
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
   const isToday = date === today;
 
   const active = assignments.filter((a) => a.status !== "CANCELLED");

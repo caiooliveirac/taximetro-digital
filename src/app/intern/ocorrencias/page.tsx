@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ClipboardPlus, CheckCircle, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { localDateStr } from "@/lib/utils";
 
 type Assignment = { id: string; baseCode: string; date: string; period: string };
 
@@ -14,7 +15,7 @@ export default function InternOcorrencias() {
   const [form, setForm] = useState({ assignmentId: "", nickname: "", description: "" });
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
 
   useEffect(() => {
     fetch(`/taximetro/api/assignments?from=${today}&to=${today}`)

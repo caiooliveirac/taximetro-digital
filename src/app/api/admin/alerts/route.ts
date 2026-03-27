@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { operationalDateStr } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
   if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string))
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
 
-  const today = new Date().toISOString().split("T")[0]!;
+  const today = operationalDateStr();
   const facultyFilter = token.role === "LEADER" && token.facultyId
     ? sql`AND a.faculty_id = ${token.facultyId}`
     : sql``;
@@ -81,6 +82,23 @@ export async function GET(req: NextRequest) {
     JOIN faculties f ON f.id = a.faculty_id
     JOIN bases b ON b.id = a.base_id
     WHERE a.notes = '[AUTO_CRIADO]' AND a.date >= ${today}::date - INTERVAL '7 days' ${facultyFilter}
+
+    UNION ALL
+
+    SELECT
+      'REASSIGNMENT' AS type,
+      a.id AS entity_id,
+      u.name AS intern_name,
+      f.abbreviation AS faculty,
+      b.code AS base_code,
+      a.period,
+      a.date::text AS date,
+      a.notes AS detail
+    FROM assignments a
+    JOIN users u ON u.id = a.intern_id
+    JOIN faculties f ON f.id = a.faculty_id
+    JOIN bases b ON b.id = a.base_id
+    WHERE a.notes LIKE '%[REMANEJADO]%' AND a.date >= ${today}::date - INTERVAL '7 days' ${facultyFilter}
 
     ORDER BY date DESC
   `);

@@ -10,6 +10,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TableSkeleton } from "@/components/table-skeleton";
 import { usePreceptor } from "./preceptor-context";
 import { baseViewIndex } from "@/lib/base-colors";
+import { localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -31,7 +32,7 @@ export default function PreceptorValidar() {
   const [codeInput, setCodeInput] = useState("");
   const [validatingCode, setValidatingCode] = useState(false);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
 
   async function load() {
     if (!base || !shift) return;
@@ -100,7 +101,8 @@ export default function PreceptorValidar() {
           <KeyRound className="h-4 w-4 text-accent-500" strokeWidth={1.5} />
           <h2 className="text-sm font-semibold text-slate-900">Validar por código TOTP</h2>
         </div>
-        <p className="text-xs text-slate-400 mb-3">Digite o código de 6 dígitos exibido na tela do interno</p>
+        <p className="text-xs text-slate-400 mb-1">Digite somente os 6 números exibidos na tela do interno.</p>
+        <p className="text-xs text-slate-400 mb-3">Sem nome, sem pontos, sem traços e sem texto adicional.</p>
         <div className="flex gap-2">
           <Input
             value={codeInput}
@@ -109,13 +111,15 @@ export default function PreceptorValidar() {
             className="w-32 text-center font-mono text-lg tracking-widest"
             maxLength={6}
             inputMode="numeric"
+            pattern="[0-9]{6}"
+            aria-label="Código numérico de seis dígitos"
           />
           <Button onClick={validateByCode} disabled={codeInput.length !== 6 || validatingCode}>
             {validatingCode ? "Validando..." : "Validar"}
           </Button>
         </div>
         <p className="mt-2 flex items-center gap-1 text-xs text-slate-400">
-          <Send className="h-3 w-3" strokeWidth={1.5} /> Ou valide pelo Telegram no grupo da base
+          <Send className="h-3 w-3" strokeWidth={1.5} /> No Telegram, envie apenas os 6 números no grupo da base
         </p>
       </div>
 

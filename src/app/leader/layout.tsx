@@ -8,11 +8,15 @@ import {
   ClipboardList,
   BarChart3,
   Settings2,
+  MapPin,
+  ArrowRightLeft,
 } from "lucide-react";
 
 const NAV: NavItem[] = [
   { href: "/leader", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/intern/checkin", label: "Check-in", icon: MapPin },
   { href: "/leader/escala", label: "Escala", icon: Calendar },
+  { href: "/leader/remanejamento", label: "Remanejamento", icon: ArrowRightLeft },
   { href: "/leader/internos", label: "Internos", icon: UserRound },
   { href: "/leader/solicitacoes", label: "Solicitações", icon: ClipboardList },
   { href: "/leader/relatorios", label: "Relatórios", icon: BarChart3 },
@@ -26,8 +30,8 @@ export default function LeaderLayout({ children }: { children: React.ReactNode }
         nav={NAV}
         role="Líder de Escala"
         navGroups={[
-          { label: "Operação", items: NAV.slice(0, 3) },
-          { label: "Gestão", items: NAV.slice(3) },
+          { label: "Operação", items: NAV.slice(0, 5) },
+          { label: "Gestão", items: NAV.slice(5) },
         ]}
       />
       <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">{children}</main>

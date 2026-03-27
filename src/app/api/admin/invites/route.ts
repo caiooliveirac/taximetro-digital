@@ -16,10 +16,9 @@ const createSchema = z.object({
 }).refine(
     (d) => {
         if (d.targetRole === "INTERN" || d.targetRole === "LEADER") return !!d.facultyId;
-        if (d.targetRole === "PRECEPTOR") return !!d.baseId;
         return true;
     },
-    { message: "Faculdade obrigatória para Interno/Líder, Base obrigatória para Preceptor" },
+    { message: "Faculdade obrigatória para Interno/Líder" },
 );
 
 async function requireCoordinator(req: NextRequest) {
@@ -39,14 +38,16 @@ export async function POST(req: NextRequest) {
     }
 
     const { targetRole, facultyId, baseId } = parsed.data;
+    const normalizedFacultyId = targetRole === "INTERN" || targetRole === "LEADER" ? (facultyId ?? null) : null;
+    const normalizedBaseId = targetRole === "PRECEPTOR" ? null : (baseId ?? null);
 
     // Validate that facultyId / baseId actually exist
-    if (facultyId) {
-        const [f] = await db.select({ id: faculties.id }).from(faculties).where(eq(faculties.id, facultyId));
+    if (normalizedFacultyId) {
+        const [f] = await db.select({ id: faculties.id }).from(faculties).where(eq(faculties.id, normalizedFacultyId));
         if (!f) return NextResponse.json({ success: false, error: "Faculdade não encontrada" }, { status: 400 });
     }
-    if (baseId) {
-        const [b] = await db.select({ id: bases.id }).from(bases).where(eq(bases.id, baseId));
+    if (normalizedBaseId) {
+        const [b] = await db.select({ id: bases.id }).from(bases).where(eq(bases.id, normalizedBaseId));
         if (!b) return NextResponse.json({ success: false, error: "Base não encontrada" }, { status: 400 });
     }
 
@@ -58,8 +59,8 @@ export async function POST(req: NextRequest) {
             token: linkToken,
             targetRole,
             createdBy: token.id as string,
-            facultyId: facultyId ?? null,
-            baseId: baseId ?? null,
+            facultyId: normalizedFacultyId,
+            baseId: normalizedBaseId,
             expiresAt,
         }).returning();
 
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
             action: "CREATE_INVITE",
             entity: "invite_link",
             entityId: link.id,
-            payload: { targetRole, facultyId, baseId },
+            payload: { targetRole, facultyId: normalizedFacultyId, baseId: normalizedBaseId },
         });
 
         const baseUrl = (process.env.AUTH_URL ?? "https://mnrs.com.br").replace(/\/$/, "");

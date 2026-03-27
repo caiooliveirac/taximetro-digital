@@ -6,6 +6,7 @@ import { MetricCard } from "@/components/metric-card";
 import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
+import { localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -42,9 +43,9 @@ export default function LeaderRelatorios() {
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState(() => {
     const d = new Date(); d.setDate(1);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   });
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(() => localDateStr());
 
   async function load() {
     setLoading(true);

@@ -1,10 +1,85 @@
 import NextAuth from "next-auth";
+import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { compare } from "bcryptjs";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { users, userRoles } from "@/db/schema";
+import { logAudit } from "@/lib/audit";
+
+type LoginIdentifierType = "EMAIL" | "CPF";
+type CredentialLoginFailureReason =
+  | "MISSING_CREDENTIALS"
+  | "USER_NOT_FOUND"
+  | "USER_INACTIVE"
+  | "PASSWORD_NOT_SET"
+  | "INVALID_PASSWORD"
+  | "NO_ACTIVE_ROLE";
+
+function normalizeCpf(identifier: string) {
+  const digits = identifier.replace(/\D/g, "");
+  if (digits.length !== 11) return identifier;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function maskIdentifier(identifier: string, type: LoginIdentifierType) {
+  if (type === "EMAIL") {
+    const [local, domain] = identifier.split("@");
+    if (!domain) return "***";
+    const safeLocal = local.length <= 2 ? "***" : `${local.slice(0, 2)}***`;
+    return `${safeLocal}@${domain}`;
+  }
+
+  const digits = identifier.replace(/\D/g, "");
+  if (digits.length !== 11) return "***";
+  return `${digits.slice(0, 3)}.***.***-${digits.slice(9)}`;
+}
+
+function getRequestIp(request?: Request) {
+  if (!request) return null;
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || request.headers.get("x-real-ip")
+    || null;
+}
+
+async function logCredentialLoginEvent(input: {
+  action: "LOGIN_CREDENTIALS_FAILED" | "LOGIN_CREDENTIALS_SUCCESS";
+  identifier: string;
+  identifierType: LoginIdentifierType;
+  ipAddress: string | null;
+  reason?: CredentialLoginFailureReason;
+  userId?: string;
+  userName?: string | null;
+  userEmail?: string | null;
+  role?: string | null;
+}) {
+  try {
+    await logAudit({
+      userId: input.userId,
+      action: input.action,
+      entity: "user",
+      entityId: input.userId,
+      ipAddress: input.ipAddress ?? undefined,
+      payload: {
+        identifierType: input.identifierType,
+        maskedIdentifier: maskIdentifier(input.identifier, input.identifierType),
+        reason: input.reason ?? null,
+        userName: input.userName ?? null,
+        userEmail: input.userEmail ? maskIdentifier(input.userEmail, "EMAIL") : null,
+        role: input.role ?? null,
+      },
+    });
+  } catch (error) {
+    console.error("[auth] failed to write login audit event", {
+      action: input.action,
+      reason: input.reason,
+      identifierType: input.identifierType,
+      ipAddress: input.ipAddress,
+      error,
+    });
+  }
+}
 
 async function fetchRole(userId: string) {
   const [role] = await db
@@ -16,54 +91,139 @@ async function fetchRole(userId: string) {
   return role;
 }
 
+const googleProviders: Provider[] =
+  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ? [Google({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET })]
+    : [];
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   basePath: "/taximetro/api/auth",
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-    }),
+    ...googleProviders,
     Credentials({
       credentials: {
         identifier: { label: "Email ou CPF", type: "text" },
         password: { label: "Senha", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const identifier = credentials?.identifier as string | undefined;
         const password = credentials?.password as string | undefined;
-        if (!identifier || !password) return null;
+        const trimmedIdentifier = identifier?.trim() ?? "";
+        const identifierType: LoginIdentifierType = trimmedIdentifier.includes("@") ? "EMAIL" : "CPF";
+        const normalizedIdentifier = identifierType === "EMAIL"
+          ? trimmedIdentifier.toLowerCase()
+          : normalizeCpf(trimmedIdentifier);
+        const ipAddress = getRequestIp(request);
+
+        if (!trimmedIdentifier || !password) {
+          await logCredentialLoginEvent({
+            action: "LOGIN_CREDENTIALS_FAILED",
+            identifier: trimmedIdentifier || "***",
+            identifierType,
+            ipAddress,
+            reason: "MISSING_CREDENTIALS",
+          });
+          return null;
+        }
 
         let user;
-        if (identifier.includes("@")) {
-          // Email login
+        if (identifierType === "EMAIL") {
           [user] = await db.select().from(users)
-            .where(and(eq(users.email, identifier.toLowerCase().trim()), eq(users.isActive, true)))
+            .where(eq(users.email, normalizedIdentifier))
             .limit(1);
         } else {
-          // CPF login — normalize to format 000.000.000-00
-          const digits = identifier.replace(/\D/g, "");
-          const cpf = digits.length === 11
-            ? `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`
-            : identifier;
           [user] = await db.select().from(users)
-            .where(and(eq(users.cpf, cpf), eq(users.isActive, true)))
+            .where(eq(users.cpf, normalizedIdentifier))
             .limit(1);
         }
 
-        if (!user) return null;
+        if (!user) {
+          await logCredentialLoginEvent({
+            action: "LOGIN_CREDENTIALS_FAILED",
+            identifier: normalizedIdentifier,
+            identifierType,
+            ipAddress,
+            reason: "USER_NOT_FOUND",
+          });
+          return null;
+        }
+
+        if (!user.isActive) {
+          await logCredentialLoginEvent({
+            action: "LOGIN_CREDENTIALS_FAILED",
+            identifier: normalizedIdentifier,
+            identifierType,
+            ipAddress,
+            reason: "USER_INACTIVE",
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+          });
+          return null;
+        }
+
+        if (!user.passwordHash) {
+          await logCredentialLoginEvent({
+            action: "LOGIN_CREDENTIALS_FAILED",
+            identifier: normalizedIdentifier,
+            identifierType,
+            ipAddress,
+            reason: "PASSWORD_NOT_SET",
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+          });
+          return null;
+        }
 
         const valid = await compare(password, user.passwordHash);
-        if (!valid) return null;
+        if (!valid) {
+          await logCredentialLoginEvent({
+            action: "LOGIN_CREDENTIALS_FAILED",
+            identifier: normalizedIdentifier,
+            identifierType,
+            ipAddress,
+            reason: "INVALID_PASSWORD",
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+          });
+          return null;
+        }
 
         const role = await fetchRole(user.id);
+        if (!role) {
+          await logCredentialLoginEvent({
+            action: "LOGIN_CREDENTIALS_FAILED",
+            identifier: normalizedIdentifier,
+            identifierType,
+            ipAddress,
+            reason: "NO_ACTIVE_ROLE",
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+          });
+          return null;
+        }
+
+        await logCredentialLoginEvent({
+          action: "LOGIN_CREDENTIALS_SUCCESS",
+          identifier: normalizedIdentifier,
+          identifierType,
+          ipAddress,
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          role: role.role,
+        });
 
         return {
           id: user.id,
           name: user.name,
           email: user.email,
-          role: role?.role ?? "INTERN",
-          facultyId: role?.facultyId ?? null,
-          baseId: role?.baseId ?? null,
+          role: role.role,
+          facultyId: role.facultyId ?? null,
+          baseId: role.baseId ?? null,
         };
       },
     }),

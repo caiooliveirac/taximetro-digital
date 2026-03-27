@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Ambulance, CheckCircle, Camera, ImagePlus, UserCircle, Eye, EyeOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RegistrationPendingApproval } from "@/components/registration-pending-approval";
 
 function compressImage(file: File, maxSize = 400): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -151,19 +152,13 @@ export default function RegistroPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-[0_1px_3px_rgba(0,0,0,0.04)] text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-50 mx-auto mb-3">
-            <CheckCircle className="h-6 w-6 text-green-600" strokeWidth={1.5} />
-          </div>
-          <h1 className="text-xl font-semibold text-slate-900">Registro enviado!</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Seu cadastro foi recebido e está aguardando aprovação do líder de escala.
-            Você será notificado quando for aprovado.
-          </p>
-          <a href="/taximetro/login" className="mt-4 inline-block text-sm font-medium text-accent-600 hover:text-accent-700 transition-colors">
-            ← Voltar ao login
-          </a>
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#e8fff2_0%,#f8fafc_38%,#fffef8_100%)] px-4 py-10">
+        <div className="w-full max-w-2xl">
+          <RegistrationPendingApproval
+            title="Cadastro enviado com sucesso"
+            approverLabel="coordenadores"
+            loginHint="Seu login ainda nao vai funcionar nesta fase. Aguarde a liberacao dos coordenadores e depois entre normalmente com o usuario e a senha que voce acabou de criar."
+          />
         </div>
       </div>
     );
@@ -183,11 +178,26 @@ export default function RegistroPage() {
                 Faculdade: <span className="font-medium text-slate-900">{faculty.facultyName}</span>
               </p>
             )}
-            {faculty?.baseName && (
+            {faculty?.targetRole !== "PRECEPTOR" && faculty?.baseName && (
               <p className="mt-1 text-sm text-slate-500">
                 Base: <span className="font-medium text-slate-900">{faculty.baseCode} — {faculty.baseName}</span>
               </p>
             )}
+          </div>
+
+          <div className="mb-5 rounded-xl border border-accent-200 bg-accent-50 px-4 py-4 text-center">
+            <p className="text-sm font-semibold text-accent-900">
+              Se voce ja criou seu usuario e senha, acesse por aqui:
+            </p>
+            <a
+              href="/taximetro/login"
+              className="mt-2 inline-block text-base font-semibold text-accent-700 underline decoration-accent-300 underline-offset-4 hover:text-accent-800"
+            >
+              Ir para o login
+            </a>
+            <p className="mt-2 text-xs text-accent-800/80">
+              Nao preencha este cadastro de novo se voce ja enviou seus dados e esta aguardando aprovacao.
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

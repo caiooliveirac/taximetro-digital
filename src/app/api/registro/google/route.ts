@@ -29,19 +29,24 @@ export async function POST(req: NextRequest) {
   }
 
   const { name, email, cpf, phone, role, facultyId, baseId, selfie, password } = parsed.data;
+  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedFacultyId = role === "INTERN" || role === "LEADER" ? (facultyId ?? null) : null;
+  const normalizedBaseId = role === "PRECEPTOR" ? null : (baseId ?? null);
 
   // Validate faculty/base requirements
-  if ((role === "INTERN" || role === "LEADER") && !facultyId) {
+  if ((role === "INTERN" || role === "LEADER") && !normalizedFacultyId) {
     return NextResponse.json({ success: false, error: "Faculdade obrigatória para esse papel" }, { status: 400 });
-  }
-  if (role === "PRECEPTOR" && !baseId) {
-    return NextResponse.json({ success: false, error: "Base obrigatória para preceptores" }, { status: 400 });
   }
 
   // Check duplicate email
-  const [existingEmail] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+  const [existingEmail] = await db.select({ id: users.id, isActive: users.isActive }).from(users).where(eq(users.email, normalizedEmail));
   if (existingEmail) {
-    return NextResponse.json({ success: false, error: "E-mail já cadastrado. Tente fazer login." }, { status: 409 });
+    return NextResponse.json({
+      success: false,
+      error: existingEmail.isActive
+        ? "Este e-mail ja esta cadastrado. Se voce ja criou sua senha, entre pelo login."
+        : "Seu cadastro ja foi enviado e ainda esta aguardando aprovacao. Se voce ja criou sua senha, use o login e aguarde liberacao.",
+    }, { status: 409 });
   }
 
   // Check duplicate CPF
@@ -56,7 +61,7 @@ export async function POST(req: NextRequest) {
 
   const [user] = await db.insert(users).values({
     name,
-    email: email.toLowerCase().trim(),
+    email: normalizedEmail,
     cpf: cpf ?? null,
     phone,
     passwordHash,
@@ -68,15 +73,15 @@ export async function POST(req: NextRequest) {
   await db.insert(userRoles).values({
     userId: user.id,
     role,
-    facultyId: facultyId ?? null,
-    baseId: baseId ?? null,
+    facultyId: normalizedFacultyId,
+    baseId: normalizedBaseId,
   });
 
   await logAudit({
     action: "SELF_REGISTER_GOOGLE",
     entity: "user",
     entityId: user.id,
-    payload: { role, facultyId, baseId, email },
+    payload: { role, facultyId: normalizedFacultyId, baseId: normalizedBaseId, email },
   });
 
   return NextResponse.json({ success: true }, { status: 201 });

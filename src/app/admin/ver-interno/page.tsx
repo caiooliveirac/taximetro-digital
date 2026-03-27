@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle, getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
+import { addDaysToDateStr, operationalDateStr } from "@/lib/utils";
 
 /* ── types ── */
 type Intern = { id: string; name: string; facultyAbbr: string; isActive: boolean };
@@ -93,9 +94,9 @@ export default function AdminVerComoInterno() {
     setActionTab(null);
     setActionMsg(null);
 
-    const today = new Date().toISOString().slice(0, 10);
-    const futureEnd = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-    const past90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const today = operationalDateStr();
+    const futureEnd = addDaysToDateStr(today, 30);
+    const past90 = addDaysToDateStr(today, -90);
 
     Promise.all([
       fetch(`/taximetro/api/assignments?from=${past90}&to=${futureEnd}&internId=${selected.id}`).then((r) => r.json()),
@@ -128,7 +129,7 @@ export default function AdminVerComoInterno() {
     const body: Record<string, string> =
       actionTab === "DROP"
         ? { type: "DROP_SHIFT", assignmentId: actionAssignmentId, onBehalfOf: selected.id }
-        : { type: "EXTRA_SHIFT", assignmentId: actionAssignmentId, extraBaseId, extraDate, extraPeriod, onBehalfOf: selected.id };
+        : { type: "EXTRA_SHIFT", extraBaseId, extraDate, extraPeriod, onBehalfOf: selected.id };
 
     try {
       const res = await fetch("/taximetro/api/requests", {
@@ -163,7 +164,7 @@ export default function AdminVerComoInterno() {
   }, [interns, search]);
 
   /* ── derived ── */
-  const today = new Date().toISOString().slice(0, 10);
+  const today = operationalDateStr();
   const todayAssignment = assignments.find((a) => a.date === today);
   const upcoming = assignments.filter((a) => a.date > today);
   const pastAssignments = assignments.filter((a) => a.date <= today);
@@ -324,7 +325,7 @@ export default function AdminVerComoInterno() {
                     <span className={`inline-block h-2 w-2 rounded-full ${getBaseStyle(a.baseType).dot}`} />
                     <span className="text-sm font-medium text-slate-900 w-12">{a.baseCode}</span>
                     <span className="text-xs text-slate-500 w-28">
-                      {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                      {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
                     </span>
                     <span className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ${getPeriodStyle(a.period).bg} ${getPeriodStyle(a.period).text}`}>
                       {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
@@ -357,19 +358,22 @@ export default function AdminVerComoInterno() {
                 <p className="text-xs font-medium text-amber-700">
                   ⚠ Ação em nome de {selected.name} — ficará registrada na auditoria
                 </p>
-                <label className="block">
-                  <span className="text-xs font-medium text-slate-600">Plantão de referência</span>
-                  <select value={actionAssignmentId} onChange={(e) => setActionAssignmentId(e.target.value)} className={selectClass}>
-                    <option value="">Selecionar...</option>
-                    {scheduledForAction.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.baseCode} — {a.date} ({a.period === "DAY" ? "Diurno" : "Noturno"})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {actionTab === "DROP" && (
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600">Plantão de referência</span>
+                    <select value={actionAssignmentId} onChange={(e) => setActionAssignmentId(e.target.value)} className={selectClass}>
+                      <option value="">Selecionar...</option>
+                      {scheduledForAction.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.baseCode} — {a.date} ({a.period === "DAY" ? "Diurno" : "Noturno"})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 {actionTab === "EXTRA" && (
                   <>
+                    <p className="text-xs text-slate-600">Solicitação de extra não exige plantão de referência.</p>
                     <label className="block">
                       <span className="text-xs font-medium text-slate-600">Base desejada</span>
                       <select value={extraBaseId} onChange={(e) => setExtraBaseId(e.target.value)} className={selectClass}>
@@ -394,7 +398,7 @@ export default function AdminVerComoInterno() {
                     </div>
                   </>
                 )}
-                <Button onClick={submitAction} disabled={!actionAssignmentId || submitting} size="sm">
+                <Button onClick={submitAction} disabled={(actionTab === "DROP" ? !actionAssignmentId : !extraBaseId || !extraDate || !extraPeriod) || submitting} size="sm">
                   <Send className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
                   {submitting ? "Enviando..." : "Criar Solicitação"}
                 </Button>

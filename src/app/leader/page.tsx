@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Users, Calendar, CheckCircle, Clock, XCircle, RefreshCw,
-  AlertTriangle, AlertCircle, Target, ChevronDown, ChevronUp, ArrowRight, MapPinOff,
+  AlertTriangle, AlertCircle, Target, ChevronDown, ChevronUp, ArrowRight, MapPinOff, MapPin, Sun, Moon,
 } from "lucide-react";
 import { MetricCard } from "@/components/metric-card";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
+import { addDaysToDateStr, isCurrentOperationalAssignment, operationalDateStr } from "@/lib/utils";
 
 type Stats = {
   totalInterns: number;
@@ -88,12 +89,13 @@ export default function LeaderDashboard() {
   const [loading, setLoading] = useState(true);
   const [expandedGroup, setExpandedGroup] = useState<WeeklyCategory | null>(null);
   const [error, setError] = useState("");
+  const [myAssignment, setMyAssignment] = useState<{ id: string; baseCode: string; baseName: string; period: string; status: string } | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
-        const today = new Date().toISOString().slice(0, 10);
-        const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+        const today = operationalDateStr();
+        const weekEnd = addDaysToDateStr(today, 7);
 
         const [usersRes, assignmentsRes, requestsRes, todayRes, complianceRes, alertsRes] = await Promise.all([
           fetch("/taximetro/api/admin/users"),
@@ -103,6 +105,17 @@ export default function LeaderDashboard() {
           fetch("/taximetro/api/compliance"),
           fetch("/taximetro/api/admin/alerts").catch(() => null),
         ]);
+
+        // Fetch leader's own assignment for today
+        const myRes = await fetch(`/taximetro/api/assignments?from=${today}&to=${today}&selfOnly=true`);
+        const myJson = await myRes.json();
+        if (myJson.success && myJson.data.length > 0) {
+          const active = myJson.data.find((a: { status: string; date: string; period: string }) => a.status !== "CANCELLED" && isCurrentOperationalAssignment(a.date, a.period as "DAY" | "NIGHT"))
+            ?? myJson.data.find((a: { status: string }) => a.status !== "CANCELLED");
+          setMyAssignment(active ?? null);
+        } else {
+          setMyAssignment(null);
+        }
 
         const [usersJson, assignmentsJson, requestsJson, todayJson, complianceJson] = await Promise.all([
           usersRes.json(), assignmentsRes.json(), requestsRes.json(), todayRes.json(), complianceRes.json(),
@@ -179,6 +192,37 @@ export default function LeaderDashboard() {
         <MetricCard label="Faltas hoje" value={stats.absentToday} icon={XCircle} severity={stats.absentToday > 0 ? "danger" : "default"} />
         <MetricCard label="Solicitações" value={stats.pendingRequests} icon={Clock} severity={stats.pendingRequests > 0 ? "warning" : "default"} />
       </div>
+
+      {/* Leader's own shift */}
+      {myAssignment && (myAssignment.status === "SCHEDULED" || myAssignment.status === "CONFIRMED") && (
+        <Link href="/intern/checkin" className="block">
+          <div className="rounded-xl border border-accent-200 bg-accent-50/50 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:bg-accent-50 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <MapPin className="h-5 w-5 text-accent-600" strokeWidth={1.5} />
+                <div>
+                  <p className="text-sm font-semibold text-accent-900">Meu plantão hoje</p>
+                  <p className="text-xs text-accent-700">{myAssignment.baseCode} — {myAssignment.baseName} · {myAssignment.period === "DAY" ? "Diurno" : "Noturno"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-white">
+                Fazer check-in <ArrowRight className="h-4 w-4" strokeWidth={2} />
+              </div>
+            </div>
+          </div>
+        </Link>
+      )}
+      {myAssignment && myAssignment.status === "CHECKED_IN" && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="h-5 w-5 text-emerald-600" strokeWidth={1.5} />
+            <div>
+              <p className="text-sm font-semibold text-emerald-900">Check-in realizado</p>
+              <p className="text-xs text-emerald-700">{myAssignment.baseCode} — {myAssignment.baseName} · {myAssignment.period === "DAY" ? "Diurno" : "Noturno"}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Check-in irregular */}
       {incidents.length > 0 && (
@@ -369,8 +413,8 @@ export default function LeaderDashboard() {
             <div
               key={i}
               className={`flex items-center gap-2 rounded-lg border-l-3 px-4 py-2.5 text-sm ${a.type === "ABSENCE"
-                  ? "border-red-500 bg-red-50 text-red-700"
-                  : "border-amber-500 bg-amber-50 text-amber-700"
+                ? "border-red-500 bg-red-50 text-red-700"
+                : "border-amber-500 bg-amber-50 text-amber-700"
                 }`}
             >
               {a.type === "ABSENCE" ? (

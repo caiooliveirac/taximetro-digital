@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties, userRoles } from "@/db/schema";
-import { eq, and, isNull, gt } from "drizzle-orm";
+import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { validateCode } from "@/lib/totp";
 import { bot, TELEGRAM_GROUP_ID } from "@/lib/telegram";
 import { logAudit } from "@/lib/audit";
+import { formatBrazilTime } from "@/lib/utils";
 import { z } from "zod/v4";
 
 export async function POST(req: NextRequest) {
@@ -44,8 +45,8 @@ export async function POST(req: NextRequest) {
           "🩺 *Taxímetro Bot*\n\n" +
           "Comandos:\n" +
           "• `/vincular 000.000.000-00` — vincular seu Telegram ao cadastro\n" +
-          "• Escaneie o QR Code do interno para validar presença\n" +
-          "• No grupo: digite o código de 6 dígitos do interno",
+          "• Escaneie o QR Code do interno para abrir o grupo\n" +
+          "• No grupo: envie somente o código de 6 dígitos do interno",
           { parse_mode: "Markdown" }
         );
         return NextResponse.json({ ok: true });
@@ -66,7 +67,14 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** Group validation — ANY member posting valid 6-digit code validates it */
+/** Resolve optional binding — returns userId if bound, null otherwise */
+async function resolveBindingOptional(telegramUserId: string): Promise<string | null> {
+  const [binding] = await db.select().from(telegramBindings)
+    .where(eq(telegramBindings.telegramUserId, telegramUserId)).limit(1);
+  return binding?.userId ?? null;
+}
+
+/** Group validation — any group member can validate by typing the 6-digit code */
 async function handleGroupCodeValidation(code: string, telegramUserId: string, telegramName: string, chatId: string) {
   const session = await validateCode(code);
   if (!session) {
@@ -77,14 +85,16 @@ async function handleGroupCodeValidation(code: string, telegramUserId: string, t
   const [checkin] = await db.select().from(checkins).where(eq(checkins.id, session.checkinId)).limit(1);
   if (!checkin) return NextResponse.json({ ok: true });
 
+  // If checkin is already VALIDATED, this is a CHECKOUT code
+  if (checkin.status === "VALIDATED") {
+    return await handleCheckoutViaCode(session, checkin, telegramUserId, telegramName, chatId, false);
+  }
+
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, checkin.assignmentId)).limit(1);
   if (!assignment) return NextResponse.json({ ok: true });
 
-  // Try to find binding for the validator (optional — for recording who validated)
-  const [binding] = await db.select().from(telegramBindings)
-    .where(eq(telegramBindings.telegramUserId, telegramUserId)).limit(1);
-
-  const validatorId = binding?.userId ?? null;
+  // Try to resolve binding for audit — nullable
+  const validatorId = await resolveBindingOptional(telegramUserId);
 
   // Update checkin
   await db.update(checkins).set({
@@ -102,33 +112,79 @@ async function handleGroupCodeValidation(code: string, telegramUserId: string, t
   const [faculty] = await db.select().from(faculties).where(eq(faculties.id, assignment.facultyId)).limit(1);
 
   const period = assignment.period === "DAY" ? "DIA" : "NOITE";
-  const time = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const time = formatBrazilTime(new Date());
 
   await bot.api.sendMessage(chatId,
     `✓ ${intern?.name} (${faculty?.abbreviation}) — ${base?.code} · ${period} · ${time} — ${telegramName}`
   );
 
   await logAudit({
-    userId: validatorId,
+    userId: validatorId ?? undefined,
     action: "CHECKIN_VALIDATED_TELEGRAM_GROUP",
     entity: "checkin",
     entityId: session.checkinId,
-    payload: { telegramUserId, telegramName },
+    payload: { telegramUserId, telegramName, bound: !!validatorId },
   });
 
   return NextResponse.json({ ok: true });
 }
 
-/** Private chat validation via QR deep link (/start CODE) — shows detailed intern info */
-async function handlePrivateCodeValidation(code: string, telegramUserId: string, telegramName: string, chatId: string) {
-  // Binding required for private validation
-  const [binding] = await db.select().from(telegramBindings)
-    .where(eq(telegramBindings.telegramUserId, telegramUserId)).limit(1);
+/** Shared checkout handler — validates checkout via Telegram code (group or private) */
+async function handleCheckoutViaCode(
+  session: { id: string; checkinId: string },
+  checkin: { id: string; assignmentId: string },
+  telegramUserId: string, telegramName: string, chatId: string,
+  isPrivate: boolean,
+) {
+  const validatorId = await resolveBindingOptional(telegramUserId);
 
-  if (!binding) {
-    await bot.api.sendMessage(chatId, "Você não está vinculado. Use /vincular CPF primeiro.");
-    return NextResponse.json({ ok: true });
+  const [assignment] = await db.select().from(assignments).where(eq(assignments.id, checkin.assignmentId)).limit(1);
+  if (!assignment) return NextResponse.json({ ok: true });
+
+  // Transition: CHECKED_IN → CHECKED_OUT
+  await db.update(assignments).set({ status: "CHECKED_OUT", updatedAt: new Date() }).where(eq(assignments.id, assignment.id));
+  await db.update(checkins).set({ checkoutAt: new Date(), checkoutConfirmedBy: validatorId }).where(eq(checkins.id, checkin.id));
+  await db.update(qrSessions).set({ consumedAt: new Date(), consumedBy: validatorId }).where(eq(qrSessions.id, session.id));
+
+  const [intern] = await db.select().from(users).where(eq(users.id, assignment.internId)).limit(1);
+  const [base] = await db.select().from(bases).where(eq(bases.id, assignment.baseId)).limit(1);
+  const [faculty] = await db.select().from(faculties).where(eq(faculties.id, assignment.facultyId)).limit(1);
+
+  const period = assignment.period === "DAY" ? "DIA" : "NOITE";
+  const time = formatBrazilTime(new Date());
+
+  if (isPrivate) {
+    await bot.api.sendMessage(chatId,
+      `⬜ *Checkout confirmado*\n\n*${intern?.name}*\n${faculty?.abbreviation}\nBase: ${base?.code} — ${base?.name} · ${period === "DIA" ? "Diurno" : "Noturno"}\n${time}`,
+      { parse_mode: "Markdown" }
+    );
+    if (TELEGRAM_GROUP_ID) {
+      try {
+        await bot.api.sendMessage(TELEGRAM_GROUP_ID,
+          `⬜ CHECKOUT ${intern?.name} (${faculty?.abbreviation}) — ${base?.code} · ${period} · ${time} — ${telegramName}`
+        );
+      } catch { /* group may not be configured */ }
+    }
+  } else {
+    await bot.api.sendMessage(chatId,
+      `⬜ CHECKOUT ${intern?.name} (${faculty?.abbreviation}) — ${base?.code} · ${period} · ${time} — ${telegramName}`
+    );
   }
+
+  await logAudit({
+    userId: validatorId ?? undefined,
+    action: isPrivate ? "CHECKOUT_VALIDATED_TELEGRAM_QR" : "CHECKOUT_VALIDATED_TELEGRAM_GROUP",
+    entity: "assignment",
+    entityId: assignment.id,
+    payload: { telegramUserId, telegramName, bound: !!validatorId },
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
+/** Private chat validation via /start CODE — no role check, security via group */
+async function handlePrivateCodeValidation(code: string, telegramUserId: string, telegramName: string, chatId: string) {
+  const validatorId = await resolveBindingOptional(telegramUserId);
 
   const session = await validateCode(code);
   if (!session) {
@@ -139,18 +195,23 @@ async function handlePrivateCodeValidation(code: string, telegramUserId: string,
   const [checkin] = await db.select().from(checkins).where(eq(checkins.id, session.checkinId)).limit(1);
   if (!checkin) return NextResponse.json({ ok: true });
 
+  // If checkin is already VALIDATED, this is a CHECKOUT code
+  if (checkin.status === "VALIDATED") {
+    return await handleCheckoutViaCode(session, checkin, telegramUserId, telegramName, chatId, true);
+  }
+
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, checkin.assignmentId)).limit(1);
   if (!assignment) return NextResponse.json({ ok: true });
 
   // Update checkin
   await db.update(checkins).set({
     status: "VALIDATED",
-    validatedBy: binding.userId,
+    validatedBy: validatorId,
     totpValidatedAt: new Date(),
     method: "TELEGRAM_QR",
   }).where(eq(checkins.id, session.checkinId));
 
-  await db.update(qrSessions).set({ consumedAt: new Date(), consumedBy: binding.userId }).where(eq(qrSessions.id, session.id));
+  await db.update(qrSessions).set({ consumedAt: new Date(), consumedBy: validatorId }).where(eq(qrSessions.id, session.id));
   await db.update(assignments).set({ status: "CHECKED_IN", updatedAt: new Date() }).where(eq(assignments.id, checkin.assignmentId));
 
   const [intern] = await db.select().from(users).where(eq(users.id, assignment.internId)).limit(1);
@@ -171,7 +232,7 @@ async function handlePrivateCodeValidation(code: string, telegramUserId: string,
 
   // Also post confirmation in group
   if (TELEGRAM_GROUP_ID) {
-    const time = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const time = formatBrazilTime(new Date());
     try {
       await bot.api.sendMessage(TELEGRAM_GROUP_ID,
         `✓ ${intern?.name} (${faculty?.abbreviation}) — ${base?.code} · ${period === "Diurno" ? "DIA" : "NOITE"} · ${time} — ${telegramName}`
@@ -180,10 +241,11 @@ async function handlePrivateCodeValidation(code: string, telegramUserId: string,
   }
 
   await logAudit({
-    userId: binding.userId,
+    userId: validatorId ?? undefined,
     action: "CHECKIN_VALIDATED_TELEGRAM_QR",
     entity: "checkin",
     entityId: session.checkinId,
+    payload: { telegramUserId, telegramName, bound: !!validatorId },
   });
 
   return NextResponse.json({ ok: true });

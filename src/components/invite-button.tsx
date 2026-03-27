@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { Link2, X, Copy, Check, Loader2 } from "lucide-react";
 
 type Faculty = { id: string; abbreviation: string };
-type Base = { id: string; code: string; name: string };
 
 const ROLES = [
     { value: "INTERN", label: "Interno" },
@@ -17,9 +16,7 @@ export function InviteButton() {
     const [open, setOpen] = useState(false);
     const [role, setRole] = useState("INTERN");
     const [facultyId, setFacultyId] = useState("");
-    const [baseId, setBaseId] = useState("");
     const [faculties, setFaculties] = useState<Faculty[]>([]);
-    const [bases, setBases] = useState<Base[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [generatedUrl, setGeneratedUrl] = useState("");
@@ -27,19 +24,14 @@ export function InviteButton() {
 
     useEffect(() => {
         if (!open) return;
-        Promise.all([
-            fetch("/taximetro/api/admin/faculties").then((r) => r.json()),
-            fetch("/taximetro/api/admin/bases").then((r) => r.json()),
-        ]).then(([fRes, bRes]) => {
+        fetch("/taximetro/api/admin/faculties").then((r) => r.json()).then((fRes) => {
             if (fRes.success) setFaculties(fRes.data);
-            if (bRes.success) setBases(bRes.data);
         });
     }, [open]);
 
     function reset() {
         setRole("INTERN");
         setFacultyId("");
-        setBaseId("");
         setError("");
         setGeneratedUrl("");
         setCopied(false);
@@ -51,8 +43,7 @@ export function InviteButton() {
     }
 
     const needsFaculty = role === "INTERN" || role === "LEADER";
-    const needsBase = role === "PRECEPTOR";
-    const canSubmit = needsFaculty ? !!facultyId : needsBase ? !!baseId : true;
+    const canSubmit = needsFaculty ? !!facultyId : true;
 
     async function generate() {
         setError("");
@@ -60,7 +51,6 @@ export function InviteButton() {
         try {
             const body: Record<string, string> = { targetRole: role };
             if (needsFaculty) body.facultyId = facultyId;
-            if (needsBase) body.baseId = baseId;
 
             const res = await fetch("/taximetro/api/admin/invites", {
                 method: "POST",
@@ -94,7 +84,6 @@ export function InviteButton() {
 
     const roleName = ROLES.find((r) => r.value === role)?.label ?? role;
     const facultyName = faculties.find((f) => f.id === facultyId)?.abbreviation;
-    const baseName = bases.find((b) => b.id === baseId);
 
     return (
         <>
@@ -128,10 +117,10 @@ export function InviteButton() {
                                             <button
                                                 key={r.value}
                                                 type="button"
-                                                onClick={() => { setRole(r.value); setFacultyId(""); setBaseId(""); }}
+                                                onClick={() => { setRole(r.value); setFacultyId(""); }}
                                                 className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${role === r.value
-                                                        ? "border-orange-500 bg-orange-50 text-orange-700"
-                                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                                    ? "border-orange-500 bg-orange-50 text-orange-700"
+                                                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                                                     }`}
                                             >
                                                 {r.label}
@@ -159,34 +148,12 @@ export function InviteButton() {
                                     </div>
                                 )}
 
-                                {/* Base selector for PRECEPTOR */}
-                                {needsBase && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                                            Base
-                                        </label>
-                                        <select
-                                            value={baseId}
-                                            onChange={(e) => setBaseId(e.target.value)}
-                                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
-                                        >
-                                            <option value="">Selecione a base...</option>
-                                            {bases.map((b) => (
-                                                <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-
                                 {/* Summary */}
                                 <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
                                     <span className="font-medium">Resumo:</span> Convite para{" "}
                                     <span className="font-semibold text-slate-900">{roleName}</span>
                                     {needsFaculty && facultyName && (
                                         <> — Faculdade <span className="font-semibold text-slate-900">{facultyName}</span></>
-                                    )}
-                                    {needsBase && baseName && (
-                                        <> — Base <span className="font-semibold text-slate-900">{baseName.code}</span></>
                                     )}
                                     <br />
                                     <span className="text-xs text-slate-400">Válido por 7 dias</span>
@@ -215,7 +182,6 @@ export function InviteButton() {
                                     <p className="text-xs text-green-600">
                                         {roleName}
                                         {facultyName ? ` — ${facultyName}` : ""}
-                                        {baseName ? ` — ${baseName.code}` : ""}
                                     </p>
                                 </div>
 
@@ -229,8 +195,8 @@ export function InviteButton() {
                                     <button
                                         onClick={copyLink}
                                         className={`flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${copied
-                                                ? "bg-green-500 text-white"
-                                                : "bg-orange-500 text-white hover:bg-orange-600"
+                                            ? "bg-green-500 text-white"
+                                            : "bg-orange-500 text-white hover:bg-orange-600"
                                             }`}
                                     >
                                         {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

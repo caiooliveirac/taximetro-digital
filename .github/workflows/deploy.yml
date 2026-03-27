@@ -4,6 +4,10 @@ on:
   push:
     branches: [master]
 
+concurrency:
+  group: taximetro-digital-deploy
+  cancel-in-progress: true
+
 env:
   APP: taximetro-digital
   REMOTE: ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}
@@ -12,6 +16,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -38,9 +43,8 @@ jobs:
             echo "=== Building Docker image (native ARM64) ==="
             docker build -t ${{ env.APP }} .
 
-            echo "=== Stopping old container ==="
-            docker stop ${{ env.APP }} 2>/dev/null || true
-            docker rm ${{ env.APP }} 2>/dev/null || true
+            echo "=== Replacing old container ==="
+            docker rm -f ${{ env.APP }} 2>/dev/null || true
 
             echo "=== Running migrations ==="
             docker build --target builder -t ${{ env.APP }}-builder .
@@ -101,6 +105,5 @@ jobs:
               echo "⚠️ Nginx → App failed (app works but nginx may need restart)"
             fi
 
-            echo "=== Cleaning old images ==="
-            docker image prune -f
+            echo "=== Deploy complete ==="
           REMOTE_SCRIPT

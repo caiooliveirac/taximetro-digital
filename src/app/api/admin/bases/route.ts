@@ -9,7 +9,7 @@ import { z } from "zod/v4";
 const baseSchema = z.object({
   code: z.string().min(2).max(10),
   name: z.string().min(2).max(100),
-  type: z.enum(["USA", "CENTRAL"]),
+  type: z.enum(["USA", "CENTRAL", "CRL"]),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   geoFenceMeters: z.number().int().min(50).max(2000).default(200),

@@ -44,10 +44,14 @@ export async function GET(
       r.created_at,
       r.review_notes,
       a.date AS assignment_date,
-      b.code AS base_code
+      b.code AS base_code,
+      eb.code AS extra_base_code,
+      r.extra_date,
+      r.extra_period
     FROM requests r
-    JOIN assignments a ON a.id = r.assignment_id
-    JOIN bases b ON b.id = a.base_id
+    LEFT JOIN assignments a ON a.id = r.assignment_id
+    LEFT JOIN bases b ON b.id = a.base_id
+    LEFT JOIN bases eb ON eb.id = r.extra_base_id
     WHERE r.requester_id = ${id}
     ORDER BY r.created_at DESC
   `);

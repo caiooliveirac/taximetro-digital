@@ -399,7 +399,7 @@ npm install
 
 # Configurar variáveis de ambiente
 cp .env.example .env.local
-# Editar DATABASE_URL, AUTH_SECRET, TELEGRAM_BOT_TOKEN
+# Editar DATABASE_URL, AUTH_SECRET, TELEGRAM_BOT_TOKEN e SMTP_*
 
 # Rodar migrações
 npx drizzle-kit push
@@ -433,8 +433,40 @@ npm run dev
 | -------------------- | ---------------------------- | ------------------------------------------------- |
 | `DATABASE_URL`       | Connection string PostgreSQL | `postgresql://user:pass@localhost:5432/taximetro` |
 | `AUTH_SECRET`        | Segredo JWT do NextAuth      | `openssl rand -base64 32`                         |
+| `AUTH_URL`           | URL pública sem barra final  | `https://mnrs.com.br`                             |
 | `TELEGRAM_BOT_TOKEN` | Token do bot Telegram        | `123456:ABC-DEF...`                               |
-| `BASE_URL`           | URL pública da aplicação     | `https://mnrs.com.br/taximetro`                   |
+| `SMTP_HOST`          | Host SMTP                    | `smtp.gmail.com`                                  |
+| `SMTP_PORT`          | Porta SMTP                   | `587`                                             |
+| `SMTP_USER`          | Usuário SMTP                 | `noreply@mnrs.com.br`                             |
+| `SMTP_PASS`          | Senha/app password SMTP      | `senha-ou-app-password`                           |
+| `SMTP_FROM`          | Remetente exibido            | `Taxímetro Digital <noreply@mnrs.com.br>`         |
+| `SMTP_SECURE`        | Usa SMTPS direto             | `false`                                           |
+
+### Gmail: configuração prática
+
+Se a intenção for usar uma conta Google/Gmail só para os envios de redefinição de senha, o conjunto mais útil é este:
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_REQUIRE_TLS=true
+SMTP_TLS_REJECT_UNAUTHORIZED=true
+SMTP_USER=seu.email@gmail.com
+SMTP_PASS=sua_app_password_do_google
+SMTP_FROM=Taxímetro Digital <seu.email@gmail.com>
+```
+
+Regras práticas:
+
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` e `SMTP_PASS` são os únicos realmente obrigatórios para o envio funcionar.
+- `SMTP_SECURE=false` com porta `587` é o padrão mais comum do Gmail.
+- `SMTP_FROM` não é tecnicamente obrigatório no código, mas é altamente recomendado. No Gmail, o ideal é usar o mesmo endereço de `SMTP_USER`.
+- `SMTP_REQUIRE_TLS=true` ajuda a forçar conexão segura sem precisar usar a porta 465.
+- `SMTP_PASS` no Gmail não deve ser a senha normal da conta. Deve ser uma `App Password` criada após ativar verificação em 2 etapas.
+- `AUTH_URL` continua importante porque ele define a base do link enviado no e-mail de redefinição.
+
+Para o fluxo de redefinição de senha funcionar em produção, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` e `SMTP_PASS` precisam estar presentes no ambiente do container. Sem isso, a rota de `esqueci senha` passa a responder com erro explícito e registrar auditoria de falha de entrega.
 
 ---
 
