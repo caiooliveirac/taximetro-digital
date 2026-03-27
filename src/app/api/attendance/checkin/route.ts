@@ -2,126 +2,163 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { assignments, bases, checkins, qrSessions, users } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { isWithinGeofence } from "@/lib/geo";
-import { generateUniqueCode, CODE_TTL_SECONDS } from "@/lib/totp";
+import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
+import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
 import { z } from "zod/v4";
-import QRCode from "qrcode";
 
 const checkinSchema = z.object({
   assignmentId: z.string().uuid(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
+  geoValid: z.boolean().default(true),
 });
+
+function isImpersonating(req: NextRequest, token: { role?: unknown }): boolean {
+  return token.role === "COORDINATOR" &&
+    !!(req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user"));
+}
 
 export async function POST(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
-  // Block impersonation — check-in requires physical presence
-  if (req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user")) {
-    return NextResponse.json({ success: false, error: "Check-in requer presença física e não pode ser feito via impersonate" }, { status: 403 });
+  const impersonating = isImpersonating(req, token);
+  const effectiveInternId = impersonating
+    ? (req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user"))!
+    : token.id as string;
+
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Corpo da requisição inválido." }, { status: 400 });
   }
-
-  const body = await req.json();
   const parsed = checkinSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ success: false, error: "Dados inválidos: " + parsed.error.issues.map(i => i.message).join(", ") }, { status: 400 });
 
-  const { assignmentId, latitude, longitude } = parsed.data;
+  const { assignmentId, latitude, longitude, geoValid: clientGeoValid } = parsed.data;
 
   // Fetch assignment + base
   const [assignment] = await db
     .select()
     .from(assignments)
-    .where(and(eq(assignments.id, assignmentId), eq(assignments.internId, token.id as string)))
+    .where(and(eq(assignments.id, assignmentId), eq(assignments.internId, effectiveInternId)))
     .limit(1);
 
-  if (!assignment) return NextResponse.json({ success: false, error: "Plantão não encontrado" }, { status: 404 });
+  if (!assignment) return NextResponse.json({ success: false, error: "Plantão não encontrado para este interno." }, { status: 404 });
+
+  // Allow SCHEDULED, CONFIRMED, or even assignments with a PENDING checkin
   if (assignment.status !== "SCHEDULED" && assignment.status !== "CONFIRMED") {
-    return NextResponse.json({ success: false, error: "Check-in já realizado ou cancelado" }, { status: 400 });
+    return NextResponse.json({ success: false, error: "Check-in já realizado ou plantão cancelado." }, { status: 400 });
   }
 
   const [base] = await db.select().from(bases).where(eq(bases.id, assignment.baseId)).limit(1);
-  if (!base) return NextResponse.json({ success: false, error: "Base não encontrada" }, { status: 404 });
+  if (!base) return NextResponse.json({ success: false, error: "Base não encontrada." }, { status: 404 });
 
-  // Shift period validation
-  const hour = new Date().getHours();
-  const isDayShift = assignment.period === "DAY";
-  if (isDayShift && (hour >= 20 || hour < 4)) {
-    return NextResponse.json({ success: false, error: "Fora do horário do turno diurno (05h–20h)" }, { status: 400 });
-  }
-  if (!isDayShift && (hour >= 8 && hour < 17)) {
-    return NextResponse.json({ success: false, error: "Fora do horário do turno noturno (17h–08h)" }, { status: 400 });
-  }
-
-  // Geofence check
-  const geo = isWithinGeofence(latitude, longitude, base.latitude, base.longitude, base.geoFenceMeters);
-  if (!geo.valid) {
-    await logAudit({
-      userId: token.id as string,
-      action: "CHECKIN_GEO_REJECTED",
-      entity: "assignment",
-      entityId: assignmentId,
-      payload: { distance: geo.distance, fence: base.geoFenceMeters },
-    });
-    return NextResponse.json({
-      success: false,
-      error: `Fora do raio de geofence (${geo.distance}m, máximo ${base.geoFenceMeters}m)`,
-    }, { status: 400 });
+  // Shift period validation — skip when impersonating (testing)
+  if (!impersonating) {
+    const hour = new Date().getHours();
+    const isDayShift = assignment.period === "DAY";
+    if (isDayShift && (hour >= 20 || hour < 4)) {
+      return NextResponse.json({ success: false, error: "Fora do horário do turno diurno (05h–20h). Tente novamente no horário correto." }, { status: 400 });
+    }
+    if (!isDayShift && (hour >= 8 && hour < 17)) {
+      return NextResponse.json({ success: false, error: "Fora do horário do turno noturno (17h–08h). Tente novamente no horário correto." }, { status: 400 });
+    }
   }
 
-  // Generate unique 6-digit code (5-min TTL)
-  const code = await generateUniqueCode();
+  // Geofence check — skip when impersonating or no GPS
+  const hasGps = latitude !== 0 || longitude !== 0;
+  let geo = { valid: true, distance: 0 };
+  if (!impersonating && hasGps) {
+    geo = isWithinGeofence(latitude, longitude, base.latitude, base.longitude, base.geoFenceMeters);
+  }
+
+  // Generate TOTP secret for code rotation (5-min step, 15-min session)
+  const totpSecret = generateTotpSecret();
+  const currentCode = getCurrentCode(totpSecret);
   const now = new Date();
-  const codeExpiresAt = new Date(now.getTime() + CODE_TTL_SECONDS * 1000);
+  const sessionExpiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000);
 
-  // Create checkin record
-  const [checkin] = await db.insert(checkins).values({
-    assignmentId,
-    internId: token.id as string,
-    checkinLat: latitude,
-    checkinLng: longitude,
-    geoDistanceMeters: geo.distance,
-    geoValid: true,
-    checkinAt: now,
-    totpSecret: code, // store code for reference
-    status: "PENDING",
-  }).returning();
+  // Check for existing PENDING checkin for this assignment — reuse it instead of failing on unique constraint
+  const [existingCheckin] = await db.select().from(checkins)
+    .where(eq(checkins.assignmentId, assignmentId))
+    .limit(1);
 
-  // Create QR session
+  let checkinId: string;
+
+  if (existingCheckin && existingCheckin.status === "PENDING") {
+    // Reuse existing checkin: update with new geo + TOTP data
+    await db.update(checkins).set({
+      checkinLat: hasGps ? latitude : null,
+      checkinLng: hasGps ? longitude : null,
+      geoDistanceMeters: hasGps ? geo.distance : null,
+      geoValid: impersonating ? true : (hasGps ? (clientGeoValid || geo.valid) : false),
+      checkinAt: now,
+      totpSecret,
+      status: "PENDING",
+    }).where(eq(checkins.id, existingCheckin.id));
+    checkinId = existingCheckin.id;
+
+    // Expire old qr_sessions for this checkin
+    await db.update(qrSessions).set({
+      consumedAt: now,
+      consumedBy: null,
+    }).where(and(
+      eq(qrSessions.checkinId, existingCheckin.id),
+      isNull(qrSessions.consumedAt),
+    ));
+  } else if (existingCheckin) {
+    // Checkin exists but is VALIDATED or another non-PENDING state
+    return NextResponse.json({ success: false, error: "Check-in já realizado ou plantão cancelado." }, { status: 400 });
+  } else {
+    // Create new checkin record
+    const [newCheckin] = await db.insert(checkins).values({
+      assignmentId,
+      internId: effectiveInternId,
+      checkinLat: hasGps ? latitude : null,
+      checkinLng: hasGps ? longitude : null,
+      geoDistanceMeters: hasGps ? geo.distance : null,
+      geoValid: impersonating ? true : (hasGps ? (clientGeoValid || geo.valid) : false),
+      checkinAt: now,
+      totpSecret,
+      status: "PENDING",
+    }).returning();
+    checkinId = newCheckin.id;
+  }
+
+  // Create new QR session
   await db.insert(qrSessions).values({
-    checkinId: checkin.id,
-    internId: token.id as string,
-    totpSecret: code,
-    activeCode: code,
-    codeExpiresAt,
-    expiresAt: codeExpiresAt,
+    checkinId,
+    internId: effectiveInternId,
+    totpSecret,
+    activeCode: currentCode,
+    codeExpiresAt: sessionExpiresAt,
+    expiresAt: sessionExpiresAt,
   });
 
   // Get intern selfie for display
   const [intern] = await db.select({ selfie: users.selfie, name: users.name })
-    .from(users).where(eq(users.id, token.id as string)).limit(1);
-
-  // Generate QR code (deep link to Telegram bot)
-  const botUrl = `https://t.me/Taximetros_bot?start=${code}`;
-  const qrDataUrl = await QRCode.toDataURL(botUrl, { width: 300, margin: 2 });
+    .from(users).where(eq(users.id, effectiveInternId)).limit(1);
 
   await logAudit({
-    userId: token.id as string,
+    userId: effectiveInternId,
     action: "CHECKIN_INITIATED",
     entity: "checkin",
-    entityId: checkin.id,
-    payload: { distance: geo.distance },
+    entityId: checkinId,
+    payload: { distance: hasGps ? geo.distance : null, geoValid: hasGps ? geo.valid : false, hasGps, reused: !!existingCheckin, impersonatedBy: impersonating ? (token.id as string) : undefined },
   });
 
   return NextResponse.json({
     success: true,
     data: {
-      checkinId: checkin.id,
-      code,
-      qrDataUrl,
-      expiresAt: codeExpiresAt.toISOString(),
+      checkinId,
+      currentCode,
+      expiresAt: sessionExpiresAt.toISOString(),
+      assignmentId,
       geoDistance: geo.distance,
       selfie: intern?.selfie ?? null,
       internName: intern?.name ?? "",
