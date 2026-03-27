@@ -13,16 +13,30 @@ export async function GET(
   if (!token) return new Response("Unauthorized", { status: 401 });
 
   const { assignmentId } = await params;
+  const after = req.nextUrl.searchParams.get("after");
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       let running = true;
 
+      // Terminal states depend on what we're waiting for
+      const isTerminal = (status: string) => {
+        if (after === "CHECKED_IN") {
+          // Checkout listener: skip CHECKED_IN, close on CHECKED_OUT or other terminal
+          return ["CHECKED_OUT", "ABSENT", "CANCELLED"].includes(status);
+        }
+        return ["CHECKED_IN", "CHECKED_OUT", "ABSENT", "CANCELLED"].includes(status);
+      };
+
       // Send initial status
       const [assignment] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
       if (assignment) {
         controller.enqueue(encoder.encode(sseEvent("status", { status: assignment.status })));
+        if (isTerminal(assignment.status)) {
+          controller.close();
+          return;
+        }
       }
 
       // Poll every 5 seconds
@@ -32,8 +46,7 @@ export async function GET(
           const [a] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
           if (a) {
             controller.enqueue(encoder.encode(sseEvent("status", { status: a.status })));
-            // Close stream when check-in is validated or terminal state
-            if (["CHECKED_IN", "CHECKED_OUT", "ABSENT", "CANCELLED"].includes(a.status)) {
+            if (isTerminal(a.status)) {
               running = false;
               clearInterval(interval);
               controller.close();

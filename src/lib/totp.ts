@@ -1,45 +1,51 @@
-import crypto from "crypto";
+import { generateSync, verifySync, generateSecret } from "otplib";
 import { db } from "@/db";
 import { qrSessions } from "@/db/schema";
-import { and, isNull, gt, eq } from "drizzle-orm";
+import { and, isNull, gt } from "drizzle-orm";
+import { SESSION_TTL_SECONDS, TOTP_STEP_SECONDS } from "@/lib/totp-config";
 
-export const CODE_TTL_SECONDS = 300; // 5 minutes
+// TOTP rotates every 5 minutes; session lasts 15 minutes
 
-/** Generate a cryptographically random 6-digit code, guaranteed unique among active sessions */
-export async function generateUniqueCode(): Promise<string> {
-  for (let i = 0; i < 20; i++) {
-    const code = String(crypto.randomInt(100000, 999999));
+const TOTP_OPTS = { period: TOTP_STEP_SECONDS, digits: 6 } as const;
 
-    const [exists] = await db
-      .select({ id: qrSessions.id })
-      .from(qrSessions)
-      .where(
-        and(
-          eq(qrSessions.activeCode, code),
-          isNull(qrSessions.consumedAt),
-          gt(qrSessions.codeExpiresAt, new Date()),
-        ),
-      )
-      .limit(1);
-
-    if (!exists) return code;
-  }
-  throw new Error("Não foi possível gerar código único após 20 tentativas");
+/** Generate a random base32 secret for TOTP */
+export function generateTotpSecret(): string {
+  return generateSecret();
 }
 
-/** Validate a code by exact DB lookup — returns the qrSession if valid */
-export async function validateCode(code: string) {
-  const [session] = await db
+/** Get the current 6-digit code for a TOTP secret */
+export function getCurrentCode(secret: string): string {
+  return generateSync({ ...TOTP_OPTS, secret });
+}
+
+/** Verify a code against a TOTP secret (accepts ±1 period tolerance) */
+export function verifyCode(code: string, secret: string): boolean {
+  const result = verifySync({ ...TOTP_OPTS, secret, token: code, epochTolerance: TOTP_STEP_SECONDS });
+  return result.valid;
+}
+
+/**
+ * Validate a 6-digit code against all active (non-consumed, non-expired) TOTP sessions.
+ * Returns the matching qrSession or null.
+ */
+export async function validateTotpCode(code: string) {
+  const sessions = await db
     .select()
     .from(qrSessions)
     .where(
       and(
-        eq(qrSessions.activeCode, code),
         isNull(qrSessions.consumedAt),
-        gt(qrSessions.codeExpiresAt, new Date()),
+        gt(qrSessions.expiresAt, new Date()),
       ),
-    )
-    .limit(1);
+    );
 
-  return session ?? null;
+  for (const session of sessions) {
+    if (verifyCode(code, session.totpSecret)) {
+      return session;
+    }
+  }
+  return null;
 }
+
+// Keep legacy validateCode as alias for backward compatibility
+export const validateCode = validateTotpCode;
