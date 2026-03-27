@@ -14,6 +14,7 @@ export interface EffectiveUser {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IMPERSONATABLE_ROLES = new Set(["LEADER", "PRECEPTOR", "INTERN"]);
 
 /**
  * Returns the effective user identity for an API request.
@@ -44,8 +45,40 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
     const impersonateId =
         req.headers.get("x-impersonate-user") ??
         req.cookies.get("x-impersonate-user")?.value;
+    const requestedRole =
+        req.headers.get("x-impersonate-role") ??
+        req.cookies.get("x-impersonate-role")?.value ??
+        null;
 
     if (!impersonateId || !UUID_RE.test(impersonateId)) return self;
+
+    if (requestedRole && IMPERSONATABLE_ROLES.has(requestedRole)) {
+        const [requestedTargetRole] = await db
+            .select({
+                userId: userRoles.userId,
+                role: userRoles.role,
+                facultyId: userRoles.facultyId,
+                baseId: userRoles.baseId,
+            })
+            .from(userRoles)
+            .where(and(
+                eq(userRoles.userId, impersonateId),
+                eq(userRoles.isActive, true),
+                eq(userRoles.role, requestedRole as "LEADER" | "PRECEPTOR" | "INTERN"),
+            ))
+            .limit(1);
+
+        if (requestedTargetRole) {
+            return {
+                id: requestedTargetRole.userId,
+                role: requestedTargetRole.role,
+                facultyId: requestedTargetRole.facultyId,
+                baseId: requestedTargetRole.baseId,
+                isImpersonating: true,
+                realUserId: token.id as string,
+            };
+        }
+    }
 
     const [targetRole] = await db
         .select({

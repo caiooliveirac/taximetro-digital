@@ -30,14 +30,17 @@ export function useImpersonate() {
 
 const STORAGE_KEY = "taximetro_impersonate";
 const COOKIE_NAME = "x-impersonate-user";
+const COOKIE_ROLE_NAME = "x-impersonate-role";
 const COOKIE_PATH = "/taximetro";
 
-function setCookie(userId: string) {
-    document.cookie = `${COOKIE_NAME}=${encodeURIComponent(userId)}; path=${COOKIE_PATH}; SameSite=Lax`;
+function setCookie(target: ImpersonateTarget) {
+    document.cookie = `${COOKIE_NAME}=${encodeURIComponent(target.userId)}; path=${COOKIE_PATH}; SameSite=Lax`;
+    document.cookie = `${COOKIE_ROLE_NAME}=${encodeURIComponent(target.role)}; path=${COOKIE_PATH}; SameSite=Lax`;
 }
 
 function clearCookie() {
     document.cookie = `${COOKIE_NAME}=; path=${COOKIE_PATH}; max-age=0`;
+    document.cookie = `${COOKIE_ROLE_NAME}=; path=${COOKIE_PATH}; max-age=0`;
 }
 
 const ROLE_PREFIX: Record<string, string> = {
@@ -58,7 +61,7 @@ export function ImpersonateProvider({ children }: { children: ReactNode }) {
                 const parsed = JSON.parse(stored) as ImpersonateTarget;
                 if (parsed.userId) {
                     setTarget(parsed);
-                    setCookie(parsed.userId);
+                    setCookie(parsed);
                 }
             } else {
                 clearCookie();
@@ -72,7 +75,7 @@ export function ImpersonateProvider({ children }: { children: ReactNode }) {
         (t: ImpersonateTarget) => {
             setTarget(t);
             sessionStorage.setItem(STORAGE_KEY, JSON.stringify(t));
-            setCookie(t.userId);
+            setCookie(t);
             router.push(ROLE_PREFIX[t.role] ?? "/admin");
         },
         [router],
