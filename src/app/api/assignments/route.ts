@@ -74,9 +74,14 @@ export async function GET(req: NextRequest) {
     conditions.push(eq(assignments.internId, user.id));
   }
 
-  // Coordinator (not impersonating) can filter by specific intern
-  if (user.role === "COORDINATOR" && internId) {
+  // Allow coordinator or leader to filter by specific intern
+  if (internId && (user.role === "COORDINATOR" || user.role === "LEADER")) {
     conditions.push(eq(assignments.internId, internId));
+  }
+
+  // selfOnly=true: return only assignments where the user is the intern (any role)
+  if (searchParams.get("selfOnly") === "true") {
+    conditions.push(eq(assignments.internId, user.id));
   }
 
   // Preceptors must filter by base (declared base sent from client)
@@ -112,37 +117,116 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Só pode alocar internos da sua faculdade" }, { status: 403 });
   }
 
-  // Check slot availability
-  const slot = await checkSlotAvailability(
-    parsed.data.baseId,
-    parsed.data.date,
-    parsed.data.period,
-    parsed.data.facultyId,
-  );
-  if (!slot.available) {
-    return NextResponse.json({ success: false, error: `Sem vaga (${slot.assigned}/${slot.capacity})` }, { status: 409 });
+  const [existingAssignment] = await db
+    .select({
+      id: assignments.id,
+      status: assignments.status,
+      baseId: assignments.baseId,
+      facultyId: assignments.facultyId,
+    })
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.internId, parsed.data.internId),
+        eq(assignments.date, parsed.data.date),
+        eq(assignments.period, parsed.data.period),
+      ),
+    )
+    .limit(1);
+
+  if (existingAssignment && existingAssignment.status !== "CANCELLED") {
+    return NextResponse.json(
+      { success: false, error: "Interno já possui plantão neste dia e turno" },
+      { status: 409 },
+    );
   }
 
-  // Check CRU ±12h conflict
-  const cruCheck = await checkCruConflict(parsed.data.internId, parsed.data.date, parsed.data.period);
-  if (cruCheck.conflicted) {
-    return NextResponse.json({ success: false, error: cruCheck.reason }, { status: 409 });
+  const isCancelledSameSlot = existingAssignment?.status === "CANCELLED"
+    && existingAssignment.baseId === parsed.data.baseId
+    && existingAssignment.facultyId === parsed.data.facultyId;
+
+  if (!isCancelledSameSlot) {
+    const slot = await checkSlotAvailability(
+      parsed.data.baseId,
+      parsed.data.date,
+      parsed.data.period,
+      parsed.data.facultyId,
+    );
+    if (!slot.available) {
+      return NextResponse.json({ success: false, error: `Sem vaga (${slot.assigned}/${slot.capacity})` }, { status: 409 });
+    }
+
+    const cruCheck = await checkCruConflict(parsed.data.internId, parsed.data.date, parsed.data.period);
+    if (cruCheck.conflicted) {
+      return NextResponse.json({ success: false, error: cruCheck.reason }, { status: 409 });
+    }
   }
 
-  const [created] = await db
-    .insert(assignments)
-    .values({ ...parsed.data, createdBy: user.realUserId ?? user.id })
-    .returning();
+  try {
+    if (existingAssignment?.status === "CANCELLED") {
+      const [reactivated] = await db
+        .update(assignments)
+        .set({
+          facultyId: parsed.data.facultyId,
+          baseId: parsed.data.baseId,
+          status: "SCHEDULED",
+          notes: parsed.data.notes ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(assignments.id, existingAssignment.id))
+        .returning();
 
-  await logAudit({
-    userId: user.realUserId ?? user.id,
-    action: "CREATE_ASSIGNMENT",
-    entity: "assignment",
-    entityId: created.id,
-    payload: { ...parsed.data, ...(user.isImpersonating ? { impersonating: user.id } : {}) },
-  });
+      await logAudit({
+        userId: user.realUserId ?? user.id,
+        action: "REACTIVATE_CANCELLED_ASSIGNMENT",
+        entity: "assignment",
+        entityId: existingAssignment.id,
+        payload: { ...parsed.data, ...(user.isImpersonating ? { impersonating: user.id } : {}) },
+      });
 
-  return NextResponse.json({ success: true, data: created }, { status: 201 });
+      return NextResponse.json({ success: true, data: reactivated, reusedCancelled: true });
+    }
+
+    const [created] = await db
+      .insert(assignments)
+      .values({ ...parsed.data, createdBy: user.realUserId ?? user.id })
+      .returning();
+
+    await logAudit({
+      userId: user.realUserId ?? user.id,
+      action: "CREATE_ASSIGNMENT",
+      entity: "assignment",
+      entityId: created.id,
+      payload: { ...parsed.data, ...(user.isImpersonating ? { impersonating: user.id } : {}) },
+    });
+
+    return NextResponse.json({ success: true, data: created }, { status: 201 });
+  } catch (err: unknown) {
+    const cause = typeof err === "object" && err !== null && "cause" in err ? (err as { cause?: { code?: string } }).cause : undefined;
+    if (cause?.code === "23505") {
+      return NextResponse.json(
+        { success: false, error: "Interno já possui plantão neste dia e turno" },
+        { status: 409 },
+      );
+    }
+
+    const errorCode = typeof err === "object" && err !== null && "code" in err
+      ? (err as { code?: string }).code
+      : undefined;
+
+    console.error("POST /api/assignments failed", {
+      errorCode,
+      causeCode: cause?.code,
+      userId: user.realUserId ?? user.id,
+      role: user.role,
+      payload: parsed.data,
+    });
+
+    return NextResponse.json(
+      { success: false, error: "Falha ao criar ou reativar plantão. Se o problema persistir, contate o suporte." },
+      { status: 500 },
+    );
+  }
 }
 
 export async function PUT(req: NextRequest) {

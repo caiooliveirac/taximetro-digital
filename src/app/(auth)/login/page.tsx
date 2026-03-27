@@ -23,7 +23,7 @@ function LoginForm() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState(() => {
     const err = searchParams.get("error");
-    if (err === "PendingApproval") return "Seu cadastro está aguardando aprovação do coordenador.";
+    if (err === "PendingApproval") return "Seu cadastro foi recebido, mas ainda está aguardando aprovação. Até lá, o login permanece bloqueado.";
     if (err === "OAuthAccountNotLinked") return "E-mail já cadastrado com outra forma de login. Use CPF e senha.";
     if (err) return "Erro no login. Tente novamente ou use CPF e senha.";
     return "";
@@ -64,7 +64,7 @@ function LoginForm() {
     setLoading(false);
 
     if (result?.error) {
-      setError("Credenciais inválidas. Verifique e tente novamente.");
+      setError("Credenciais inválidas. Se você já foi aprovado, use 'Esqueci minha senha' ou peça à coordenação para resetar seu acesso.");
     } else {
       router.push("/");
       router.refresh();

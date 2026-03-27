@@ -5,6 +5,7 @@ import { CheckCircle2, Clock, Sun, Moon, Target, CalendarDays } from "lucide-rea
 import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -38,11 +39,11 @@ export default function InternHistorico() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const to = new Date().toISOString().slice(0, 10);
-    const from = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const to = localDateStr();
+    const from = localDateStr(new Date(Date.now() - 90 * 86400000));
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${from}&to=${to}`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
-      fetch("/taximetro/api/compliance").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      fetch(`/taximetro/api/assignments?from=${from}&to=${to}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      fetch("/taximetro/api/compliance?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
     ]).then(([aJson, cJson]) => {
       if (aJson.success) setAssignments(aJson.data);
       else setError("Não foi possível carregar seu histórico.");

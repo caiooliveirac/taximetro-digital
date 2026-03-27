@@ -97,10 +97,10 @@ export default function InternTrocas() {
       const from = localDateStr();
       const to = localDateStr(new Date(Date.now() + 30 * 86400000));
       const [aRes, sRes, rRes, osRes] = await Promise.all([
-        fetch(`/taximetro/api/assignments?from=${from}&to=${to}`),
-        fetch("/taximetro/api/slots/available"),
-        fetch("/taximetro/api/requests"),
-        fetch("/taximetro/api/requests?scope=open-swaps"),
+        fetch(`/taximetro/api/assignments?from=${from}&to=${to}&selfOnly=true`),
+        fetch("/taximetro/api/slots/available?selfOnly=true"),
+        fetch("/taximetro/api/requests?selfOnly=true"),
+        fetch("/taximetro/api/requests?scope=open-swaps&selfOnly=true"),
       ]);
       const [aJson, sJson, rJson, osJson] = await Promise.all([aRes.json(), sRes.json(), rRes.json(), osRes.json()]);
       if (aJson.success) setAssignments(aJson.data.filter((a: Assignment) => ["SCHEDULED", "CONFIRMED"].includes(a.status)));
