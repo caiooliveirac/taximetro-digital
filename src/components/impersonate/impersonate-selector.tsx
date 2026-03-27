@@ -146,8 +146,8 @@ export function ImpersonateSelector({ role, open, onClose }: Props) {
                             <button
                                 onClick={() => setSelectedFaculty(null)}
                                 className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${!selectedFaculty
-                                        ? "bg-accent-100 text-accent-700"
-                                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                    ? "bg-accent-100 text-accent-700"
+                                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                                     }`}
                             >
                                 Todas
@@ -159,8 +159,8 @@ export function ImpersonateSelector({ role, open, onClose }: Props) {
                                         setSelectedFaculty(f.id === selectedFaculty ? null : f.id)
                                     }
                                     className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${selectedFaculty === f.id
-                                            ? "bg-accent-100 text-accent-700"
-                                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                        ? "bg-accent-100 text-accent-700"
+                                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                                         }`}
                                 >
                                     {f.abbr} ({f.count})

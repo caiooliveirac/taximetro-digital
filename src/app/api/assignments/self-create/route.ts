@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { assignments, bases, userRoles, faculties } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { checkCruConflict } from "@/lib/slots";
 import { getEffectiveUser } from "@/lib/impersonate";
+import { operationalDateStr } from "@/lib/utils";
 import { z } from "zod/v4";
 
 const selfCreateSchema = z.object({
@@ -14,8 +15,8 @@ const selfCreateSchema = z.object({
 
 export async function POST(req: NextRequest) {
   const user = await getEffectiveUser(req);
-  if (!user || user.role !== "INTERN") {
-    return NextResponse.json({ success: false, error: "Apenas internos podem criar plantão avulso" }, { status: 403 });
+  if (!user || (user.role !== "INTERN" && user.role !== "LEADER")) {
+    return NextResponse.json({ success: false, error: "Apenas internos e líderes podem criar plantão avulso" }, { status: 403 });
   }
 
   const body = await req.json();
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   const { baseId, period } = parsed.data;
   const internId = user.id;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = operationalDateStr();
 
   // Validate base exists and is active
   const [base] = await db
@@ -43,13 +44,13 @@ export async function POST(req: NextRequest) {
     .where(
       and(
         eq(userRoles.userId, internId),
-        eq(userRoles.role, "INTERN"),
+        inArray(userRoles.role, ["INTERN", "LEADER"]),
         eq(userRoles.isActive, true),
       ),
     )
     .limit(1);
   if (!role?.facultyId)
-    return NextResponse.json({ success: false, error: "Faculdade do interno não encontrada" }, { status: 400 });
+    return NextResponse.json({ success: false, error: "Faculdade não encontrada" }, { status: 400 });
 
   // Check: intern must NOT already have an assignment for today+period
   const [existing] = await db

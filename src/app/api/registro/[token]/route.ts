@@ -42,6 +42,20 @@ async function getValidInvite(token: string) {
   return invite;
 }
 
+function normalizeInviteScope(invite: Awaited<ReturnType<typeof getValidInvite>>) {
+  if (!invite) return { facultyId: null, baseId: null };
+
+  if (invite.targetRole === "INTERN" || invite.targetRole === "LEADER") {
+    return { facultyId: invite.facultyId ?? null, baseId: null };
+  }
+
+  if (invite.targetRole === "PRECEPTOR") {
+    return { facultyId: null, baseId: null };
+  }
+
+  return { facultyId: null, baseId: null };
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ token: string }> }
@@ -57,8 +71,8 @@ export async function GET(
       targetRole: invite.targetRole ?? "INTERN",
       facultyName: invite.facultyName,
       facultyAbbr: invite.facultyAbbr,
-      baseCode: invite.baseCode,
-      baseName: invite.baseName,
+      baseCode: invite.targetRole === "PRECEPTOR" ? null : invite.baseCode,
+      baseName: invite.targetRole === "PRECEPTOR" ? null : invite.baseName,
     },
   });
 }
@@ -80,6 +94,7 @@ export async function POST(
   }
 
   const { name, cpf, email, phone, password, selfie } = parsed.data;
+  const normalizedEmail = email.toLowerCase().trim();
 
   // Check if CPF already exists (only if provided)
   if (cpf) {
@@ -88,9 +103,14 @@ export async function POST(
       return NextResponse.json({ success: false, error: "CPF já cadastrado" }, { status: 409 });
     }
   }
-  const [existingEmail] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+  const [existingEmail] = await db.select({ id: users.id, isActive: users.isActive }).from(users).where(eq(users.email, normalizedEmail));
   if (existingEmail) {
-    return NextResponse.json({ success: false, error: "E-mail já cadastrado" }, { status: 409 });
+    return NextResponse.json({
+      success: false,
+      error: existingEmail.isActive
+        ? "Este e-mail ja esta cadastrado. Se voce ja criou sua senha, entre pelo login."
+        : "Seu cadastro ja foi enviado e ainda esta aguardando aprovacao. Se voce ja criou sua senha, use o login e aguarde liberacao.",
+    }, { status: 409 });
   }
 
   const passwordHash = await hash(password, 12);
@@ -98,7 +118,7 @@ export async function POST(
   const [user] = await db.insert(users).values({
     name,
     cpf: cpf ?? null,
-    email,
+    email: normalizedEmail,
     phone,
     passwordHash,
     selfie,
@@ -107,19 +127,20 @@ export async function POST(
   }).returning();
 
   const assignedRole = (invite.targetRole as "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") ?? "INTERN";
+  const normalizedScope = normalizeInviteScope(invite);
 
   await db.insert(userRoles).values({
     userId: user.id,
     role: assignedRole,
-    facultyId: invite.facultyId,
-    baseId: invite.baseId,
+    facultyId: normalizedScope.facultyId,
+    baseId: normalizedScope.baseId,
   });
 
   await logAudit({
     action: "SELF_REGISTER",
     entity: "user",
     entityId: user.id,
-    payload: { inviteLinkId: invite.id, role: assignedRole, facultyId: invite.facultyId, baseId: invite.baseId },
+    payload: { inviteLinkId: invite.id, role: assignedRole, facultyId: normalizedScope.facultyId, baseId: normalizedScope.baseId },
   });
 
   return NextResponse.json({ success: true }, { status: 201 });

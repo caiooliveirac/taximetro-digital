@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     .where(
       and(
         eq(userRoles.facultyId, facultyId),
-        eq(userRoles.role, "INTERN"),
+        inArray(userRoles.role, ["INTERN", "LEADER"]),
         eq(userRoles.isActive, true),
         inArray(userRoles.userId, internIds),
       ),

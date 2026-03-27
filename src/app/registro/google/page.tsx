@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Ambulance, CheckCircle, Camera, ImagePlus, X, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RegistrationPendingApproval } from "@/components/registration-pending-approval";
 
 function compressImage(file: File, maxSize = 400): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -45,7 +46,6 @@ const ROLES = [
 ] as const;
 
 type Faculty = { id: string; abbreviation: string; name: string };
-type Base = { id: string; code: string; name: string };
 
 export default function RegistroGooglePage() {
   return (
@@ -70,7 +70,6 @@ function RegistroGoogleForm() {
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState("INTERN");
   const [facultyId, setFacultyId] = useState("");
-  const [baseId, setBaseId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [selfie, setSelfie] = useState<string | null>(null);
@@ -78,15 +77,10 @@ function RegistroGoogleForm() {
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [bases, setBases] = useState<Base[]>([]);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/taximetro/api/admin/faculties").then((r) => r.json()).catch(() => ({ success: false })),
-      fetch("/taximetro/api/admin/bases").then((r) => r.json()).catch(() => ({ success: false })),
-    ]).then(([fRes, bRes]) => {
+    fetch("/taximetro/api/admin/faculties").then((r) => r.json()).catch(() => ({ success: false })).then((fRes) => {
       if (fRes.success) setFaculties(fRes.data);
-      if (bRes.success) setBases(bRes.data);
     });
   }, []);
 
@@ -117,7 +111,6 @@ function RegistroGoogleForm() {
   }, []);
 
   const needsFaculty = role === "INTERN" || role === "LEADER";
-  const needsBase = role === "PRECEPTOR";
   const passwordValid = PASSWORD_RULES.every((r) => r.test(password));
 
   async function handleSubmit(e: React.FormEvent) {
@@ -126,7 +119,6 @@ function RegistroGoogleForm() {
     if (!selfie) { setError("Selfie obrigatória para identificação."); return; }
     if (!passwordValid) { setError("A senha não atende aos requisitos."); return; }
     if (needsFaculty && !facultyId) { setError("Selecione uma faculdade."); return; }
-    if (needsBase && !baseId) { setError("Selecione uma base."); return; }
     setSubmitting(true);
     try {
       const res = await fetch("/taximetro/api/registro/google", {
@@ -140,7 +132,6 @@ function RegistroGoogleForm() {
           password,
           role,
           facultyId: needsFaculty ? facultyId : undefined,
-          baseId: needsBase ? baseId : undefined,
           selfie,
         }),
       });
@@ -178,19 +169,13 @@ function RegistroGoogleForm() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-[0_1px_3px_rgba(0,0,0,0.04)] text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-50 mx-auto mb-3">
-            <CheckCircle className="h-6 w-6 text-green-600" strokeWidth={1.5} />
-          </div>
-          <h1 className="text-xl font-semibold text-slate-900">Cadastro enviado!</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Seu cadastro foi recebido e está aguardando aprovação do coordenador.
-            Após aprovado, basta fazer login com Google.
-          </p>
-          <a href="/taximetro/login" className="mt-4 inline-block text-sm font-medium text-accent-600 hover:text-accent-700 transition-colors">
-            ← Voltar ao login
-          </a>
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#e8fff2_0%,#f8fafc_38%,#fffef8_100%)] px-4 py-10">
+        <div className="w-full max-w-2xl">
+          <RegistrationPendingApproval
+            title="Solicitacao de acesso enviada"
+            approverLabel="coordenadores"
+            loginHint="Enquanto o cadastro estiver pendente, o acesso por Google tambem fica bloqueado. Nao tente cadastrar de novo: aguarde a aprovacao e depois volte para entrar normalmente."
+          />
         </div>
       </div>
     );
@@ -206,6 +191,21 @@ function RegistroGoogleForm() {
             </div>
             <h1 className="text-xl font-semibold text-slate-900">Cadastro via Google</h1>
             <p className="mt-1 text-sm text-slate-500">Complete seus dados para solicitar acesso</p>
+          </div>
+
+          <div className="mb-5 rounded-xl border border-accent-200 bg-accent-50 px-4 py-4 text-center">
+            <p className="text-sm font-semibold text-accent-900">
+              Se voce ja criou seu usuario e senha, acesse por aqui:
+            </p>
+            <a
+              href="/taximetro/login"
+              className="mt-2 inline-block text-base font-semibold text-accent-700 underline decoration-accent-300 underline-offset-4 hover:text-accent-800"
+            >
+              Ir para o login
+            </a>
+            <p className="mt-2 text-xs text-accent-800/80">
+              Se seu cadastro ja foi enviado antes, basta aguardar aprovacao e depois entrar pelo login.
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -266,7 +266,7 @@ function RegistroGoogleForm() {
               <select
                 id="role"
                 value={role}
-                onChange={(e) => { setRole(e.target.value); setBaseId(""); }}
+                onChange={(e) => { setRole(e.target.value); setFacultyId(""); }}
                 className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 {ROLES.map((r) => (
@@ -289,25 +289,6 @@ function RegistroGoogleForm() {
                   <option value="">Selecione...</option>
                   {faculties.map((f) => (
                     <option key={f.id} value={f.id}>{f.abbreviation} — {f.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Base (only for preceptors) */}
-            {needsBase && (
-              <div>
-                <label htmlFor="base" className="block text-sm font-medium text-slate-700 mb-1">Base</label>
-                <select
-                  id="base"
-                  value={baseId}
-                  onChange={(e) => setBaseId(e.target.value)}
-                  className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                  required
-                >
-                  <option value="">Selecione...</option>
-                  {bases.map((b) => (
-                    <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
                   ))}
                 </select>
               </div>

@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sun, Moon, Calendar } from "lucide-react";
+import { Sun, Moon, Calendar, LogOut, Loader2, CheckCircle } from "lucide-react";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
+import { Button } from "@/components/ui/button";
 import { usePreceptor } from "../preceptor-context";
 import { baseViewIndex } from "@/lib/base-colors";
+import { localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -22,8 +24,10 @@ export default function PreceptorPlantao() {
   const { base, shift } = usePreceptor();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
 
   useEffect(() => {
     if (!base || !shift) return;
@@ -41,6 +45,29 @@ export default function PreceptorPlantao() {
       .catch(() => { })
       .finally(() => setLoading(false));
   }, [base, shift]);
+
+  async function handleCheckout(assignmentId: string) {
+    if (confirming !== assignmentId) {
+      setConfirming(assignmentId);
+      return;
+    }
+    setCheckingOut(assignmentId);
+    try {
+      const res = await fetch("/taximetro/api/attendance/checkout", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignmentId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAssignments((prev) =>
+          prev.map((a) => (a.id === assignmentId ? { ...a, status: "CHECKED_OUT" } : a))
+        );
+      }
+    } catch { /* ignore */ }
+    setCheckingOut(null);
+    setConfirming(null);
+  }
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -64,6 +91,7 @@ export default function PreceptorPlantao() {
                 <TableHead>Base</TableHead>
                 <TableHead>Turno</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -79,6 +107,27 @@ export default function PreceptorPlantao() {
                     </span>
                   </TableCell>
                   <TableCell><StatusBadge status={a.status} /></TableCell>
+                  <TableCell className="text-right">
+                    {a.status === "CHECKED_IN" ? (
+                      <Button
+                        size="sm"
+                        variant={confirming === a.id ? "default" : "outline"}
+                        className={confirming === a.id ? "bg-blue-600 hover:bg-blue-700 text-white gap-1" : "gap-1"}
+                        disabled={checkingOut === a.id}
+                        onClick={() => handleCheckout(a.id)}
+                      >
+                        {checkingOut === a.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : confirming === a.id ? (
+                          <><CheckCircle className="h-3.5 w-3.5" /> Confirmar</>
+                        ) : (
+                          <><LogOut className="h-3.5 w-3.5" /> Checkout</>
+                        )}
+                      </Button>
+                    ) : a.status === "CHECKED_OUT" ? (
+                      <span className="text-xs text-blue-500 font-medium">Encerrado</span>
+                    ) : null}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
+import { localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string; internId: string; internName: string; baseCode: string;
@@ -40,9 +41,9 @@ export default function AdminRelatorios() {
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState(() => {
     const d = new Date(); d.setDate(1);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   });
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(() => localDateStr());
 
   /* filters */
   const [facultyFilter, setFacultyFilter] = useState<string>("");
@@ -206,8 +207,8 @@ export default function AdminRelatorios() {
               key={key}
               onClick={() => toggleSection(key)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${sections[key]
-                  ? "bg-accent-50 text-accent-700 ring-1 ring-accent-600/10"
-                  : "bg-slate-100 text-slate-400"
+                ? "bg-accent-50 text-accent-700 ring-1 ring-accent-600/10"
+                : "bg-slate-100 text-slate-400"
                 }`}
             >
               {label}
@@ -292,9 +293,9 @@ export default function AdminRelatorios() {
                               <TableCell className="text-center">
                                 {c ? (
                                   <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${c.status === "ok" ? "bg-emerald-50 text-emerald-700" :
-                                      c.status === "compensating" ? "bg-blue-50 text-blue-700" :
-                                        c.status === "partial" ? "bg-amber-50 text-amber-700" :
-                                          "bg-red-50 text-red-700"
+                                    c.status === "compensating" ? "bg-blue-50 text-blue-700" :
+                                      c.status === "partial" ? "bg-amber-50 text-amber-700" :
+                                        "bg-red-50 text-red-700"
                                     }`}>{STATUS_LABEL[c.status]}</span>
                                 ) : "—"}
                               </TableCell>
@@ -503,7 +504,7 @@ export default function AdminRelatorios() {
                     <TableBody>
                       {individualAssignments.map((a) => (
                         <TableRow key={a.id}>
-                          <TableCell className="text-sm">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "2-digit" })}</TableCell>
+                          <TableCell className="text-sm">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}</TableCell>
                           <TableCell className="font-medium">{a.baseCode}</TableCell>
                           <TableCell>
                             <span className="flex items-center gap-1 text-xs">

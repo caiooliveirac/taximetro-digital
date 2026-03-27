@@ -18,6 +18,8 @@ type AuditEntry = {
 };
 
 const ACTION_VARIANT: Record<string, "confirmed" | "pending" | "absent" | "checkedout" | "default"> = {
+  LOGIN_CREDENTIALS_SUCCESS: "confirmed",
+  LOGIN_CREDENTIALS_FAILED: "absent",
   CHECKIN_VALIDATED_APP: "confirmed",
   CHECKIN_VALIDATED_CODE: "confirmed",
   CHECKIN_VALIDATED_TELEGRAM: "confirmed",
@@ -42,11 +44,16 @@ const ACTION_VARIANT: Record<string, "confirmed" | "pending" | "absent" | "check
   VALIDATE_RATE_LIMITED: "absent",
   GEO_VIOLATION: "absent",
   TOTP_EXPIRED: "absent",
+  MANUAL_ATTENDANCE_CONFIRMED: "confirmed",
+  MANUAL_CHECKOUT_CONFIRMED: "checkedout",
+  MANUAL_ABSENCE_RECORDED: "absent",
 };
 
 const ACTION_LABEL: Record<string, string> = {
   SELF_REGISTER: "Auto-cadastro",
   LOGIN: "Login",
+  LOGIN_CREDENTIALS_SUCCESS: "Login por senha OK",
+  LOGIN_CREDENTIALS_FAILED: "Login por senha falhou",
   CHECKIN_GPS: "Check-in GPS",
   CHECKIN_VALIDATED_APP: "Check-in Validado (App)",
   CHECKIN_VALIDATED_CODE: "Check-in Validado (Código)",
@@ -87,6 +94,9 @@ const ACTION_LABEL: Record<string, string> = {
   TELEGRAM_BINDING: "Vinculação Telegram",
   CREATE_INVITE: "Convite Criado",
   DEACTIVATE_INVITE: "Convite Desativado",
+  MANUAL_ATTENDANCE_CONFIRMED: "Presença Manual Confirmada",
+  MANUAL_CHECKOUT_CONFIRMED: "Checkout Manual Confirmado",
+  MANUAL_ABSENCE_RECORDED: "Falta Manual Registrada",
 };
 
 const ENTITY_LABEL: Record<string, string> = {
@@ -124,7 +134,7 @@ export default function AdminAudit() {
   const entities = [...new Set(entries.map((e) => e.entity).filter(Boolean))].sort();
 
   const filtered = entries.filter((e) =>
-    (!search || e.userName?.toLowerCase().includes(search.toLowerCase()) || e.action.toLowerCase().includes(search.toLowerCase())) &&
+    (!search || e.userName?.toLowerCase().includes(search.toLowerCase()) || e.action.toLowerCase().includes(search.toLowerCase()) || e.detail?.toLowerCase().includes(search.toLowerCase())) &&
     (!filterAction || e.action === filterAction) &&
     (!filterEntity || e.entity === filterEntity)
   );
