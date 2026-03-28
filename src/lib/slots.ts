@@ -3,6 +3,10 @@ import { slotRules, assignments, bases, faculties, requests } from "@/db/schema"
 import { eq, and, sql, ne, gte, lte, inArray } from "drizzle-orm";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 
+function normalizeDateKey(date: string): string {
+  return date.slice(0, 10);
+}
+
 export async function getAvailableSlots(facultyId?: string, weekStart?: string) {
   const rangeStart = weekStart ?? localDateStr();
   const rangeEnd = addDaysToDateStr(rangeStart, 6);
@@ -225,15 +229,16 @@ function getDayOfWeek(dateStr: string): "MON" | "TUE" | "WED" | "THU" | "FRI" | 
  * CRU NIGHT on date X → blocks: (X DAY) and (X+1 DAY)
  */
 function getAdjacentBlockedSlots(date: string, period: "DAY" | "NIGHT"): string[] {
+  const normalizedDate = normalizeDateKey(date);
   if (period === "DAY") {
     return [
-      `${addDaysToDateStr(date, -1)}|NIGHT`,
-      `${date}|NIGHT`,
+      `${addDaysToDateStr(normalizedDate, -1)}|NIGHT`,
+      `${normalizedDate}|NIGHT`,
     ];
   }
   return [
-    `${date}|DAY`,
-    `${addDaysToDateStr(date, 1)}|DAY`,
+    `${normalizedDate}|DAY`,
+    `${addDaysToDateStr(normalizedDate, 1)}|DAY`,
   ];
 }
 
@@ -262,7 +267,7 @@ export async function getCruBlockedSlots(
     .innerJoin(bases, eq(bases.id, assignments.baseId))
     .where(
       and(
-        inArray(bases.type, ["CENTRAL", "CRL"]),
+        inArray(bases.code, ["CRU", "CRL"]),
         inArray(assignments.internId, internIds),
         gte(assignments.date, from),
         lte(assignments.date, to),
@@ -273,10 +278,11 @@ export async function getCruBlockedSlots(
   for (const a of cruAssignments) {
     if (!blocked.has(a.internId)) blocked.set(a.internId, new Set());
     const set = blocked.get(a.internId)!;
+    const normalizedDate = normalizeDateKey(a.date);
     // The CRU assignment itself blocks that slot
-    set.add(`${a.date}|${a.period}`);
+    set.add(`${normalizedDate}|${a.period}`);
     // Plus adjacent slots
-    for (const s of getAdjacentBlockedSlots(a.date, a.period as "DAY" | "NIGHT")) {
+    for (const s of getAdjacentBlockedSlots(normalizedDate, a.period as "DAY" | "NIGHT")) {
       set.add(s);
     }
   }
@@ -296,9 +302,10 @@ export async function checkCruConflict(
 ): Promise<{ conflicted: boolean; reason?: string }> {
   const from = addDaysToDateStr(date, -1);
   const to = addDaysToDateStr(date, 1);
+  const normalizedTargetDate = normalizeDateKey(date);
 
   const conditions = [
-    inArray(bases.type, ["CENTRAL", "CRL"]),
+    inArray(bases.code, ["CRU", "CRL"]),
     eq(assignments.internId, internId),
     gte(assignments.date, from),
     lte(assignments.date, to),
@@ -317,13 +324,14 @@ export async function checkCruConflict(
 
   const blocked = new Set<string>();
   for (const assignment of cruAssignments) {
-    blocked.add(`${assignment.date}|${assignment.period}`);
-    for (const slot of getAdjacentBlockedSlots(assignment.date, assignment.period as "DAY" | "NIGHT")) {
+    const normalizedDate = normalizeDateKey(assignment.date);
+    blocked.add(`${normalizedDate}|${assignment.period}`);
+    for (const slot of getAdjacentBlockedSlots(normalizedDate, assignment.period as "DAY" | "NIGHT")) {
       blocked.add(slot);
     }
   }
 
-  if (blocked.has(`${date}|${period}`)) {
+  if (blocked.has(`${normalizedTargetDate}|${period}`)) {
     return { conflicted: true, reason: "Conflito: interno possui plantão em regulação (CRU/CRL) em turno adjacente (±12h)" };
   }
   return { conflicted: false };

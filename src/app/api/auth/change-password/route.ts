@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const passwordHash = await hash(newPassword, 10);
 
     await db.update(users)
-        .set({ passwordHash, updatedAt: new Date() })
+        .set({ passwordHash, forcePasswordChange: false, updatedAt: new Date() })
         .where(eq(users.id, user.id));
 
     return NextResponse.json({ success: true });

@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const passwordHash = await hash(password, 10);
 
     await db.update(users)
-        .set({ passwordHash, updatedAt: new Date() })
+        .set({ passwordHash, forcePasswordChange: false, updatedAt: new Date() })
         .where(eq(users.id, resetToken.userId));
 
     await db.update(passwordResetTokens)

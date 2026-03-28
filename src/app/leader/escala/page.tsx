@@ -44,6 +44,10 @@ const DOW_IDX: Record<(typeof DOW_KEYS)[number], number> = {
 };
 const BASE_ORDER = ["SM01", "PM04", "PM40", "CN10", "PR03", "CC70", "BR60", "CB02", "IT30", "CZ50", "BR05", "PP20"];
 
+function normalizeDateKey(date: string) {
+  return date.slice(0, 10);
+}
+
 function compareBaseOrder(left: Base, right: Base) {
   const typeRank = (type: string) => {
     if (type === "USA") return 0;
@@ -135,6 +139,7 @@ export default function LeaderEscala() {
   /* ── Manual allocation modal ── */
   const [allocSlot, setAllocSlot] = useState<{ baseId: string; baseCode: string; date: string; period: "DAY" | "NIGHT" } | null>(null);
   const [allocInternId, setAllocInternId] = useState("");
+  const [allocSearch, setAllocSearch] = useState("");
   const [allocLoading, setAllocLoading] = useState(false);
   const [allocMsg, setAllocMsg] = useState("");
 
@@ -371,6 +376,7 @@ export default function LeaderEscala() {
   function openAllocModal(baseId: string, baseCode: string, date: string, period: "DAY" | "NIGHT") {
     setAllocSlot({ baseId, baseCode, date, period });
     setAllocInternId("");
+    setAllocSearch("");
     setAllocMsg("");
   }
 
@@ -495,34 +501,57 @@ export default function LeaderEscala() {
     // Map: "internId|date|period" → true if that slot is blocked by a CRU/CRL assignment
     const blocked = new Set<string>();
     for (const a of assignments) {
-      if (a.status === "CANCELLED" || (a.baseType !== "CENTRAL" && a.baseType !== "CRL")) continue;
+      if (a.status === "CANCELLED" || (a.baseCode !== "CRU" && a.baseCode !== "CRL")) continue;
+      const dateKey = normalizeDateKey(a.date);
       // The CRU assignment itself is fine — mark adjacent slots as blocked
       if (a.period === "DAY") {
-        blocked.add(`${a.internId}|${addDaysToDateStr(a.date, -1)}|NIGHT`);
-        blocked.add(`${a.internId}|${a.date}|NIGHT`);
+        blocked.add(`${a.internId}|${addDaysToDateStr(dateKey, -1)}|NIGHT`);
+        blocked.add(`${a.internId}|${dateKey}|NIGHT`);
       } else {
-        blocked.add(`${a.internId}|${a.date}|DAY`);
-        blocked.add(`${a.internId}|${addDaysToDateStr(a.date, 1)}|DAY`);
+        blocked.add(`${a.internId}|${dateKey}|DAY`);
+        blocked.add(`${a.internId}|${addDaysToDateStr(dateKey, 1)}|DAY`);
       }
     }
     return blocked;
   }, [assignments]);
 
-  const eligibleAllocInterns = useMemo(() => {
-    if (!allocSlot) return [] as Array<InternRole & { isCruBlocked: boolean }>;
+  const allocationCandidates = useMemo(() => {
+    if (!allocSlot) {
+      return {
+        eligibleInterns: [] as InternRole[],
+        blockedCount: 0,
+        busyCount: 0,
+      };
+    }
 
-    return activeInterns
+    const query = allocSearch.trim().toLowerCase();
+    let blockedCount = 0;
+    let busyCount = 0;
+
+    const eligibleInterns = activeInterns
       .filter((intern) => {
         const key = `${intern.id}|${allocSlot.date}`;
         const existing = assignmentsByInternDate.get(key) ?? [];
-        return !existing.some((assignment) => assignment.period === allocSlot.period);
+        if (existing.some((assignment) => assignment.period === allocSlot.period)) {
+          busyCount += 1;
+          return false;
+        }
+
+        if (cruConflicts.has(`${intern.id}|${allocSlot.date}|${allocSlot.period}`)) {
+          blockedCount += 1;
+          return false;
+        }
+
+        if (query && !intern.name.toLowerCase().includes(query)) {
+          return false;
+        }
+
+        return true;
       })
-      .map((intern) => ({
-        ...intern,
-        isCruBlocked: cruConflicts.has(`${intern.id}|${allocSlot.date}|${allocSlot.period}`),
-      }))
       .sort((left, right) => left.name.localeCompare(right.name));
-  }, [activeInterns, allocSlot, assignmentsByInternDate, cruConflicts]);
+
+    return { eligibleInterns, blockedCount, busyCount };
+  }, [activeInterns, allocSearch, allocSlot, assignmentsByInternDate, cruConflicts]);
 
   const today = localDateStr();
   const selectedCount = [...lotterySelected].filter((id) => !lotteryExcluded.has(id)).length;
@@ -670,7 +699,7 @@ export default function LeaderEscala() {
                           <div className="space-y-1">
                             {periodAssignments.map((assignment) => {
                               const ring = getStatusRing(assignment);
-                              const isCruBlocked = cruConflicts.has(`${assignment.internId}|${assignment.date}|${assignment.period}`);
+                              const isCruBlocked = cruConflicts.has(`${assignment.internId}|${normalizeDateKey(assignment.date)}|${assignment.period}`);
                               return (
                                 <div
                                   key={assignment.id}
@@ -1158,24 +1187,47 @@ export default function LeaderEscala() {
               </button>
             </div>
             <div className="px-6 py-4 space-y-3">
-              <label className="block text-sm font-medium text-slate-700">Selecionar interno:</label>
-              <select
-                value={allocInternId}
-                onChange={(e) => setAllocInternId(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-              >
-                <option value="">— Escolher —</option>
-                {eligibleAllocInterns.map((intern) => (
-                  <option key={intern.id} value={intern.id}>
-                    {intern.name}{intern.isCruBlocked ? " ⚠️ CRU ±12h" : ""}
-                  </option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium text-slate-700">Buscar e selecionar interno:</label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={allocSearch}
+                  onChange={(e) => setAllocSearch(e.target.value)}
+                  placeholder="Buscar pelo nome"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+                {allocationCandidates.eligibleInterns.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-400">
+                    Nenhum interno elegível neste turno.
+                    {allocationCandidates.blockedCount > 0 ? ` ${allocationCandidates.blockedCount} bloqueado(s) por conflito CRU/CRL ±12h.` : ""}
+                  </p>
+                ) : (
+                  allocationCandidates.eligibleInterns.map((intern) => (
+                    <button
+                      key={intern.id}
+                      type="button"
+                      onClick={() => setAllocInternId(intern.id)}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${allocInternId === intern.id ? "bg-blue-50 text-blue-700 ring-1 ring-blue-300" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+                    >
+                      <span>{intern.name}</span>
+                      {allocInternId === intern.id && <span className="text-xs font-semibold text-blue-600">Selecionado</span>}
+                    </button>
+                  ))
+                )}
+              </div>
               <p className="text-xs text-slate-500">
-                {eligibleAllocInterns.length === 0
+                {allocationCandidates.eligibleInterns.length === 0
                   ? "Nenhum interno livre para este dia e turno."
-                  : `${eligibleAllocInterns.length} interno(s) elegível(is) para este plantão.`}
+                  : `${allocationCandidates.eligibleInterns.length} interno(s) elegível(is) para este plantão.`}
               </p>
+              {(allocationCandidates.blockedCount > 0 || allocationCandidates.busyCount > 0) && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {allocationCandidates.blockedCount > 0 && <p>{allocationCandidates.blockedCount} interno(s) ocultado(s) por conflito CRU/CRL ±12h.</p>}
+                  {allocationCandidates.busyCount > 0 && <p>{allocationCandidates.busyCount} interno(s) já ocupados neste mesmo dia e turno.</p>}
+                </div>
+              )}
               {allocMsg && <p className="text-sm">{allocMsg}</p>}
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">

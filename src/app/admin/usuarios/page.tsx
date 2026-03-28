@@ -2,9 +2,11 @@
 
 import { Fragment, useEffect, useState, useRef } from "react";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { FileDown, KeyRound, Mail, ChevronDown, ChevronUp } from "lucide-react";
+import { FileDown, KeyRound, Mail, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { InviteButton } from "@/components/invite-button";
 import { formatBrazilTime } from "@/lib/utils";
+
+const MERGE_ROLLBACK_WINDOW_DAYS = 7;
 
 type User = {
   id: string;
@@ -21,6 +23,7 @@ type User = {
   baseId: string | null;
   baseCode: string | null;
   alsoPreceptor?: boolean;
+  createdAt?: string;
 };
 
 type Faculty = { id: string; abbreviation: string };
@@ -56,7 +59,37 @@ type HistoryRequest = {
 type DuplicateGroup = {
   key: string;
   users: User[];
+  suggestedTargetId: string;
 };
+
+type RecentMergeEvent = {
+  id: string;
+  sourceUserId: string;
+  sourceName: string;
+  sourceEmail: string;
+  targetUserId: string;
+  targetName: string;
+  targetEmail: string;
+  createdAt: string;
+  rollbackAvailableUntil: string;
+};
+
+function normalizeDuplicateKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function compareDuplicateUsers(left: User, right: User) {
+  if (left.isActive !== right.isActive) return left.isActive ? -1 : 1;
+  if (Boolean(left.registrationCode) !== Boolean(right.registrationCode)) return left.registrationCode ? -1 : 1;
+  if (Boolean(left.cpf) !== Boolean(right.cpf)) return left.cpf ? -1 : 1;
+  if ((left.createdAt ?? "") !== (right.createdAt ?? "")) return (left.createdAt ?? "").localeCompare(right.createdAt ?? "");
+  return left.email.localeCompare(right.email);
+}
 
 const ROLES = ["COORDINATOR", "LEADER", "PRECEPTOR", "INTERN"] as const;
 const ROLE_LABEL: Record<string, string> = {
@@ -118,6 +151,8 @@ export default function AdminUsuarios() {
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [mergeSaving, setMergeSaving] = useState(false);
   const [mergeMessage, setMergeMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [recentMergeEvents, setRecentMergeEvents] = useState<RecentMergeEvent[]>([]);
+  const [rollbackingMergeId, setRollbackingMergeId] = useState<string | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
 
   function applyRoleDefaults(nextRole: string) {
@@ -137,14 +172,16 @@ export default function AdminUsuarios() {
 
   async function load() {
     try {
-      const [uRes, fRes, bRes] = await Promise.all([
+      const [uRes, fRes, bRes, mergeRes] = await Promise.all([
         fetch("/taximetro/api/admin/users").then((r) => r.json()),
         fetch("/taximetro/api/admin/faculties").then((r) => r.json()),
         fetch("/taximetro/api/admin/bases").then((r) => r.json()),
+        fetch("/taximetro/api/admin/users/merge-events").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       ]);
       if (uRes.success) setUsers(uRes.data);
       if (fRes.success) setFaculties(fRes.data);
       if (bRes.success) setBases(bRes.data);
+      if (mergeRes.success) setRecentMergeEvents(mergeRes.data);
     } catch {
       setError("Erro ao carregar usuários.");
     }
@@ -276,6 +313,7 @@ export default function AdminUsuarios() {
           id: user.id,
           email: normalizedEmail,
           password: "123456",
+          forcePasswordChange: true,
           isActive: true,
         }),
       });
@@ -284,7 +322,7 @@ export default function AdminUsuarios() {
         setAccessMessage({ type: "error", text: json.error || "Não foi possível redefinir o acesso." });
         return;
       }
-      setAccessMessage({ type: "success", text: `Login atualizado para ${normalizedEmail}. Senha temporária definida como 123456.` });
+      setAccessMessage({ type: "success", text: `Login atualizado para ${normalizedEmail}. Senha temporária definida como 123456 e troca obrigatória ativada no próximo login.` });
       await load();
     } catch {
       setAccessMessage({ type: "error", text: "Erro de conexão ao redefinir acesso." });
@@ -339,7 +377,7 @@ export default function AdminUsuarios() {
   });
 
   const duplicateGroups = users.reduce<DuplicateGroup[]>((groups, user) => {
-    const key = user.name.trim().toLowerCase();
+    const key = normalizeDuplicateKey(user.name);
     if (!key) return groups;
 
     const existing = groups.find((group) => group.key === key);
@@ -348,15 +386,13 @@ export default function AdminUsuarios() {
       return groups;
     }
 
-    groups.push({ key, users: [user] });
+    groups.push({ key, users: [user], suggestedTargetId: user.id });
     return groups;
   }, []).filter((group) => group.users.length > 1)
     .map((group) => ({
       ...group,
-      users: [...group.users].sort((left, right) => {
-        if (left.isActive !== right.isActive) return left.isActive ? -1 : 1;
-        return left.name.localeCompare(right.name) || left.email.localeCompare(right.email);
-      }),
+      users: [...group.users].sort(compareDuplicateUsers),
+      suggestedTargetId: [...group.users].sort(compareDuplicateUsers)[0]?.id ?? "",
     }));
 
   async function mergeUsers() {
@@ -372,7 +408,7 @@ export default function AdminUsuarios() {
       return;
     }
 
-    const confirmed = window.confirm(`Mesclar ${sourceUser.name} (${sourceUser.email}) em ${targetUser.name} (${targetUser.email})? O cadastro removido deixará de existir e os vínculos serão migrados.`);
+    const confirmed = window.confirm(`Mesclar ${sourceUser.name} (${sourceUser.email}) em ${targetUser.name} (${targetUser.email})? O cadastro fonte ficará oculto e poderá ser desfeito por até ${MERGE_ROLLBACK_WINDOW_DAYS} dias.`);
     if (!confirmed) return;
 
     setMergeSaving(true);
@@ -389,7 +425,7 @@ export default function AdminUsuarios() {
         return;
       }
 
-      setMergeMessage({ type: "success", text: "Cadastros mesclados com sucesso." });
+      setMergeMessage({ type: "success", text: `Cadastros mesclados com sucesso. Se precisar, o rollback automático fica disponível por ${MERGE_ROLLBACK_WINDOW_DAYS} dias.` });
       setMergeSourceId("");
       setMergeTargetId("");
       await load();
@@ -397,6 +433,68 @@ export default function AdminUsuarios() {
       setMergeMessage({ type: "error", text: "Erro de conexão ao mesclar os cadastros." });
     } finally {
       setMergeSaving(false);
+    }
+  }
+
+  async function mergeDuplicateGroup(group: DuplicateGroup) {
+    const targetUser = group.users.find((user) => user.id === group.suggestedTargetId) ?? group.users[0];
+    const sourceUsers = group.users.filter((user) => user.id !== targetUser?.id);
+    if (!targetUser || sourceUsers.length === 0) return;
+
+    const confirmed = window.confirm(`Mesclar ${sourceUsers.length} cadastro(s) de ${targetUser.name} mantendo ${targetUser.email} como principal? O rollback automático ficará disponível por ${MERGE_ROLLBACK_WINDOW_DAYS} dias para cada merge realizado.`);
+    if (!confirmed) return;
+
+    setMergeSaving(true);
+    setMergeMessage(null);
+    try {
+      for (const sourceUser of sourceUsers) {
+        const res = await fetch("/taximetro/api/admin/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceUserId: sourceUser.id, targetUserId: targetUser.id }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+          setMergeMessage({ type: "error", text: json.error || `Não foi possível mesclar ${sourceUser.email}.` });
+          return;
+        }
+      }
+
+      setMergeSourceId("");
+      setMergeTargetId("");
+      setMergeMessage({ type: "success", text: `Cadastros de ${targetUser.name} mesclados em ${targetUser.email}. O rollback automático fica disponível por ${MERGE_ROLLBACK_WINDOW_DAYS} dias.` });
+      await load();
+    } catch {
+      setMergeMessage({ type: "error", text: "Erro de conexão ao mesclar o grupo duplicado." });
+    } finally {
+      setMergeSaving(false);
+    }
+  }
+
+  async function rollbackMerge(event: RecentMergeEvent) {
+    const confirmed = window.confirm(`Desfazer a mesclagem de ${event.sourceName} (${event.sourceEmail}) em ${event.targetName} (${event.targetEmail})?`);
+    if (!confirmed) return;
+
+    setRollbackingMergeId(event.id);
+    setMergeMessage(null);
+    try {
+      const res = await fetch("/taximetro/api/admin/users/merge-events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mergeEventId: event.id }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setMergeMessage({ type: "error", text: json.error || "Não foi possível desfazer a mesclagem." });
+        return;
+      }
+
+      setMergeMessage({ type: "success", text: `Mesclagem desfeita. O cadastro ${event.sourceEmail} voltou ao estado anterior.` });
+      await load();
+    } catch {
+      setMergeMessage({ type: "error", text: "Erro de conexão ao desfazer a mesclagem." });
+    } finally {
+      setRollbackingMergeId(null);
     }
   }
 
@@ -426,6 +524,35 @@ export default function AdminUsuarios() {
         </div>
       </div>
 
+      {recentMergeEvents.length > 0 && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 shadow-sm space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-sky-900">Mesclagens recentes com rollback disponível</h2>
+            <p className="text-xs text-sky-800">Se o admin mesclar a conta errada, dá para desfazer por aqui enquanto a janela automática ainda estiver aberta.</p>
+          </div>
+          <div className="space-y-2">
+            {recentMergeEvents.map((event) => (
+              <div key={event.id} className="flex flex-col gap-3 rounded-lg border border-sky-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900">{event.sourceName} → {event.targetName}</p>
+                  <p className="text-xs text-slate-500">{event.sourceEmail} mesclado em {event.targetEmail}</p>
+                  <p className="text-xs text-slate-400">Mesclado em {formatBrazilTime(event.createdAt)} · rollback até {formatBrazilTime(event.rollbackAvailableUntil)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => rollbackMerge(event)}
+                  disabled={rollbackingMergeId === event.id || mergeSaving}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-xs font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {rollbackingMergeId === event.id ? "Desfazendo..." : "Desfazer merge"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {duplicateGroups.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm space-y-4">
           <div>
@@ -436,13 +563,21 @@ export default function AdminUsuarios() {
           <div className="space-y-3">
             {duplicateGroups.map((group) => (
               <div key={group.key} className="rounded-lg border border-amber-200 bg-white p-3 space-y-2">
-                <p className="text-sm font-medium text-slate-900">{group.users[0]?.name}</p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{group.users[0]?.name}</p>
+                    <p className="text-xs text-slate-500">Principal sugerido: {group.users.find((user) => user.id === group.suggestedTargetId)?.email ?? "—"}</p>
+                  </div>
+                  <button onClick={() => mergeDuplicateGroup(group)} disabled={mergeSaving || group.users.length < 2} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
+                    {mergeSaving ? "Mesclando..." : "Mesclar grupo automaticamente"}
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {group.users.map((user) => (
                     <label key={user.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
                       <div>
                         <p className="font-medium text-slate-900">{user.email}</p>
-                        <p className="text-xs text-slate-500">CPF: {user.cpf ?? "—"} · Papel: {ROLE_LABEL[user.role ?? ""] ?? user.role ?? "—"} · {user.isActive ? "Ativo" : "Pendente"}</p>
+                        <p className="text-xs text-slate-500">CPF: {user.cpf ?? "—"} · Papel: {ROLE_LABEL[user.role ?? ""] ?? user.role ?? "—"} · {user.isActive ? "Ativo" : "Pendente"}{group.suggestedTargetId === user.id ? " · sugerido manter" : ""}</p>
                       </div>
                       <div className="flex gap-2 text-xs">
                         <button type="button" onClick={() => setMergeTargetId(user.id)} className={`rounded px-2 py-1 ${mergeTargetId === user.id ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-700"}`}>
@@ -726,7 +861,7 @@ export default function AdminUsuarios() {
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <p className="text-sm font-semibold text-slate-900">Acesso rápido</p>
-                            <p className="text-xs text-slate-500">Troca o email de login e redefine a senha temporária sem abrir o editor grande.</p>
+                            <p className="text-xs text-slate-500">Troca o email de login, redefine a senha temporária e obriga a pessoa a cadastrar uma nova senha assim que entrar.</p>
                           </div>
                           <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 border border-sky-200">
                             Senha temporária: 123456

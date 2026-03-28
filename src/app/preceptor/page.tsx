@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Clock, Sun, Moon, KeyRound, Send } from "lucide-react";
+import { CheckCircle, Clock, Sun, Moon, KeyRound, Send, LogOut, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
@@ -31,6 +31,8 @@ export default function PreceptorValidar() {
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [codeInput, setCodeInput] = useState("");
   const [validatingCode, setValidatingCode] = useState(false);
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const [confirmingCheckout, setConfirmingCheckout] = useState<string | null>(null);
 
   const today = localDateStr();
 
@@ -38,7 +40,7 @@ export default function PreceptorValidar() {
     if (!base || !shift) return;
     try {
       const params = new URLSearchParams({ from: today, to: today, baseId: base.id, period: shift });
-      const res = await fetch(`/taximetro/api/assignments?${params}`);
+      const res = await fetch(`/taximetro/api/assignments?${params}`, { headers: { "x-force-role": "PRECEPTOR" } });
       const json = await res.json();
       if (json.success) {
         const sorted = json.data
@@ -58,7 +60,7 @@ export default function PreceptorValidar() {
     try {
       const res = await fetch("/taximetro/api/attendance/validate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
         body: JSON.stringify({ assignmentId }),
       });
       const json = await res.json();
@@ -76,7 +78,7 @@ export default function PreceptorValidar() {
     try {
       const res = await fetch("/taximetro/api/attendance/validate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
         body: JSON.stringify({ code: codeInput }),
       });
       const json = await res.json();
@@ -86,6 +88,36 @@ export default function PreceptorValidar() {
       setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
     }
     setValidatingCode(false);
+  }
+
+  async function handleCheckout(assignmentId: string) {
+    if (confirmingCheckout !== assignmentId) {
+      setConfirmingCheckout(assignmentId);
+      return;
+    }
+
+    setCheckingOut(assignmentId);
+    setMsg(null);
+    try {
+      const res = await fetch("/taximetro/api/attendance/checkout", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
+        body: JSON.stringify({ assignmentId }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setAssignments((prev) => prev.map((assignment) => (
+          assignment.id === assignmentId ? { ...assignment, status: "CHECKED_OUT" } : assignment
+        )));
+        setMsg({ type: "success", text: "Checkout registrado" });
+      } else {
+        setMsg({ type: "error", text: json.error });
+      }
+    } catch {
+      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
+    }
+    setCheckingOut(null);
+    setConfirmingCheckout(null);
   }
 
   const filtered = assignments.filter((a) => !search || a.internName.toLowerCase().includes(search.toLowerCase()));
@@ -169,6 +201,24 @@ export default function PreceptorValidar() {
                         <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
                         Confirmar
                       </Button>
+                    ) : a.status === "CHECKED_IN" ? (
+                      <Button
+                        size="sm"
+                        variant={confirmingCheckout === a.id ? "default" : "outline"}
+                        className={confirmingCheckout === a.id ? "bg-blue-600 hover:bg-blue-700 text-white gap-1" : "gap-1"}
+                        disabled={checkingOut === a.id}
+                        onClick={() => handleCheckout(a.id)}
+                      >
+                        {checkingOut === a.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : confirmingCheckout === a.id ? (
+                          <><CheckCircle className="h-3.5 w-3.5" /> Confirmar</>
+                        ) : (
+                          <><LogOut className="h-3.5 w-3.5" /> Checkout</>
+                        )}
+                      </Button>
+                    ) : a.status === "CHECKED_OUT" ? (
+                      <span className="text-xs font-medium text-blue-500">Encerrado</span>
                     ) : (
                       <span className="text-xs text-slate-400">—</span>
                     )}

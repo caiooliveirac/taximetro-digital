@@ -32,7 +32,7 @@ export default function PreceptorPlantao() {
   useEffect(() => {
     if (!base || !shift) return;
     const params = new URLSearchParams({ from: today, to: today, baseId: base.id, period: shift });
-    fetch(`/taximetro/api/assignments?${params}`)
+    fetch(`/taximetro/api/assignments?${params}`, { headers: { "x-force-role": "PRECEPTOR" } })
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
@@ -55,7 +55,7 @@ export default function PreceptorPlantao() {
     try {
       const res = await fetch("/taximetro/api/attendance/checkout", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
         body: JSON.stringify({ assignmentId }),
       });
       const data = await res.json();

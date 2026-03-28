@@ -6,8 +6,8 @@ import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, X } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { StatusBadge } from "@/components/status-badge";
-import { getBaseStyle, baseViewIndex } from "@/lib/base-colors";
-import { formatBrazilTime, isWithinAdminAttendanceWindow, localDateStr } from "@/lib/utils";
+import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
+import { addDaysToDateStr, formatBrazilTime, localDateStr } from "@/lib/utils";
 
 type Rule = {
     id: string;
@@ -73,11 +73,23 @@ type AssignmentDetail = {
 type AllocationState = {
     baseId: string;
     baseCode: string;
+    baseName?: string;
     date: string;
     period: "DAY" | "NIGHT";
     facultyId: string | null;
     facultyAbbr: string | null;
 };
+
+type PeriodFocusState = {
+    baseId: string;
+    baseCode: string;
+    baseName: string;
+    date: string;
+    period: "DAY" | "NIGHT";
+};
+
+type ScheduleScope = "all" | "usa" | "regulation" | "cru" | "crl";
+type FacultyBadgeMode = "neutral" | "faculty";
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const;
 const PERIODS: Array<"DAY" | "NIGHT"> = ["DAY", "NIGHT"];
@@ -91,20 +103,43 @@ const DAY_LABEL_BY_KEY: Record<(typeof DAYS)[number], string> = {
     SUN: "Dom",
 };
 
+const DAY_LONG_LABEL_BY_KEY: Record<(typeof DAYS)[number], string> = {
+    MON: "Segunda",
+    TUE: "Terça",
+    WED: "Quarta",
+    THU: "Quinta",
+    FRI: "Sexta",
+    SAT: "Sábado",
+    SUN: "Domingo",
+};
+
 const SLOT_LIMIT_PER_PERIOD = 2;
 
-type PeriodGridSlot =
+type ActualPeriodGridSlot =
     | { kind: "assignment"; key: string; assignment: AssignmentDetail }
-    | { kind: "vacancy"; key: string; allocation: AllocationState; facultyAbbr: string }
-    | { kind: "open"; key: string; allocation: AllocationState; period: "DAY" | "NIGHT" };
+    | { kind: "vacancy"; key: string; allocation: AllocationState; facultyAbbr: string };
+
+type VisiblePeriodGridSlot = ActualPeriodGridSlot | { kind: "open"; key: string; allocation: AllocationState };
+
+type VisiblePeriodSlots = {
+    slots: VisiblePeriodGridSlot[];
+    overflowCount: number;
+    hiddenHasVacancy: boolean;
+};
+
+function normalizeDateKey(date: string) {
+    return date.slice(0, 10);
+}
 
 function getDayKey(date: string) {
-    const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+    const normalizedDate = normalizeDateKey(date);
+    const day = new Date(`${normalizedDate}T12:00:00Z`).getUTCDay();
     return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][day] as typeof DAYS[number] | "SUN";
 }
 
 function formatDayMonth(date: string) {
-    return new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    const normalizedDate = normalizeDateKey(date);
+    return new Date(`${normalizedDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
 function formatPeriod(period: "DAY" | "NIGHT") {
@@ -119,9 +154,10 @@ function formatAssignmentCardName(name: string) {
 }
 
 function getDatePhase(date: string) {
+    const normalizedDate = normalizeDateKey(date);
     const today = localDateStr();
-    if (date < today) return "past" as const;
-    if (date > today) return "future" as const;
+    if (normalizedDate < today) return "past" as const;
+    if (normalizedDate > today) return "future" as const;
     return "today" as const;
 }
 
@@ -141,6 +177,14 @@ function getNeutralFacultyBadgeClass(period?: "DAY" | "NIGHT") {
         pill: "border border-stone-300 bg-white/66 text-stone-700",
         dot: "bg-stone-400",
     };
+}
+
+function getFacultyBadgeClass(facultyAbbr: string | null | undefined, mode: FacultyBadgeMode, period?: "DAY" | "NIGHT") {
+    if (mode === "faculty") {
+        return getFacultyStyle(facultyAbbr);
+    }
+
+    return getNeutralFacultyBadgeClass(period);
 }
 
 function getPeriodTone(period: "DAY" | "NIGHT") {
@@ -207,7 +251,7 @@ function getAssignmentVisualState(assignment: AssignmentDetail, period: "DAY" | 
             iconWrapClass: "border border-orange-300/80 bg-white/68",
             iconClass: "text-orange-700",
             dotClass: "bg-orange-500 shadow-[0_0_0_5px_rgba(249,115,22,0.2)]",
-            metaLabel: phase === "past" ? "Pendência passada" : "Sem check-in",
+            metaLabel: "Sem checkin",
             metaClass: "text-stone-700/80",
             icon: Clock3 as LucideIcon,
             darkSurface: false,
@@ -288,10 +332,10 @@ function getAssignmentCardTitle(assignment: AssignmentDetail) {
     return `${assignment.intern_name} • ${assignment.base_code} • ${formatPeriod(assignment.period)} • check-in ${checkinText} • checkout ${checkoutText}`;
 }
 
-function AssignmentSlotCard({ assignment, period, onSelect }: { assignment: AssignmentDetail; period: "DAY" | "NIGHT"; onSelect: (id: string) => void }) {
+function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "neutral", showBaseCode = false }: { assignment: AssignmentDetail; period: "DAY" | "NIGHT"; onSelect: (id: string) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean }) {
     const visual = getAssignmentVisualState(assignment, period);
     const Icon = visual.icon;
-    const facultyTone = getNeutralFacultyBadgeClass(visual.darkSurface ? "NIGHT" : undefined);
+    const facultyTone = getFacultyBadgeClass(assignment.faculty_abbr, facultyBadgeMode, visual.darkSurface ? "NIGHT" : undefined);
 
     return (
         <button
@@ -307,6 +351,7 @@ function AssignmentSlotCard({ assignment, period, onSelect }: { assignment: Assi
                         <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
                         <span className="truncate">{assignment.faculty_abbr}</span>
                     </span>
+                    {showBaseCode && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${visual.darkSurface ? "border border-white/10 bg-white/8 text-white/72" : "border border-stone-300 bg-white/70 text-stone-600"}`}>{assignment.base_code}</span>}
                     <span className={`truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${visual.metaClass}`}>{visual.metaLabel}</span>
                 </span>
             </span>
@@ -321,9 +366,9 @@ function AssignmentSlotCard({ assignment, period, onSelect }: { assignment: Assi
     );
 }
 
-function VacancySlotCard({ facultyAbbr, allocation, period, onOpen }: { facultyAbbr: string; allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void }) {
+function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, facultyBadgeMode = "neutral", showBaseCode = false }: { facultyAbbr: string; allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean }) {
     const tone = getPeriodTone(period);
-    const facultyTone = getNeutralFacultyBadgeClass(period === "NIGHT" ? "NIGHT" : undefined);
+    const facultyTone = getFacultyBadgeClass(facultyAbbr, facultyBadgeMode, period === "NIGHT" ? "NIGHT" : undefined);
 
     return (
         <button
@@ -334,9 +379,12 @@ function VacancySlotCard({ facultyAbbr, allocation, period, onOpen }: { facultyA
         >
             <span className="min-w-0 flex-1">
                 <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-75">Vaga</span>
-                <span className={`mt-1 inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${facultyTone.pill}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
-                    <span className="truncate">{facultyAbbr}</span>
+                <span className="mt-1 flex items-center gap-2">
+                    <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${facultyTone.pill}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
+                        <span className="truncate">{facultyAbbr}</span>
+                    </span>
+                    {showBaseCode && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${period === "NIGHT" ? "border border-white/10 bg-white/8 text-white/72" : "border border-stone-300 bg-white/70 text-stone-600"}`}>{allocation.baseCode}</span>}
                 </span>
             </span>
             <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${tone.action}`}>
@@ -353,17 +401,23 @@ function OpenSlotCard({ allocation, period, onOpen }: { allocation: AllocationSt
         <button
             type="button"
             onClick={() => onOpen(allocation)}
-            className={`flex min-h-[52px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-dashed px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.08)] ${tone.ghost} ${getMutedSlotClass(allocation.date, "open")}`}
+            className={`flex min-h-[56px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-dashed px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.1)] ${tone.ghost} ${getMutedSlotClass(allocation.date, "open")}`}
+            title="Alocação manual livre"
         >
-            <span className={`min-w-0 flex-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${tone.meta}`}>Livre para alocação</span>
+            <span className="min-w-0 flex-1">
+                <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-75">Livre</span>
+                <span className={`mt-1 block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${tone.meta}`}>
+                    Alocação manual
+                </span>
+            </span>
             <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${tone.action}`}>
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-4 w-4" />
             </span>
         </button>
     );
 }
 
-export function AdminFilledSchedule() {
+export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }) {
     const [bases, setBases] = useState<Base[]>([]);
     const [rules, setRules] = useState<Rule[]>([]);
     const [faculties, setFaculties] = useState<Faculty[]>([]);
@@ -379,10 +433,13 @@ export function AdminFilledSchedule() {
     const [searchIntern, setSearchIntern] = useState("");
     const [filterBase, setFilterBase] = useState("");
     const [filterFaculty, setFilterFaculty] = useState("");
+    const [filterDayKey, setFilterDayKey] = useState<"" | (typeof DAYS)[number]>("");
     const [filterPeriod, setFilterPeriod] = useState<"" | "DAY" | "NIGHT">("");
     const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
     const [allocation, setAllocation] = useState<AllocationState | null>(null);
+    const [focusedPeriod, setFocusedPeriod] = useState<PeriodFocusState | null>(null);
     const [allocFacultyId, setAllocFacultyId] = useState("");
+    const [allocCandidateFacultyFilter, setAllocCandidateFacultyFilter] = useState<string>("ALL");
     const [allocInternId, setAllocInternId] = useState("");
     const [allocSearch, setAllocSearch] = useState("");
     const [allocLoading, setAllocLoading] = useState(false);
@@ -399,6 +456,14 @@ export function AdminFilledSchedule() {
     );
     const weekEnd = weekDates[6];
     const today = localDateStr();
+    const isRegulationScope = scope === "cru" || scope === "crl";
+    const hasInternSearch = searchIntern.trim().length > 0;
+    const hidesNight = scope === "crl";
+    const scopePeriods: Array<"DAY" | "NIGHT"> = hidesNight ? ["DAY"] : PERIODS;
+    const filteredWeekDates = useMemo(
+        () => (filterDayKey ? weekDates.filter((date) => getDayKey(date) === filterDayKey) : weekDates),
+        [filterDayKey, weekDates],
+    );
 
     const loadBaseData = useCallback(async () => {
         const [basesRes, rulesRes, facultiesRes] = await Promise.all([
@@ -463,6 +528,12 @@ export function AdminFilledSchedule() {
         if (!exists) setSelectedAssignmentId(null);
     }, [assignments, selectedAssignmentId]);
 
+    useEffect(() => {
+        if (hidesNight && filterPeriod === "NIGHT") {
+            setFilterPeriod("");
+        }
+    }, [filterPeriod, hidesNight]);
+
     const facultyById = useMemo(() => new Map(faculties.map((faculty) => [faculty.id, faculty])), [faculties]);
 
     const visibleFacultyOptions = useMemo(() => {
@@ -499,10 +570,33 @@ export function AdminFilledSchedule() {
         });
     }, [filterBase, filterFaculty, filterPeriod, rules]);
 
+    const cruConflicts = useMemo(() => {
+        const blocked = new Set<string>();
+
+        for (const assignment of assignments) {
+            if (assignment.status === "CANCELLED") continue;
+            if (assignment.base_code !== "CRU" && assignment.base_code !== "CRL") continue;
+
+            const dateKey = normalizeDateKey(assignment.date);
+            blocked.add(`${assignment.intern_id}|${dateKey}|${assignment.period}`);
+
+            if (assignment.period === "DAY") {
+                blocked.add(`${assignment.intern_id}|${addDaysToDateStr(dateKey, -1)}|NIGHT`);
+                blocked.add(`${assignment.intern_id}|${dateKey}|NIGHT`);
+                continue;
+            }
+
+            blocked.add(`${assignment.intern_id}|${dateKey}|DAY`);
+            blocked.add(`${assignment.intern_id}|${addDaysToDateStr(dateKey, 1)}|DAY`);
+        }
+
+        return blocked;
+    }, [assignments]);
+
     const assignmentsByBaseDate = useMemo(() => {
         const map = new Map<string, AssignmentDetail[]>();
         for (const assignment of filteredAssignments) {
-            const key = `${assignment.base_id}|${assignment.date}`;
+            const key = `${assignment.base_id}|${normalizeDateKey(assignment.date)}`;
             const rows = map.get(key) ?? [];
             rows.push(assignment);
             map.set(key, rows);
@@ -511,16 +605,28 @@ export function AdminFilledSchedule() {
     }, [filteredAssignments]);
 
     const visibleBases = useMemo(() => {
-        const hasContent = (base: Base) => weekDates.some((date) => {
+        const hasContent = (base: Base) => filteredWeekDates.some((date) => {
             const dayKey = getDayKey(date);
             const rulesForDay = filteredRules.filter((rule) => rule.baseId === base.id && rule.dayOfWeek === dayKey);
             const assignmentsForDay = assignmentsByBaseDate.get(`${base.id}|${date}`) ?? [];
+            if (isRegulationScope && hasInternSearch) {
+                return assignmentsForDay.length > 0;
+            }
             return rulesForDay.length > 0 || assignmentsForDay.length > 0;
         });
 
+        const matchesScope = (base: Base) => {
+            if (scope === "usa") return base.type === "USA";
+            if (scope === "regulation") return base.type === "CENTRAL" || base.type === "CRL";
+            if (scope === "cru") return base.type === "CENTRAL";
+            if (scope === "crl") return base.type === "CRL";
+            return true;
+        };
+
         return bases
+            .filter((base) => matchesScope(base))
             .filter((base) => !filterBase || base.id === filterBase)
-            .filter((base) => hasContent(base))
+            .filter((base) => (hasInternSearch ? hasContent(base) : true))
             .sort((left, right) => {
                 if (left.type !== right.type) {
                     const rank = (type: Base["type"]) => (type === "USA" ? 0 : type === "CENTRAL" ? 1 : 2);
@@ -528,29 +634,39 @@ export function AdminFilledSchedule() {
                 }
                 return baseViewIndex(left.code) - baseViewIndex(right.code) || left.code.localeCompare(right.code);
             });
-    }, [assignmentsByBaseDate, bases, filterBase, filteredRules, weekDates]);
+    }, [assignmentsByBaseDate, bases, filterBase, filteredRules, filteredWeekDates, hasInternSearch, isRegulationScope, scope]);
 
     const usaBases = visibleBases.filter((base) => base.type === "USA");
     const regulationBases = visibleBases.filter((base) => base.type !== "USA");
+    const cruBases = visibleBases.filter((base) => base.type === "CENTRAL");
+    const crlBases = visibleBases.filter((base) => base.type === "CRL");
 
     const baseToggleOptions = useMemo(() => {
-        return [...bases].sort((left, right) => {
-            if (left.type !== right.type) {
-                const rank = (type: Base["type"]) => (type === "USA" ? 0 : type === "CENTRAL" ? 1 : 2);
-                return rank(left.type) - rank(right.type);
-            }
-            return baseViewIndex(left.code) - baseViewIndex(right.code) || left.code.localeCompare(right.code);
-        });
-    }, [bases]);
+        return [...bases]
+            .filter((base) => {
+                if (scope === "usa") return base.type === "USA";
+                if (scope === "regulation") return base.type === "CENTRAL" || base.type === "CRL";
+                if (scope === "cru") return base.type === "CENTRAL";
+                if (scope === "crl") return base.type === "CRL";
+                return true;
+            })
+            .sort((left, right) => {
+                if (left.type !== right.type) {
+                    const rank = (type: Base["type"]) => (type === "USA" ? 0 : type === "CENTRAL" ? 1 : 2);
+                    return rank(left.type) - rank(right.type);
+                }
+                return baseViewIndex(left.code) - baseViewIndex(right.code) || left.code.localeCompare(right.code);
+            });
+    }, [bases, scope]);
 
     const selectedAssignment = useMemo(
         () => assignments.find((assignment) => assignment.id === selectedAssignmentId) ?? null,
         [assignments, selectedAssignmentId],
     );
 
-    const buildPeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT") => {
+    const getPeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT") => {
         const dayKey = getDayKey(date);
-        const cellAssignments = assignmentsByBaseDate.get(`${base.id}|${date}`) ?? [];
+        const cellAssignments = assignmentsByBaseDate.get(`${base.id}|${normalizeDateKey(date)}`) ?? [];
         const periodAssignments = cellAssignments
             .filter((assignment) => assignment.period === period)
             .sort((left, right) => {
@@ -566,7 +682,7 @@ export function AdminFilledSchedule() {
                 return leftFaculty.localeCompare(rightFaculty);
             });
 
-        const flattenedSlots: PeriodGridSlot[] = [];
+        const flattenedSlots: ActualPeriodGridSlot[] = [];
 
         for (const facultyId of facultyIds) {
             const facultyRule = periodRules.find((rule) => rule.facultyId === facultyId);
@@ -592,34 +708,74 @@ export function AdminFilledSchedule() {
             }
         }
 
-        const overflowCount = Math.max(flattenedSlots.length - SLOT_LIMIT_PER_PERIOD, 0);
-        const slots = flattenedSlots.slice(0, SLOT_LIMIT_PER_PERIOD);
-        const preferredFaculty = filterFaculty ? facultyById.get(filterFaculty) : null;
+        return flattenedSlots;
+    }, [assignmentsByBaseDate, facultyById, filterFaculty, filteredRules]);
 
-        while (slots.length < SLOT_LIMIT_PER_PERIOD) {
-            slots.push({
+    const buildVisiblePeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT", visibleLimit = SLOT_LIMIT_PER_PERIOD): VisiblePeriodSlots => {
+        const allSlots = getPeriodSlots(base, date, period);
+        const visibleSlots: ActualPeriodGridSlot[] = visibleLimit >= allSlots.length ? [...allSlots] : allSlots.slice(0, visibleLimit);
+        const hiddenSlots = visibleLimit >= allSlots.length ? [] : allSlots.slice(visibleLimit);
+
+        if (!visibleSlots.some((slot) => slot.kind === "vacancy")) {
+            const hiddenVacancyIndex = hiddenSlots.findIndex((slot) => slot.kind === "vacancy");
+            const replaceIndex = visibleSlots.findIndex((slot) => slot.kind === "assignment");
+
+            if (hiddenVacancyIndex !== -1 && replaceIndex !== -1) {
+                const replacement = hiddenSlots[hiddenVacancyIndex];
+                hiddenSlots[hiddenVacancyIndex] = visibleSlots[replaceIndex];
+                visibleSlots[replaceIndex] = replacement;
+            }
+        }
+
+        const paddedSlots: VisiblePeriodGridSlot[] = [...visibleSlots];
+
+        while (!hasInternSearch && paddedSlots.length < visibleLimit) {
+            paddedSlots.push({
                 kind: "open",
-                key: `${base.id}|${date}|${period}|open-${slots.length + 1}`,
-                period,
+                key: `${base.id}|${date}|${period}|open-${paddedSlots.length + 1}`,
                 allocation: {
                     baseId: base.id,
                     baseCode: base.code,
+                    baseName: base.name,
                     date,
                     period,
-                    facultyId: preferredFaculty?.id ?? null,
-                    facultyAbbr: preferredFaculty?.abbreviation ?? null,
+                    facultyId: null,
+                    facultyAbbr: null,
                 },
             });
         }
 
-        return { slots, overflowCount };
-    }, [assignmentsByBaseDate, facultyById, filterFaculty, filteredRules]);
+        return {
+            slots: paddedSlots,
+            overflowCount: hiddenSlots.length,
+            hiddenHasVacancy: hiddenSlots.some((slot) => slot.kind === "vacancy"),
+        };
+    }, [getPeriodSlots, hasInternSearch]);
 
-    const activeAllocationFacultyId = allocation?.facultyId ?? allocFacultyId;
+    const focusedPeriodBase = useMemo(
+        () => (focusedPeriod ? bases.find((base) => base.id === focusedPeriod.baseId) ?? null : null),
+        [bases, focusedPeriod],
+    );
 
-    const eligibleInterns = useMemo(() => {
-        if (!allocation) return [];
-        if (!activeAllocationFacultyId) return [];
+    const focusedPeriodSlots = useMemo(() => {
+        if (!focusedPeriod || !focusedPeriodBase) return [];
+        return getPeriodSlots(focusedPeriodBase, focusedPeriod.date, focusedPeriod.period);
+    }, [focusedPeriod, focusedPeriodBase, getPeriodSlots]);
+
+    const selectedAllocUser = useMemo(
+        () => (allocInternId ? users.find((user) => user.id === allocInternId) ?? null : null),
+        [allocInternId, users],
+    );
+
+    const assignmentFacultyId = allocation?.facultyId ?? allocFacultyId ?? selectedAllocUser?.facultyId ?? "";
+    const activeCandidateFacultyFilter = allocCandidateFacultyFilter === "ALL" ? null : allocCandidateFacultyFilter;
+    const isRetroactiveAdminAllocation = Boolean(allocation && allocation.date < localDateStr());
+    const isManualOpenAllocation = Boolean(allocation && allocation.facultyId === null);
+
+    const allocationCandidates = useMemo(() => {
+        if (!allocation) {
+            return { eligibleInterns: [], blockedCount: 0, busyCount: 0 };
+        }
 
         const query = allocSearch.trim().toLowerCase();
         const busyInternIds = new Set(
@@ -628,25 +784,58 @@ export function AdminFilledSchedule() {
                 .map((assignment) => assignment.intern_id),
         );
 
-        return users
+        let blockedCount = 0;
+        let busyCount = 0;
+
+        const eligibleInterns = users
             .filter((user) => user.role === "INTERN" && user.isActive)
-            .filter((user) => user.facultyId === activeAllocationFacultyId)
-            .filter((user) => !busyInternIds.has(user.id))
+            .filter((user) => !activeCandidateFacultyFilter || user.facultyId === activeCandidateFacultyFilter)
+            .filter((user) => {
+                if (busyInternIds.has(user.id)) {
+                    busyCount += 1;
+                    return false;
+                }
+
+                if (!isRetroactiveAdminAllocation && cruConflicts.has(`${user.id}|${allocation.date}|${allocation.period}`)) {
+                    blockedCount += 1;
+                    return false;
+                }
+
+                return true;
+            })
             .filter((user) => !query || user.name.toLowerCase().includes(query))
-            .sort((left, right) => left.name.localeCompare(right.name));
-    }, [activeAllocationFacultyId, allocSearch, allocation, assignments, users]);
+            .sort((left, right) => {
+                const preferredFacultyId = allocation.facultyId ?? activeCandidateFacultyFilter;
+                const leftSameFaculty = left.facultyId === preferredFacultyId;
+                const rightSameFaculty = right.facultyId === preferredFacultyId;
+
+                if (leftSameFaculty !== rightSameFaculty) {
+                    return leftSameFaculty ? -1 : 1;
+                }
+
+                const leftFaculty = left.facultyAbbr ?? "";
+                const rightFaculty = right.facultyAbbr ?? "";
+                const byFaculty = leftFaculty.localeCompare(rightFaculty);
+                if (byFaculty !== 0) return byFaculty;
+
+                return left.name.localeCompare(right.name);
+            });
+
+        return { eligibleInterns, blockedCount, busyCount };
+    }, [activeCandidateFacultyFilter, allocSearch, allocation, assignments, cruConflicts, isRetroactiveAdminAllocation, users]);
 
     async function openAllocation(slot: AllocationState) {
         await loadUsers();
         setAllocation(slot);
         setAllocFacultyId(slot.facultyId ?? "");
+        setAllocCandidateFacultyFilter(slot.facultyId ?? "ALL");
         setAllocInternId("");
         setAllocSearch("");
         setMessage(null);
     }
 
     async function createAssignment() {
-        const facultyId = allocation?.facultyId ?? allocFacultyId;
+        const facultyId = assignmentFacultyId;
         if (!allocation || !allocInternId || !facultyId) return;
         setAllocLoading(true);
         setMessage(null);
@@ -661,12 +850,16 @@ export function AdminFilledSchedule() {
                     baseId: allocation.baseId,
                     date: allocation.date,
                     period: allocation.period,
+                    allowRetroactiveOverride: isRetroactiveAdminAllocation,
+                    allowAdminOpenAllocation: isManualOpenAllocation,
                 }),
             });
             const json = await response.json();
             if (!json.success) throw new Error(json.error ?? "Não foi possível alocar o interno.");
             setAllocation(null);
+            setFocusedPeriod(null);
             setAllocFacultyId("");
+            setAllocCandidateFacultyFilter("ALL");
             setMessage({ type: "success", text: "Interno alocado com sucesso." });
             await loadAssignments();
         } catch (error) {
@@ -716,7 +909,7 @@ export function AdminFilledSchedule() {
                 <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <div className="min-w-[1260px]" style={{ display: "grid", gridTemplateColumns: "124px repeat(7, minmax(162px, 1fr))" }}>
                         <div className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Base</div>
-                        {weekDates.map((date) => (
+                        {filteredWeekDates.map((date) => (
                             <div key={date} className={`border-b border-slate-200 px-2 py-2 text-center text-[11px] font-semibold ${date === today ? "bg-accent-50/60 text-accent-700" : "bg-slate-50 text-slate-500"}`}>
                                 {DAY_LABEL_BY_KEY[getDayKey(date)]}<br />
                                 <span className="font-normal">{formatDayMonth(date)}</span>
@@ -735,15 +928,15 @@ export function AdminFilledSchedule() {
                                     <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-500">{base.name}</p>
                                 </div>
 
-                                {weekDates.map((date) => {
-                                    const periods = filterPeriod ? [filterPeriod] : PERIODS;
+                                {filteredWeekDates.map((date) => {
+                                    const periods = filterPeriod ? [filterPeriod] : scopePeriods;
 
                                     return (
                                         <div key={`${base.id}|${date}`} className={`border-b border-slate-100 px-1.5 py-1.5 ${date === today ? "bg-accent-50/20" : ""}`}>
                                             <div className="grid gap-1.5">
                                                 {periods.map((period) => {
                                                     const tone = getPeriodTone(period);
-                                                    const { slots, overflowCount } = buildPeriodSlots(base, date, period);
+                                                    const { slots, overflowCount, hiddenHasVacancy } = buildVisiblePeriodSlots(base, date, period);
 
                                                     return (
                                                         <div key={`${base.id}|${date}|${period}`} className={`rounded-xl border p-1.5 ${tone.shell}`}>
@@ -764,6 +957,26 @@ export function AdminFilledSchedule() {
 
                                                                     return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} />;
                                                                 })}
+
+                                                                {overflowCount > 0 && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setFocusedPeriod({
+                                                                            baseId: base.id,
+                                                                            baseCode: base.code,
+                                                                            baseName: base.name,
+                                                                            date,
+                                                                            period,
+                                                                        })}
+                                                                        className={`flex w-full items-center justify-between rounded-xl border border-dashed px-2.5 py-2 text-left text-[11px] font-semibold transition hover:-translate-y-[1px] ${tone.ghost}`}
+                                                                    >
+                                                                        <span>
+                                                                            Ver +{overflowCount} item(ns)
+                                                                            {hiddenHasVacancy ? " e vagas" : ""}
+                                                                        </span>
+                                                                        <Plus className="h-3.5 w-3.5" />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     );
@@ -775,6 +988,119 @@ export function AdminFilledSchedule() {
                             </Fragment>
                         ))}
                     </div>
+                </div>
+            </section>
+        );
+    }
+
+    function renderRegulationFacultySection(title: string, rows: Base[]) {
+        if (rows.length === 0) return null;
+
+        const showBaseCode = rows.length > 1;
+        const periods = filterPeriod ? [filterPeriod] : scopePeriods;
+        const visibleDateCards = filteredWeekDates.map((date) => {
+            const periodCards = periods.map((period) => {
+                const tone = getPeriodTone(period);
+                const facultyGroups = rows.flatMap((base) => {
+                    const slots = getPeriodSlots(base, date, period);
+                    const visibleSlots = hasInternSearch
+                        ? slots.filter((slot) => slot.kind === "assignment")
+                        : slots;
+                    return visibleSlots.map((slot) => ({ base, slot }));
+                }).reduce((map, item) => {
+                    const facultyAbbr = item.slot.kind === "assignment"
+                        ? item.slot.assignment.faculty_abbr
+                        : item.slot.facultyAbbr;
+
+                    const rowsForFaculty = map.get(facultyAbbr) ?? [];
+                    rowsForFaculty.push(item);
+                    map.set(facultyAbbr, rowsForFaculty);
+                    return map;
+                }, new Map<string, Array<{ base: Base; slot: ActualPeriodGridSlot }>>());
+
+                const orderedFaculties = [...facultyGroups.entries()]
+                    .sort(([left], [right]) => left.localeCompare(right))
+                    .map(([facultyAbbr, items]) => ({
+                        facultyAbbr,
+                        items: [...items].sort((left, right) => {
+                            const leftName = left.slot.kind === "assignment" ? left.slot.assignment.intern_name : "zzzzzz";
+                            const rightName = right.slot.kind === "assignment" ? right.slot.assignment.intern_name : "zzzzzz";
+                            if (leftName !== rightName) return leftName.localeCompare(rightName);
+                            return left.base.code.localeCompare(right.base.code);
+                        }),
+                    }));
+
+                if (orderedFaculties.length === 0) {
+                    return null;
+                }
+
+                return (
+                    <div key={`${date}|${period}`} className={`rounded-2xl border p-3 ${tone.shell}`}>
+                        <div className={`mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${tone.meta}`}>
+                            {period === "DAY" ? <Sun className="h-3.5 w-3.5" strokeWidth={1.8} /> : <Moon className="h-3.5 w-3.5" strokeWidth={1.8} />}
+                            <span>{formatPeriod(period)}</span>
+                        </div>
+
+                        <div className="space-y-3">
+                            {orderedFaculties.map(({ facultyAbbr, items }) => {
+                                const facultyTone = getFacultyStyle(facultyAbbr);
+                                return (
+                                    <div key={`${date}|${period}|${facultyAbbr}`} className="rounded-xl border border-black/5 bg-white/45 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+                                        <div className="mb-2 flex items-center justify-between gap-2">
+                                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold ${facultyTone.pill}`}>
+                                                <span className={`h-2 w-2 rounded-full ${facultyTone.dot}`} />
+                                                {facultyAbbr}
+                                            </span>
+                                            <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">{items.length} item(ns)</span>
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            {items.map(({ slot }) => {
+                                                if (slot.kind === "assignment") {
+                                                    return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
+                                                }
+
+                                                if (slot.kind === "vacancy") {
+                                                    return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
+                                                }
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            }).filter(Boolean);
+
+            if (periodCards.length === 0) {
+                return null;
+            }
+
+            return (
+                <article key={date} className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${date === today ? "ring-1 ring-accent-300" : ""}`}>
+                    <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                        <div>
+                            <p className="text-sm font-semibold text-slate-900">{DAY_LABEL_BY_KEY[getDayKey(date)]}</p>
+                            <p className="text-xs text-slate-500">{formatDayMonth(date)}</p>
+                        </div>
+                        {date === today && <span className="rounded-full bg-accent-50 px-2.5 py-1 text-[10px] font-semibold text-accent-700">Hoje</span>}
+                    </div>
+
+                    <div className="space-y-4">{periodCards}</div>
+                </article>
+            );
+        }).filter(Boolean);
+
+        return (
+            <section className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+                    <span className="text-xs text-slate-400">ordem por faculdade e nome</span>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+                    {visibleDateCards}
                 </div>
             </section>
         );
@@ -830,17 +1156,46 @@ export function AdminFilledSchedule() {
             </div>
 
             <div className="overflow-x-auto rounded-[28px] border border-slate-200 bg-white/82 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm">
-                <div className="flex min-w-max items-center gap-1.5 text-xs">
+                <div className="flex min-w-max flex-wrap items-center gap-1.5 text-xs">
+                    <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Dia</span>
+                    <button
+                        type="button"
+                        onClick={() => setFilterDayKey("")}
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 transition-all ${!filterDayKey ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-105" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                    >
+                        Semana toda
+                    </button>
+                    {DAYS.map((dayKey) => {
+                        const active = filterDayKey === dayKey;
+                        const dayDate = weekDates.find((date) => getDayKey(date) === dayKey);
+                        const isToday = dayDate === today;
+
+                        return (
+                            <button
+                                key={dayKey}
+                                type="button"
+                                onClick={() => setFilterDayKey(active ? "" : dayKey)}
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 transition-all ${active ? "bg-accent-600 text-white shadow-[0_10px_18px_rgba(2,132,199,0.22)] scale-105" : isToday ? "border border-accent-300 bg-accent-50 text-accent-700 hover:bg-accent-100" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                                title={DAY_LONG_LABEL_BY_KEY[dayKey]}
+                            >
+                                <span className="font-semibold">{DAY_LABEL_BY_KEY[dayKey]}</span>
+                                {dayDate && <span className={`text-[10px] ${active ? "text-white/80" : "text-slate-400"}`}>{formatDayMonth(dayDate)}</span>}
+                            </button>
+                        );
+                    })}
+
+                    <span className="mx-1 text-slate-300">|</span>
                     {visibleFacultyOptions.map((faculty) => {
                         const active = filterFaculty === faculty.id;
+                        const facultyTone = getFacultyStyle(faculty.abbreviation);
                         return (
                             <button
                                 key={faculty.id}
                                 type="button"
                                 onClick={() => setFilterFaculty(active ? "" : faculty.id)}
-                                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium transition-all ${active ? "border-slate-900 bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)]" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"} ${active ? "scale-105" : filterFaculty ? "opacity-40" : ""}`}
+                                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium transition-all ${active ? `${facultyTone.pill} shadow-[0_10px_18px_rgba(15,23,42,0.12)]` : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"} ${active ? "scale-105" : filterFaculty ? "opacity-40" : ""}`}
                             >
-                                <span className={`h-2 w-2 rounded-full ${active ? "bg-white" : "bg-slate-400"}`} />
+                                <span className={`h-2 w-2 rounded-full ${active ? facultyTone.dot : "bg-slate-400"}`} />
                                 {faculty.abbreviation}
                             </button>
                         );
@@ -854,13 +1209,15 @@ export function AdminFilledSchedule() {
                     >
                         <Sun className="h-3.5 w-3.5 text-current" strokeWidth={1.5} /> Diurno
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => setFilterPeriod(filterPeriod === "NIGHT" ? "" : "NIGHT")}
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 transition-all ${filterPeriod === "NIGHT" ? "bg-sky-950 font-bold text-white ring-1 ring-sky-800/20 shadow-[0_10px_18px_rgba(15,23,42,0.22)] scale-105" : filterPeriod ? "opacity-35 text-slate-400" : "border border-sky-900/30 bg-[linear-gradient(135deg,rgba(31,58,99,0.9),rgba(10,25,47,0.96))] text-white"}`}
-                    >
-                        <Moon className="h-3.5 w-3.5 text-current" strokeWidth={1.5} /> Noturno
-                    </button>
+                    {!hidesNight && (
+                        <button
+                            type="button"
+                            onClick={() => setFilterPeriod(filterPeriod === "NIGHT" ? "" : "NIGHT")}
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 transition-all ${filterPeriod === "NIGHT" ? "bg-sky-950 font-bold text-white ring-1 ring-sky-800/20 shadow-[0_10px_18px_rgba(15,23,42,0.22)] scale-105" : filterPeriod ? "opacity-35 text-slate-400" : "border border-sky-900/30 bg-[linear-gradient(135deg,rgba(31,58,99,0.9),rgba(10,25,47,0.96))] text-white"}`}
+                        >
+                            <Moon className="h-3.5 w-3.5 text-current" strokeWidth={1.5} /> Noturno
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -876,8 +1233,10 @@ export function AdminFilledSchedule() {
                 </div>
             ) : (
                 <div className="space-y-6">
-                    {renderBaseSection("USA — Bases × Dia", usaBases)}
-                    {renderBaseSection("Regulação — CRU / CRL", regulationBases)}
+                    {(scope === "all" || scope === "usa") && renderBaseSection("USA — Bases × Dia", usaBases)}
+                    {(scope === "all" || scope === "regulation") && renderBaseSection("Regulação — CRU / CRL", regulationBases)}
+                    {scope === "cru" && renderRegulationFacultySection("CRU — Regulação", cruBases)}
+                    {scope === "crl" && renderRegulationFacultySection("CRL", crlBases)}
                     {visibleBases.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">Nenhuma alocação ou vaga encontrada para os filtros da semana.</div>}
                 </div>
             )}
@@ -897,67 +1256,159 @@ export function AdminFilledSchedule() {
                         </div>
 
                         <div className="space-y-3 px-6 py-4">
-                            {!allocation.facultyId && (
-                                <div className="space-y-2">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Escolha a faculdade</p>
-                                    <div className="flex flex-wrap gap-2">
-                                        {allocationFacultyOptions.map((faculty) => {
-                                            const active = allocFacultyId === faculty.id;
-                                            return (
-                                                <button
-                                                    key={faculty.id}
-                                                    type="button"
-                                                    onClick={() => {
+                            <div className="space-y-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Pesquisar internos por faculdade</p>
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setAllocCandidateFacultyFilter("ALL");
+                                            setAllocInternId("");
+                                        }}
+                                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${allocCandidateFacultyFilter === "ALL" ? "border-slate-900 bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-105" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                                    >
+                                        Todas
+                                    </button>
+                                    {allocationFacultyOptions.map((faculty) => {
+                                        const active = allocCandidateFacultyFilter === faculty.id;
+                                        return (
+                                            <button
+                                                key={faculty.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setAllocCandidateFacultyFilter(faculty.id);
+                                                    setAllocInternId("");
+                                                    if (!allocation.facultyId) {
                                                         setAllocFacultyId(faculty.id);
-                                                        setAllocInternId("");
-                                                    }}
-                                                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${active ? "border-slate-900 bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-105" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"} ${!active && allocFacultyId ? "opacity-45" : ""}`}
-                                                >
-                                                    <span className={`h-2 w-2 rounded-full ${active ? "bg-white" : "bg-slate-400"}`} />
-                                                    {faculty.abbreviation}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                                    }
+                                                }}
+                                                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${active ? "border-slate-900 bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-105" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                                            >
+                                                <span className={`h-2 w-2 rounded-full ${active ? "bg-white" : "bg-slate-400"}`} />
+                                                {faculty.abbreviation}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                            )}
+                            </div>
 
                             <label className="relative block">
                                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                <input value={allocSearch} onChange={(event) => setAllocSearch(event.target.value)} disabled={!activeAllocationFacultyId} placeholder={activeAllocationFacultyId ? "Buscar interno da faculdade..." : "Escolha a faculdade primeiro"} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-accent-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60" />
+                                <input value={allocSearch} onChange={(event) => setAllocSearch(event.target.value)} placeholder={activeCandidateFacultyFilter ? "Buscar pelo nome dentro da faculdade" : "Buscar qualquer interno ativo"} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-accent-400 focus:bg-white" />
                             </label>
+
+                            <div className={`rounded-xl px-3 py-2 text-xs ${isRetroactiveAdminAllocation ? "border border-sky-200 bg-sky-50 text-sky-800" : "border border-slate-200 bg-slate-50 text-slate-600"}`}>
+                                {allocation.facultyId
+                                    ? `Vaga reservada para ${allocation.facultyAbbr}. O plantão continuará contando como ${allocation.facultyAbbr}, mas você pode procurar internos de outras faculdades ou abrir “Todas”.`
+                                    : "Vaga livre: o plantão assumirá a faculdade do interno selecionado."}
+                                {isRetroactiveAdminAllocation ? " Edição retroativa segue liberada para a coordenação e fica auditada." : ""}
+                            </div>
+
+                            {assignmentFacultyId && (
+                                <div className={`rounded-xl px-3 py-2 text-xs ${isRetroactiveAdminAllocation ? "border border-sky-200 bg-sky-50 text-sky-800" : "border border-slate-200 bg-slate-50 text-slate-600"}`}>
+                                    Faculdade que será registrada no plantão: {faculties.find((faculty) => faculty.id === assignmentFacultyId)?.abbreviation ?? selectedAllocUser?.facultyAbbr ?? "—"}
+                                </div>
+                            )}
 
                             <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
                                 {loadingUsers ? (
                                     <div className="flex items-center justify-center py-8 text-sm text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando internos...</div>
-                                ) : !activeAllocationFacultyId ? (
-                                    <p className="py-8 text-center text-sm text-slate-400">Selecione a faculdade para listar os internos elegíveis.</p>
-                                ) : eligibleInterns.length === 0 ? (
-                                    <p className="py-8 text-center text-sm text-slate-400">Nenhum interno elegível nesta vaga.</p>
+                                ) : allocationCandidates.eligibleInterns.length === 0 ? (
+                                    <p className="py-8 text-center text-sm text-slate-400">
+                                        Nenhum interno elegível nesta vaga.
+                                        {!isRetroactiveAdminAllocation && allocationCandidates.blockedCount > 0 ? ` ${allocationCandidates.blockedCount} bloqueado(s) por conflito CRU/CRL ±12h.` : ""}
+                                    </p>
                                 ) : (
-                                    eligibleInterns.map((user) => (
+                                    allocationCandidates.eligibleInterns.map((user) => (
                                         <button
                                             key={user.id}
                                             type="button"
-                                            onClick={() => setAllocInternId(user.id)}
+                                            onClick={() => {
+                                                setAllocInternId(user.id);
+                                                if (!allocation.facultyId && user.facultyId) {
+                                                    setAllocFacultyId(user.facultyId);
+                                                }
+                                            }}
                                             className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${allocInternId === user.id ? "bg-accent-50 text-accent-700 ring-1 ring-accent-300" : "bg-white text-slate-700 hover:bg-slate-100"}`}
                                         >
-                                            <span>{user.name}</span>
-                                            <span className="text-xs text-slate-400">{user.facultyAbbr}</span>
+                                            <span className="min-w-0 flex-1 truncate">{user.name}</span>
+                                            <span className={`ml-3 rounded-full px-2 py-0.5 text-[10px] font-semibold ${user.facultyId === allocation.facultyId ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                                                {user.facultyAbbr ?? "Sem faculdade"}
+                                            </span>
                                         </button>
                                     ))
                                 )}
                             </div>
+
+                            {(allocationCandidates.blockedCount > 0 || allocationCandidates.busyCount > 0) && (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                    {!isRetroactiveAdminAllocation && allocationCandidates.blockedCount > 0 && <p>{allocationCandidates.blockedCount} interno(s) ocultado(s) por conflito CRU/CRL ±12h.</p>}
+                                    {allocationCandidates.busyCount > 0 && <p>{allocationCandidates.busyCount} interno(s) já ocupados neste mesmo dia e turno.</p>}
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
                             <button type="button" onClick={() => {
                                 setAllocation(null);
                                 setAllocFacultyId("");
+                                setAllocCandidateFacultyFilter("ALL");
                             }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
-                            <button type="button" disabled={allocLoading || !allocInternId || !activeAllocationFacultyId} onClick={createAssignment} className="inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50">
+                            <button type="button" disabled={allocLoading || !allocInternId || !assignmentFacultyId} onClick={createAssignment} className="inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50">
                                 {allocLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Alocar na escala
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {focusedPeriod && focusedPeriodBase && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setFocusedPeriod(null)}>
+                    <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
+                            <div>
+                                <p className="text-sm font-medium text-accent-600">Detalhes do turno</p>
+                                <h3 className="text-xl font-semibold text-slate-900">{focusedPeriod.baseCode} - {focusedPeriod.baseName}</h3>
+                                <p className="text-sm text-slate-500">{formatDayMonth(focusedPeriod.date)} · {formatPeriod(focusedPeriod.period)} · {focusedPeriodSlots.length} item(ns)</p>
+                            </div>
+                            <button type="button" onClick={() => setFocusedPeriod(null)} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
+                        </div>
+
+                        <div className="max-h-[70vh] space-y-3 overflow-y-auto px-6 py-5">
+                            {focusedPeriodSlots.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                                    Não há vagas ou plantões neste turno.
+                                </div>
+                            ) : focusedPeriodSlots.map((slot) => {
+                                if (slot.kind === "assignment") {
+                                    return (
+                                        <AssignmentSlotCard
+                                            key={slot.key}
+                                            assignment={slot.assignment}
+                                            period={focusedPeriod.period}
+                                            onSelect={(assignmentId) => {
+                                                setFocusedPeriod(null);
+                                                setSelectedAssignmentId(assignmentId);
+                                            }}
+                                        />
+                                    );
+                                }
+
+                                return (
+                                    <VacancySlotCard
+                                        key={slot.key}
+                                        facultyAbbr={slot.facultyAbbr}
+                                        allocation={slot.allocation}
+                                        period={focusedPeriod.period}
+                                        onOpen={(slotAllocation) => {
+                                            setFocusedPeriod(null);
+                                            void openAllocation(slotAllocation);
+                                        }}
+                                        facultyBadgeMode="faculty"
+                                        showBaseCode
+                                    />
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -1032,13 +1483,11 @@ export function AdminFilledSchedule() {
                                     <p className="text-xs text-slate-500">Ações manuais disponíveis até a data seguinte, inclusive.</p>
                                 </div>
 
-                                {isWithinAdminAttendanceWindow(selectedAssignment.date) ? (
-                                    <AdminManualAttendanceActions assignmentId={selectedAssignment.id} status={selectedAssignment.status} onUpdated={loadAssignments} />
-                                ) : (
-                                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-500">
-                                        Janela manual encerrada para este plantão.
-                                    </div>
-                                )}
+                                <AdminManualAttendanceActions assignmentId={selectedAssignment.id} status={selectedAssignment.status} onUpdated={loadAssignments} />
+
+                                <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-500">
+                                    A coordenação pode registrar presença, checkout ou falta retroativamente. Toda ação manual fica auditada.
+                                </div>
 
                                 <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-500">
                                     <p>Interno: <span className="font-medium text-slate-700">{selectedAssignment.intern_name}</span></p>

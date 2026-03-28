@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { assignments, bases, checkins, faculties, qrSessions, telegramBindings, userRoles, users } from "@/db/schema";
 import { logAudit } from "@/lib/audit";
 import { bot } from "@/lib/telegram";
-import { isWithinAdminAttendanceWindow } from "@/lib/utils";
+import { localDateStr } from "@/lib/utils";
 
 const manualAttendanceSchema = z.object({
     assignmentId: z.string().uuid(),
@@ -116,18 +116,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: "Plantão não encontrado" }, { status: 404 });
     }
 
-    if (!isWithinAdminAttendanceWindow(assignment.date)) {
-        return NextResponse.json(
-            { success: false, error: "A ação manual só fica disponível para plantões do dia atual e do dia anterior." },
-            { status: 409 },
-        );
-    }
-
     if (assignment.status === "CANCELLED") {
         return NextResponse.json({ success: false, error: "Plantão cancelado" }, { status: 409 });
     }
 
     const now = new Date();
+    const isRetroactive = assignment.date < localDateStr();
     const recordedBy = String(token.name ?? "Admin");
     const [existingCheckin] = await db
         .select({
@@ -177,6 +171,9 @@ export async function POST(req: NextRequest) {
 
             await tx.update(assignments).set({
                 status: "CHECKED_IN",
+                absenceJustification: null,
+                absenceJustificationActor: null,
+                absenceJustificationAt: null,
                 updatedAt: now,
             }).where(eq(assignments.id, assignmentId));
         });
@@ -191,6 +188,7 @@ export async function POST(req: NextRequest) {
                 previousCheckinStatus: existingCheckin?.status ?? null,
                 internId: assignment.internId,
                 facultyId: assignment.facultyId,
+                retroactive: isRetroactive,
             },
         });
 
@@ -221,6 +219,9 @@ export async function POST(req: NextRequest) {
         await db.transaction(async (tx) => {
             await tx.update(assignments).set({
                 status: "CHECKED_OUT",
+                absenceJustification: null,
+                absenceJustificationActor: null,
+                absenceJustificationAt: null,
                 updatedAt: now,
             }).where(eq(assignments.id, assignmentId));
 
@@ -246,6 +247,7 @@ export async function POST(req: NextRequest) {
                 previousCheckinStatus: existingCheckin.status,
                 internId: assignment.internId,
                 facultyId: assignment.facultyId,
+                retroactive: isRetroactive,
             },
         });
 
@@ -309,6 +311,7 @@ export async function POST(req: NextRequest) {
             internId: assignment.internId,
             facultyId: assignment.facultyId,
             leaderNotificationsSent,
+            retroactive: isRetroactive,
         },
     });
 

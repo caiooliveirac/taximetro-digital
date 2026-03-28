@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
-import { LogOut, Ambulance, Eye, Users, Stethoscope, GraduationCap, Menu, X, KeyRound, type LucideIcon } from "lucide-react";
+import { LogOut, Ambulance, Eye, Users, Stethoscope, GraduationCap, Menu, X, KeyRound, Loader2, type LucideIcon } from "lucide-react";
 import { ImpersonateSelector } from "@/components/impersonate/impersonate-selector";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 
@@ -32,8 +32,12 @@ export function AppSidebar({
   navGroups?: NavGroup[];
 }) {
   const pathname = usePathname();
-  const { data: session } = useSession();
+  const router = useRouter();
+  const { data: session, status } = useSession();
   const isCoordinator = session?.user?.role === "COORDINATOR";
+  const { target: impersonateTarget, deactivate: stopImpersonate } = useImpersonate();
+  const sessionRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
+  const canOpenPreceptorView = sessionRoles.includes("PRECEPTOR") && !impersonateTarget;
   const userName = session?.user?.name ?? "";
   const initials = userName
     .split(" ")
@@ -45,11 +49,12 @@ export function AppSidebar({
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectorRole, setSelectorRole] = useState<"LEADER" | "PRECEPTOR" | "INTERN" | null>(null);
-  const { target: impersonateTarget, deactivate: stopImpersonate } = useImpersonate();
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew, setPwNew] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
+  const [preceptorAccessError, setPreceptorAccessError] = useState("");
+  const [preceptorRedirecting, setPreceptorRedirecting] = useState(false);
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
@@ -77,6 +82,27 @@ export function AppSidebar({
     finally { setPwLoading(false); }
   }
 
+  function handleOpenPreceptorView() {
+    if (status !== "authenticated") {
+      setPreceptorAccessError("Sessão indisponível. Entre novamente para acessar a visão de preceptoria.");
+      return;
+    }
+
+    if (impersonateTarget) {
+      setPreceptorAccessError("Pare o impersonate atual antes de entrar na visão de preceptoria.");
+      return;
+    }
+
+    if (!sessionRoles.includes("PRECEPTOR")) {
+      setPreceptorAccessError("Seu login atual ainda não trouxe a role de preceptoria. Saia e entre novamente.");
+      return;
+    }
+
+    setPreceptorAccessError("");
+    setPreceptorRedirecting(true);
+    router.push("/preceptor");
+  }
+
   const viewRoles: { role: "LEADER" | "PRECEPTOR" | "INTERN"; label: string; icon: typeof Users }[] = [
     { role: "LEADER", label: "Líder", icon: Users },
     { role: "PRECEPTOR", label: "Preceptor", icon: Stethoscope },
@@ -84,7 +110,7 @@ export function AppSidebar({
   ];
 
   const renderItem = (item: NavItem) => {
-    const active = pathname === item.href;
+    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
     return (
       <Link
         key={item.href}
@@ -153,6 +179,33 @@ export function AppSidebar({
               </div>
             </div>
           ))}
+
+          {canOpenPreceptorView && (
+            <div>
+              <div className="my-2" />
+              <p className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-widest text-navy-500 font-medium">
+                Acesso Extra
+              </p>
+              <div className="space-y-2 px-3 pb-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleOpenPreceptorView}
+                  disabled={preceptorRedirecting}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-3 text-left text-white shadow-[0_12px_24px_rgba(16,185,129,0.22)] transition hover:from-emerald-400 hover:to-teal-400 disabled:cursor-wait disabled:opacity-70"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    {preceptorRedirecting ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" strokeWidth={1.8} /> : <Stethoscope className="h-5 w-5 shrink-0" strokeWidth={1.8} />}
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">Entrar como preceptora</span>
+                      <span className="block truncate text-[11px] text-white/80">Valida a sua auth e abre a tela de check-in</span>
+                    </span>
+                  </span>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">Abrir</span>
+                </button>
+                {preceptorAccessError && <p className="text-xs text-amber-300">{preceptorAccessError}</p>}
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Bottom */}
@@ -215,7 +268,7 @@ export function AppSidebar({
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 flex justify-around border-t border-slate-200 bg-white py-2 lg:hidden shadow-[0_-1px_3px_rgba(0,0,0,0.06)]">
         {(nav.length > 5 ? nav.slice(0, 4) : nav.slice(0, 5)).map((item) => {
-          const active = pathname === item.href;
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}
@@ -263,7 +316,7 @@ export function AppSidebar({
                     <p className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-widest text-slate-400 font-medium">{group.label}</p>
                   )}
                   {group.items.map((item) => {
-                    const active = pathname === item.href;
+                    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     return (
                       <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)}
                         className={cn("flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors",
@@ -277,6 +330,26 @@ export function AppSidebar({
                   })}
                 </div>
               ))}
+
+              {canOpenPreceptorView && (
+                <div>
+                  <div className="my-1 border-t border-slate-100" />
+                  <p className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-widest text-slate-400 font-medium">Acesso Extra</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleOpenPreceptorView();
+                    }}
+                    disabled={preceptorRedirecting}
+                    className="flex w-full items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-3 text-left text-sm font-medium text-white transition disabled:cursor-wait disabled:opacity-70"
+                  >
+                    {preceptorRedirecting ? <Loader2 className="h-5 w-5 shrink-0 animate-spin" strokeWidth={1.8} /> : <Stethoscope className="h-5 w-5 shrink-0" strokeWidth={1.8} />}
+                    Entrar como preceptora
+                  </button>
+                  {preceptorAccessError && <p className="px-3 pt-2 text-xs text-amber-600">{preceptorAccessError}</p>}
+                </div>
+              )}
             </div>
             {isCoordinator && (
               <div className="px-3 pb-2">

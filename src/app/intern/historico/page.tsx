@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CheckCircle2, Clock, Sun, Moon, Target, CalendarDays } from "lucide-react";
+import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
@@ -15,6 +16,9 @@ type Assignment = {
   date: string;
   period: string;
   status: string;
+  absenceJustification?: string | null;
+  absenceJustificationActor?: string | null;
+  absenceJustificationAt?: string | null;
 };
 
 type Compliance = {
@@ -37,6 +41,7 @@ export default function InternHistorico() {
   const [compliance, setCompliance] = useState<Compliance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [justificationAssignment, setJustificationAssignment] = useState<Assignment | null>(null);
 
   useEffect(() => {
     const to = localDateStr();
@@ -54,6 +59,14 @@ export default function InternHistorico() {
 
   const completed = assignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status));
   const totalHours = completed.length * 12;
+
+  function handleJustificationSaved(assignmentId: string, data: {
+    absenceJustification: string | null;
+    absenceJustificationActor: string | null;
+    absenceJustificationAt: string | null;
+  }) {
+    setAssignments((current) => current.map((assignment) => assignment.id === assignmentId ? { ...assignment, ...data } : assignment));
+  }
 
   if (loading) return <p className="text-sm text-slate-400">Carregando...</p>;
   if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
@@ -155,6 +168,7 @@ export default function InternHistorico() {
               <TableHead>Base</TableHead>
               <TableHead>Turno</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Justificativa</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -179,6 +193,26 @@ export default function InternHistorico() {
                     </span>
                   </TableCell>
                   <TableCell><StatusBadge status={a.status} /></TableCell>
+                  <TableCell>
+                    {a.status === "ABSENT" ? (
+                      <div className="space-y-1">
+                        {a.absenceJustification ? (
+                          <p className="max-w-[220px] truncate text-xs text-slate-500">{a.absenceJustification}</p>
+                        ) : (
+                          <p className="text-xs text-amber-600">Sem justificativa</p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setJustificationAssignment(a)}
+                          className="text-xs font-medium text-accent-600 hover:text-accent-500"
+                        >
+                          {a.absenceJustification ? "Ver ou editar" : "Justificar falta"}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-300">—</span>
+                    )}
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -188,6 +222,22 @@ export default function InternHistorico() {
           <p className="py-8 text-center text-sm text-slate-400">Nenhum plantão registrado.</p>
         )}
       </div>
+
+      <AbsenceJustificationDialog
+        assignment={justificationAssignment ? {
+          id: justificationAssignment.id,
+          date: justificationAssignment.date,
+          period: justificationAssignment.period,
+          baseCode: justificationAssignment.baseCode,
+          baseName: justificationAssignment.baseName,
+          absenceJustification: justificationAssignment.absenceJustification,
+          absenceJustificationActor: justificationAssignment.absenceJustificationActor,
+          absenceJustificationAt: justificationAssignment.absenceJustificationAt,
+        } : null}
+        title="Justificar falta"
+        onClose={() => setJustificationAssignment(null)}
+        onSaved={handleJustificationSaved}
+      />
     </div>
   );
 }

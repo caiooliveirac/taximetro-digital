@@ -7,6 +7,7 @@ import {
   ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight, Plus, X,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
@@ -54,6 +55,9 @@ type AssignmentRow = {
   date: string;
   period: string;
   status: string;
+  absenceJustification?: string | null;
+  absenceJustificationActor?: string | null;
+  absenceJustificationAt?: string | null;
 };
 
 type InviteLink = {
@@ -91,6 +95,7 @@ export default function LeaderInternos() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [actionMsg, setActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [justificationAssignment, setJustificationAssignment] = useState<AssignmentRow | null>(null);
 
   /* ── Allocation modal ── */
   const [allocIntern, setAllocIntern] = useState<{ id: string; name: string } | null>(null);
@@ -216,6 +221,14 @@ export default function LeaderInternos() {
       setAllocMsg("❌ Erro de conexão.");
     }
     setAllocLoading(false);
+  }
+
+  function handleJustificationSaved(assignmentId: string, data: {
+    absenceJustification: string | null;
+    absenceJustificationActor: string | null;
+    absenceJustificationAt: string | null;
+  }) {
+    setAssignments((current) => current.map((assignment) => assignment.id === assignmentId ? { ...assignment, ...data } : assignment));
   }
 
   /* ── Derive available dates from selected base ── */
@@ -418,17 +431,35 @@ export default function LeaderInternos() {
                                     const bs = getBaseStyle(a.baseType);
                                     const ps = getPeriodStyle(a.period);
                                     return (
-                                      <div key={a.id} className="flex items-center gap-3 rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm">
-                                        <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${bs.dot}`} />
-                                        <span className="font-medium text-slate-900 w-14">{a.baseCode}</span>
-                                        <span className="text-xs text-slate-500 w-20">
-                                          {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                                        </span>
-                                        <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${ps.text}`}>
-                                          {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
-                                          {ps.label}
-                                        </span>
-                                        <span className="ml-auto"><StatusBadge status={a.status} /></span>
+                                      <div key={a.id} className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm">
+                                        <div className="flex items-center gap-3">
+                                          <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${bs.dot}`} />
+                                          <span className="font-medium text-slate-900 w-14">{a.baseCode}</span>
+                                          <span className="text-xs text-slate-500 w-20">
+                                            {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                                          </span>
+                                          <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${ps.text}`}>
+                                            {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
+                                            {ps.label}
+                                          </span>
+                                          <span className="ml-auto"><StatusBadge status={a.status} /></span>
+                                        </div>
+                                        {a.status === "ABSENT" && (
+                                          <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                                            <div className="min-w-0 text-xs text-slate-500">
+                                              {a.absenceJustification
+                                                ? <p className="truncate">{a.absenceJustification}</p>
+                                                : <p className="text-amber-600">Sem justificativa registrada.</p>}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => setJustificationAssignment(a)}
+                                              className="shrink-0 text-xs font-medium text-accent-600 hover:text-accent-500"
+                                            >
+                                              {a.absenceJustification ? "Ver ou editar justificativa" : "Justificar falta"}
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
                                     );
                                   })}
@@ -640,6 +671,22 @@ export default function LeaderInternos() {
           </div>
         </div>
       )}
+
+      <AbsenceJustificationDialog
+        assignment={justificationAssignment ? {
+          id: justificationAssignment.id,
+          date: justificationAssignment.date,
+          period: justificationAssignment.period,
+          baseCode: justificationAssignment.baseCode,
+          baseName: justificationAssignment.baseName,
+          absenceJustification: justificationAssignment.absenceJustification,
+          absenceJustificationActor: justificationAssignment.absenceJustificationActor,
+          absenceJustificationAt: justificationAssignment.absenceJustificationAt,
+        } : null}
+        title="Justificar falta do aluno"
+        onClose={() => setJustificationAssignment(null)}
+        onSaved={handleJustificationSaved}
+      />
     </div>
   );
 }

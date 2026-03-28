@@ -28,6 +28,9 @@ function LoginForm() {
     if (err) return "Erro no login. Tente novamente ou use CPF e senha.";
     return "";
   });
+  const [info] = useState(() => searchParams.get("passwordChanged") === "1"
+    ? "Senha alterada com sucesso. Entre novamente com a nova senha."
+    : "");
   const [loading, setLoading] = useState(false);
 
   function formatCpf(value: string) {
@@ -133,6 +136,12 @@ function LoginForm() {
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-600/10">
                 {error}
+              </p>
+            )}
+
+            {info && (
+              <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-600/10">
+                {info}
               </p>
             )}
 
