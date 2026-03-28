@@ -349,6 +349,31 @@ Imagem final contém apenas o `standalone` output + assets estáticos + migraç�
 - **PostgreSQL 16**
 - **NGINX** como reverse proxy (recomendado)
 - **SSL/TLS** obrigatório (HSTS configurado)
+- **Volume persistente** para `/var/backups/taximetro` se o backup diário estiver habilitado
+
+### Backup diário do banco
+
+O container de produção agenda um dump diário do PostgreSQL via `pg_dump` em formato custom (`.dump`) e pode encaminhar esse arquivo por e-mail.
+
+- Horário padrão: `37 3 * * *`
+- Timezone padrão: `America/Bahia`
+- Diretório padrão: `/var/backups/taximetro`
+- Retenção padrão: `14` dias
+- Envio por e-mail: habilita ao definir `DB_BACKUP_EMAIL_TO`
+
+Execução manual:
+
+```bash
+npm run db:backup
+```
+
+Restauração manual:
+
+```bash
+sh scripts/restore-db-backup.sh /caminho/do/arquivo.dump
+```
+
+No deploy com Docker, monte um volume do host para o diretório de backup. Sem isso, o dump fica preso ao filesystem do container e se perde ao recriar a instância.
 
 ### PWA
 
@@ -419,6 +444,7 @@ npm run dev
 | `npm run build`       | Build de produção                |
 | `npm run start`       | Iniciar produção                 |
 | `npm run lint`        | Linting                          |
+| `npm run db:backup`   | Executar dump manual do banco    |
 | `npm run db:generate` | Gerar migrações Drizzle          |
 | `npm run db:migrate`  | Aplicar migrações                |
 | `npm run db:push`     | Push schema (dev)                |
@@ -441,6 +467,13 @@ npm run dev
 | `SMTP_PASS`          | Senha/app password SMTP      | `senha-ou-app-password`                           |
 | `SMTP_FROM`          | Remetente exibido            | `Taxímetro Digital <noreply@mnrs.com.br>`         |
 | `SMTP_SECURE`        | Usa SMTPS direto             | `false`                                           |
+| `DB_BACKUP_ENABLED`  | Liga o cron de backup        | `true`                                            |
+| `DB_BACKUP_CRON`     | Expressão cron diária        | `37 3 * * *`                                      |
+| `DB_BACKUP_TZ`       | Timezone do cron             | `America/Bahia`                                   |
+| `DB_BACKUP_DIR`      | Pasta persistente do dump    | `/var/backups/taximetro`                          |
+| `DB_BACKUP_PREFIX`   | Prefixo do arquivo           | `taximetro`                                       |
+| `DB_BACKUP_RETENTION_DAYS` | Quantos dias manter    | `14`                                              |
+| `DB_BACKUP_EMAIL_TO` | Destinatários do dump        | `coord@example.com,ti@example.com`                |
 
 ### Gmail: configuração prática
 
@@ -467,6 +500,8 @@ Regras práticas:
 - `AUTH_URL` continua importante porque ele define a base do link enviado no e-mail de redefinição.
 
 Para o fluxo de redefinição de senha funcionar em produção, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` e `SMTP_PASS` precisam estar presentes no ambiente do container. Sem isso, a rota de `esqueci senha` passa a responder com erro explícito e registrar auditoria de falha de entrega.
+
+Para o envio do backup diário por e-mail funcionar, reaproveitamos o mesmo SMTP. Basta definir `DB_BACKUP_EMAIL_TO` com um ou mais destinatários separados por vírgula. O dump segue anexado em formato `.dump`; se o seu provedor tiver limite baixo de anexo, o arquivo pode exceder esse teto conforme o banco crescer.
 
 ---
 

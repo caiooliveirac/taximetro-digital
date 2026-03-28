@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Users, Calendar, CheckCircle, Clock, XCircle, RefreshCw,
-  AlertTriangle, AlertCircle, Target, ChevronDown, ChevronUp, ArrowRight, MapPinOff, MapPin, Sun, Moon,
+  AlertTriangle, AlertCircle, Target, ChevronDown, ChevronUp, ArrowRight, MapPinOff, MapPin, Sun, Moon, Stethoscope, Loader2,
 } from "lucide-react";
 import { MetricCard } from "@/components/metric-card";
 import { TableSkeleton } from "@/components/table-skeleton";
@@ -81,6 +83,8 @@ const CATEGORY_CONFIG: Record<WeeklyCategory, { label: string; border: string; b
 };
 
 export default function LeaderDashboard() {
+  const router = useRouter();
+  const { data: session, status } = useSession();
   const [stats, setStats] = useState<Stats>({ totalInterns: 0, scheduledThisWeek: 0, pendingRequests: 0, confirmedToday: 0, absentToday: 0, checkedInToday: 0 });
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
   const [summary, setSummary] = useState<ComplianceSummary | null>(null);
@@ -90,6 +94,26 @@ export default function LeaderDashboard() {
   const [expandedGroup, setExpandedGroup] = useState<WeeklyCategory | null>(null);
   const [error, setError] = useState("");
   const [myAssignment, setMyAssignment] = useState<{ id: string; baseCode: string; baseName: string; period: string; status: string } | null>(null);
+  const [preceptorRedirecting, setPreceptorRedirecting] = useState(false);
+  const [preceptorAccessError, setPreceptorAccessError] = useState("");
+  const sessionRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
+  const canActAsPreceptor = sessionRoles.includes("PRECEPTOR");
+
+  function handleOpenPreceptorView() {
+    if (status !== "authenticated") {
+      setPreceptorAccessError("Sessão indisponível. Entre novamente para abrir a visão de preceptoria.");
+      return;
+    }
+
+    if (!canActAsPreceptor) {
+      setPreceptorAccessError("Seu login atual ainda não trouxe a role de preceptoria. Saia e entre novamente.");
+      return;
+    }
+
+    setPreceptorAccessError("");
+    setPreceptorRedirecting(true);
+    router.push("/preceptor");
+  }
 
   useEffect(() => {
     async function load() {
@@ -184,6 +208,28 @@ export default function LeaderDashboard() {
           <RefreshCw className="h-3 w-3" strokeWidth={1.5} /> 30s
         </span>
       </div>
+
+      {canActAsPreceptor && (
+        <div className="rounded-2xl border border-emerald-200 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(13,148,136,0.18))] p-5 shadow-[0_14px_28px_rgba(15,23,42,0.05)]">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Acesso de Função</p>
+              <h2 className="text-lg font-semibold text-slate-900">Entrar como preceptora</h2>
+              <p className="text-sm text-slate-600">Use este atalho para validar a sua auth atual e abrir diretamente a tela de validação de check-in.</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenPreceptorView}
+              disabled={preceptorRedirecting}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(5,150,105,0.24)] transition hover:bg-emerald-500 disabled:cursor-wait disabled:opacity-70"
+            >
+              {preceptorRedirecting ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.8} /> : <Stethoscope className="h-4 w-4" strokeWidth={1.8} />}
+              Abrir visão de preceptoria
+            </button>
+          </div>
+          {preceptorAccessError && <p className="mt-3 text-sm text-amber-700">{preceptorAccessError}</p>}
+        </div>
+      )}
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

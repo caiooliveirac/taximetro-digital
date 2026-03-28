@@ -5,6 +5,7 @@ import { eq, and, gte, lte, ne } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { checkSlotAvailability, checkCruConflict } from "@/lib/slots";
 import { getEffectiveUser } from "@/lib/impersonate";
+import { localDateStr } from "@/lib/utils";
 import { z } from "zod/v4";
 
 const createAssignmentSchema = z.object({
@@ -14,6 +15,8 @@ const createAssignmentSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   period: z.enum(["DAY", "NIGHT"]),
   notes: z.string().optional(),
+  allowRetroactiveOverride: z.boolean().optional(),
+  allowAdminOpenAllocation: z.boolean().optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -45,6 +48,9 @@ export async function GET(req: NextRequest) {
       period: assignments.period,
       status: assignments.status,
       notes: assignments.notes,
+      absenceJustification: assignments.absenceJustification,
+      absenceJustificationActor: assignments.absenceJustificationActor,
+      absenceJustificationAt: assignments.absenceJustificationAt,
       createdAt: assignments.createdAt,
       checkinGeoValid: checkins.geoValid,
       checkinStatus: checkins.status,
@@ -111,9 +117,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = createAssignmentSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
+  const { allowRetroactiveOverride, allowAdminOpenAllocation, ...assignmentData } = parsed.data;
+  const allowCoordinatorRetroactiveOverride = user.role === "COORDINATOR"
+    && allowRetroactiveOverride === true
+    && assignmentData.date < localDateStr();
+  const allowCoordinatorOpenAllocation = user.role === "COORDINATOR" && allowAdminOpenAllocation === true;
 
   // Leader can only create for their faculty
-  if (user.role === "LEADER" && parsed.data.facultyId !== user.facultyId) {
+  if (user.role === "LEADER" && assignmentData.facultyId !== user.facultyId) {
     return NextResponse.json({ success: false, error: "Só pode alocar internos da sua faculdade" }, { status: 403 });
   }
 
@@ -127,9 +138,9 @@ export async function POST(req: NextRequest) {
     .from(assignments)
     .where(
       and(
-        eq(assignments.internId, parsed.data.internId),
-        eq(assignments.date, parsed.data.date),
-        eq(assignments.period, parsed.data.period),
+        eq(assignments.internId, assignmentData.internId),
+        eq(assignments.date, assignmentData.date),
+        eq(assignments.period, assignmentData.period),
       ),
     )
     .limit(1);
@@ -142,23 +153,27 @@ export async function POST(req: NextRequest) {
   }
 
   const isCancelledSameSlot = existingAssignment?.status === "CANCELLED"
-    && existingAssignment.baseId === parsed.data.baseId
-    && existingAssignment.facultyId === parsed.data.facultyId;
+    && existingAssignment.baseId === assignmentData.baseId
+    && existingAssignment.facultyId === assignmentData.facultyId;
 
   if (!isCancelledSameSlot) {
-    const slot = await checkSlotAvailability(
-      parsed.data.baseId,
-      parsed.data.date,
-      parsed.data.period,
-      parsed.data.facultyId,
-    );
-    if (!slot.available) {
-      return NextResponse.json({ success: false, error: `Sem vaga (${slot.assigned}/${slot.capacity})` }, { status: 409 });
+    if (!allowCoordinatorOpenAllocation) {
+      const slot = await checkSlotAvailability(
+        assignmentData.baseId,
+        assignmentData.date,
+        assignmentData.period,
+        assignmentData.facultyId,
+      );
+      if (!slot.available) {
+        return NextResponse.json({ success: false, error: `Sem vaga (${slot.assigned}/${slot.capacity})` }, { status: 409 });
+      }
     }
 
-    const cruCheck = await checkCruConflict(parsed.data.internId, parsed.data.date, parsed.data.period);
-    if (cruCheck.conflicted) {
-      return NextResponse.json({ success: false, error: cruCheck.reason }, { status: 409 });
+    if (!allowCoordinatorRetroactiveOverride) {
+      const cruCheck = await checkCruConflict(assignmentData.internId, assignmentData.date, assignmentData.period);
+      if (cruCheck.conflicted) {
+        return NextResponse.json({ success: false, error: cruCheck.reason }, { status: 409 });
+      }
     }
   }
 
@@ -167,10 +182,10 @@ export async function POST(req: NextRequest) {
       const [reactivated] = await db
         .update(assignments)
         .set({
-          facultyId: parsed.data.facultyId,
-          baseId: parsed.data.baseId,
+          facultyId: assignmentData.facultyId,
+          baseId: assignmentData.baseId,
           status: "SCHEDULED",
-          notes: parsed.data.notes ?? null,
+          notes: assignmentData.notes ?? null,
           updatedAt: new Date(),
         })
         .where(eq(assignments.id, existingAssignment.id))
@@ -181,7 +196,12 @@ export async function POST(req: NextRequest) {
         action: "REACTIVATE_CANCELLED_ASSIGNMENT",
         entity: "assignment",
         entityId: existingAssignment.id,
-        payload: { ...parsed.data, ...(user.isImpersonating ? { impersonating: user.id } : {}) },
+        payload: {
+          ...assignmentData,
+          allowRetroactiveOverride: allowCoordinatorRetroactiveOverride,
+          allowAdminOpenAllocation: allowCoordinatorOpenAllocation,
+          ...(user.isImpersonating ? { impersonating: user.id } : {}),
+        },
       });
 
       return NextResponse.json({ success: true, data: reactivated, reusedCancelled: true });
@@ -189,7 +209,7 @@ export async function POST(req: NextRequest) {
 
     const [created] = await db
       .insert(assignments)
-      .values({ ...parsed.data, createdBy: user.realUserId ?? user.id })
+      .values({ ...assignmentData, createdBy: user.realUserId ?? user.id })
       .returning();
 
     await logAudit({
@@ -197,7 +217,12 @@ export async function POST(req: NextRequest) {
       action: "CREATE_ASSIGNMENT",
       entity: "assignment",
       entityId: created.id,
-      payload: { ...parsed.data, ...(user.isImpersonating ? { impersonating: user.id } : {}) },
+      payload: {
+        ...assignmentData,
+        allowRetroactiveOverride: allowCoordinatorRetroactiveOverride,
+        allowAdminOpenAllocation: allowCoordinatorOpenAllocation,
+        ...(user.isImpersonating ? { impersonating: user.id } : {}),
+      },
     });
 
     return NextResponse.json({ success: true, data: created }, { status: 201 });
@@ -219,7 +244,9 @@ export async function POST(req: NextRequest) {
       causeCode: cause?.code,
       userId: user.realUserId ?? user.id,
       role: user.role,
-      payload: parsed.data,
+      payload: assignmentData,
+      allowRetroactiveOverride: allowCoordinatorRetroactiveOverride,
+      allowAdminOpenAllocation: allowCoordinatorOpenAllocation,
     });
 
     return NextResponse.json(

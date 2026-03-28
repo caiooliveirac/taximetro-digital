@@ -91,6 +91,16 @@ async function fetchRole(userId: string) {
   return role;
 }
 
+async function fetchRoles(userId: string) {
+  const rows = await db
+    .select({ role: userRoles.role })
+    .from(userRoles)
+    .where(and(eq(userRoles.userId, userId), eq(userRoles.isActive, true)))
+    .orderBy(sql`CASE ${userRoles.role} WHEN 'COORDINATOR' THEN 0 WHEN 'LEADER' THEN 1 WHEN 'PRECEPTOR' THEN 2 WHEN 'INTERN' THEN 3 END`);
+
+  return rows.map((row) => row.role);
+}
+
 const googleProviders: Provider[] =
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? [Google({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET })]
@@ -192,6 +202,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
 
         const role = await fetchRole(user.id);
+        const roles = await fetchRoles(user.id);
         if (!role) {
           await logCredentialLoginEvent({
             action: "LOGIN_CREDENTIALS_FAILED",
@@ -222,8 +233,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           name: user.name,
           email: user.email,
           role: role.role,
+          roles,
           facultyId: role.facultyId ?? null,
           baseId: role.baseId ?? null,
+          mustChangePassword: user.forcePasswordChange,
         };
       },
     }),
@@ -269,16 +282,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           .limit(1);
         if (dbUser) {
           const role = await fetchRole(dbUser.id);
+          const roles = await fetchRoles(dbUser.id);
           token.id = dbUser.id;
           token.role = role?.role ?? "INTERN";
           token.facultyId = role?.facultyId ?? null;
           token.baseId = role?.baseId ?? null;
+          token.roles = roles;
+          token.mustChangePassword = dbUser.forcePasswordChange;
         }
       } else if (user) {
         token.id = user.id as string;
         token.role = (user as unknown as { role: string }).role as typeof token.role;
         token.facultyId = (user as unknown as { facultyId: string | null }).facultyId;
         token.baseId = (user as unknown as { baseId: string | null }).baseId;
+        token.roles = (user as unknown as { roles?: Array<"COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN"> }).roles ?? [token.role];
+        token.mustChangePassword = (user as unknown as { mustChangePassword?: boolean }).mustChangePassword ?? false;
       }
       return token;
     },
@@ -287,6 +305,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       (session.user as { role: string }).role = token.role as string;
       (session.user as { facultyId: string | null }).facultyId = token.facultyId as string | null;
       (session.user as { baseId: string | null }).baseId = token.baseId as string | null;
+      (session.user as { roles: string[] }).roles = (token.roles as string[] | undefined) ?? [token.role as string];
+      (session.user as { mustChangePassword: boolean }).mustChangePassword = Boolean(token.mustChangePassword);
       return session;
     },
   },

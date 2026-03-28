@@ -57,11 +57,15 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   phone: varchar("phone", { length: 20 }),
   passwordHash: text("password_hash").notNull(),
+  forcePasswordChange: boolean("force_password_change").notNull().default(false),
   googleId: varchar("google_id", { length: 255 }).unique(),
   selfie: text("selfie"),
   selfieUploadedAt: timestamp("selfie_uploaded_at"),
   registrationCode: varchar("registration_code", { length: 20 }),
   isActive: boolean("is_active").notNull().default(true),
+  mergedIntoUserId: uuid("merged_into_user_id"),
+  mergedAt: timestamp("merged_at"),
+  mergeRollbackExpiresAt: timestamp("merge_rollback_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -110,6 +114,9 @@ export const assignments = pgTable("assignments", {
   status: assignmentStatusEnum("status").notNull().default("SCHEDULED"),
   createdBy: uuid("created_by").notNull().references(() => users.id),
   notes: text("notes"),
+  absenceJustification: text("absence_justification"),
+  absenceJustificationActor: varchar("absence_justification_actor", { length: 20 }),
+  absenceJustificationAt: timestamp("absence_justification_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -200,6 +207,30 @@ export const auditLog = pgTable("audit_log", {
 }, (t) => [
   index("idx_audit_created").on(t.createdAt),
   index("idx_audit_user").on(t.userId),
+]);
+
+export const userMergeEvents = pgTable("user_merge_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceUserId: uuid("source_user_id").notNull().references(() => users.id),
+  sourceName: varchar("source_name", { length: 255 }).notNull(),
+  sourceEmail: varchar("source_email", { length: 255 }).notNull(),
+  targetUserId: uuid("target_user_id").notNull().references(() => users.id),
+  targetName: varchar("target_name", { length: 255 }).notNull(),
+  targetEmail: varchar("target_email", { length: 255 }).notNull(),
+  performedByUserId: uuid("performed_by_user_id").notNull().references(() => users.id),
+  sourceUserSnapshot: jsonb("source_user_snapshot").notNull(),
+  sourceRolesSnapshot: jsonb("source_roles_snapshot").notNull(),
+  sourceBindingSnapshot: jsonb("source_binding_snapshot"),
+  movedRecords: jsonb("moved_records").notNull(),
+  insertedTargetRoleIds: jsonb("inserted_target_role_ids").notNull(),
+  rollbackAvailableUntil: timestamp("rollback_available_until").notNull(),
+  rolledBackAt: timestamp("rolled_back_at"),
+  rolledBackByUserId: uuid("rolled_back_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_user_merge_events_source").on(t.sourceUserId),
+  index("idx_user_merge_events_target").on(t.targetUserId),
+  index("idx_user_merge_events_available_until").on(t.rollbackAvailableUntil),
 ]);
 
 export const inviteLinks = pgTable("invite_links", {

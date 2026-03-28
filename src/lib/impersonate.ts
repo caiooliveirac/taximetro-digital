@@ -26,6 +26,37 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
     const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
     if (!token) return null;
 
+    const tokenRoles = Array.isArray(token.roles) ? token.roles.map(String) : [String(token.role ?? "")].filter(Boolean);
+    const requestedSelfRole = req.headers.get("x-force-role");
+
+    if (requestedSelfRole && IMPERSONATABLE_ROLES.has(requestedSelfRole) && tokenRoles.includes(requestedSelfRole)) {
+        const [selfAsRequestedRole] = await db
+            .select({
+                userId: userRoles.userId,
+                role: userRoles.role,
+                facultyId: userRoles.facultyId,
+                baseId: userRoles.baseId,
+            })
+            .from(userRoles)
+            .where(and(
+                eq(userRoles.userId, token.id as string),
+                eq(userRoles.isActive, true),
+                eq(userRoles.role, requestedSelfRole as "LEADER" | "PRECEPTOR" | "INTERN"),
+            ))
+            .limit(1);
+
+        if (selfAsRequestedRole) {
+            return {
+                id: selfAsRequestedRole.userId,
+                role: selfAsRequestedRole.role,
+                facultyId: selfAsRequestedRole.facultyId,
+                baseId: selfAsRequestedRole.baseId,
+                isImpersonating: false,
+                realUserId: null,
+            };
+        }
+    }
+
     const self: EffectiveUser = {
         id: token.id as string,
         role: token.role as string,

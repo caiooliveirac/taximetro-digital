@@ -55,14 +55,26 @@ async function seed() {
     .onConflictDoNothing()
     .returning({ id: users.id });
 
-  if (admin) {
+  const adminId = admin?.id ?? (await db.select({ id: users.id }).from(users).where(eq(users.email, "caio.olive94@gmail.com")))[0]?.id;
+
+  if (adminId) {
     await db
       .insert(userRoles)
       .values({
-        userId: admin.id,
+        userId: adminId,
         role: "COORDINATOR",
       })
       .onConflictDoNothing();
+
+    const existingRoles = await db.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, adminId));
+    if (!existingRoles.some((row) => row.role === "PRECEPTOR")) {
+      await db
+        .insert(userRoles)
+        .values({
+          userId: adminId,
+          role: "PRECEPTOR",
+        });
+    }
   }
 
   /* ── CRU slot rules for EBMSP ── */

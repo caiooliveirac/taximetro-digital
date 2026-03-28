@@ -19,8 +19,8 @@ const PreceptorContext = createContext<PreceptorCtx>({
   shift: null,
   bases: [],
   loading: true,
-  declare: () => {},
-  clear: () => {},
+  declare: () => { },
+  clear: () => { },
 });
 
 export function usePreceptor() {
@@ -37,7 +37,7 @@ export function PreceptorProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Load bases from API
-    fetch("/taximetro/api/preceptor/bases")
+    fetch("/taximetro/api/preceptor/bases", { headers: { "x-force-role": "PRECEPTOR" } })
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setBases(json.data);
