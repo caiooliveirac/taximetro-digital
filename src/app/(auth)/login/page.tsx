@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Ambulance, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,6 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -58,9 +57,12 @@ function LoginForm() {
     setError("");
     setLoading(true);
 
+    const callbackUrl = "/taximetro/";
+
     const result = await signIn("credentials", {
       identifier,
       password,
+      callbackUrl,
       redirect: false,
     });
 
@@ -69,8 +71,7 @@ function LoginForm() {
     if (result?.error) {
       setError("Credenciais inválidas. Se você já foi aprovado, use 'Esqueci minha senha' ou peça à coordenação para resetar seu acesso.");
     } else {
-      router.push("/");
-      router.refresh();
+      window.location.assign(result?.url ?? callbackUrl);
     }
   }
 
