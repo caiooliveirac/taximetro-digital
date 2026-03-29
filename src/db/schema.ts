@@ -138,6 +138,8 @@ export const checkins = pgTable("checkins", {
   totpValidatedAt: timestamp("totp_validated_at"),
   validatedBy: uuid("validated_by").references(() => users.id),
   method: checkinMethodEnum("method"),
+  internObservations: text("intern_observations"),
+  preceptorObservations: text("preceptor_observations"),
   status: checkinStatusEnum("status").notNull().default("PENDING"),
   checkoutAt: timestamp("checkout_at"),
   checkoutConfirmedBy: uuid("checkout_confirmed_by").references(() => users.id),

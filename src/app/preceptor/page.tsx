@@ -30,6 +30,8 @@ export default function PreceptorValidar() {
   const [search, setSearch] = useState("");
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [codeInput, setCodeInput] = useState("");
+  const [codeObservations, setCodeObservations] = useState("");
+  const [rowObservations, setRowObservations] = useState<Record<string, string>>({});
   const [validatingCode, setValidatingCode] = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [confirmingCheckout, setConfirmingCheckout] = useState<string | null>(null);
@@ -61,10 +63,14 @@ export default function PreceptorValidar() {
       const res = await fetch("/taximetro/api/attendance/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId }),
+        body: JSON.stringify({ assignmentId, observations: rowObservations[assignmentId] ?? "" }),
       });
       const json = await res.json();
-      if (json.success) { setMsg({ type: "success", text: "Presença validada" }); load(); }
+      if (json.success) {
+        setMsg({ type: "success", text: "Presença validada" });
+        setRowObservations((prev) => ({ ...prev, [assignmentId]: "" }));
+        load();
+      }
       else setMsg({ type: "error", text: json.error });
     } catch {
       setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
@@ -79,10 +85,15 @@ export default function PreceptorValidar() {
       const res = await fetch("/taximetro/api/attendance/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ code: codeInput }),
+        body: JSON.stringify({ code: codeInput, observations: codeObservations }),
       });
       const json = await res.json();
-      if (json.success) { setMsg({ type: "success", text: "Presença validada (código)" }); setCodeInput(""); load(); }
+      if (json.success) {
+        setMsg({ type: "success", text: "Presença validada (código)" });
+        setCodeInput("");
+        setCodeObservations("");
+        load();
+      }
       else setMsg({ type: "error", text: json.error });
     } catch {
       setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
@@ -150,6 +161,14 @@ export default function PreceptorValidar() {
             {validatingCode ? "Validando..." : "Validar"}
           </Button>
         </div>
+        <textarea
+          value={codeObservations}
+          onChange={(e) => setCodeObservations(e.target.value)}
+          placeholder="Observações"
+          maxLength={2000}
+          rows={3}
+          className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20"
+        />
         <p className="mt-2 flex items-center gap-1 text-xs text-slate-400">
           <Send className="h-3 w-3" strokeWidth={1.5} /> No Telegram, envie apenas os 6 números no grupo da base
         </p>
@@ -197,10 +216,20 @@ export default function PreceptorValidar() {
                   <TableCell><StatusBadge status={a.status} /></TableCell>
                   <TableCell>
                     {a.status === "SCHEDULED" ? (
-                      <Button size="sm" variant="default" onClick={() => validateDirect(a.id)}>
-                        <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        Confirmar
-                      </Button>
+                      <div className="space-y-2">
+                        <textarea
+                          value={rowObservations[a.id] ?? ""}
+                          onChange={(e) => setRowObservations((prev) => ({ ...prev, [a.id]: e.target.value }))}
+                          placeholder="Observações"
+                          maxLength={2000}
+                          rows={3}
+                          className="w-full min-w-56 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20"
+                        />
+                        <Button size="sm" variant="default" onClick={() => validateDirect(a.id)}>
+                          <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          Confirmar
+                        </Button>
+                      </div>
                     ) : a.status === "CHECKED_IN" ? (
                       <Button
                         size="sm"

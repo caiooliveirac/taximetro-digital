@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { MapPin, Sun, Moon, CheckCircle, Clock, Loader2, AlertCircle, Plus, Building2, UserCircle, AlertTriangle, LogOut, Shield, Settings, RotateCcw, Smartphone } from "lucide-react";
+import { MapPin, Sun, Moon, CheckCircle, Clock, Loader2, AlertCircle, UserCircle, AlertTriangle, LogOut, Shield, Settings, RotateCcw, Smartphone } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -50,8 +50,6 @@ type Step =
   | "IDLE" | "CHECKING_GEO" | "GPS_DENIED" | "GEO_WARNING" | "GENERATING" | "AWAITING"
   | "VALIDATED" | "CHECKOUT_GENERATING" | "CHECKOUT_AWAITING" | "CHECKED_OUT" | "ERROR";
 
-type Base = { id: string; code: string; name: string; type: string; isActive: boolean };
-
 type CurrentAttendancePayload = {
   current: {
     uiState: "NONE" | "IDLE" | "AWAITING" | "VALIDATED" | "CHECKOUT_AWAITING" | "CHECKED_OUT";
@@ -62,6 +60,7 @@ type CurrentAttendancePayload = {
     };
     checkinAt: string | null;
     checkoutAt: string | null;
+    internObservations: string | null;
     session: {
       checkinId: string;
       currentCode: string;
@@ -75,6 +74,7 @@ type CurrentAttendancePayload = {
     assignment: Assignment | null;
     checkinAt: string | null;
     checkoutAt: string | null;
+    internObservations: string | null;
     session: {
       checkinId: string;
       currentCode: string;
@@ -85,6 +85,11 @@ type CurrentAttendancePayload = {
 
 const GROUP_NAME = "TaximetrosSAMUInternos";
 const TOTP_STEP = TOTP_STEP_SECONDS;
+
+function normalizeObservation(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : "";
+}
 
 export default function InternCheckin() {
   return (
@@ -111,26 +116,23 @@ function InternCheckinContent() {
   const [errorText, setErrorText] = useState("");
   const [checkinAt, setCheckinAt] = useState<string | null>(null);
   const [canRequestCheckout, setCanRequestCheckout] = useState(false);
+  const [internObservations, setInternObservations] = useState("");
+  const [savedInternObservations, setSavedInternObservations] = useState("");
+  const [savingObservations, setSavingObservations] = useState(false);
+  const [observationsMsg, setObservationsMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>(null);
   const sseRef = useRef<EventSource>(null);
 
-  // Self-create state
-  const [showSelfCreate, setShowSelfCreate] = useState(false);
-  const [bases, setBases] = useState<Base[]>([]);
-  const [selectedBase, setSelectedBase] = useState("");
-  const [selectedPeriod, setSelectedPeriod] = useState<"DAY" | "NIGHT">("DAY");
-  const [creating, setCreating] = useState(false);
-  const [msg, setMsg] = useState<{ type: "error" | "warning"; text: string } | null>(null);
-
   // QR value — opens the Telegram group directly
   const qrValue = `https://t.me/${GROUP_NAME}`;
+  const normalizedInternObservations = normalizeObservation(internObservations);
+  const normalizedSavedInternObservations = normalizeObservation(savedInternObservations);
 
   // Step 1: Get geolocation and check against base
   const startCheckin = useCallback(async () => {
     if (!assignment) return;
     setStep("CHECKING_GEO");
     setErrorText("");
-    setMsg(null);
 
     if (!navigator.geolocation) {
       setUserCoords(null);
@@ -310,6 +312,39 @@ function InternCheckinContent() {
     }
   }, [assignment]);
 
+  const saveObservations = useCallback(async () => {
+    if (!assignment) return;
+
+    setSavingObservations(true);
+    setObservationsMsg(null);
+
+    try {
+      const res = await fetch("/taximetro/api/attendance/observations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignmentId: assignment.id,
+          observations: internObservations,
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        setObservationsMsg({ type: "error", text: data.error || "Não foi possível salvar as observações." });
+        return;
+      }
+
+      const savedValue = data.data?.observations ?? "";
+      setInternObservations(savedValue);
+      setSavedInternObservations(savedValue);
+      setObservationsMsg({ type: "success", text: "Observações salvas." });
+    } catch {
+      setObservationsMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
+    } finally {
+      setSavingObservations(false);
+    }
+  }, [assignment, internObservations]);
+
   // SSE for checkout — listen for CHECKED_OUT
   const startCheckoutSSE = useCallback((assignmentId: string, attempt = 0) => {
     if (sseRef.current) sseRef.current.close();
@@ -351,6 +386,8 @@ function InternCheckinContent() {
             setAssignment(pendingCheckout.assignment);
             setCheckinAt(pendingCheckout.checkinAt);
             setCanRequestCheckout(pendingCheckout.state === "PENDING");
+            setInternObservations(pendingCheckout.internObservations ?? "");
+            setSavedInternObservations(pendingCheckout.internObservations ?? "");
 
             if (pendingCheckout.state === "PENDING") {
               setStep("VALIDATED");
@@ -379,12 +416,17 @@ function InternCheckinContent() {
           }
 
           setAssignment(null);
+          setInternObservations("");
+          setSavedInternObservations("");
+          setObservationsMsg(null);
           return;
         }
 
         setAssignment(data.current.assignment);
         setCheckinAt(data.current.checkinAt);
         setCanRequestCheckout(data.current.canRequestCheckout);
+        setInternObservations(data.current.internObservations ?? "");
+        setSavedInternObservations(data.current.internObservations ?? "");
 
         if (data.current.uiState === "VALIDATED") {
           setStep("VALIDATED");
@@ -437,6 +479,8 @@ function InternCheckinContent() {
         if (!cancelled) {
           setAssignment(null);
           setCanRequestCheckout(false);
+          setInternObservations("");
+          setSavedInternObservations("");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -458,43 +502,6 @@ function InternCheckinContent() {
     : `/leader/remanejamento?assignmentId=${assignment?.id ?? ""}`;
   const showInternGuidance = session?.user?.role === "INTERN" && !impersonateTarget;
 
-  async function openSelfCreate() {
-    setShowSelfCreate(true);
-    if (bases.length === 0) {
-      try {
-        const res = await fetch("/taximetro/api/admin/bases");
-        const json = await res.json();
-        if (json.success) setBases(json.data.filter((b: Base) => b.isActive !== false));
-      } catch {
-        setMsg({ type: "error", text: "Erro ao carregar bases." });
-      }
-    }
-  }
-
-  async function doSelfCreate() {
-    if (!selectedBase) return;
-    setCreating(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/taximetro/api/assignments/self-create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseId: selectedBase, period: selectedPeriod }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setAssignment(json.data);
-        setShowSelfCreate(false);
-        setMsg(null);
-      } else {
-        setMsg({ type: "error", text: json.error });
-      }
-    } catch {
-      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
-    }
-    setCreating(false);
-  }
-
   if (loading) return <p className="text-sm text-slate-400">Carregando...</p>;
 
   return (
@@ -506,91 +513,8 @@ function InternCheckinContent() {
         <div className="space-y-4">
           <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
             <p className="text-sm text-slate-400">Nenhum plantão pendente de check-in.</p>
+            <p className="mt-2 text-xs text-slate-500">Se você estiver escalado e o plantão não aparecer, peça a alocação ao líder ou à coordenação.</p>
           </div>
-
-          {!showSelfCreate ? (
-            <button
-              onClick={openSelfCreate}
-              className="w-full rounded-xl border border-dashed border-amber-300 bg-amber-50/50 p-5 text-center transition-colors hover:bg-amber-50"
-            >
-              <div className="flex items-center justify-center gap-2 text-amber-700">
-                <Plus className="h-4 w-4" strokeWidth={2} />
-                <span className="text-sm font-medium">Estou na base e meu plantão não aparece</span>
-              </div>
-              <p className="mt-1 text-xs text-amber-600/70">Crie o plantão manualmente para fazer check-in</p>
-            </button>
-          ) : (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-4">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-amber-600" strokeWidth={1.5} />
-                <h2 className="text-sm font-semibold text-amber-800">Criar plantão avulso</h2>
-              </div>
-              <p className="text-xs text-amber-700/70">
-                Selecione a base e o turno. Um alerta será enviado à coordenação.
-                O preceptor ainda precisará validar sua presença normalmente.
-              </p>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Base</label>
-                  <select
-                    value={selectedBase}
-                    onChange={(e) => setSelectedBase(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
-                  >
-                    <option value="">Selecione a base...</option>
-                    {bases.map((b) => (
-                      <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Turno</label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setSelectedPeriod("DAY")}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${selectedPeriod === "DAY"
-                        ? "border-amber-300 bg-amber-100 text-amber-800"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                        }`}
-                    >
-                      <Sun className="h-4 w-4" strokeWidth={1.5} /> Diurno
-                    </button>
-                    <button
-                      onClick={() => setSelectedPeriod("NIGHT")}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${selectedPeriod === "NIGHT"
-                        ? "border-indigo-300 bg-indigo-100 text-indigo-800"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                        }`}
-                    >
-                      <Moon className="h-4 w-4" strokeWidth={1.5} /> Noturno
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {msg && (
-                <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${msg.type === "error" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>
-                  <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                  {msg.text}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => { setShowSelfCreate(false); setMsg(null); }} className="flex-1">
-                  Cancelar
-                </Button>
-                <Button onClick={doSelfCreate} disabled={!selectedBase || creating} className="flex-1 gap-2">
-                  {creating ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Criando...</>
-                  ) : (
-                    <><Plus className="h-4 w-4" strokeWidth={2} /> Criar Plantão</>
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
 
         /* Validated — On Duty — show checkout button */
@@ -624,6 +548,40 @@ function InternCheckinContent() {
                 Check-in validado às {formatBrazilTime(checkinAt)}
               </div>
             )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Observações</p>
+              <p className="mt-1 text-xs text-slate-500">Opcional.</p>
+            </div>
+            <textarea
+              value={internObservations}
+              onChange={(e) => {
+                setInternObservations(e.target.value);
+                if (observationsMsg) setObservationsMsg(null);
+              }}
+              placeholder="Observações"
+              maxLength={2000}
+              rows={5}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+            />
+            {observationsMsg && (
+              <div className={`rounded-lg px-3 py-2 text-sm ${observationsMsg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                {observationsMsg.text}
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-400">{internObservations.length}/2000</p>
+              <Button
+                variant="outline"
+                onClick={saveObservations}
+                disabled={savingObservations || normalizedInternObservations === normalizedSavedInternObservations}
+                className="gap-2"
+              >
+                {savingObservations ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</> : "Salvar observações"}
+              </Button>
+            </div>
           </div>
 
           {canRequestCheckout ? (
@@ -958,14 +916,6 @@ function InternCheckinContent() {
               longitude={assignment.baseLongitude}
               label={`${assignment.baseCode} - ${assignment.baseName}`}
             />
-
-            {msg && (
-              <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${msg.type === "error" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>
-                <AlertCircle className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                {msg.text}
-              </div>
-            )}
-
             <Button onClick={startCheckin} className="w-full gap-2" size="lg">
               <MapPin className="h-4 w-4" strokeWidth={1.5} /> Iniciar Check-in
             </Button>
