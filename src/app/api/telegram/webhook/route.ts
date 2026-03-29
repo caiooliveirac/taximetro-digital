@@ -6,7 +6,13 @@ import { validateCode } from "@/lib/totp";
 import { bot, TELEGRAM_GROUP_ID } from "@/lib/telegram";
 import { logAudit } from "@/lib/audit";
 import { formatBrazilTime } from "@/lib/utils";
+import { canTriggerPendingReminderFromTelegram, sendPendingCheckinReminder } from "@/lib/telegram-checkin-pending-reminder";
 import { z } from "zod/v4";
+
+function extractCommand(text: string) {
+  const match = text.match(/^\/([a-zA-Z_]+)(?:@[^\s]+)?(?:\s+.*)?$/);
+  return match?.[1]?.toLowerCase() ?? null;
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -20,6 +26,7 @@ export async function POST(req: NextRequest) {
     const chatId = String(message.chat.id);
     const isGroup = message.chat.type === "group" || message.chat.type === "supergroup";
     const telegramName = message.from.first_name + (message.from.last_name ? ` ${message.from.last_name}` : "");
+    const command = extractCommand(text);
 
     // Private commands
     if (!isGroup) {
@@ -46,13 +53,18 @@ export async function POST(req: NextRequest) {
           "Comandos:\n" +
           "• `/vincular 000.000.000-00` — vincular seu Telegram ao cadastro\n" +
           "• Escaneie o QR Code do interno para abrir o grupo\n" +
-          "• No grupo: envie somente o código de 6 dígitos do interno",
+          "• No grupo: envie somente o código de 6 dígitos do interno\n" +
+          "• No grupo: `/pendencias` — avisar faltas de check-in do plantão diurno",
           { parse_mode: "Markdown" }
         );
         return NextResponse.json({ ok: true });
       }
 
       return NextResponse.json({ ok: true });
+    }
+
+    if (command === "pendencias" || command === "checkinspendentes") {
+      return await handleManualPendingReminderCommand(telegramUserId, telegramName, chatId, isGroup);
     }
 
     // Group messages — any 6-digit code validates (no binding required)
@@ -65,6 +77,47 @@ export async function POST(req: NextRequest) {
     console.error("Telegram webhook error:", err);
     return NextResponse.json({ ok: true });
   }
+}
+
+async function handleManualPendingReminderCommand(
+  telegramUserId: string,
+  telegramName: string,
+  chatId: string,
+  isGroup: boolean,
+) {
+  if (!isGroup) {
+    await bot.api.sendMessage(chatId, "Use este comando no grupo de validação.");
+    return NextResponse.json({ ok: true });
+  }
+
+  if (TELEGRAM_GROUP_ID && chatId !== TELEGRAM_GROUP_ID) {
+    await bot.api.sendMessage(chatId, "Este comando só está habilitado no grupo oficial de validação.");
+    return NextResponse.json({ ok: true });
+  }
+
+  const permission = await canTriggerPendingReminderFromTelegram(telegramUserId);
+
+  if (!permission.allowed) {
+    const message = permission.reason === "not-bound"
+      ? "Comando indisponível para este Telegram. Faça primeiro /vincular 000.000.000-00 no privado do bot."
+      : "Comando disponível apenas para coordenação, liderança ou preceptoria vinculadas.";
+    await bot.api.sendMessage(chatId, message);
+    return NextResponse.json({ ok: true });
+  }
+
+  const result = await sendPendingCheckinReminder({
+    notifyWhenEmpty: true,
+    requestedByUserId: permission.userId,
+    requestedByTelegramId: telegramUserId,
+    requestedByName: telegramName,
+    source: "MANUAL_COMMAND",
+  });
+
+  if (result.pendingCount > 0) {
+    await bot.api.sendMessage(chatId, `📣 Alerta manual disparado por ${telegramName}.`);
+  }
+
+  return NextResponse.json({ ok: true });
 }
 
 /** Resolve optional binding — returns userId if bound, null otherwise */

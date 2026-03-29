@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function PlanilhaRedirect() {
-  redirect("/leader/escala");
+  redirect("/taximetro/leader/escala");
 }

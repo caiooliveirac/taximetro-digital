@@ -2,10 +2,10 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 
 const ROLE_HOME: Record<string, string> = {
-  COORDINATOR: "/admin",
-  LEADER: "/leader",
-  PRECEPTOR: "/preceptor",
-  INTERN: "/intern",
+  COORDINATOR: "/taximetro/admin",
+  LEADER: "/taximetro/leader",
+  PRECEPTOR: "/taximetro/preceptor",
+  INTERN: "/taximetro/intern",
 };
 
 export default async function RootPage() {

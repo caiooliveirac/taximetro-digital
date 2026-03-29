@@ -474,6 +474,8 @@ npm run dev
 | `DB_BACKUP_PREFIX`   | Prefixo do arquivo           | `taximetro`                                       |
 | `DB_BACKUP_RETENTION_DAYS` | Quantos dias manter    | `14`                                              |
 | `DB_BACKUP_EMAIL_TO` | Destinatários do dump        | `coord@example.com,ti@example.com`                |
+| `TELEGRAM_CHECKIN_REMINDER_ENABLED` | Liga os alertas de 8h/9h | `true`                                  |
+| `TELEGRAM_CHECKIN_REMINDER_CRON` | Expressão cron dos alertas | `0 8,9 * * *`                           |
 
 ### Gmail: configuração prática
 
