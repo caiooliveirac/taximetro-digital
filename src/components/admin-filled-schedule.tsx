@@ -67,6 +67,8 @@ type AssignmentDetail = {
     validated_by_name: string | null;
     checkout_at: string | null;
     checkout_confirmed_by_name: string | null;
+    intern_observations: string | null;
+    preceptor_observations: string | null;
     checkout_notes: string | null;
 };
 
@@ -1458,6 +1460,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 <div className="rounded-xl border border-slate-200 bg-white p-4">
                                     <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Notas do plantão</p>
                                     <p className="mt-2 text-sm text-slate-700">{selectedAssignment.notes || "Sem observações operacionais."}</p>
+                                    {selectedAssignment.intern_observations && <p className="mt-2 text-xs text-slate-500">Interno: {selectedAssignment.intern_observations}</p>}
+                                    {selectedAssignment.preceptor_observations && <p className="mt-2 text-xs text-slate-500">Preceptor: {selectedAssignment.preceptor_observations}</p>}
                                     {selectedAssignment.checkout_notes && <p className="mt-2 text-xs text-slate-500">Checkout: {selectedAssignment.checkout_notes}</p>}
                                 </div>
 

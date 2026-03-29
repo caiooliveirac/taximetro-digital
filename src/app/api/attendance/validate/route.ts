@@ -25,7 +25,13 @@ const validateSchema = z.object({
   checkinId: z.string().uuid().optional(),
   assignmentId: z.string().uuid().optional(),
   code: z.string().length(6).optional(),
+  observations: z.string().max(2000).optional(),
 });
+
+function normalizeObservation(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
 
 export async function POST(req: NextRequest) {
   const user = await getEffectiveUser(req);
@@ -44,6 +50,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
   const { assignmentId, code } = parsed.data;
+  const observations = normalizeObservation(parsed.data.observations);
 
   if (assignmentId) {
     const [assignment] = await db.select().from(assignments).where(eq(assignments.id, assignmentId)).limit(1);
@@ -60,6 +67,7 @@ export async function POST(req: NextRequest) {
       validatedBy: validatorId,
       totpValidatedAt: new Date(),
       method: "APP_DIRECT",
+      preceptorObservations: observations,
     }).where(eq(checkins.id, checkin.id));
 
     await db.update(assignments).set({ status: "CHECKED_IN", updatedAt: new Date() }).where(eq(assignments.id, assignmentId));
@@ -67,19 +75,30 @@ export async function POST(req: NextRequest) {
     await db.update(qrSessions).set({ consumedAt: new Date(), consumedBy: validatorId })
       .where(and(eq(qrSessions.checkinId, checkin.id)));
 
-    await logAudit({ userId: validatorId, action: "CHECKIN_VALIDATED_APP", entity: "checkin", entityId: checkin.id, ...(user.isImpersonating ? { payload: { impersonating: user.id } } : {}) });
+    await logAudit({
+      userId: validatorId,
+      action: "CHECKIN_VALIDATED_APP",
+      entity: "checkin",
+      entityId: checkin.id,
+      ...((user.isImpersonating || observations) ? {
+        payload: {
+          ...(user.isImpersonating ? { impersonating: user.id } : {}),
+          ...(observations ? { hasObservations: true } : {}),
+        },
+      } : {}),
+    });
 
     return NextResponse.json({ success: true, data: { method: "APP_DIRECT" } });
   }
 
   if (code) {
-    return validateByCode(code, user.realUserId ?? user.id, user.isImpersonating ? user.id : undefined);
+    return validateByCode(code, user.realUserId ?? user.id, user.isImpersonating ? user.id : undefined, observations);
   }
 
   return NextResponse.json({ success: false, error: "Informe assignmentId ou code" }, { status: 400 });
 }
 
-async function validateByCode(code: string, validatorId: string, impersonatingId?: string) {
+async function validateByCode(code: string, validatorId: string, impersonatingId?: string, observations?: string | null) {
   // Direct DB lookup by activeCode — O(1) with index
   const session = await validateCode(code);
   if (!session) {
@@ -98,12 +117,24 @@ async function validateByCode(code: string, validatorId: string, impersonatingId
     validatedBy: validatorId,
     totpValidatedAt: new Date(),
     method: "APP_DIRECT",
+    preceptorObservations: observations ?? null,
   }).where(eq(checkins.id, session.checkinId));
 
   await db.update(qrSessions).set({ consumedAt: new Date(), consumedBy: validatorId }).where(eq(qrSessions.id, session.id));
   await db.update(assignments).set({ status: "CHECKED_IN", updatedAt: new Date() }).where(eq(assignments.id, checkin.assignmentId));
 
-  await logAudit({ userId: validatorId, action: "CHECKIN_VALIDATED_CODE", entity: "checkin", entityId: session.checkinId, ...(impersonatingId ? { payload: { impersonating: impersonatingId } } : {}) });
+  await logAudit({
+    userId: validatorId,
+    action: "CHECKIN_VALIDATED_CODE",
+    entity: "checkin",
+    entityId: session.checkinId,
+    ...((impersonatingId || observations) ? {
+      payload: {
+        ...(impersonatingId ? { impersonating: impersonatingId } : {}),
+        ...(observations ? { hasObservations: true } : {}),
+      },
+    } : {}),
+  });
 
   return NextResponse.json({ success: true, data: { method: "CODE" } });
 }

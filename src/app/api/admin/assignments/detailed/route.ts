@@ -4,20 +4,20 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
-    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
-    if (!token || token.role !== "COORDINATOR") {
-        return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
-    }
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  if (!token || token.role !== "COORDINATOR") {
+    return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+  }
 
-    const { searchParams } = new URL(req.url);
-    const from = searchParams.get("from");
-    const to = searchParams.get("to");
+  const { searchParams } = new URL(req.url);
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
 
-    if (!from || !to) {
-        return NextResponse.json({ success: false, error: "Parâmetros from e to são obrigatórios" }, { status: 400 });
-    }
+  if (!from || !to) {
+    return NextResponse.json({ success: false, error: "Parâmetros from e to são obrigatórios" }, { status: 400 });
+  }
 
-    const rows = await db.execute(sql`
+  const rows = await db.execute(sql`
     SELECT
       a.id,
       a.intern_id,
@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
       vu.name AS validated_by_name,
       c.checkout_at,
       cu.name AS checkout_confirmed_by_name,
+      c.intern_observations,
+      c.preceptor_observations,
       c.checkout_notes
     FROM assignments a
     JOIN users u ON u.id = a.intern_id
@@ -54,5 +56,5 @@ export async function GET(req: NextRequest) {
     ORDER BY a.date, b.code, a.period, u.name
   `);
 
-    return NextResponse.json({ success: true, data: rows });
+  return NextResponse.json({ success: true, data: rows });
 }

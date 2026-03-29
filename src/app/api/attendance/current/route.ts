@@ -26,6 +26,7 @@ type EnrichedRow = {
     checkinStatus: string | null;
     checkinAt: Date | null;
     checkoutAt: Date | null;
+    internObservations: string | null;
     activeSession?: {
         checkinId: string;
         totpSecret: string;
@@ -110,6 +111,7 @@ export async function GET(req: NextRequest) {
             checkinStatus: checkins.status,
             checkinAt: checkins.checkinAt,
             checkoutAt: checkins.checkoutAt,
+            internObservations: checkins.internObservations,
         })
         .from(assignments)
         .innerJoin(users, eq(users.id, assignments.internId))
@@ -202,6 +204,7 @@ export async function GET(req: NextRequest) {
             assignment: serializeAssignment(latestPendingCheckout),
             checkinAt: latestPendingCheckout.checkinAt?.toISOString() ?? null,
             checkoutAt: latestPendingCheckout.checkoutAt?.toISOString() ?? null,
+            internObservations: latestPendingCheckout.internObservations,
             session: serializeSession(latestPendingCheckout),
         }
         : latestCompletedCheckout
@@ -210,6 +213,7 @@ export async function GET(req: NextRequest) {
                 assignment: serializeAssignment(latestCompletedCheckout),
                 checkinAt: latestCompletedCheckout.checkinAt?.toISOString() ?? null,
                 checkoutAt: latestCompletedCheckout.checkoutAt?.toISOString() ?? null,
+                internObservations: latestCompletedCheckout.internObservations,
                 session: null,
             }
             : {
@@ -217,6 +221,7 @@ export async function GET(req: NextRequest) {
                 assignment: null,
                 checkinAt: null,
                 checkoutAt: null,
+                internObservations: null,
                 session: null,
             };
 
@@ -251,6 +256,7 @@ export async function GET(req: NextRequest) {
                 },
                 checkinAt: selected.checkinAt?.toISOString() ?? null,
                 checkoutAt: selected.checkoutAt?.toISOString() ?? null,
+                internObservations: selected.internObservations,
                 session,
                 checkoutPending: uiState === "CHECKOUT_AWAITING",
                 canRequestCheckout: selected.status === "CHECKED_IN" && uiState !== "CHECKOUT_AWAITING" && isWithinInternCheckoutWindow(selected.date, selected.period as "DAY" | "NIGHT"),
