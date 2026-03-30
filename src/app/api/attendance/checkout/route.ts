@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
   }
   if (!isWithinInternCheckoutWindow(assignment.date, assignment.period as "DAY" | "NIGHT")) {
     return NextResponse.json(
-      { success: false, error: assignment.period === "DAY" ? "O checkout do plantão diurno só fica liberado entre 18:00 e 00:00." : "O checkout do plantão noturno só fica liberado entre 06:00 e 12:00." },
+      { success: false, error: assignment.period === "DAY" ? "O checkout do plantão diurno só fica liberado entre 15:00 e 00:00." : "O checkout do plantão noturno só fica liberado entre 06:00 e 12:00." },
       { status: 409 },
     );
   }

@@ -550,40 +550,6 @@ function InternCheckinContent() {
             )}
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Observações</p>
-              <p className="mt-1 text-xs text-slate-500">Opcional.</p>
-            </div>
-            <textarea
-              value={internObservations}
-              onChange={(e) => {
-                setInternObservations(e.target.value);
-                if (observationsMsg) setObservationsMsg(null);
-              }}
-              placeholder="Observações"
-              maxLength={2000}
-              rows={5}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-            />
-            {observationsMsg && (
-              <div className={`rounded-lg px-3 py-2 text-sm ${observationsMsg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-                {observationsMsg.text}
-              </div>
-            )}
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-slate-400">{internObservations.length}/2000</p>
-              <Button
-                variant="outline"
-                onClick={saveObservations}
-                disabled={savingObservations || normalizedInternObservations === normalizedSavedInternObservations}
-                className="gap-2"
-              >
-                {savingObservations ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</> : "Salvar observações"}
-              </Button>
-            </div>
-          </div>
-
           {canRequestCheckout ? (
             <>
               <Button
@@ -601,7 +567,7 @@ function InternCheckinContent() {
           ) : (
             <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-center text-sm text-blue-900">
               {assignment.period === "DAY"
-                ? "O checkout do plantão diurno fica liberado a partir das 18:00 e permanece disponível até 00:00."
+                ? "O checkout do plantão diurno fica liberado a partir das 15:00 e permanece disponível até 00:00."
                 : "O checkout do plantão noturno fica liberado a partir das 06:00 e permanece disponível até 12:00."}
             </div>
           )}
@@ -691,11 +657,47 @@ function InternCheckinContent() {
 
         /* Checked out — done */
       ) : step === "CHECKED_OUT" ? (
-        <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-6 text-center space-y-3">
-          <CheckCircle className="mx-auto h-12 w-12 text-blue-600" strokeWidth={1.5} />
-          <p className="text-xl font-semibold text-blue-800">Checkout Realizado</p>
-          <p className="text-sm text-blue-600">{assignment.baseCode} — {assignment.baseName}</p>
-          <p className="text-xs text-slate-400">Seu plantão foi encerrado. Bom descanso!</p>
+        <div className="space-y-4">
+          <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-6 text-center space-y-3">
+            <CheckCircle className="mx-auto h-12 w-12 text-blue-600" strokeWidth={1.5} />
+            <p className="text-xl font-semibold text-blue-800">Checkout Realizado</p>
+            <p className="text-sm text-blue-600">{assignment.baseCode} — {assignment.baseName}</p>
+            <p className="text-xs text-slate-500">Se quiser, registre abaixo observações facultativas sobre o plantão encerrado.</p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Observações</p>
+              <p className="mt-1 text-xs text-slate-500">Campo opcional disponível após o checkout.</p>
+            </div>
+            <textarea
+              value={internObservations}
+              onChange={(e) => {
+                setInternObservations(e.target.value);
+                if (observationsMsg) setObservationsMsg(null);
+              }}
+              placeholder="Observações sobre o plantão"
+              maxLength={2000}
+              rows={5}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+            />
+            {observationsMsg && (
+              <div className={`rounded-lg px-3 py-2 text-sm ${observationsMsg.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                {observationsMsg.text}
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-400">{internObservations.length}/2000</p>
+              <Button
+                variant="outline"
+                onClick={saveObservations}
+                disabled={savingObservations || normalizedInternObservations === normalizedSavedInternObservations}
+                className="gap-2"
+              >
+                {savingObservations ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</> : "Salvar observações"}
+              </Button>
+            </div>
+          </div>
         </div>
 
         /* Checking geo */

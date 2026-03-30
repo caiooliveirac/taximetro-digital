@@ -4,6 +4,7 @@ import { twMerge } from "tailwind-merge";
 const BRAZIL_TIME_ZONE = "America/Sao_Paulo";
 const OPERATIONAL_DAY_START_HOUR = 6;
 const OPERATIONAL_NIGHT_START_HOUR = 18;
+const DAY_SHIFT_CHECKOUT_START_HOUR = 15;
 const SHIFT_CHECKOUT_GRACE_HOURS = 6;
 
 export type ShiftPeriod = "DAY" | "NIGHT";
@@ -103,7 +104,7 @@ function shiftCheckoutStartPoint(dateStr: string, period: ShiftPeriod): LocalDat
   if (period === "DAY") {
     return {
       dateStr,
-      hour: OPERATIONAL_NIGHT_START_HOUR,
+      hour: DAY_SHIFT_CHECKOUT_START_HOUR,
       minute: 0,
     };
   }
