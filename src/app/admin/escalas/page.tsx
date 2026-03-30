@@ -18,5 +18,5 @@ const DAY_LABELS: Record<string, string> = { MON: "Seg", TUE: "Ter", WED: "Qua",
 const DAY_SHORT: Record<string, string> = { MON: "S", TUE: "T", WED: "Q", THU: "Q", FRI: "S", SAT: "S", SUN: "D" };
 
 export default function AdminEscalas() {
-  redirect("/taximetro/admin/escalas/usa");
+  redirect("/admin/escalas/usa");
 }
