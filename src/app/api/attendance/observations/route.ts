@@ -46,8 +46,8 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ success: false, error: "Plantão não encontrado" }, { status: 404 });
     }
 
-    if (assignment.status !== "CHECKED_IN") {
-        return NextResponse.json({ success: false, error: "As observações ficam disponíveis somente durante o plantão em andamento." }, { status: 409 });
+    if (assignment.status !== "CHECKED_OUT") {
+        return NextResponse.json({ success: false, error: "As observações ficam disponíveis somente após o checkout." }, { status: 409 });
     }
 
     const [checkin] = await db
