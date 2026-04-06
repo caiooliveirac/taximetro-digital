@@ -45,6 +45,43 @@ function formatRow(row: PendingCheckinRow) {
     ].join("\n");
 }
 
+function formatCopyableRow(row: PendingCheckinRow) {
+    const faculty = row.facultyAbbr ? ` (${row.facultyAbbr})` : "";
+    const pendingHint = row.checkinStatus === "PENDING" ? " | CODIGO GERADO SEM VALIDACAO" : "";
+
+    return `${row.baseCode} | ${row.baseName} | ${row.internName}${faculty}${pendingHint}`;
+}
+
+function escapeHtml(value: string) {
+    return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+}
+
+export function buildPendingCheckinReminderCopyText(rows: PendingCheckinRow[]) {
+    const regularRows = rows.filter((row) => row.baseCode !== "CRU").sort(compareRows);
+    const cruRows = rows.filter((row) => row.baseCode === "CRU").sort(compareRows);
+    const lines: string[] = [];
+
+    if (regularRows.length > 0) {
+        lines.push("PENDENCIAS");
+        for (const row of regularRows) {
+            lines.push(formatCopyableRow(row));
+        }
+    }
+
+    if (cruRows.length > 0) {
+        if (lines.length > 0) lines.push("");
+        lines.push("CRU");
+        for (const row of cruRows) {
+            lines.push(formatCopyableRow(row));
+        }
+    }
+
+    return lines.join("\n");
+}
+
 export function buildPendingCheckinReminderMessage(rows: PendingCheckinRow[], hourLabel = formatHourLabel()) {
     const regularRows = rows.filter((row) => row.baseCode !== "CRU").sort(compareRows);
     const cruRows = rows.filter((row) => row.baseCode === "CRU").sort(compareRows);
@@ -71,6 +108,19 @@ export function buildPendingCheckinReminderMessage(rows: PendingCheckinRow[], ho
     }
 
     return lines.join("\n");
+}
+
+export function buildPendingCheckinReminderTelegramMessage(rows: PendingCheckinRow[], hourLabel = formatHourLabel()) {
+    const copyText = buildPendingCheckinReminderCopyText(rows);
+
+    return [
+        `🚨 <b>Check-in pendente · ${escapeHtml(hourLabel)}</b>`,
+        "",
+        `🟠 ${rows.length} interno(s) ainda sem check-in validado no plantão diurno.`,
+        "",
+        "📋 <b>Copiar e colar</b>",
+        `<pre>${escapeHtml(copyText)}</pre>`,
+    ].join("\n");
 }
 
 export async function getPendingCheckinRows(date = localDateStr()) {
@@ -165,10 +215,14 @@ export async function sendPendingCheckinReminder(options: SendReminderOptions) {
         };
     }
 
-    const message = buildPendingCheckinReminderMessage(rows, hourLabel);
+    const preview = buildPendingCheckinReminderMessage(rows, hourLabel);
+    const message = buildPendingCheckinReminderTelegramMessage(rows, hourLabel);
 
     if (!options.dryRun) {
-        await bot.api.sendMessage(TELEGRAM_GROUP_ID, message);
+        await bot.api.sendMessage(TELEGRAM_GROUP_ID, message, {
+            parse_mode: "HTML",
+            link_preview_options: { is_disabled: true },
+        });
     }
 
     await logAudit({
@@ -191,6 +245,6 @@ export async function sendPendingCheckinReminder(options: SendReminderOptions) {
     return {
         sent: !(options.dryRun ?? false),
         pendingCount: rows.length,
-        preview: message,
+        preview,
     };
 }

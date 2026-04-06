@@ -4,6 +4,8 @@ import { cruFixedAssignments, userRoles } from "@/db/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { logAudit } from "@/lib/audit";
+import { cancelCruFixedAssignments, materializeCruFixedAssignments } from "@/lib/cru-fixed";
+import { localDateStr } from "@/lib/utils";
 import { z } from "zod/v4";
 
 const DOW = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const;
@@ -75,23 +77,67 @@ export async function POST(req: NextRequest) {
     const validUntilStr = validUntil.toISOString().split("T")[0]!;
 
     try {
-        await db.insert(cruFixedAssignments).values({
-            internId,
-            facultyId: user.facultyId,
-            dayOfWeek,
-            period,
-            createdBy: user.id,
-            validUntil: validUntilStr,
-        }).onConflictDoNothing();
+        const actorUserId = user.realUserId ?? user.id;
 
-        await logAudit({
-            userId: user.id,
-            action: "CRU_FIXED_ADD",
-            entity: "cru_fixed_assignments",
-            payload: { internId, dayOfWeek, period, weeks },
+        const [existing] = await db
+            .select({ id: cruFixedAssignments.id })
+            .from(cruFixedAssignments)
+            .where(and(
+                eq(cruFixedAssignments.internId, internId),
+                eq(cruFixedAssignments.dayOfWeek, dayOfWeek),
+                eq(cruFixedAssignments.period, period),
+            ))
+            .limit(1);
+
+        let templateId = existing?.id ?? null;
+
+        if (existing) {
+            await db
+                .update(cruFixedAssignments)
+                .set({
+                    facultyId: user.facultyId,
+                    createdBy: actorUserId,
+                    validUntil: validUntilStr,
+                    isActive: true,
+                })
+                .where(eq(cruFixedAssignments.id, existing.id));
+        } else {
+            const [createdTemplate] = await db.insert(cruFixedAssignments).values({
+                internId,
+                facultyId: user.facultyId,
+                dayOfWeek,
+                period,
+                createdBy: actorUserId,
+                validUntil: validUntilStr,
+            }).returning({ id: cruFixedAssignments.id });
+
+            templateId = createdTemplate.id;
+        }
+
+        const sync = await materializeCruFixedAssignments({
+            facultyId: user.facultyId,
+            startDate: localDateStr(),
+            endDate: validUntilStr,
+            actorUserId,
+            templateIds: templateId ? [templateId] : undefined,
         });
 
-        return NextResponse.json({ success: true });
+        await logAudit({
+            userId: actorUserId,
+            action: "CRU_FIXED_ADD",
+            entity: "cru_fixed_assignments",
+            entityId: templateId ?? undefined,
+            payload: {
+                internId,
+                dayOfWeek,
+                period,
+                weeks,
+                materialized: sync,
+                ...(user.isImpersonating ? { impersonating: user.id, impersonateRole: user.role } : {}),
+            },
+        });
+
+        return NextResponse.json({ success: true, data: sync });
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "";
         if (msg.includes("uq_cru_fixed")) {
@@ -118,6 +164,26 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ success: false, error: "ID inválido" }, { status: 400 });
     }
 
+    const [current] = await db
+        .select({
+            id: cruFixedAssignments.id,
+            internId: cruFixedAssignments.internId,
+            facultyId: cruFixedAssignments.facultyId,
+            dayOfWeek: cruFixedAssignments.dayOfWeek,
+            period: cruFixedAssignments.period,
+            validUntil: cruFixedAssignments.validUntil,
+        })
+        .from(cruFixedAssignments)
+        .where(and(
+            eq(cruFixedAssignments.id, id),
+            eq(cruFixedAssignments.facultyId, user.facultyId),
+        ))
+        .limit(1);
+
+    if (!current) {
+        return NextResponse.json({ success: false, error: "Template CRU fixo não encontrado" }, { status: 404 });
+    }
+
     await db
         .update(cruFixedAssignments)
         .set({ isActive: false })
@@ -126,12 +192,24 @@ export async function DELETE(req: NextRequest) {
             eq(cruFixedAssignments.facultyId, user.facultyId),
         ));
 
+    const cancelled = await cancelCruFixedAssignments({
+        internId: current.internId,
+        dayOfWeek: current.dayOfWeek,
+        period: current.period,
+        startDate: localDateStr(),
+        endDate: current.validUntil,
+    });
+
     await logAudit({
-        userId: user.id,
+        userId: user.realUserId ?? user.id,
         action: "CRU_FIXED_REMOVE",
         entity: "cru_fixed_assignments",
         entityId: id,
+        payload: {
+            cancelled,
+            ...(user.isImpersonating ? { impersonating: user.id, impersonateRole: user.role } : {}),
+        },
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, data: cancelled });
 }

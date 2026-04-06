@@ -7,6 +7,7 @@ import { isWithinGeofence } from "@/lib/geo";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
+import { validateShiftClockIn } from "@/lib/utils";
 import { z } from "zod/v4";
 
 const checkinSchema = z.object({
@@ -61,12 +62,13 @@ export async function POST(req: NextRequest) {
   // Shift period validation — skip when impersonating (testing)
   if (!impersonating) {
     const hour = new Date().getHours();
-    const isDayShift = assignment.period === "DAY";
-    if (isDayShift && (hour >= 20 || hour < 4)) {
-      return NextResponse.json({ success: false, error: "Fora do horário do turno diurno (05h–20h). Tente novamente no horário correto." }, { status: 400 });
-    }
-    if (!isDayShift && (hour >= 8 && hour < 17)) {
-      return NextResponse.json({ success: false, error: "Fora do horário do turno noturno (17h–08h). Tente novamente no horário correto." }, { status: 400 });
+    const clockInCheck = validateShiftClockIn(
+      assignment.period as "DAY" | "NIGHT",
+      assignment.shift,
+      hour,
+    );
+    if (!clockInCheck.allowed) {
+      return NextResponse.json({ success: false, error: clockInCheck.errorMessage }, { status: 400 });
     }
   }
 

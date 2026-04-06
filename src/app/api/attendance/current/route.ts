@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { assignments, bases, checkins, qrSessions, users } from "@/db/schema";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { getCurrentCode } from "@/lib/totp";
-import { addDaysToDateStr, isCurrentOperationalAssignment, isWithinAttendanceWindow, isWithinInternCheckoutWindow, localDateStr, operationalDateStr } from "@/lib/utils";
+import { addDaysToDateStr, isCurrentOperationalAssignment, isWithinAttendanceWindow, isWithinShiftCheckoutWindow, localDateStr, operationalDateStr } from "@/lib/utils";
 
 type UiState = "NONE" | "IDLE" | "AWAITING" | "VALIDATED" | "CHECKOUT_AWAITING" | "CHECKED_OUT";
 
@@ -19,6 +19,7 @@ type EnrichedRow = {
     baseLongitude: number;
     date: string;
     period: string;
+    shift: string | null;
     status: string;
     notes: string | null;
     updatedAt: Date;
@@ -46,11 +47,15 @@ function isVisibleRecentCheckout(checkoutAt: Date | null, now: Date, localToday:
 }
 
 function isCurrentAssignmentCandidate(row: EnrichedRow, today: string, localToday: string): boolean {
-    if (row.status === "CHECKED_IN") {
+    if (["SCHEDULED", "CONFIRMED", "CHECKED_IN"].includes(row.status)) {
         return isWithinAttendanceWindow(row.date, row.period as "DAY" | "NIGHT");
     }
 
     return isCurrentOperationalAssignment(row.date, row.period as "DAY" | "NIGHT") || row.date === today || row.date === localToday;
+}
+
+function isCheckoutWindowForRow(row: EnrichedRow): boolean {
+    return isWithinShiftCheckoutWindow(row.date, row.period as "DAY" | "NIGHT", row.shift);
 }
 
 function serializeAssignment(row: EnrichedRow) {
@@ -63,6 +68,7 @@ function serializeAssignment(row: EnrichedRow) {
         baseLongitude: row.baseLongitude,
         date: row.date,
         period: row.period,
+        shift: row.shift,
         status: row.status,
         notes: row.notes,
         checkinStatus: row.checkinStatus,
@@ -104,6 +110,7 @@ export async function GET(req: NextRequest) {
             baseLongitude: bases.longitude,
             date: assignments.date,
             period: assignments.period,
+            shift: assignments.shift,
             status: assignments.status,
             notes: assignments.notes,
             updatedAt: assignments.updatedAt,
@@ -182,9 +189,7 @@ export async function GET(req: NextRequest) {
             enriched.find((row) => row.status === "CHECKED_IN" && row.activeSession && isCurrentAssignmentCandidate(row, today, localToday)) ??
             enriched.find((row) => row.status === "CHECKED_IN" && isCurrentAssignmentCandidate(row, today, localToday)) ??
             enriched.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && row.checkinStatus === "PENDING" && row.activeSession) ??
-            enriched.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && isCurrentOperationalAssignment(row.date, row.period as "DAY" | "NIGHT")) ??
-            enriched.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && row.date === today) ??
-            enriched.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && row.date === localToday) ??
+            enriched.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && isCurrentAssignmentCandidate(row, today, localToday)) ??
             (!hasActionableScheduledAssignment
                 ? enriched.find((row) => row.status === "CHECKED_OUT" && row.isRecentCheckout)
                 : null) ??
@@ -192,8 +197,8 @@ export async function GET(req: NextRequest) {
         );
 
     const latestPendingCheckout =
-        enriched.find((row) => row.status === "CHECKED_IN" && row.activeSession && isWithinInternCheckoutWindow(row.date, row.period as "DAY" | "NIGHT")) ??
-        enriched.find((row) => row.status === "CHECKED_IN" && isWithinInternCheckoutWindow(row.date, row.period as "DAY" | "NIGHT")) ??
+        enriched.find((row) => row.status === "CHECKED_IN" && row.activeSession && isCheckoutWindowForRow(row)) ??
+        enriched.find((row) => row.status === "CHECKED_IN" && isCheckoutWindowForRow(row)) ??
         null;
 
     const latestCompletedCheckout = enriched.find((row) => row.status === "CHECKED_OUT" && row.isRecentCheckout) ?? null;
@@ -259,7 +264,7 @@ export async function GET(req: NextRequest) {
                 internObservations: selected.internObservations,
                 session,
                 checkoutPending: uiState === "CHECKOUT_AWAITING",
-                canRequestCheckout: selected.status === "CHECKED_IN" && uiState !== "CHECKOUT_AWAITING" && isWithinInternCheckoutWindow(selected.date, selected.period as "DAY" | "NIGHT"),
+                canRequestCheckout: selected.status === "CHECKED_IN" && uiState !== "CHECKOUT_AWAITING" && isCheckoutWindowForRow(selected),
             },
             checkoutStatus,
         },

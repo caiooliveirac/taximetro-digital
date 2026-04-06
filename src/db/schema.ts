@@ -88,6 +88,9 @@ export const userRoles = pgTable("user_roles", {
   facultyId: uuid("faculty_id").references(() => faculties.id),
   baseId: uuid("base_id").references(() => bases.id),
   isActive: boolean("is_active").notNull().default(true),
+  isArchived: boolean("is_archived").notNull().default(false),
+  archivedAt: timestamp("archived_at"),
+  archivedBy: uuid("archived_by").references(() => users.id),
 }, (t) => [
   uniqueIndex("uq_user_role_faculty").on(t.userId, t.role, t.facultyId),
 ]);
@@ -111,6 +114,7 @@ export const assignments = pgTable("assignments", {
   baseId: uuid("base_id").notNull().references(() => bases.id),
   date: date("date").notNull(),
   period: shiftPeriodEnum("period").notNull(),
+  shift: varchar("shift", { length: 10 }),  // 'MORNING' | 'AFTERNOON' | null (EBMSP only)
   status: assignmentStatusEnum("status").notNull().default("SCHEDULED"),
   createdBy: uuid("created_by").notNull().references(() => users.id),
   notes: text("notes"),
@@ -120,7 +124,8 @@ export const assignments = pgTable("assignments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
-  uniqueIndex("uq_intern_day_period").on(t.internId, t.date, t.period),
+  // Note: actual unique constraint is in DB as uq_intern_day_period_shift
+  // using COALESCE(shift, 'FULL') — Drizzle can't express this directly
   index("idx_assignment_date").on(t.date),
   index("idx_assignment_intern").on(t.internId),
 ]);

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { NavigationLinks } from "@/components/navigation-links";
 import { TOTP_STEP_SECONDS } from "@/lib/totp-config";
-import { formatBrazilTime } from "@/lib/utils";
+import { formatBrazilTime, getShiftLabel } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -21,6 +21,7 @@ type Assignment = {
   baseLongitude: number;
   date?: string;
   period: string;
+  shift?: string | null;
   status: string;
   checkinStatus?: string | null;
 };
@@ -535,9 +536,11 @@ function InternCheckinContent() {
               <div className="rounded-lg bg-white/70 p-3">
                 <p className="text-xs font-medium text-slate-500">Turno</p>
                 <p className="text-lg font-bold text-slate-900 flex items-center justify-center gap-1">
-                  {assignment.period === "DAY"
-                    ? <><Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} /> Diurno</>
-                    : <><Moon className="h-4 w-4 text-indigo-500" strokeWidth={1.5} /> Noturno</>}
+                  {assignment.shift
+                    ? <><Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} /> {getShiftLabel(assignment.shift)}</>
+                    : assignment.period === "DAY"
+                      ? <><Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} /> Diurno</>
+                      : <><Moon className="h-4 w-4 text-indigo-500" strokeWidth={1.5} /> Noturno</>}
                 </p>
               </div>
             </div>
@@ -566,9 +569,13 @@ function InternCheckinContent() {
             </>
           ) : (
             <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-center text-sm text-blue-900">
-              {assignment.period === "DAY"
-                ? "O checkout do plantão diurno fica liberado a partir das 15:00 e permanece disponível até 00:00."
-                : "O checkout do plantão noturno fica liberado a partir das 06:00 e permanece disponível até 12:00."}
+              {assignment.shift === "MORNING"
+                ? "O checkout do plantão da manhã fica liberado a partir das 11:00 e permanece disponível até 00:00."
+                : assignment.shift === "AFTERNOON"
+                  ? "O checkout do plantão da tarde fica liberado a partir das 17:00 e permanece disponível até 00:00."
+                  : assignment.period === "DAY"
+                    ? "O checkout do plantão diurno fica liberado a partir das 15:00 e permanece disponível até 00:00."
+                    : "O checkout do plantão noturno fica liberado a partir das 06:00 e permanece disponível até 12:00."}
             </div>
           )}
 
@@ -906,9 +913,11 @@ function InternCheckinContent() {
               <div>
                 <p className="text-xs font-medium text-slate-500">Turno</p>
                 <p className="mt-0.5 flex items-center gap-1.5 text-lg font-semibold text-slate-900">
-                  {assignment.period === "DAY"
-                    ? <><Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} /> Diurno</>
-                    : <><Moon className="h-4 w-4 text-indigo-500" strokeWidth={1.5} /> Noturno</>}
+                  {assignment.shift
+                    ? <><Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} /> {getShiftLabel(assignment.shift)}</>
+                    : assignment.period === "DAY"
+                      ? <><Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} /> Diurno</>
+                      : <><Moon className="h-4 w-4 text-indigo-500" strokeWidth={1.5} /> Noturno</>}
                 </p>
               </div>
             </div>

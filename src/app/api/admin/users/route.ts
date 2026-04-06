@@ -37,6 +37,7 @@ const updateUserSchema = z.object({
   facultyId: z.string().uuid().nullable().optional(),
   baseId: z.string().uuid().nullable().optional(),
   alsoPreceptor: z.boolean().optional(),
+  isArchived: z.boolean().optional(),
 });
 
 const mergeUsersSchema = z.object({
@@ -88,6 +89,7 @@ type UserRoleRow = {
   baseId: string | null;
   baseCode: string | null;
   mergedIntoUserId: string | null;
+  isArchived: boolean;
 };
 
 type SourceUserSnapshot = {
@@ -224,11 +226,13 @@ function aggregateUsers(rows: UserRoleRow[]) {
       grouped.set(row.id, {
         ...row,
         alsoPreceptor: current.alsoPreceptor || row.role === "PRECEPTOR",
+        isArchived: current.isArchived && row.isArchived,
       });
       continue;
     }
 
     current.alsoPreceptor = current.alsoPreceptor || row.role === "PRECEPTOR";
+    current.isArchived = current.isArchived && row.isArchived;
   }
 
   return Array.from(grouped.values()).map((row) => ({
@@ -264,6 +268,7 @@ export async function GET(req: NextRequest) {
       baseId: userRoles.baseId,
       baseCode: bases.code,
       mergedIntoUserId: users.mergedIntoUserId,
+      isArchived: sql<boolean>`COALESCE(${userRoles.isArchived}, false)`,
     })
     .from(users)
     .leftJoin(userRoles, and(eq(userRoles.userId, users.id), eq(userRoles.isActive, true)))
@@ -345,7 +350,7 @@ export async function PUT(req: NextRequest) {
     const parsed = updateUserSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
-    const { id, password, forcePasswordChange, role, facultyId, baseId, alsoPreceptor, ...userData } = parsed.data;
+    const { id, password, forcePasswordChange, role, facultyId, baseId, alsoPreceptor, isArchived, ...userData } = parsed.data;
 
     if (userData.email) {
       const [existingEmail] = await db
@@ -390,8 +395,19 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    if (isArchived !== undefined) {
+      await db
+        .update(userRoles)
+        .set({
+          isArchived,
+          archivedAt: isArchived ? new Date() : null,
+          archivedBy: isArchived ? (token.id as string) : null,
+        })
+        .where(and(eq(userRoles.userId, id), eq(userRoles.isActive, true)));
+    }
+
     const normalizedScope = role !== undefined ? normalizeRoleScope(role, facultyId, baseId) : { facultyId, baseId };
-    await logAudit({ userId: token.id as string, action: "UPDATE_USER", entity: "user", entityId: id, payload: { role, facultyId: normalizedScope.facultyId ?? null, baseId: normalizedScope.baseId ?? null, email: userData.email ?? null, passwordChanged: Boolean(password), forcePasswordChange: forcePasswordChange ?? null, alsoPreceptor: role ? (role === "COORDINATOR" ? true : Boolean(alsoPreceptor && role !== "PRECEPTOR")) : Boolean(alsoPreceptor) } });
+    await logAudit({ userId: token.id as string, action: "UPDATE_USER", entity: "user", entityId: id, payload: { role, facultyId: normalizedScope.facultyId ?? null, baseId: normalizedScope.baseId ?? null, email: userData.email ?? null, passwordChanged: Boolean(password), forcePasswordChange: forcePasswordChange ?? null, alsoPreceptor: role ? (role === "COORDINATOR" ? true : Boolean(alsoPreceptor && role !== "PRECEPTOR")) : Boolean(alsoPreceptor), isArchived: isArchived ?? null } });
     return NextResponse.json({ success: true, data: updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro interno";

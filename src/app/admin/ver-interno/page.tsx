@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import {
   Search, User, Sun, Moon, Calendar, CheckCircle, XCircle,
   Target, Clock, Send, ArrowLeftRight, Trash2, Plus, Eye,
-  ChevronDown, ChevronUp, TrendingUp,
+  ChevronDown, ChevronUp, TrendingUp, Repeat, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,9 +38,18 @@ type Request = {
 };
 type Base = { id: string; code: string; name: string };
 
+type SwapSlot = {
+  baseCode: string; baseName: string; date: string; period: string;
+  shift?: string; assignmentStatus?: string;
+};
+type SwapHistoryEntry = {
+  id: string; completedAt: string;
+  requester: { id: string; name: string; gave: SwapSlot | null; received: SwapSlot | null };
+  target: { id: string | null; name: string | null; gave: SwapSlot | null; received: SwapSlot | null };
+};
+
 const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra", DROP_SHIFT: "Descarte" };
 const STATUS_LABEL: Record<string, string> = { PENDING: "Pendente", APPROVED: "Aprovado", REJECTED: "Rejeitado" };
-const SHIFT_HOURS = 12;
 
 export default function AdminVerComoInterno() {
   /* ── intern list ── */
@@ -55,6 +64,7 @@ export default function AdminVerComoInterno() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [bases, setBases] = useState<Base[]>([]);
   const [loadingData, setLoadingData] = useState(false);
+  const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
 
   /* ── action panel ── */
   const [actionTab, setActionTab] = useState<"DROP" | "EXTRA" | null>(null);
@@ -73,7 +83,7 @@ export default function AdminVerComoInterno() {
         if (json.success) {
           setInterns(
             json.data
-              .filter((u: { role: string; isActive: boolean }) => u.role === "INTERN" && u.isActive)
+              .filter((u: { role: string; isActive: boolean; isArchived?: boolean }) => u.role === "INTERN" && u.isActive && !u.isArchived)
               .sort((a: Intern, b: Intern) => a.name.localeCompare(b.name))
           );
         }
@@ -102,7 +112,8 @@ export default function AdminVerComoInterno() {
       fetch(`/taximetro/api/assignments?from=${past90}&to=${futureEnd}&internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/compliance?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/requests?internId=${selected.id}`).then((r) => r.json()),
-    ]).then(([aJson, cJson, rJson]) => {
+      fetch(`/taximetro/api/requests/swap-history?internId=${selected.id}`).then((r) => r.json()),
+    ]).then(([aJson, cJson, rJson, shJson]) => {
       if (aJson.success) {
         setAssignments(
           aJson.data
@@ -116,6 +127,8 @@ export default function AdminVerComoInterno() {
       if (cJson.success && cJson.data.length > 0) setCompliance(cJson.data[0]);
       else setCompliance(null);
       if (rJson.success) setRequests(rJson.data);
+      if (shJson.success) setSwapHistory(shJson.data);
+      else setSwapHistory([]);
     })
       .catch(() => { })
       .finally(() => setLoadingData(false));
@@ -450,10 +463,97 @@ export default function AdminVerComoInterno() {
             )}
           </div>
 
-          {/* Past history (last 10) */}
+          {/* Swap history tracking */}
+          {swapHistory.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Repeat className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
+                <h2 className="text-sm font-semibold text-slate-900">Histórico de Trocas ({swapHistory.length})</h2>
+              </div>
+              <div className="space-y-2">
+                {swapHistory.map((swap) => {
+                  const isRequester = swap.requester.id === selected.id;
+                  const self = isRequester ? swap.requester : swap.target;
+                  const peer = isRequester ? swap.target : swap.requester;
+                  return (
+                    <div key={swap.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-slate-500">
+                          {new Date(swap.completedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                        </span>
+                        <span className="text-[11px] text-slate-400">com {peer.name}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-lg bg-red-50 border border-red-100 p-2">
+                          <p className="text-[11px] font-medium text-red-600 mb-1">Deu</p>
+                          {self.gave ? (
+                            <div className="text-sm">
+                              <span className="font-semibold text-slate-900">{self.gave.baseCode}</span>
+                              <span className="text-slate-500 ml-1">
+                                {new Date(self.gave.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                              </span>
+                              <span className={`ml-1 text-[11px] ${self.gave.period === "DAY" ? "text-amber-600" : "text-indigo-600"}`}>
+                                {self.gave.period === "DAY" ? "☀ D" : "🌙 N"}
+                              </span>
+                            </div>
+                          ) : <span className="text-xs text-slate-400">—</span>}
+                        </div>
+                        <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-2">
+                          <p className="text-[11px] font-medium text-emerald-600 mb-1">Recebeu</p>
+                          {self.received ? (
+                            <div className="text-sm">
+                              <span className="font-semibold text-slate-900">{self.received.baseCode}</span>
+                              <span className="text-slate-500 ml-1">
+                                {new Date(self.received.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                              </span>
+                              <span className={`ml-1 text-[11px] ${self.received.period === "DAY" ? "text-amber-600" : "text-indigo-600"}`}>
+                                {self.received.period === "DAY" ? "☀ D" : "🌙 N"}
+                              </span>
+                            </div>
+                          ) : <span className="text-xs text-slate-400">—</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Completed shifts by base type */}
+          {pastAssignments.length > 0 && (() => {
+            const realized = pastAssignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status));
+            const cruCount = realized.filter((a) => a.baseType === "CENTRAL").length;
+            const usaCount = realized.filter((a) => a.baseType === "USA").length;
+            const crlCount = realized.filter((a) => a.baseType === "CRL").length;
+            return (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText className="h-4 w-4 text-slate-500" strokeWidth={1.5} />
+                  <h2 className="text-sm font-semibold text-slate-900">Plantões por Tipo</h2>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-center">
+                    <p className="text-2xl font-bold text-violet-700">{cruCount}</p>
+                    <p className="text-[11px] font-medium text-violet-600">CRU</p>
+                  </div>
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-center">
+                    <p className="text-2xl font-bold text-red-700">{usaCount}</p>
+                    <p className="text-[11px] font-medium text-red-600">USA</p>
+                  </div>
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-center">
+                    <p className="text-2xl font-bold text-rose-700">{crlCount}</p>
+                    <p className="text-[11px] font-medium text-rose-600">CRL</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Past history (last 15) */}
           {pastAssignments.length > 0 && (
             <div>
-              <h2 className="text-sm font-semibold text-slate-900 mb-2">Histórico Recente</h2>
+              <h2 className="text-sm font-semibold text-slate-900 mb-2">Histórico Completo</h2>
               <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
                 <Table>
                   <TableHeader>

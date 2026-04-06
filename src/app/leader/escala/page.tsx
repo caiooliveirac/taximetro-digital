@@ -12,18 +12,18 @@ import { addDaysToDateStr, localDateStr, startOfWeekDateStr } from "@/lib/utils"
 
 /* ────────── Types ────────── */
 
-type InternRole = { id: string; name: string; userActive: boolean; roleActive: boolean };
+type InternRole = { id: string; name: string; userActive: boolean; roleActive: boolean; isArchived: boolean };
 type Base = { id: string; code: string; name: string; type: string };
 type Assignment = {
   id: string; internId: string; internName: string;
   baseId: string; baseCode: string; baseName: string; baseType: string;
-  date: string; period: string; status: string;
+  date: string; period: string; shift: string | null; status: string;
   checkinGeoValid?: boolean | null;
 };
 type Slot = {
   ruleId: string; baseId: string; baseCode: string; baseName: string; baseType: string;
   dayOfWeek: string; period: string; capacity: number; filled: number; available: number;
-  nextDate: string;
+  nextDate: string; facultyAbbr?: string;
 };
 type CruFixed = {
   id: string; intern_id: string; intern_name: string;
@@ -137,11 +137,12 @@ export default function LeaderEscala() {
   const [maxShifts, setMaxShifts] = useState(1);
 
   /* ── Manual allocation modal ── */
-  const [allocSlot, setAllocSlot] = useState<{ baseId: string; baseCode: string; date: string; period: "DAY" | "NIGHT" } | null>(null);
+  const [allocSlot, setAllocSlot] = useState<{ baseId: string; baseCode: string; baseType: string; date: string; period: "DAY" | "NIGHT" } | null>(null);
   const [allocInternId, setAllocInternId] = useState("");
   const [allocSearch, setAllocSearch] = useState("");
   const [allocLoading, setAllocLoading] = useState(false);
   const [allocMsg, setAllocMsg] = useState("");
+  const [allocShift, setAllocShift] = useState<"MORNING" | "AFTERNOON" | "">("");
 
   /* ── Remove assignment (cancel) ── */
   const [removeTarget, setRemoveTarget] = useState<Assignment | null>(null);
@@ -169,6 +170,14 @@ export default function LeaderEscala() {
       const from = weekDates[0];
       const to = weekDates[6];
 
+      if (weekStart >= startOfWeekDateStr(localDateStr())) {
+        await fetch("/taximetro/api/leader/cru-generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ weekStart }),
+        }).catch(() => null);
+      }
+
       const [uRes, bRes, aRes, sRes, cfRes] = await Promise.all([
         fetchJsonNoStore("/taximetro/api/leader/interns"),
         fetchJsonNoStore("/taximetro/api/admin/bases"),
@@ -194,6 +203,10 @@ export default function LeaderEscala() {
   const sortedBases = useMemo(() => [...bases].sort(compareBaseOrder), [bases]);
   const cruBase = useMemo(() => bases.find((b) => b.type === "CENTRAL"), [bases]);
   const crlBase = useMemo(() => bases.find((b) => b.type === "CRL"), [bases]);
+  const isEbmsp = useMemo(() => {
+    const firstSlot = slots.find((s) => s.facultyAbbr);
+    return firstSlot?.facultyAbbr === "EBMSP";
+  }, [slots]);
 
   /* ── Vacancy matrix from slots ── */
   const vacancyByBaseDay = useMemo(() => {
@@ -232,7 +245,7 @@ export default function LeaderEscala() {
   }, [assignments]);
 
   const activeInterns = useMemo(
-    () => interns.filter((intern) => intern.userActive && intern.roleActive),
+    () => interns.filter((intern) => intern.userActive && intern.roleActive && !intern.isArchived),
     [interns],
   );
 
@@ -295,9 +308,9 @@ export default function LeaderEscala() {
     const res = await fetch("/taximetro/api/leader/interns");
     const json = await res.json();
     if (json.success) {
-      setLotteryInterns(json.data);
+      setLotteryInterns(json.data.filter((i: InternRole) => !i.isArchived));
       const sel = new Set<string>();
-      (json.data as InternRole[]).forEach((i) => { if (i.roleActive) sel.add(i.id); });
+      (json.data as InternRole[]).filter((i) => !i.isArchived).forEach((i) => { if (i.roleActive) sel.add(i.id); });
       setLotterySelected(sel);
       setLotteryExcluded(new Set());
     }
@@ -373,15 +386,22 @@ export default function LeaderEscala() {
   }
 
   /* ── Manual allocation ── */
-  function openAllocModal(baseId: string, baseCode: string, date: string, period: "DAY" | "NIGHT") {
-    setAllocSlot({ baseId, baseCode, date, period });
+  function openAllocModal(baseId: string, baseCode: string, baseType: string, date: string, period: "DAY" | "NIGHT") {
+    setAllocSlot({ baseId, baseCode, baseType, date, period });
     setAllocInternId("");
     setAllocSearch("");
     setAllocMsg("");
+    const isCruShift = baseType === "CENTRAL" && period === "DAY";
+    setAllocShift(isCruShift ? "MORNING" : "");
   }
 
   async function submitAllocation() {
     if (!allocSlot || !allocInternId || !effectiveFacultyId) return;
+    const isCruShift = allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY";
+    if (isCruShift && !allocShift) {
+      setAllocMsg("❌ Selecione o turno (Manhã ou Tarde) para CRU.");
+      return;
+    }
     setAllocLoading(true);
     setAllocMsg("");
     try {
@@ -394,6 +414,7 @@ export default function LeaderEscala() {
           baseId: allocSlot.baseId,
           date: allocSlot.date,
           period: allocSlot.period,
+          ...(allocShift ? { shift: allocShift } : {}),
         }),
       });
 
@@ -457,7 +478,9 @@ export default function LeaderEscala() {
       });
       const json = await res.json();
       if (json.success) {
-        setCruFixedMsg("✅ Adicionado!");
+        const sync = json.data;
+        const changed = (sync?.createdCount ?? 0) + (sync?.updatedCount ?? 0) + (sync?.reactivatedCount ?? 0);
+        setCruFixedMsg(`✅ Salvo e sincronizado (${changed}/${sync?.plannedCount ?? 0})`);
         await load();
         setTimeout(() => { setCruFixedAdd(null); setCruFixedMsg(""); }, 600);
       } else {
@@ -471,7 +494,13 @@ export default function LeaderEscala() {
 
   async function removeCruFixed(id: string) {
     try {
-      await fetch(`/taximetro/api/leader/cru-fixed?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/taximetro/api/leader/cru-fixed?id=${id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (json.success) {
+        const cancelled = json.data?.cancelledCount ?? 0;
+        const alreadyCancelled = json.data?.alreadyCancelledCount ?? 0;
+        setCruGenMsg(`✅ Template removido. ${cancelled} plantão(ões) futuro(s) cancelado(s)${alreadyCancelled > 0 ? ` · ${alreadyCancelled} já estavam cancelados` : ""}`);
+      }
       await load();
     } catch { /* silent */ }
   }
@@ -486,7 +515,7 @@ export default function LeaderEscala() {
       });
       const json = await res.json();
       if (json.success) {
-        setCruGenMsg(`✅ ${json.created} de ${json.total} alocações CRU criadas`);
+        setCruGenMsg(`✅ ${json.created} criados · ${json.updated ?? 0} movidos · ${json.reactivated ?? 0} reativados · ${json.total} previstos`);
         await load();
       } else {
         setCruGenMsg(`❌ ${json.error}`);
@@ -532,7 +561,17 @@ export default function LeaderEscala() {
       .filter((intern) => {
         const key = `${intern.id}|${allocSlot.date}`;
         const existing = assignmentsByInternDate.get(key) ?? [];
-        if (existing.some((assignment) => assignment.period === allocSlot.period)) {
+
+        // For CRU DAY with shift: only block CRU if same shift; still block non-CRU same-period
+        const isCruShift = allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && allocShift;
+        const busy = existing.some((assignment) => {
+          if (assignment.period !== allocSlot.period) return false;
+          if (isCruShift && assignment.baseType === "CENTRAL") {
+            return assignment.shift === allocShift;
+          }
+          return true;
+        });
+        if (busy) {
           busyCount += 1;
           return false;
         }
@@ -551,7 +590,7 @@ export default function LeaderEscala() {
       .sort((left, right) => left.name.localeCompare(right.name));
 
     return { eligibleInterns, blockedCount, busyCount };
-  }, [activeInterns, allocSearch, allocSlot, assignmentsByInternDate, cruConflicts]);
+  }, [activeInterns, allocSearch, allocShift, allocSlot, assignmentsByInternDate, cruConflicts]);
 
   const today = localDateStr();
   const selectedCount = [...lotterySelected].filter((id) => !lotteryExcluded.has(id)).length;
@@ -705,9 +744,10 @@ export default function LeaderEscala() {
                                   key={assignment.id}
                                   onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
                                   className={`group rounded-md px-2 py-1 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition hover:opacity-80 ${periodStyle.bg} ${periodStyle.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
-                                  title={`${assignment.internName} · ${assignment.status}${capacity === 0 ? " · sem vaga configurada" : ""}${isCruBlocked ? " · conflito CRU ±12h" : ""}`}
+                                  title={`${assignment.internName} · ${assignment.status}${assignment.shift ? ` · ${assignment.shift === "MORNING" ? "Manhã" : "Tarde"}` : ""}${capacity === 0 ? " · sem vaga configurada" : ""}${isCruBlocked ? " · conflito CRU ±12h" : ""}`}
                                 >
                                   {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
+                                  {assignment.shift && <span className="text-[9px] font-bold shrink-0">{assignment.shift === "MORNING" ? "M" : "T"}</span>}
                                   <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                                   {assignment.status === "SCHEDULED" && (
                                     <button
@@ -725,7 +765,7 @@ export default function LeaderEscala() {
                             {Array.from({ length: openCount }, (_, vacancyIndex) => (
                               <button
                                 key={`${base.id}|${d}|${period}|vacancy-${vacancyIndex + 1}`}
-                                onClick={() => openAllocModal(base.id, base.code, d, period)}
+                                onClick={() => openAllocModal(base.id, base.code, base.type, d, period)}
                                 className="flex w-full items-center gap-2 rounded-md border border-dashed border-amber-300 bg-white/90 px-2 py-1 text-left text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100"
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
@@ -854,7 +894,7 @@ export default function LeaderEscala() {
 
                             {openCount > 0 && (!filterPeriod || filterPeriod === "DAY") && (
                               <button
-                                onClick={() => openAllocModal(crlBase.id, crlBase.code, d, "DAY")}
+                                onClick={() => openAllocModal(crlBase.id, crlBase.code, crlBase.type, d, "DAY")}
                                 className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
                               >
                                 <Plus className="h-3.5 w-3.5" />
@@ -864,6 +904,126 @@ export default function LeaderEscala() {
                           </div>
                         </div>
                       )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══════════ CRU — Central de Regulação de Urgência ═══════════ */}
+      {cruBase && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-lg font-semibold text-violet-700 flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-full bg-violet-500" />
+              CRU — Central de Regulação de Urgência
+            </h2>
+            <span className="text-xs text-slate-500">
+              {isEbmsp ? "Alocação por turno: Manhã (07h–13h) ou Tarde (13h–19h)." : "Central de Regulação de Urgência."}
+            </span>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-violet-200 bg-white shadow-sm">
+            <div className="min-w-[980px]" style={{ display: "grid", gridTemplateColumns: "140px repeat(7, minmax(118px, 1fr))" }}>
+              <div className="sticky left-0 z-10 border-b border-r border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700">
+                Base
+              </div>
+              {weekDates.map((d, i) => (
+                <div
+                  key={`cru-head-${d}`}
+                  className={`border-b border-violet-200 px-2 py-2 text-center text-xs font-semibold ${d === today ? "bg-violet-50/80 text-violet-700" : "bg-violet-50/40 text-slate-500"}`}
+                >
+                  {DAY_LABELS[i]}<br /><span className="font-normal">{d.slice(5)}</span>
+                </div>
+              ))}
+
+              <div className="sticky left-0 z-10 border-b border-r border-violet-100 bg-white px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-900">{cruBase.code}</span>
+                  <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-violet-600/20">
+                    CRU
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-slate-500">{cruBase.name}</p>
+              </div>
+
+              {weekDates.map((d) => {
+                const slotState = vacancyByBaseDay.get(`${cruBase.id}|${d}`);
+                const cellAssignments = (assignmentsByBaseDate.get(`${cruBase.id}|${d}`) ?? [])
+                  .filter((a) => a.status !== "CANCELLED");
+                const periods = filterPeriod ? [filterPeriod] as const : PERIODS;
+                const periodBlocks = periods.map((period) => {
+                  const periodAssignments = cellAssignments
+                    .filter((a) => a.period === period)
+                    .sort((a, b) => a.internName.localeCompare(b.internName));
+                  const capacity = slotState?.[period].cap ?? 0;
+                  const openCount = Math.max(capacity - periodAssignments.length, 0);
+
+                  if (capacity === 0 && periodAssignments.length === 0) return null;
+
+                  const periodStyle = getPeriodStyle(period);
+                  const containerStyle = capacity === 0
+                    ? "border-rose-200 bg-rose-50/60"
+                    : openCount > 0
+                      ? "border-amber-200 bg-amber-50/60"
+                      : "border-emerald-200 bg-emerald-50/50";
+
+                  return (
+                    <div key={`${cruBase.id}|${d}|${period}`} className={`rounded-lg border p-1.5 ${containerStyle}`}>
+                      <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        <span className="flex items-center gap-1">{periodStyle.emoji} {periodStyle.label}</span>
+                        <span>{periodAssignments.length}/{capacity || periodAssignments.length}</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        {periodAssignments.map((assignment) => {
+                          const ring = getStatusRing(assignment);
+                          return (
+                            <div
+                              key={assignment.id}
+                              onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
+                              className={`group flex cursor-pointer items-center gap-1 rounded-md bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 transition hover:opacity-80 ${ring}`}
+                              title={`${assignment.internName} · ${assignment.status}${assignment.shift ? ` · ${assignment.shift === "MORNING" ? "Manhã" : "Tarde"}` : ""}`}
+                            >
+                              {assignment.shift && <span className="text-[9px] font-bold shrink-0">{assignment.shift === "MORNING" ? "M" : "T"}</span>}
+                              <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
+                              {assignment.status === "SCHEDULED" && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setRemoveTarget(assignment); }}
+                                  className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
+                                  title="Remover da escala"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {openCount > 0 && (
+                          <button
+                            onClick={() => openAllocModal(cruBase.id, cruBase.code, cruBase.type, d, period)}
+                            className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            {openCount === 1 ? "Vaga disponível" : `${openCount} vagas`}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }).filter(Boolean);
+
+                return (
+                  <div
+                    key={`cru-cell-${d}`}
+                    className={`border-b border-violet-50 px-2 py-2 min-h-[110px] ${d === today ? "bg-violet-50/20" : ""}`}
+                  >
+                    <div className="space-y-1.5">
+                      {periodBlocks.length > 0 ? periodBlocks : <span className="text-xs italic text-slate-300">—</span>}
                     </div>
                   </div>
                 );
@@ -1188,6 +1348,27 @@ export default function LeaderEscala() {
             </div>
             <div className="px-6 py-4 space-y-3">
               <label className="block text-sm font-medium text-slate-700">Buscar e selecionar interno:</label>
+              {allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Turno CRU:</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAllocShift("MORNING")}
+                      className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${allocShift === "MORNING" ? "bg-amber-100 text-amber-800 ring-2 ring-amber-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                    >
+                      ☀️ Manhã (07h–13h)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllocShift("AFTERNOON")}
+                      className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${allocShift === "AFTERNOON" ? "bg-orange-100 text-orange-800 ring-2 ring-orange-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                    >
+                      🌤️ Tarde (13h–19h)
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
-import { addDaysToDateStr, formatBrazilTime, isCurrentOperationalAssignment, isWithinAttendanceWindow, operationalDateStr, operationalPeriod } from "@/lib/utils";
+import { addDaysToDateStr, formatBrazilTime, getShiftShortLabel, isCurrentOperationalAssignment, isWithinAttendanceWindow, operationalDateStr, operationalPeriod } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -18,6 +18,7 @@ type Assignment = {
   baseLongitude: number;
   date: string;
   period: string;
+  shift?: string | null;
   status: string;
 };
 
@@ -86,13 +87,19 @@ export default function InternHoje() {
     ]).then(([assignJson, slotsJson, complianceJson, attendanceJson]) => {
       if (assignJson.success) {
         const active = assignJson.data.filter((a: Assignment) => a.status !== "CANCELLED");
-        const todayAssign = active.find((a: Assignment) => a.status === "CHECKED_IN" && isWithinAttendanceWindow(a.date, a.period as "DAY" | "NIGHT"))
+        const todayAssign = active.find((a: Assignment) => ["SCHEDULED", "CONFIRMED", "CHECKED_IN"].includes(a.status) && isWithinAttendanceWindow(a.date, a.period as "DAY" | "NIGHT"))
           ?? active.find((a: Assignment) => isCurrentOperationalAssignment(a.date, a.period as "DAY" | "NIGHT"))
           ?? active.find((a: Assignment) => a.date === today);
         setAssignment(todayAssign ?? null);
         setUpcoming(
           active
-            .filter((a: Assignment) => a.date > today || (a.date === today && a.period !== currentPeriod))
+            .filter((a: Assignment) => {
+              if (["SCHEDULED", "CONFIRMED", "CHECKED_IN"].includes(a.status) && isWithinAttendanceWindow(a.date, a.period as "DAY" | "NIGHT")) {
+                return false;
+              }
+
+              return a.date > today || (a.date === today && a.period !== currentPeriod);
+            })
             .slice(0, 5),
         );
       } else {
@@ -166,7 +173,9 @@ export default function InternHoje() {
               <p className={`text-xs ${pendingCheckout.state === "AWAITING" ? "text-blue-700" : "text-amber-700"}`}>
                 {new Date(pendingCheckout.assignment.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
                 {" · "}
-                {pendingCheckout.assignment.period === "DAY" ? "Diurno" : "Noturno"}
+                {pendingCheckout.assignment.shift
+                  ? getShiftShortLabel(pendingCheckout.assignment.shift)
+                  : pendingCheckout.assignment.period === "DAY" ? "Diurno" : "Noturno"}
                 {pendingCheckout.checkinAt ? ` · check-in às ${formatBrazilTime(pendingCheckout.checkinAt)}` : ""}
               </p>
               <p className={`text-xs ${pendingCheckout.state === "AWAITING" ? "text-blue-700" : "text-amber-700"}`}>
@@ -222,7 +231,7 @@ export default function InternHoje() {
                 {assignment.period === "DAY"
                   ? <Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} />
                   : <Moon className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />}
-                {getPeriodStyle(assignment.period).label}
+                {assignment.shift ? getShiftShortLabel(assignment.shift) : getPeriodStyle(assignment.period).label}
               </div>
             </div>
           </div>
@@ -275,7 +284,7 @@ export default function InternHoje() {
                     {a.period === "DAY"
                       ? <Sun className="h-3 w-3" strokeWidth={1.5} />
                       : <Moon className="h-3 w-3" strokeWidth={1.5} />}
-                    {ps.label}
+                    {a.shift ? getShiftShortLabel(a.shift) : ps.label}
                   </div>
                 </div>
               );

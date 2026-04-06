@@ -230,3 +230,82 @@ export function formatBrazilTime(value: Date | string) {
     minute: "2-digit",
   });
 }
+
+/* ────────── EBMSP Shift helpers ────────── */
+
+export type EbmspShift = "MORNING" | "AFTERNOON";
+
+/** EBMSP-specific checkout window start for MORNING shifts (11:00 instead of 15:00) */
+const EBMSP_MORNING_CHECKOUT_START_HOUR = 11;
+
+export function getShiftLabel(shift: string | null | undefined): string {
+  if (shift === "MORNING") return "Manhã (07h–13h)";
+  if (shift === "AFTERNOON") return "Tarde (13h–19h)";
+  return "";
+}
+
+export function getShiftShortLabel(shift: string | null | undefined): string {
+  if (shift === "MORNING") return "Manhã";
+  if (shift === "AFTERNOON") return "Tarde";
+  return "";
+}
+
+/**
+ * Shift-aware checkout window.
+ * For EBMSP MORNING shifts, checkout opens at 11:00 (instead of default 15:00 for DAY).
+ * For EBMSP AFTERNOON shifts, uses default DAY window (15:00-00:00).
+ */
+export function isWithinShiftCheckoutWindow(
+  assignmentDate: string,
+  period: ShiftPeriod,
+  shift: string | null | undefined,
+  date: Date = new Date(),
+): boolean {
+  // Non-EBMSP or NIGHT: use default
+  if (!shift || period !== "DAY") {
+    return isWithinInternCheckoutWindow(assignmentDate, period, date);
+  }
+
+  const now = currentLocalPoint(date);
+  const deadline = shiftCheckoutDeadlinePoint(assignmentDate, period);
+
+  if (shift === "MORNING") {
+    const start: LocalDateTimePoint = {
+      dateStr: assignmentDate,
+      hour: EBMSP_MORNING_CHECKOUT_START_HOUR,
+      minute: 0,
+    };
+    return compareLocalDateTime(now, start) >= 0 && compareLocalDateTime(now, deadline) <= 0;
+  }
+
+  // AFTERNOON: default DAY checkout window (15:00-00:00)
+  return isWithinInternCheckoutWindow(assignmentDate, period, date);
+}
+
+/**
+ * Shift-aware clock-in validation.
+ * Returns { allowed: boolean, errorMessage?: string }
+ */
+export function validateShiftClockIn(
+  period: ShiftPeriod,
+  shift: string | null | undefined,
+  hour: number,
+): { allowed: boolean; errorMessage?: string } {
+  if (!shift) {
+    // Non-EBMSP: existing logic
+    const isDayShift = period === "DAY";
+    if (isDayShift && (hour >= 20 || hour < 4)) {
+      return { allowed: false, errorMessage: "Fora do horário do turno diurno (05h–20h). Tente novamente no horário correto." };
+    }
+    if (!isDayShift && (hour >= 8 && hour < 17)) {
+      return { allowed: false, errorMessage: "Fora do horário do turno noturno (17h–08h). Tente novamente no horário correto." };
+    }
+    return { allowed: true };
+  }
+
+  // EBMSP shifts: wide window (05:00-23:59) per requirements
+  if (hour < 5) {
+    return { allowed: false, errorMessage: "Fora do horário permitido (05h–23h59). Tente novamente no horário correto." };
+  }
+  return { allowed: true };
+}

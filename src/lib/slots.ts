@@ -131,6 +131,7 @@ export async function getRequestableSlots(facultyId: string, internId: string) {
     .select({
       date: assignments.date,
       period: assignments.period,
+      shift: assignments.shift,
     })
     .from(assignments)
     .where(and(
@@ -140,7 +141,25 @@ export async function getRequestableSlots(facultyId: string, internId: string) {
       ne(assignments.status, "CANCELLED"),
     ));
 
-  const blockedByAssignment = new Set(activeAssignments.map((assignment) => `${assignment.date}|${assignment.period}`));
+  // For EBMSP (shift-based): only block if BOTH shifts are taken
+  const blockedByAssignment = new Set<string>();
+  const shiftsByDatePeriod = new Map<string, Set<string>>();
+  for (const a of activeAssignments) {
+    const key = `${a.date}|${a.period}`;
+    if (a.shift) {
+      if (!shiftsByDatePeriod.has(key)) shiftsByDatePeriod.set(key, new Set());
+      shiftsByDatePeriod.get(key)!.add(a.shift);
+    } else {
+      // Non-shift assignment: fully blocks the slot
+      blockedByAssignment.add(key);
+    }
+  }
+  // Block only if both MORNING and AFTERNOON are taken
+  for (const [key, shifts] of shiftsByDatePeriod) {
+    if (shifts.has("MORNING") && shifts.has("AFTERNOON")) {
+      blockedByAssignment.add(key);
+    }
+  }
 
   const pendingExtraRequests = await db
     .select({
@@ -179,6 +198,7 @@ export async function checkSlotAvailability(
   date: string,
   period: "DAY" | "NIGHT",
   facultyId: string,
+  shift?: string | null,
 ): Promise<{ available: boolean; capacity: number; assigned: number }> {
   const dayOfWeek = getDayOfWeek(date);
 
@@ -198,19 +218,24 @@ export async function checkSlotAvailability(
 
   if (!rule) return { available: false, capacity: 0, assigned: 0 };
 
+  // When shift is provided (EBMSP), count only same-shift assignments.
+  // Each shift gets the full slot capacity (capacity=1 → 1 MORNING + 1 AFTERNOON).
+  const conditions = [
+    eq(assignments.baseId, baseId),
+    eq(assignments.date, date),
+    eq(assignments.period, period),
+    eq(assignments.facultyId, facultyId),
+    ne(assignments.status, "CANCELLED"),
+    ne(assignments.status, "ABSENT"),
+  ];
+  if (shift) {
+    conditions.push(eq(assignments.shift, shift));
+  }
+
   const [result] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(assignments)
-    .where(
-      and(
-        eq(assignments.baseId, baseId),
-        eq(assignments.date, date),
-        eq(assignments.period, period),
-        eq(assignments.facultyId, facultyId),
-        ne(assignments.status, "CANCELLED"),
-        ne(assignments.status, "ABSENT"),
-      ),
-    );
+    .where(and(...conditions));
 
   const assigned = Number(result?.count ?? 0);
   return { available: assigned < rule.capacity, capacity: rule.capacity, assigned };

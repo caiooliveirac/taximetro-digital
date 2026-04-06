@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
   const internConditions = [
     inArray(userRoles.role, roleFilter),
     eq(userRoles.isActive, true),
+    eq(userRoles.isArchived, false),
   ];
   if (facultyId) internConditions.push(eq(userRoles.facultyId, facultyId));
   if (personOnly) internConditions.push(eq(userRoles.userId, personOnly));
