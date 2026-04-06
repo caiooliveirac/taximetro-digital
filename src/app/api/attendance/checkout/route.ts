@@ -7,7 +7,7 @@ import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
-import { isWithinInternCheckoutWindow } from "@/lib/utils";
+import { isWithinShiftCheckoutWindow, getShiftLabel } from "@/lib/utils";
 import { z } from "zod/v4";
 
 // GET: return checkin details for a CHECKED_IN assignment
@@ -66,9 +66,16 @@ export async function POST(req: NextRequest) {
   if (assignment.status !== "CHECKED_IN") {
     return NextResponse.json({ success: false, error: "Check-in não realizado" }, { status: 400 });
   }
-  if (!isWithinInternCheckoutWindow(assignment.date, assignment.period as "DAY" | "NIGHT")) {
+  if (!isWithinShiftCheckoutWindow(assignment.date, assignment.period as "DAY" | "NIGHT", assignment.shift)) {
+    const shiftInfo = assignment.shift ? ` (${getShiftLabel(assignment.shift)})` : "";
     return NextResponse.json(
-      { success: false, error: assignment.period === "DAY" ? "O checkout do plantão diurno só fica liberado entre 15:00 e 00:00." : "O checkout do plantão noturno só fica liberado entre 06:00 e 12:00." },
+      {
+        success: false, error: assignment.period === "DAY"
+          ? (assignment.shift === "MORNING"
+            ? "O checkout do turno da manhã só fica liberado entre 11:00 e 00:00."
+            : `O checkout do plantão diurno${shiftInfo} só fica liberado entre 15:00 e 00:00.`)
+          : "O checkout do plantão noturno só fica liberado entre 06:00 e 12:00."
+      },
       { status: 409 },
     );
   }

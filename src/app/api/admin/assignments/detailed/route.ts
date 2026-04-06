@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       b.type AS base_type,
       a.date::text AS date,
       a.period,
+      a.shift,
       a.status,
       a.notes,
       c.geo_valid,

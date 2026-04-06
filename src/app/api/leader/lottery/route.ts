@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { slotRules, assignments, bases, userRoles } from "@/db/schema";
+import { slotRules, assignments, bases, userRoles, faculties } from "@/db/schema";
 import { eq, and, gte, lte, ne, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { getCruBlockedSlots } from "@/lib/slots";
@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
       baseId: assignments.baseId,
       date: assignments.date,
       period: assignments.period,
+      shift: assignments.shift,
     })
     .from(assignments)
     .where(
@@ -104,8 +105,16 @@ export async function POST(req: NextRequest) {
       ),
     );
 
+  /* ── Detect EBMSP faculty (shift-aware lottery) ── */
+  const [facultyRow] = await db
+    .select({ abbreviation: faculties.abbreviation })
+    .from(faculties)
+    .where(eq(faculties.id, facultyId))
+    .limit(1);
+  const isEbmsp = facultyRow?.abbreviation === "EBMSP";
+
   /* ── Build list of open positions ── */
-  type Pos = { baseId: string; baseCode: string; baseType: string; date: string; period: "DAY" | "NIGHT" };
+  type Pos = { baseId: string; baseCode: string; baseType: string; date: string; period: "DAY" | "NIGHT"; shift: string | null };
   const positions: Pos[] = [];
 
   for (const rule of rules) {
@@ -118,14 +127,31 @@ export async function POST(req: NextRequest) {
       (a) => a.baseId === rule.baseId && a.date === dateStr && a.period === rule.period,
     ).length;
 
-    for (let j = 0; j < rule.capacity - filled; j++) {
-      positions.push({
-        baseId: rule.baseId,
-        baseCode: rule.baseCode,
-        baseType: rule.baseType,
-        date: dateStr,
-        period: rule.period as "DAY" | "NIGHT",
-      });
+    const openCount = rule.capacity - filled;
+
+    if (isEbmsp && rule.period === "DAY" && rule.baseType === "CENTRAL") {
+      // EBMSP CRU DAY: split positions into MORNING and AFTERNOON halves
+      const morningCount = Math.ceil(openCount / 2);
+      const afternoonCount = openCount - morningCount;
+      for (let j = 0; j < morningCount; j++) {
+        positions.push({
+          baseId: rule.baseId, baseCode: rule.baseCode, baseType: rule.baseType,
+          date: dateStr, period: "DAY", shift: "MORNING",
+        });
+      }
+      for (let j = 0; j < afternoonCount; j++) {
+        positions.push({
+          baseId: rule.baseId, baseCode: rule.baseCode, baseType: rule.baseType,
+          date: dateStr, period: "DAY", shift: "AFTERNOON",
+        });
+      }
+    } else {
+      for (let j = 0; j < openCount; j++) {
+        positions.push({
+          baseId: rule.baseId, baseCode: rule.baseCode, baseType: rule.baseType,
+          date: dateStr, period: rule.period as "DAY" | "NIGHT", shift: null,
+        });
+      }
     }
   }
 
@@ -144,12 +170,14 @@ export async function POST(req: NextRequest) {
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  /* ── Track date|period already used per intern ── */
+  /* ── Track date|period|shift already used per intern ── */
   const usedSlots = new Map<string, Set<string>>();
   for (const id of safeIds) usedSlots.set(id, new Set());
   for (const a of existing) {
     if (usedSlots.has(a.internId)) {
-      usedSlots.get(a.internId)!.add(`${a.date}|${a.period}`);
+      // For EBMSP, include shift in the key to allow MORNING + AFTERNOON
+      const shiftKey = isEbmsp ? `${a.date}|${a.period}|${(a as { shift?: string | null }).shift ?? ''}` : `${a.date}|${a.period}`;
+      usedSlots.get(a.internId)!.add(shiftKey);
     }
   }
 
@@ -175,9 +203,9 @@ export async function POST(req: NextRequest) {
    */
 
   function canAssign(internId: string, pos: Pos, shiftCount: number): boolean {
-    const key = `${pos.date}|${pos.period}`;
+    const key = isEbmsp && pos.shift ? `${pos.date}|${pos.period}|${pos.shift}` : `${pos.date}|${pos.period}`;
     if (usedSlots.get(internId)?.has(key)) return false;
-    if (cruBlocked.get(internId)?.has(key)) return false;
+    if (cruBlocked.get(internId)?.has(`${pos.date}|${pos.period}`)) return false;
     if (shiftCount >= maxShifts) return false;
     return true;
   }
@@ -203,7 +231,7 @@ export async function POST(req: NextRequest) {
 
   const toCreate: {
     internId: string; facultyId: string; baseId: string;
-    date: string; period: "DAY" | "NIGHT"; createdBy: string;
+    date: string; period: "DAY" | "NIGHT"; shift: string | null; createdBy: string;
   }[] = [];
 
   // Track new shifts per intern in this lottery
@@ -233,7 +261,7 @@ export async function POST(req: NextRequest) {
       if (bestIdx === -1) continue;
 
       const pos = positions[bestIdx];
-      const key = `${pos.date}|${pos.period}`;
+      const key = isEbmsp && pos.shift ? `${pos.date}|${pos.period}|${pos.shift}` : `${pos.date}|${pos.period}`;
 
       positionTaken[bestIdx] = true;
       usedSlots.get(internId)!.add(key);
@@ -246,6 +274,7 @@ export async function POST(req: NextRequest) {
         baseId: pos.baseId,
         date: pos.date,
         period: pos.period,
+        shift: pos.shift,
         createdBy: user.realUserId ?? user.id,
       });
     }

@@ -11,13 +11,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
-import { localDateStr } from "@/lib/utils";
+import { localDateStr, getShiftShortLabel } from "@/lib/utils";
 
 /* ═══════════ Types ═══════════ */
 
 type Assignment = {
   id: string; baseCode: string; baseName: string; baseType?: string;
-  date: string; period: string; status: string;
+  date: string; period: string; shift?: string | null; status: string;
 };
 type Slot = {
   baseId: string; baseCode: string; baseName: string; baseType?: string;
@@ -28,11 +28,13 @@ type Request = {
   id: string; type: string; status: string; createdAt: string;
   requesterId: string; requesterName: string;
   assignmentId: string | null; assignmentDate: string | null;
-  assignmentPeriod: string | null; baseCode: string | null;
+  assignmentPeriod: string | null; assignmentShift: string | null;
+  baseCode: string | null;
   baseName: string | null; baseType: string | null;
   targetInternId: string | null; targetInternName: string | null;
   targetAssignmentId: string | null; targetAssignmentDate: string | null;
-  targetAssignmentPeriod: string | null; targetBaseCode: string | null;
+  targetAssignmentPeriod: string | null; targetAssignmentShift: string | null;
+  targetBaseCode: string | null;
   targetBaseName: string | null;
   extraBaseId: string | null; extraBaseCode: string | null;
   extraBaseName: string | null; extraDate: string | null;
@@ -72,10 +74,18 @@ export default function InternTrocas() {
   const { target: impersonateTarget } = useImpersonate();
   const userId = impersonateTarget?.userId ?? session?.user?.id;
 
+  type SwapHistoryShift = { baseCode: string; baseName: string; date: string; period: string; shift?: string | null; assignmentStatus: string };
+  type SwapHistoryEntry = {
+    id: string; completedAt: string;
+    requester: { id: string; name: string; gave: SwapHistoryShift | null; received: SwapHistoryShift | null };
+    target: { id: string | null; name: string | null; gave: SwapHistoryShift | null; received: SwapHistoryShift | null };
+  };
+
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [myRequests, setMyRequests] = useState<Request[]>([]);
   const [openSwaps, setOpenSwaps] = useState<Request[]>([]);
+  const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"DROP" | "EXTRA" | "SWAP" | "HISTORY">("SWAP");
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -96,17 +106,19 @@ export default function InternTrocas() {
     try {
       const from = localDateStr();
       const to = localDateStr(new Date(Date.now() + 30 * 86400000));
-      const [aRes, sRes, rRes, osRes] = await Promise.all([
+      const [aRes, sRes, rRes, osRes, shRes] = await Promise.all([
         fetch(`/taximetro/api/assignments?from=${from}&to=${to}&selfOnly=true`),
         fetch("/taximetro/api/slots/available?selfOnly=true"),
         fetch("/taximetro/api/requests?selfOnly=true"),
         fetch("/taximetro/api/requests?scope=open-swaps&selfOnly=true"),
+        fetch("/taximetro/api/requests/swap-history?selfOnly=true"),
       ]);
-      const [aJson, sJson, rJson, osJson] = await Promise.all([aRes.json(), sRes.json(), rRes.json(), osRes.json()]);
+      const [aJson, sJson, rJson, osJson, shJson] = await Promise.all([aRes.json(), sRes.json(), rRes.json(), osRes.json(), shRes.json()]);
       if (aJson.success) setAssignments(aJson.data.filter((a: Assignment) => ["SCHEDULED", "CONFIRMED"].includes(a.status)));
       if (sJson.success) setSlots(sJson.data.filter((s: Slot) => s.available > 0));
       if (rJson.success) setMyRequests(rJson.data);
       if (osJson.success) setOpenSwaps(osJson.data);
+      if (shJson.success) setSwapHistory(shJson.data);
     } catch {
       setMsg({ type: "error", text: "Erro ao carregar dados." });
     }
@@ -150,6 +162,7 @@ export default function InternTrocas() {
   }
   function confirmSwap(id: string) { apiPatch({ id, action: "confirm" }); }
   function rejectProposal(id: string) { apiPatch({ id, action: "reject_proposal" }); }
+  function withdrawProposal(id: string) { apiPatch({ id, action: "withdraw_proposal" }); }
   function cancelRequest(id: string) { apiPatch({ id, action: "cancel" }); }
 
   /* ── Derived ── */
@@ -160,9 +173,14 @@ export default function InternTrocas() {
 
   // Assignments not already involved in a pending/open request
   const usedAssignmentIds = new Set(
-    myRequests
-      .filter((r) => ["OPEN", "PENDING"].includes(r.status) && r.assignmentId)
-      .map((r) => r.assignmentId),
+    myRequests.flatMap((r) => {
+      if (!["OPEN", "PENDING"].includes(r.status)) return [];
+
+      const ids: string[] = [];
+      if (r.requesterId === userId && r.assignmentId) ids.push(r.assignmentId);
+      if (r.targetInternId === userId && r.targetAssignmentId) ids.push(r.targetAssignmentId);
+      return ids;
+    }),
   );
   const availableAssignments = assignments.filter((a) => !usedAssignmentIds.has(a.id));
 
@@ -213,7 +231,7 @@ export default function InternTrocas() {
               <option value="">Selecionar plantão...</option>
               {availableAssignments.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.baseCode} — {fmtDate(a.date)} ({a.period === "DAY" ? "Diurno" : "Noturno"})
+                  {a.baseCode} — {fmtDate(a.date)} ({a.shift ? getShiftShortLabel(a.shift) : a.period === "DAY" ? "Diurno" : "Noturno"})
                 </option>
               ))}
             </select>
@@ -229,7 +247,7 @@ export default function InternTrocas() {
               {activeSwaps.filter((r) => r.requesterId === userId).map((r) => (
                 <div key={r.id} className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} baseType={r.baseType} />
+                    <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} shift={r.assignmentShift} baseType={r.baseType} />
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_COLOR[r.status]}`}>{STATUS_LABEL[r.status]}</span>
                   </div>
                   {r.status === "PENDING" && r.targetInternName && (
@@ -237,7 +255,7 @@ export default function InternTrocas() {
                       <p className="text-xs text-blue-800">
                         <strong>{r.targetInternName}</strong> propõe trocar por:
                       </p>
-                      <ShiftBadge code={r.targetBaseCode} date={r.targetAssignmentDate} period={r.targetAssignmentPeriod} />
+                      <ShiftBadge code={r.targetBaseCode} date={r.targetAssignmentDate} period={r.targetAssignmentPeriod} shift={r.targetAssignmentShift} />
                       <div className="flex gap-2 pt-1">
                         <Button size="sm" onClick={() => confirmSwap(r.id)} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700 gap-1.5 text-xs h-7 px-3">
                           <CheckCircle className="h-3 w-3" /> Aceitar
@@ -249,10 +267,13 @@ export default function InternTrocas() {
                     </div>
                   )}
                   {r.status === "OPEN" && (
-                    <p className="text-xs text-slate-400">Aguardando propostas de colegas...</p>
+                    <div className="space-y-1">
+                      <p className="text-xs text-slate-400">Aguardando propostas de colegas...</p>
+                      <p className="text-[11px] text-slate-500">Seu plantão continua na sua escala até você cancelar ou confirmar uma troca.</p>
+                    </div>
                   )}
                   <button onClick={() => cancelRequest(r.id)} disabled={submitting} className="text-xs text-red-500 hover:text-red-600">
-                    Cancelar oferta
+                    Cancelar oferta e manter plantão
                   </button>
                 </div>
               ))}
@@ -266,11 +287,16 @@ export default function InternTrocas() {
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_COLOR[r.status]}`}>{STATUS_LABEL[r.status]}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span>Seu: <ShiftBadge code={r.targetBaseCode} date={r.targetAssignmentDate} period={r.targetAssignmentPeriod} inline /></span>
+                    <span>Seu: <ShiftBadge code={r.targetBaseCode} date={r.targetAssignmentDate} period={r.targetAssignmentPeriod} shift={r.targetAssignmentShift} inline /></span>
                     <ArrowLeftRight className="h-3 w-3 text-slate-400" />
-                    <span>Dele: <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} inline /></span>
+                    <span>Dele: <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} shift={r.assignmentShift} inline /></span>
                   </div>
-                  <p className="text-[11px] text-slate-400">Aguardando confirmação de {r.requesterName}...</p>
+                  <p className="text-[11px] text-slate-500">Seu plantão continua mantido na escala enquanto {r.requesterName} não confirmar.</p>
+                  <div className="pt-1">
+                    <Button size="sm" variant="outline" onClick={() => withdrawProposal(r.id)} disabled={submitting} className="gap-1.5 text-xs h-7 px-3">
+                      <X className="h-3 w-3" /> Desistir da proposta
+                    </Button>
+                  </div>
                 </div>
               ))}
             </section>
@@ -290,7 +316,7 @@ export default function InternTrocas() {
                       <p className="text-xs font-medium text-slate-900">{r.requesterName}</p>
                       <p className="text-xs text-slate-500">oferece:</p>
                     </div>
-                    <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} baseType={r.baseType} />
+                    <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} shift={r.assignmentShift} baseType={r.baseType} />
                   </div>
                   {proposeTarget?.id === r.id ? (
                     <div className="space-y-2 rounded-lg bg-slate-50 p-2">
@@ -299,7 +325,7 @@ export default function InternTrocas() {
                         <option value="">Selecionar...</option>
                         {availableAssignments.map((a) => (
                           <option key={a.id} value={a.id}>
-                            {a.baseCode} — {fmtDate(a.date)} ({a.period === "DAY" ? "Diurno" : "Noturno"})
+                            {a.baseCode} — {fmtDate(a.date)} ({a.shift ? getShiftShortLabel(a.shift) : a.period === "DAY" ? "Diurno" : "Noturno"})
                           </option>
                         ))}
                       </select>
@@ -343,7 +369,7 @@ export default function InternTrocas() {
               <option value="">Selecionar plantão...</option>
               {availableAssignments.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.baseCode} — {fmtDate(a.date)} ({a.period === "DAY" ? "Diurno" : "Noturno"})
+                  {a.baseCode} — {fmtDate(a.date)} ({a.shift ? getShiftShortLabel(a.shift) : a.period === "DAY" ? "Diurno" : "Noturno"})
                 </option>
               ))}
             </select>
@@ -357,7 +383,7 @@ export default function InternTrocas() {
               <h2 className="text-sm font-semibold text-slate-700">Solicitações Pendentes</h2>
               {activeDrops.map((r) => (
                 <div key={r.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                  <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} baseType={r.baseType} />
+                  <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} shift={r.assignmentShift} baseType={r.baseType} />
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_COLOR[r.status]}`}>{STATUS_LABEL[r.status]}</span>
                 </div>
               ))}
@@ -427,33 +453,80 @@ export default function InternTrocas() {
 
       {/* ═══════ HISTORY TAB ═══════ */}
       {tab === "HISTORY" && (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-          {history.length > 0 ? (
-            <div className="divide-y divide-slate-100">
-              {history.map((r) => (
-                <div key={r.id} className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">
-                      {r.type === "SWAP" ? "Troca" : r.type === "EXTRA_SHIFT" ? "Extra" : "Descarte"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {r.type === "EXTRA_SHIFT"
-                        ? `${r.extraBaseCode} · ${r.extraDate ? fmtDate(r.extraDate) : ""}`
-                        : r.baseCode && r.assignmentDate
-                          ? `${r.baseCode} · ${fmtDate(r.assignmentDate)}`
-                          : "—"
-                      }
-                    </p>
-                    {r.reviewNotes && <p className="text-[11px] text-slate-400 mt-0.5">{r.reviewNotes}</p>}
+        <div className="space-y-4">
+          {/* Swap History — detailed tracking */}
+          {swapHistory.length > 0 && (
+            <section className="space-y-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <ArrowLeftRight className="h-4 w-4 text-blue-500" strokeWidth={1.5} />
+                Trocas Concluídas
+              </h2>
+              {swapHistory.map((sw) => {
+                const isRequester = sw.requester.id === userId;
+                const me = isRequester ? sw.requester : sw.target;
+                const other = isRequester ? sw.target : sw.requester;
+                return (
+                  <div key={sw.id} className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-slate-500">
+                        Troca com <strong className="text-slate-700">{other.name}</strong>
+                      </p>
+                      <div className="text-right">
+                        <span className="rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 px-2 py-0.5 text-[11px] font-medium">Concluída</span>
+                        <p className="text-[11px] text-slate-400 mt-0.5">{new Date(sw.completedAt).toLocaleDateString("pt-BR")}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-lg bg-slate-50 p-2">
+                      <div className="text-center space-y-0.5">
+                        <p className="text-[10px] font-medium text-red-500 uppercase">Deu</p>
+                        {me.gave && <ShiftBadge code={me.gave.baseCode} date={me.gave.date} period={me.gave.period} shift={me.gave.shift} />}
+                      </div>
+                      <ArrowLeftRight className="h-4 w-4 text-slate-300" />
+                      <div className="text-center space-y-0.5">
+                        <p className="text-[10px] font-medium text-emerald-600 uppercase">Recebeu</p>
+                        {me.received && <ShiftBadge code={me.received.baseCode} date={me.received.date} period={me.received.period} shift={me.received.shift} />}
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_COLOR[r.status]}`}>{STATUS_LABEL[r.status]}</span>
-                    <p className="text-[11px] text-slate-400 mt-0.5">{new Date(r.createdAt).toLocaleDateString("pt-BR")}</p>
-                  </div>
+                );
+              })}
+            </section>
+          )}
+
+          {/* Other history (drops, extras, cancelled) */}
+          {history.filter((r) => r.type !== "SWAP" || r.status !== "COMPLETED").length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-slate-900">Outros</h2>
+              <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+                <div className="divide-y divide-slate-100">
+                  {history.filter((r) => r.type !== "SWAP" || r.status !== "COMPLETED").map((r) => (
+                    <div key={r.id} className="flex items-center justify-between px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">
+                          {r.type === "SWAP" ? "Troca" : r.type === "EXTRA_SHIFT" ? "Extra" : "Descarte"}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {r.type === "EXTRA_SHIFT"
+                            ? `${r.extraBaseCode} · ${r.extraDate ? fmtDate(r.extraDate) : ""}`
+                            : r.baseCode && r.assignmentDate
+                              ? `${r.baseCode} · ${fmtDate(r.assignmentDate)}`
+                              : "—"
+                          }
+                        </p>
+                        {r.reviewNotes && <p className="text-[11px] text-slate-400 mt-0.5">{r.reviewNotes}</p>}
+                      </div>
+                      <div className="text-right">
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_COLOR[r.status]}`}>{STATUS_LABEL[r.status]}</span>
+                        <p className="text-[11px] text-slate-400 mt-0.5">{new Date(r.createdAt).toLocaleDateString("pt-BR")}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : (
+              </div>
+            </section>
+          )}
+
+          {swapHistory.length === 0 && history.filter((r) => r.type !== "SWAP" || r.status !== "COMPLETED").length === 0 && (
             <p className="py-8 text-center text-sm text-slate-400">Nenhuma solicitação no histórico.</p>
           )}
         </div>
@@ -464,12 +537,13 @@ export default function InternTrocas() {
 
 /* ═══════════ Shift badge component ═══════════ */
 
-function ShiftBadge({ code, date, period, baseType, inline }: {
-  code: string | null; date: string | null; period: string | null; baseType?: string | null; inline?: boolean;
+function ShiftBadge({ code, date, period, shift, baseType, inline }: {
+  code: string | null; date: string | null; period: string | null; shift?: string | null; baseType?: string | null; inline?: boolean;
 }) {
   if (!code || !date || !period) return <span className="text-xs text-slate-400">—</span>;
   const bs = getBaseStyle(baseType ?? undefined);
   const ps = getPeriodStyle(period);
+  const periodLabel = shift ? getShiftShortLabel(shift) : ps.label;
   if (inline) {
     return (
       <span className="inline-flex items-center gap-1">
@@ -477,6 +551,7 @@ function ShiftBadge({ code, date, period, baseType, inline }: {
         <span className="font-medium">{code}</span>
         <span>{fmtDate(date)}</span>
         <PeriodIcon period={period} />
+        {shift && <span className="text-[10px] font-medium">{periodLabel}</span>}
       </span>
     );
   }
@@ -488,7 +563,7 @@ function ShiftBadge({ code, date, period, baseType, inline }: {
         <p className="text-xs text-slate-500">{fmtDate(date)}</p>
       </div>
       <div className={`ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${ps.bg} ${ps.text}`}>
-        <PeriodIcon period={period} />{ps.label}
+        <PeriodIcon period={period} />{periodLabel}
       </div>
     </div>
   );

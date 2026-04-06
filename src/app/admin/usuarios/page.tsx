@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState, useRef } from "react";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { FileDown, KeyRound, Mail, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { FileDown, KeyRound, Mail, ChevronDown, ChevronUp, RotateCcw, Archive, ArchiveRestore } from "lucide-react";
 import { InviteButton } from "@/components/invite-button";
 import { formatBrazilTime } from "@/lib/utils";
 
@@ -16,6 +16,7 @@ type User = {
   phone: string | null;
   registrationCode: string | null;
   isActive: boolean;
+  isArchived?: boolean;
   selfie: string | null;
   role: string | null;
   facultyId: string | null;
@@ -286,6 +287,29 @@ export default function AdminUsuarios() {
       if (editing?.id === user.id) {
         setEditing(null);
         setHistory(null);
+      }
+      load();
+    } catch {
+      alert("Erro de conexão.");
+    }
+  }
+
+  async function toggleArchive(user: User) {
+    const archive = !user.isArchived;
+    const msg = archive
+      ? `Arquivar ${user.name}? Ele não aparecerá mais nos relatórios e escalas.`
+      : `Desarquivar ${user.name}? Ele voltará a aparecer nos relatórios e escalas.`;
+    if (!window.confirm(msg)) return;
+    try {
+      const res = await fetch("/taximetro/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: user.id, isArchived: archive }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        alert(json.error);
+        return;
       }
       load();
     } catch {
@@ -836,7 +860,11 @@ export default function AdminUsuarios() {
                   </td>
                   <td className="py-2 pr-4">
                     {u.isActive ? (
-                      <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700">Ativo</span>
+                      u.isArchived ? (
+                        <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600">Arquivado</span>
+                      ) : (
+                        <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700">Ativo</span>
+                      )
                     ) : (
                       <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700">Pendente</span>
                     )}
@@ -852,6 +880,15 @@ export default function AdminUsuarios() {
                     </button>
                     <button onClick={() => openEdit(u)} className="text-accent-600 hover:text-accent-500">Editar</button>
                     {u.isActive && <button onClick={() => deactivateUser(u)} className="text-red-600 hover:text-red-500">Desativar</button>}
+                    {u.isActive && u.role === "INTERN" && (
+                      <button
+                        onClick={() => toggleArchive(u)}
+                        className={`inline-flex items-center gap-1 text-xs font-medium ${u.isArchived ? "text-emerald-600 hover:text-emerald-500" : "text-amber-600 hover:text-amber-500"}`}
+                      >
+                        {u.isArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                        {u.isArchived ? "Desarquivar" : "Arquivar"}
+                      </button>
+                    )}
                   </td>
                 </tr>
                 {accessRowUserId === u.id && (

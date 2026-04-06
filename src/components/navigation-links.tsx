@@ -1,12 +1,24 @@
 /* eslint-disable @next/next/no-img-element */
 
+import { cn } from "@/lib/utils";
+
 type Props = {
   latitude: number;
   longitude: number;
   label?: string;
+  title?: string;
+  className?: string;
+  showHeader?: boolean;
 };
 
-export function NavigationLinks({ latitude, longitude, label }: Props) {
+export function NavigationLinks({
+  latitude,
+  longitude,
+  label,
+  title = "Como chegar",
+  className,
+  showHeader = true,
+}: Props) {
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
   const wazeUrl = `https://waze.com/ul?ll=${latitude},${longitude}&navigate=yes`;
   const uberUrl = `https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${latitude}&dropoff[longitude]=${longitude}${label ? `&dropoff[nickname]=${encodeURIComponent(label)}` : ""}`;
@@ -18,11 +30,13 @@ export function NavigationLinks({ latitude, longitude, label }: Props) {
   ];
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-background p-3 space-y-2">
-      <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-        <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
-        Como chegar
-      </p>
+    <div className={cn("rounded-xl border border-slate-200 bg-background p-3 space-y-2", className)}>
+      {showHeader ? (
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
+          {title}
+        </p>
+      ) : null}
       <div className="grid grid-cols-3 gap-2">
         {links.map((l) => (
           <a

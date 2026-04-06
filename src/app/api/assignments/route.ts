@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { assignments, users, bases, faculties, checkins } from "@/db/schema";
-import { eq, and, gte, lte, ne } from "drizzle-orm";
+import { eq, and, gte, lte, ne, sql } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { checkSlotAvailability, checkCruConflict } from "@/lib/slots";
 import { getEffectiveUser } from "@/lib/impersonate";
@@ -14,6 +14,7 @@ const createAssignmentSchema = z.object({
   baseId: z.string().uuid(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   period: z.enum(["DAY", "NIGHT"]),
+  shift: z.enum(["MORNING", "AFTERNOON"]).nullish(),
   notes: z.string().optional(),
   allowRetroactiveOverride: z.boolean().optional(),
   allowAdminOpenAllocation: z.boolean().optional(),
@@ -46,6 +47,7 @@ export async function GET(req: NextRequest) {
       baseLongitude: bases.longitude,
       date: assignments.date,
       period: assignments.period,
+      shift: assignments.shift,
       status: assignments.status,
       notes: assignments.notes,
       absenceJustification: assignments.absenceJustification,
@@ -117,7 +119,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = createAssignmentSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
-  const { allowRetroactiveOverride, allowAdminOpenAllocation, ...assignmentData } = parsed.data;
+  const { allowRetroactiveOverride, allowAdminOpenAllocation, shift: rawShift, ...assignmentData } = parsed.data;
+  const shiftValue = rawShift ?? null;
   const allowCoordinatorRetroactiveOverride = user.role === "COORDINATOR"
     && allowRetroactiveOverride === true
     && assignmentData.date < localDateStr();
@@ -127,6 +130,11 @@ export async function POST(req: NextRequest) {
   if (user.role === "LEADER" && assignmentData.facultyId !== user.facultyId) {
     return NextResponse.json({ success: false, error: "Só pode alocar internos da sua faculdade" }, { status: 403 });
   }
+
+  // For shift-aware duplicate check: match exact shift (or both null)
+  const shiftCondition = shiftValue
+    ? eq(assignments.shift, shiftValue)
+    : sql`${assignments.shift} IS NULL`;
 
   const [existingAssignment] = await db
     .select({
@@ -141,6 +149,7 @@ export async function POST(req: NextRequest) {
         eq(assignments.internId, assignmentData.internId),
         eq(assignments.date, assignmentData.date),
         eq(assignments.period, assignmentData.period),
+        shiftCondition,
       ),
     )
     .limit(1);
@@ -163,6 +172,7 @@ export async function POST(req: NextRequest) {
         assignmentData.date,
         assignmentData.period,
         assignmentData.facultyId,
+        shiftValue,
       );
       if (!slot.available) {
         return NextResponse.json({ success: false, error: `Sem vaga (${slot.assigned}/${slot.capacity})` }, { status: 409 });
@@ -184,6 +194,7 @@ export async function POST(req: NextRequest) {
         .set({
           facultyId: assignmentData.facultyId,
           baseId: assignmentData.baseId,
+          shift: shiftValue,
           status: "SCHEDULED",
           notes: assignmentData.notes ?? null,
           updatedAt: new Date(),
@@ -198,6 +209,7 @@ export async function POST(req: NextRequest) {
         entityId: existingAssignment.id,
         payload: {
           ...assignmentData,
+          shift: shiftValue,
           allowRetroactiveOverride: allowCoordinatorRetroactiveOverride,
           allowAdminOpenAllocation: allowCoordinatorOpenAllocation,
           ...(user.isImpersonating ? { impersonating: user.id } : {}),
@@ -209,7 +221,7 @@ export async function POST(req: NextRequest) {
 
     const [created] = await db
       .insert(assignments)
-      .values({ ...assignmentData, createdBy: user.realUserId ?? user.id })
+      .values({ ...assignmentData, shift: shiftValue, createdBy: user.realUserId ?? user.id })
       .returning();
 
     await logAudit({

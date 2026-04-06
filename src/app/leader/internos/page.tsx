@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   UserPlus, Link2, Copy, Check, Clock, UserCheck, UserX, Trash2, Target,
-  ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight, Plus, X,
+  ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight, Plus, X, Repeat,
+  Archive, ArchiveRestore,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
@@ -22,6 +23,7 @@ type UserRow = {
   email: string;
   phone: string | null;
   isActive: boolean;
+  isArchived?: boolean;
   role?: string;
   facultyAbbr: string | null;
   createdAt?: string;
@@ -68,7 +70,16 @@ type InviteLink = {
   createdAt: string;
 };
 
-type Tab = "ativos" | "pendentes" | "convites";
+type SwapSlot = {
+  baseCode: string; baseName: string; date: string; period: string;
+};
+type SwapHistoryEntry = {
+  id: string; completedAt: string;
+  requester: { id: string; name: string; gave: SwapSlot | null; received: SwapSlot | null };
+  target: { id: string | null; name: string | null; gave: SwapSlot | null; received: SwapSlot | null };
+};
+
+type Tab = "ativos" | "pendentes" | "convites" | "arquivados";
 
 type AvailableSlot = {
   baseId: string; baseCode: string; baseName: string; baseType: string;
@@ -84,6 +95,7 @@ export default function LeaderInternos() {
   const effectiveFacultyId = impersonateTarget?.facultyId ?? session?.user?.facultyId;
   const [tab, setTab] = useState<Tab>("ativos");
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [archivedUsers, setArchivedUsers] = useState<UserRow[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [pending, setPending] = useState<UserRow[]>([]);
@@ -96,6 +108,7 @@ export default function LeaderInternos() {
   const [error, setError] = useState("");
   const [actionMsg, setActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [justificationAssignment, setJustificationAssignment] = useState<AssignmentRow | null>(null);
+  const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
 
   /* ── Allocation modal ── */
   const [allocIntern, setAllocIntern] = useState<{ id: string; name: string } | null>(null);
@@ -111,18 +124,24 @@ export default function LeaderInternos() {
       const to = localDateStr();
       const from = localDateStr(new Date(Date.now() - 30 * 86400000));
 
-      const [usersRes, pendingRes, linksRes, complianceRes, assignRes] = await Promise.all([
+      const [usersRes, pendingRes, linksRes, complianceRes, assignRes, swapRes] = await Promise.all([
         fetch("/taximetro/api/admin/users").then((r) => r.json()),
         fetch("/taximetro/api/leader/pendentes").then((r) => r.json()),
         fetch("/taximetro/api/leader/convites").then((r) => r.json()),
         fetch("/taximetro/api/compliance").then((r) => r.json()),
         fetch(`/taximetro/api/assignments?from=${from}&to=${to}`).then((r) => r.json()),
+        fetch("/taximetro/api/requests/swap-history").then((r) => r.json()),
       ]);
-      if (usersRes.success) setUsers(usersRes.data.filter((u: UserRow) => u.role === "INTERN" && u.isActive));
+      if (usersRes.success) {
+        const allInterns = usersRes.data.filter((u: UserRow) => u.role === "INTERN" && u.isActive);
+        setUsers(allInterns.filter((u: UserRow) => !u.isArchived));
+        setArchivedUsers(allInterns.filter((u: UserRow) => u.isArchived));
+      }
       if (pendingRes.success) setPending(pendingRes.data);
       if (linksRes.success) setLinks(linksRes.data.filter((l: InviteLink) => l.isActive));
       if (complianceRes.success) setCompliance(complianceRes.data);
       if (assignRes.success) setAssignments(assignRes.data);
+      if (swapRes.success) setSwapHistory(swapRes.data);
       setError("");
     } catch {
       setError("Erro ao carregar dados. Tente recarregar a página.");
@@ -163,6 +182,25 @@ export default function LeaderInternos() {
       const json = await res.json();
       if (!json.success) setActionMsg({ type: "error", text: json.error || "Erro ao processar." });
       else setActionMsg({ type: "success", text: action === "approve" ? "Interno aprovado!" : "Interno rejeitado." });
+      loadData();
+    } catch {
+      setActionMsg({ type: "error", text: "Erro de conexão." });
+    }
+    setActing(null);
+  }
+
+  async function handleArchive(userId: string, archive: boolean) {
+    setActing(userId);
+    try {
+      const res = await fetch("/taximetro/api/leader/interns", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, action: archive ? "archive" : "unarchive" }),
+      });
+      const json = await res.json();
+      if (!json.success) setActionMsg({ type: "error", text: json.error || "Erro ao processar." });
+      else setActionMsg({ type: "success", text: archive ? "Interno arquivado." : "Interno desarquivado." });
+      setExpandedId(null);
       loadData();
     } catch {
       setActionMsg({ type: "error", text: "Erro de conexão." });
@@ -248,6 +286,7 @@ export default function LeaderInternos() {
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "ativos", label: "Ativos", count: users.length },
+    { key: "arquivados", label: "Arquivados", count: archivedUsers.length },
     { key: "pendentes", label: "Pendentes", count: pending.length },
     { key: "convites", label: "Links", count: links.length },
   ];
@@ -322,6 +361,15 @@ export default function LeaderInternos() {
                   const isExpanded = expandedId === u.id;
                   const internAssignments = isExpanded
                     ? assignments.filter((a) => a.internId === u.id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10)
+                    : [];
+                  const internCompleted = isExpanded
+                    ? assignments.filter((a) => a.internId === u.id && ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status))
+                    : [];
+                  const cruCount = internCompleted.filter((a) => a.baseType === "CENTRAL").length;
+                  const usaCount = internCompleted.filter((a) => a.baseType === "USA").length;
+                  const crlCount = internCompleted.filter((a) => a.baseType === "CRL").length;
+                  const internSwaps = isExpanded
+                    ? swapHistory.filter((s) => s.requester.id === u.id || s.target.id === u.id)
                     : [];
 
                   return (
@@ -422,6 +470,71 @@ export default function LeaderInternos() {
                               </div>
                             )}
 
+                            {/* Base type boxes */}
+                            {(cruCount > 0 || usaCount > 0 || crlCount > 0) && (
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-center">
+                                  <p className="text-lg font-bold text-violet-700">{cruCount}</p>
+                                  <p className="text-[10px] font-medium text-violet-600">CRU</p>
+                                </div>
+                                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center">
+                                  <p className="text-lg font-bold text-red-700">{usaCount}</p>
+                                  <p className="text-[10px] font-medium text-red-600">USA</p>
+                                </div>
+                                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-center">
+                                  <p className="text-lg font-bold text-rose-700">{crlCount}</p>
+                                  <p className="text-[10px] font-medium text-rose-600">CRL</p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Swap history */}
+                            {internSwaps.length > 0 && (
+                              <div>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                  <Repeat className="h-3.5 w-3.5 text-indigo-500" strokeWidth={1.5} />
+                                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Trocas ({internSwaps.length})</h3>
+                                </div>
+                                <div className="space-y-1.5">
+                                  {internSwaps.slice(0, 5).map((swap) => {
+                                    const isReq = swap.requester.id === u.id;
+                                    const self = isReq ? swap.requester : swap.target;
+                                    const peer = isReq ? swap.target : swap.requester;
+                                    return (
+                                      <div key={swap.id} className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="text-[11px] text-slate-400">
+                                            {new Date(swap.completedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                                          </span>
+                                          <span className="text-[11px] text-slate-400">com {peer.name}</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="rounded bg-red-50 px-2 py-1">
+                                            <p className="text-[10px] font-medium text-red-600">Deu</p>
+                                            {self.gave ? (
+                                              <span className="text-xs font-medium text-slate-900">
+                                                {self.gave.baseCode} {new Date(self.gave.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                                                <span className={`ml-1 ${self.gave.period === "DAY" ? "text-amber-600" : "text-indigo-600"}`}>{self.gave.period === "DAY" ? "☀" : "🌙"}</span>
+                                              </span>
+                                            ) : <span className="text-xs text-slate-400">—</span>}
+                                          </div>
+                                          <div className="rounded bg-emerald-50 px-2 py-1">
+                                            <p className="text-[10px] font-medium text-emerald-600">Recebeu</p>
+                                            {self.received ? (
+                                              <span className="text-xs font-medium text-slate-900">
+                                                {self.received.baseCode} {new Date(self.received.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                                                <span className={`ml-1 ${self.received.period === "DAY" ? "text-amber-600" : "text-indigo-600"}`}>{self.received.period === "DAY" ? "☀" : "🌙"}</span>
+                                              </span>
+                                            ) : <span className="text-xs text-slate-400">—</span>}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
                             {/* Recent assignments */}
                             <div>
                               <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Últimos plantões</h3>
@@ -470,7 +583,7 @@ export default function LeaderInternos() {
                             </div>
 
                             {/* Actions */}
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                               <button
                                 onClick={() => openAllocModal({ id: u.id, name: u.name })}
                                 className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
@@ -483,6 +596,14 @@ export default function LeaderInternos() {
                                 Ver escala
                                 <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
                               </Link>
+                              <button
+                                onClick={() => handleArchive(u.id, true)}
+                                disabled={acting === u.id}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50"
+                              >
+                                <Archive className="h-4 w-4" strokeWidth={1.5} />
+                                Arquivar
+                              </button>
                             </div>
                           </div>
                         )}
@@ -591,6 +712,52 @@ export default function LeaderInternos() {
                 </div>
               );
             })
+          )}
+        </div>
+      )}
+
+      {/* Tab: Arquivados */}
+      {tab === "arquivados" && (
+        <div className="space-y-3">
+          {archivedUsers.length === 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <Archive className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">Nenhum interno arquivado.</p>
+              <p className="text-xs text-slate-400 mt-1">Internos de turmas anteriores podem ser arquivados na aba Ativos.</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-slate-500">
+                    <th className="px-4 py-3 font-medium">Nome</th>
+                    <th className="px-4 py-3 font-medium text-center">CPF</th>
+                    <th className="w-28"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archivedUsers.map((u) => (
+                    <tr key={u.id} className="border-b border-slate-100 last:border-0">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-900">{u.name}</div>
+                        <div className="text-xs text-slate-400">{u.email}</div>
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs text-slate-500 font-mono">{u.cpf}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleArchive(u.id, false)}
+                          disabled={acting === u.id}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                        >
+                          <ArchiveRestore className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          Desarquivar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

@@ -40,6 +40,7 @@ type UserRow = {
     id: string;
     name: string;
     isActive: boolean;
+    isArchived?: boolean;
     role: string | null;
     facultyId: string | null;
     facultyAbbr: string | null;
@@ -57,6 +58,7 @@ type AssignmentDetail = {
     base_type: "USA" | "CENTRAL" | "CRL";
     date: string;
     period: "DAY" | "NIGHT";
+    shift: string | null;
     status: string;
     notes: string | null;
     geo_valid: boolean | null;
@@ -75,6 +77,7 @@ type AssignmentDetail = {
 type AllocationState = {
     baseId: string;
     baseCode: string;
+    baseType?: "USA" | "CENTRAL" | "CRL";
     baseName?: string;
     date: string;
     period: "DAY" | "NIGHT";
@@ -144,7 +147,9 @@ function formatDayMonth(date: string) {
     return new Date(`${normalizedDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
-function formatPeriod(period: "DAY" | "NIGHT") {
+function formatPeriod(period: "DAY" | "NIGHT", shift?: string | null) {
+    if (shift === "MORNING") return "Manhã";
+    if (shift === "AFTERNOON") return "Tarde";
     return period === "DAY" ? "Diurno" : "Noturno";
 }
 
@@ -331,7 +336,7 @@ function getAssignmentVisualState(assignment: AssignmentDetail, period: "DAY" | 
 function getAssignmentCardTitle(assignment: AssignmentDetail) {
     const checkinText = assignment.checkin_at ? formatBrazilTime(assignment.checkin_at) : "sem check-in";
     const checkoutText = assignment.checkout_at ? formatBrazilTime(assignment.checkout_at) : "sem checkout";
-    return `${assignment.intern_name} • ${assignment.base_code} • ${formatPeriod(assignment.period)} • check-in ${checkinText} • checkout ${checkoutText}`;
+    return `${assignment.intern_name} • ${assignment.base_code} • ${formatPeriod(assignment.period, assignment.shift)} • check-in ${checkinText} • checkout ${checkoutText}`;
 }
 
 function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "neutral", showBaseCode = false }: { assignment: AssignmentDetail; period: "DAY" | "NIGHT"; onSelect: (id: string) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean }) {
@@ -353,6 +358,11 @@ function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "
                         <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
                         <span className="truncate">{assignment.faculty_abbr}</span>
                     </span>
+                    {assignment.shift && (
+                        <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${assignment.shift === "MORNING" ? "bg-amber-100 text-amber-800" : "bg-orange-100 text-orange-800"}`}>
+                            {assignment.shift === "MORNING" ? "☀️ M" : "🌤️ T"}
+                        </span>
+                    )}
                     {showBaseCode && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${visual.darkSurface ? "border border-white/10 bg-white/8 text-white/72" : "border border-stone-300 bg-white/70 text-stone-600"}`}>{assignment.base_code}</span>}
                     <span className={`truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${visual.metaClass}`}>{visual.metaLabel}</span>
                 </span>
@@ -444,6 +454,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [allocCandidateFacultyFilter, setAllocCandidateFacultyFilter] = useState<string>("ALL");
     const [allocInternId, setAllocInternId] = useState("");
     const [allocSearch, setAllocSearch] = useState("");
+    const [allocShift, setAllocShift] = useState<"MORNING" | "AFTERNOON" | "">("");
     const [allocLoading, setAllocLoading] = useState(false);
     const [removingId, setRemovingId] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -704,7 +715,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         kind: "vacancy",
                         key: `${base.id}|${date}|${period}|${facultyId}|vacancy-${index + 1}`,
                         facultyAbbr,
-                        allocation: { baseId: base.id, baseCode: base.code, date, period, facultyId, facultyAbbr },
+                        allocation: { baseId: base.id, baseCode: base.code, baseType: base.type, date, period, facultyId, facultyAbbr },
                     });
                 }
             }
@@ -738,6 +749,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 allocation: {
                     baseId: base.id,
                     baseCode: base.code,
+                    baseType: base.type,
                     baseName: base.name,
                     date,
                     period,
@@ -780,9 +792,17 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         }
 
         const query = allocSearch.trim().toLowerCase();
+        const isCruShiftAlloc = allocation.baseType === "CENTRAL" && allocation.period === "DAY" && allocShift;
         const busyInternIds = new Set(
             assignments
-                .filter((assignment) => assignment.date === allocation.date && assignment.period === allocation.period)
+                .filter((assignment) => {
+                    if (assignment.date !== allocation.date || assignment.period !== allocation.period) return false;
+                    // For CRU shift allocation, only block if same shift is already taken
+                    if (isCruShiftAlloc && assignment.base_type === "CENTRAL") {
+                        return assignment.shift === allocShift;
+                    }
+                    return true;
+                })
                 .map((assignment) => assignment.intern_id),
         );
 
@@ -790,7 +810,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         let busyCount = 0;
 
         const eligibleInterns = users
-            .filter((user) => user.role === "INTERN" && user.isActive)
+            .filter((user) => user.role === "INTERN" && user.isActive && !user.isArchived)
             .filter((user) => !activeCandidateFacultyFilter || user.facultyId === activeCandidateFacultyFilter)
             .filter((user) => {
                 if (busyInternIds.has(user.id)) {
@@ -824,7 +844,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             });
 
         return { eligibleInterns, blockedCount, busyCount };
-    }, [activeCandidateFacultyFilter, allocSearch, allocation, assignments, cruConflicts, isRetroactiveAdminAllocation, users]);
+    }, [activeCandidateFacultyFilter, allocSearch, allocShift, allocation, assignments, cruConflicts, isRetroactiveAdminAllocation, users]);
 
     async function openAllocation(slot: AllocationState) {
         await loadUsers();
@@ -833,6 +853,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setAllocCandidateFacultyFilter(slot.facultyId ?? "ALL");
         setAllocInternId("");
         setAllocSearch("");
+        const isCruShift = slot.baseType === "CENTRAL" && slot.period === "DAY"
+            && (slot.facultyAbbr === "EBMSP" || faculties.find(f => f.id === slot.facultyId)?.abbreviation === "EBMSP");
+        setAllocShift(isCruShift ? "MORNING" : "");
         setMessage(null);
     }
 
@@ -852,6 +875,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     baseId: allocation.baseId,
                     date: allocation.date,
                     period: allocation.period,
+                    shift: allocShift || null,
                     allowRetroactiveOverride: isRetroactiveAdminAllocation,
                     allowAdminOpenAllocation: isManualOpenAllocation,
                 }),
@@ -1249,7 +1273,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
                             <div>
                                 <h3 className="text-lg font-semibold text-slate-900">Alocar interno na vaga</h3>
-                                <p className="text-sm text-slate-500">{allocation.baseCode} · {formatDayMonth(allocation.date)} · {formatPeriod(allocation.period)} · {allocation.facultyAbbr ?? "faculdade livre"}</p>
+                                <p className="text-sm text-slate-500">{allocation.baseCode} · {formatDayMonth(allocation.date)} · {formatPeriod(allocation.period, allocShift || null)} · {allocation.facultyAbbr ?? "faculdade livre"}</p>
                             </div>
                             <button type="button" onClick={() => {
                                 setAllocation(null);
@@ -1298,6 +1322,28 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                                 <input value={allocSearch} onChange={(event) => setAllocSearch(event.target.value)} placeholder={activeCandidateFacultyFilter ? "Buscar pelo nome dentro da faculdade" : "Buscar qualquer interno ativo"} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-accent-400 focus:bg-white" />
                             </label>
+
+                            {allocation.baseType === "CENTRAL" && allocation.period === "DAY" && (allocation.facultyAbbr === "EBMSP" || faculties.find(f => f.id === assignmentFacultyId)?.abbreviation === "EBMSP") && (
+                                <div>
+                                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Turno CRU (EBMSP)</p>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setAllocShift("MORNING")}
+                                            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${allocShift === "MORNING" ? "bg-amber-100 text-amber-800 ring-2 ring-amber-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                                        >
+                                            ☀️ Manhã (07h–13h)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setAllocShift("AFTERNOON")}
+                                            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${allocShift === "AFTERNOON" ? "bg-orange-100 text-orange-800 ring-2 ring-orange-400" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                                        >
+                                            🌤️ Tarde (13h–19h)
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className={`rounded-xl px-3 py-2 text-xs ${isRetroactiveAdminAllocation ? "border border-sky-200 bg-sky-50 text-sky-800" : "border border-slate-200 bg-slate-50 text-slate-600"}`}>
                                 {allocation.facultyId
@@ -1428,7 +1474,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                         {selectedAssignment.faculty_abbr}
                                     </span>
                                 </div>
-                                <p className="mt-1 text-sm text-slate-500">{selectedAssignment.base_code} — {selectedAssignment.base_name} · {formatDayMonth(selectedAssignment.date)} · {formatPeriod(selectedAssignment.period)}</p>
+                                <p className="mt-1 text-sm text-slate-500">{selectedAssignment.base_code} — {selectedAssignment.base_name} · {formatDayMonth(selectedAssignment.date)} · {formatPeriod(selectedAssignment.period, selectedAssignment.shift)}</p>
                             </div>
                             <button type="button" onClick={() => setSelectedAssignmentId(null)} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
                         </div>
@@ -1497,7 +1543,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                     <p>Interno: <span className="font-medium text-slate-700">{selectedAssignment.intern_name}</span></p>
                                     <p className="mt-1">Faculdade: <span className="font-medium text-slate-700">{selectedAssignment.faculty_abbr}</span></p>
                                     <p className="mt-1">Base: <span className="font-medium text-slate-700">{selectedAssignment.base_code}</span></p>
-                                    <p className="mt-1">Turno: <span className="font-medium text-slate-700">{formatPeriod(selectedAssignment.period)}</span></p>
+                                    <p className="mt-1">Turno: <span className="font-medium text-slate-700">{formatPeriod(selectedAssignment.period, selectedAssignment.shift)}</span></p>
                                 </div>
                             </div>
                         </div>
