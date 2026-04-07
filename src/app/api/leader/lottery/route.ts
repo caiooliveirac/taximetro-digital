@@ -205,7 +205,10 @@ export async function POST(req: NextRequest) {
   function canAssign(internId: string, pos: Pos, shiftCount: number): boolean {
     const key = isEbmsp && pos.shift ? `${pos.date}|${pos.period}|${pos.shift}` : `${pos.date}|${pos.period}`;
     if (usedSlots.get(internId)?.has(key)) return false;
-    if (cruBlocked.get(internId)?.has(`${pos.date}|${pos.period}`)) return false;
+    // CRU/CRL targets are exempt from ±12h conflict (only blocks USA)
+    if (pos.baseType !== "CENTRAL" && pos.baseCode !== "CRL") {
+      if (cruBlocked.get(internId)?.has(`${pos.date}|${pos.period}`)) return false;
+    }
     if (shiftCount >= maxShifts) return false;
     return true;
   }

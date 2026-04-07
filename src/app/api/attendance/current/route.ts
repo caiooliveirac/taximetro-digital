@@ -21,6 +21,7 @@ type EnrichedRow = {
     period: string;
     shift: string | null;
     status: string;
+    isExtraShift: boolean;
     notes: string | null;
     updatedAt: Date;
     checkinId: string | null;
@@ -70,6 +71,7 @@ function serializeAssignment(row: EnrichedRow) {
         period: row.period,
         shift: row.shift,
         status: row.status,
+        isExtraShift: row.isExtraShift,
         notes: row.notes,
         checkinStatus: row.checkinStatus,
     };
@@ -112,6 +114,7 @@ export async function GET(req: NextRequest) {
             period: assignments.period,
             shift: assignments.shift,
             status: assignments.status,
+            isExtraShift: assignments.isExtraShift,
             notes: assignments.notes,
             updatedAt: assignments.updatedAt,
             checkinId: checkins.id,

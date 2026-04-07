@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState, Fragment } from "react";
-import { Sun, Moon, Plus, Loader2, Trash2, X, Save } from "lucide-react";
+import { Sun, Moon, Plus, Loader2, Trash2, X, Save, Lock } from "lucide-react";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 
 type Rule = {
     id: string; baseId: string; baseCode: string; baseName: string;
     dayOfWeek: string; period: string; facultyId: string; facultyAbbr: string;
     capacity: number; isActive: boolean;
+    isBlocked: boolean; blockedReason: string | null; blockedBy: string | null; blockedAt: string | null;
 };
 type Base = { id: string; code: string; name: string; type: string; isActive?: boolean };
 type Faculty = { id: string; abbreviation: string; name: string };
@@ -15,6 +16,7 @@ type Faculty = { id: string; abbreviation: string; name: string };
 type EditState = {
     baseId: string; baseCode: string; dayOfWeek: string; period: string;
     facultyId: string; capacity: number; ruleId?: string;
+    isBlocked: boolean; blockedReason: string;
 };
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const;
@@ -56,12 +58,12 @@ export function AdminRulesBoard() {
     }
 
     function openNew(baseId: string, baseCode: string, day: string, period: string) {
-        setEditing({ baseId, baseCode, dayOfWeek: day, period, facultyId: "", capacity: 1 });
+        setEditing({ baseId, baseCode, dayOfWeek: day, period, facultyId: "", capacity: 1, isBlocked: false, blockedReason: "" });
         setError("");
     }
 
     function openEdit(rule: Rule) {
-        setEditing({ baseId: rule.baseId, baseCode: rule.baseCode, dayOfWeek: rule.dayOfWeek, period: rule.period, facultyId: rule.facultyId, capacity: rule.capacity, ruleId: rule.id });
+        setEditing({ baseId: rule.baseId, baseCode: rule.baseCode, dayOfWeek: rule.dayOfWeek, period: rule.period, facultyId: rule.facultyId, capacity: rule.capacity, ruleId: rule.id, isBlocked: rule.isBlocked, blockedReason: rule.blockedReason ?? "" });
         setError("");
     }
 
@@ -70,8 +72,8 @@ export function AdminRulesBoard() {
         setSaving(true);
         setError("");
         const body = editing.ruleId
-            ? { id: editing.ruleId, facultyId: editing.facultyId, capacity: editing.capacity }
-            : { baseId: editing.baseId, dayOfWeek: editing.dayOfWeek, period: editing.period, facultyId: editing.facultyId, capacity: editing.capacity };
+            ? { id: editing.ruleId, facultyId: editing.facultyId, capacity: editing.capacity, isBlocked: editing.isBlocked, blockedReason: editing.isBlocked ? editing.blockedReason || null : null }
+            : { baseId: editing.baseId, dayOfWeek: editing.dayOfWeek, period: editing.period, facultyId: editing.facultyId, capacity: editing.capacity, isBlocked: editing.isBlocked, blockedReason: editing.isBlocked ? editing.blockedReason || null : null };
         const res = await fetch("/taximetro/api/admin/rules", {
             method: editing.ruleId ? "PUT" : "POST",
             headers: { "Content-Type": "application/json" },
@@ -174,7 +176,7 @@ export function AdminRulesBoard() {
                     </div>
                     <div className="flex flex-wrap items-end gap-2">
                         <label className="block">
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Faculdade</span>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Faculdade / Tipo</span>
                             <select
                                 value={editing.facultyId}
                                 onChange={(event) => setEditing({ ...editing, facultyId: event.target.value })}
@@ -189,12 +191,52 @@ export function AdminRulesBoard() {
                             <input
                                 type="number"
                                 min={1}
-                                max={10}
+                                max={20}
                                 value={editing.capacity}
                                 onChange={(event) => setEditing({ ...editing, capacity: +event.target.value })}
-                                className="mt-0.5 block w-16 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+                                disabled={editing.isBlocked}
+                                className="mt-0.5 block w-16 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500 disabled:opacity-50"
                             />
                         </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={editing.isBlocked}
+                                onChange={(event) => setEditing({ ...editing, isBlocked: event.target.checked })}
+                                className="h-4 w-4 rounded border-slate-300 text-slate-600 focus:ring-slate-500"
+                            />
+                            <span className="text-xs font-medium text-slate-700 flex items-center gap-1">
+                                <Lock className="h-3 w-3" /> Bloqueado
+                            </span>
+                        </label>
+                        {editing.isBlocked && (
+                            <label className="block">
+                                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Motivo</span>
+                                <select
+                                    value={editing.blockedReason}
+                                    onChange={(event) => setEditing({ ...editing, blockedReason: event.target.value })}
+                                    className="mt-0.5 block w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+                                >
+                                    <option value="">Selecionar motivo...</option>
+                                    <option value="Pós-Graduação">PÓS — Pós-Graduação</option>
+                                    <option value="Residência Médica">RESI — Residência Médica</option>
+                                    <option value="Outro">Outro</option>
+                                </select>
+                            </label>
+                        )}
+                        {editing.isBlocked && editing.blockedReason === "Outro" && (
+                            <label className="block">
+                                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Motivo personalizado</span>
+                                <input
+                                    type="text"
+                                    maxLength={100}
+                                    value={editing.blockedReason === "Outro" ? "" : editing.blockedReason}
+                                    onChange={(event) => setEditing({ ...editing, blockedReason: event.target.value })}
+                                    placeholder="Ex: Manutenção"
+                                    className="mt-0.5 block w-40 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+                                />
+                            </label>
+                        )}
                         <button
                             onClick={saveRule}
                             disabled={saving || !editing.facultyId}
@@ -243,6 +285,19 @@ export function AdminRulesBoard() {
                                     <div key={`${base.id}-${day}`} className={`flex min-h-[56px] flex-col justify-center gap-0.5 border-b border-l border-slate-100 p-1 transition-colors ${isEditing ? "bg-accent-50/40" : "hover:bg-slate-50/50"}`}>
                                         <div className={`flex flex-wrap items-center gap-0.5 transition-opacity ${hlPeriod === "NIGHT" ? "opacity-15" : ""}`}>
                                             {dayRules.map((rule) => {
+                                                if (rule.isBlocked) {
+                                                    return (
+                                                        <button
+                                                            key={rule.id}
+                                                            onClick={() => openEdit(rule)}
+                                                            title={`🔒 ${rule.blockedReason ?? "Bloqueado"} — Clique para editar`}
+                                                            className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-slate-600 px-1 py-px text-[10px] font-semibold text-white transition-all hover:opacity-75"
+                                                        >
+                                                            <Lock className="h-2.5 w-2.5 shrink-0" strokeWidth={2} />
+                                                            <span className="truncate">{rule.blockedReason === "Residência Médica" ? "RESI" : rule.blockedReason === "Pós-Graduação" ? "PÓS" : rule.blockedReason?.slice(0, 6) ?? "🔒"}</span>
+                                                        </button>
+                                                    );
+                                                }
                                                 const style = getFacultyStyle(rule.facultyAbbr);
                                                 const dim = hlFaculty && hlFaculty !== rule.facultyAbbr;
                                                 return (
@@ -270,6 +325,19 @@ export function AdminRulesBoard() {
 
                                         <div className={`flex flex-wrap items-center gap-0.5 transition-opacity ${hlPeriod === "DAY" ? "opacity-15" : ""}`}>
                                             {nightRules.map((rule) => {
+                                                if (rule.isBlocked) {
+                                                    return (
+                                                        <button
+                                                            key={rule.id}
+                                                            onClick={() => openEdit(rule)}
+                                                            title={`🔒 ${rule.blockedReason ?? "Bloqueado"} — Clique para editar`}
+                                                            className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-slate-600 px-1 py-px text-[10px] font-semibold text-white transition-all hover:opacity-75"
+                                                        >
+                                                            <Lock className="h-2.5 w-2.5 shrink-0" strokeWidth={2} />
+                                                            <span className="truncate">{rule.blockedReason === "Residência Médica" ? "RESI" : rule.blockedReason === "Pós-Graduação" ? "PÓS" : rule.blockedReason?.slice(0, 6) ?? "🔒"}</span>
+                                                        </button>
+                                                    );
+                                                }
                                                 const style = getFacultyStyle(rule.facultyAbbr);
                                                 const dim = hlFaculty && hlFaculty !== rule.facultyAbbr;
                                                 return (

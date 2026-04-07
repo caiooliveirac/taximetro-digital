@@ -16,6 +16,7 @@ type Assignment = {
   date: string;
   period: string;
   status: string;
+  isExtraShift?: boolean;
   absenceJustification?: string | null;
   absenceJustificationActor?: string | null;
   absenceJustificationAt?: string | null;
@@ -57,7 +58,7 @@ export default function InternHistorico() {
     });
   }, []);
 
-  const completed = assignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status));
+  const completed = assignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status) && !a.isExtraShift);
   const totalHours = completed.length * 12;
 
   function handleJustificationSaved(assignmentId: string, data: {
@@ -192,7 +193,12 @@ export default function InternHistorico() {
                       {a.period === "DAY" ? "D" : "N"}
                     </span>
                   </TableCell>
-                  <TableCell><StatusBadge status={a.status} /></TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <StatusBadge status={a.status} />
+                      {a.isExtraShift && <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">EXTRA</span>}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {a.status === "ABSENT" ? (
                       <div className="space-y-1">

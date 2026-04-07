@@ -32,6 +32,8 @@ export async function GET(req: NextRequest) {
       a.period,
       a.shift,
       a.status,
+      a.is_extra_shift,
+      a.extra_shift_notes,
       a.notes,
       c.geo_valid,
       c.status AS checkin_status,

@@ -18,6 +18,7 @@ type Assignment = {
   id: string; internId: string; internName: string;
   baseId: string; baseCode: string; baseName: string; baseType: string;
   date: string; period: string; shift: string | null; status: string;
+  isExtraShift?: boolean; extraShiftNotes?: string | null;
   checkinGeoValid?: boolean | null;
 };
 type Slot = {
@@ -143,6 +144,8 @@ export default function LeaderEscala() {
   const [allocLoading, setAllocLoading] = useState(false);
   const [allocMsg, setAllocMsg] = useState("");
   const [allocShift, setAllocShift] = useState<"MORNING" | "AFTERNOON" | "">("");
+  const [allocIsExtraShift, setAllocIsExtraShift] = useState(false);
+  const [allocExtraShiftNotes, setAllocExtraShiftNotes] = useState("");
 
   /* ── Remove assignment (cancel) ── */
   const [removeTarget, setRemoveTarget] = useState<Assignment | null>(null);
@@ -391,6 +394,8 @@ export default function LeaderEscala() {
     setAllocInternId("");
     setAllocSearch("");
     setAllocMsg("");
+    setAllocIsExtraShift(false);
+    setAllocExtraShiftNotes("");
     const isCruShift = baseType === "CENTRAL" && period === "DAY";
     setAllocShift(isCruShift ? "MORNING" : "");
   }
@@ -415,6 +420,7 @@ export default function LeaderEscala() {
           date: allocSlot.date,
           period: allocSlot.period,
           ...(allocShift ? { shift: allocShift } : {}),
+          ...(allocIsExtraShift ? { isExtraShift: true, extraShiftNotes: allocExtraShiftNotes || undefined } : {}),
         }),
       });
 
@@ -576,7 +582,9 @@ export default function LeaderEscala() {
           return false;
         }
 
-        if (cruConflicts.has(`${intern.id}|${allocSlot.date}|${allocSlot.period}`)) {
+        // CRU/CRL targets are exempt from ±12h conflict (only blocks USA)
+        const isTargetCru = allocSlot.baseType === "CENTRAL" || allocSlot.baseCode === "CRL";
+        if (!isTargetCru && cruConflicts.has(`${intern.id}|${allocSlot.date}|${allocSlot.period}`)) {
           blockedCount += 1;
           return false;
         }
@@ -739,13 +747,17 @@ export default function LeaderEscala() {
                             {periodAssignments.map((assignment) => {
                               const ring = getStatusRing(assignment);
                               const isCruBlocked = cruConflicts.has(`${assignment.internId}|${normalizeDateKey(assignment.date)}|${assignment.period}`);
+                              const isExtra = assignment.isExtraShift;
                               return (
                                 <div
                                   key={assignment.id}
                                   onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
-                                  className={`group rounded-md px-2 py-1 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition hover:opacity-80 ${periodStyle.bg} ${periodStyle.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""}`}
-                                  title={`${assignment.internName} · ${assignment.status}${assignment.shift ? ` · ${assignment.shift === "MORNING" ? "Manhã" : "Tarde"}` : ""}${capacity === 0 ? " · sem vaga configurada" : ""}${isCruBlocked ? " · conflito CRU ±12h" : ""}`}
+                                  className={`group relative rounded-md px-2 py-1 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition hover:opacity-80 ${periodStyle.bg} ${periodStyle.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""} ${isExtra ? "extra-shift-card" : ""}`}
+                                  title={`${assignment.internName} · ${assignment.status}${assignment.shift ? ` · ${assignment.shift === "MORNING" ? "Manhã" : "Tarde"}` : ""}${capacity === 0 ? " · sem vaga configurada" : ""}${isCruBlocked ? " · conflito CRU ±12h" : ""}${isExtra ? " · Plantão Extra" : ""}`}
+                                  style={isExtra ? { boxShadow: "0 0 6px 1px rgba(99,102,241,0.5)" } : undefined}
                                 >
+                                  {isExtra && <span className="pointer-events-none absolute inset-0 extra-shift-shimmer rounded-md" />}
+                                  {isExtra && <span className="text-[8px] font-bold text-indigo-700 shrink-0">EX</span>}
                                   {isCruBlocked && <span className="text-red-600 text-[10px]">⚠️</span>}
                                   {assignment.shift && <span className="text-[9px] font-bold shrink-0">{assignment.shift === "MORNING" ? "M" : "T"}</span>}
                                   <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
@@ -871,13 +883,17 @@ export default function LeaderEscala() {
                           <div className="space-y-1">
                             {cellAssignments.map((assignment) => {
                               const ring = getStatusRing(assignment);
+                              const isExtra = assignment.isExtraShift;
                               return (
                                 <div
                                   key={assignment.id}
                                   onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
-                                  className={`group flex cursor-pointer items-center gap-1 rounded-md bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700 transition hover:opacity-80 ${ring}`}
-                                  title={`${assignment.internName} · ${assignment.status}`}
+                                  className={`group relative flex cursor-pointer items-center gap-1 rounded-md bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700 transition hover:opacity-80 ${ring} ${isExtra ? "extra-shift-card" : ""}`}
+                                  title={`${assignment.internName} · ${assignment.status}${isExtra ? " · Plantão Extra" : ""}`}
+                                  style={isExtra ? { boxShadow: "0 0 6px 1px rgba(99,102,241,0.5)" } : undefined}
                                 >
+                                  {isExtra && <span className="pointer-events-none absolute inset-0 extra-shift-shimmer rounded-md" />}
+                                  {isExtra && <span className="text-[8px] font-bold text-indigo-700 shrink-0">EX</span>}
                                   <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                                   {assignment.status === "SCHEDULED" && (
                                     <button
@@ -981,13 +997,17 @@ export default function LeaderEscala() {
                       <div className="space-y-1">
                         {periodAssignments.map((assignment) => {
                           const ring = getStatusRing(assignment);
+                          const isExtra = assignment.isExtraShift;
                           return (
                             <div
                               key={assignment.id}
                               onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
-                              className={`group flex cursor-pointer items-center gap-1 rounded-md bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 transition hover:opacity-80 ${ring}`}
-                              title={`${assignment.internName} · ${assignment.status}${assignment.shift ? ` · ${assignment.shift === "MORNING" ? "Manhã" : "Tarde"}` : ""}`}
+                              className={`group relative flex cursor-pointer items-center gap-1 rounded-md bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 transition hover:opacity-80 ${ring} ${isExtra ? "extra-shift-card" : ""}`}
+                              title={`${assignment.internName} · ${assignment.status}${assignment.shift ? ` · ${assignment.shift === "MORNING" ? "Manhã" : "Tarde"}` : ""}${isExtra ? " · Plantão Extra" : ""}`}
+                              style={isExtra ? { boxShadow: "0 0 6px 1px rgba(99,102,241,0.5)" } : undefined}
                             >
+                              {isExtra && <span className="pointer-events-none absolute inset-0 extra-shift-shimmer rounded-md" />}
+                              {isExtra && <span className="text-[8px] font-bold text-indigo-700 shrink-0">EX</span>}
                               {assignment.shift && <span className="text-[9px] font-bold shrink-0">{assignment.shift === "MORNING" ? "M" : "T"}</span>}
                               <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                               {assignment.status === "SCHEDULED" && (
@@ -1409,6 +1429,26 @@ export default function LeaderEscala() {
                   {allocationCandidates.busyCount > 0 && <p>{allocationCandidates.busyCount} interno(s) já ocupados neste mesmo dia e turno.</p>}
                 </div>
               )}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allocIsExtraShift}
+                    onChange={(e) => setAllocIsExtraShift(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">Plantão Extra</span>
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">Não conta para o rodízio</span>
+                </label>
+                {allocIsExtraShift && (
+                  <input
+                    value={allocExtraShiftNotes}
+                    onChange={(e) => setAllocExtraShiftNotes(e.target.value)}
+                    placeholder="Observações (opcional)"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  />
+                )}
+              </div>
               {allocMsg && <p className="text-sm">{allocMsg}</p>}
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">

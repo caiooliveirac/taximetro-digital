@@ -60,6 +60,8 @@ type AssignmentDetail = {
     period: "DAY" | "NIGHT";
     shift: string | null;
     status: string;
+    is_extra_shift: boolean;
+    extra_shift_notes: string | null;
     notes: string | null;
     geo_valid: boolean | null;
     checkin_status: string | null;
@@ -343,14 +345,21 @@ function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "
     const visual = getAssignmentVisualState(assignment, period);
     const Icon = visual.icon;
     const facultyTone = getFacultyBadgeClass(assignment.faculty_abbr, facultyBadgeMode, visual.darkSurface ? "NIGHT" : undefined);
+    const isExtra = assignment.is_extra_shift;
+    const extraGlowStyle = isExtra ? getFacultyStyle(assignment.faculty_abbr) : null;
 
     return (
         <button
             type="button"
             onClick={() => onSelect(assignment.id)}
-            className={`group flex min-h-[56px] w-full min-w-0 items-stretch justify-between gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.12)] ${visual.cardClass} ${visual.animationClass} ${getMutedSlotClass(assignment.date, "assignment", assignment.status)}`}
-            title={getAssignmentCardTitle(assignment)}
+            className={`group relative flex min-h-[56px] w-full min-w-0 items-stretch justify-between gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.12)] ${visual.cardClass} ${visual.animationClass} ${getMutedSlotClass(assignment.date, "assignment", assignment.status)} ${isExtra ? "extra-shift-card" : ""}`}
+            title={getAssignmentCardTitle(assignment) + (isExtra ? " (Plantão Extra)" : "")}
+            style={isExtra && extraGlowStyle ? { boxShadow: `0 0 8px 2px ${extraGlowStyle.glowColor ?? "rgba(99,102,241,0.6)"}` } : undefined}
         >
+            {isExtra && <span className="pointer-events-none absolute inset-0 extra-shift-shimmer" />}
+            {isExtra && (
+                <span className="absolute right-1 top-1 z-10 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">EXTRA</span>
+            )}
             <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-semibold leading-tight">{formatAssignmentCardName(assignment.intern_name)}</span>
                 <span className="mt-1 flex items-center gap-2">
@@ -456,6 +465,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [allocSearch, setAllocSearch] = useState("");
     const [allocShift, setAllocShift] = useState<"MORNING" | "AFTERNOON" | "">("");
     const [allocLoading, setAllocLoading] = useState(false);
+    const [allocIsExtraShift, setAllocIsExtraShift] = useState(false);
+    const [allocExtraShiftNotes, setAllocExtraShiftNotes] = useState("");
     const [removingId, setRemovingId] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -818,7 +829,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     return false;
                 }
 
-                if (!isRetroactiveAdminAllocation && cruConflicts.has(`${user.id}|${allocation.date}|${allocation.period}`)) {
+                // CRU/CRL targets are exempt from ±12h conflict (only blocks USA)
+                const isTargetCru = allocation.baseType === "CENTRAL" || allocation.baseCode === "CRL";
+                if (!isTargetCru && !isRetroactiveAdminAllocation && cruConflicts.has(`${user.id}|${allocation.date}|${allocation.period}`)) {
                     blockedCount += 1;
                     return false;
                 }
@@ -853,6 +866,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setAllocCandidateFacultyFilter(slot.facultyId ?? "ALL");
         setAllocInternId("");
         setAllocSearch("");
+        setAllocIsExtraShift(false);
+        setAllocExtraShiftNotes("");
         const isCruShift = slot.baseType === "CENTRAL" && slot.period === "DAY"
             && (slot.facultyAbbr === "EBMSP" || faculties.find(f => f.id === slot.facultyId)?.abbreviation === "EBMSP");
         setAllocShift(isCruShift ? "MORNING" : "");
@@ -878,6 +893,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     shift: allocShift || null,
                     allowRetroactiveOverride: isRetroactiveAdminAllocation,
                     allowAdminOpenAllocation: isManualOpenAllocation,
+                    isExtraShift: allocIsExtraShift,
+                    extraShiftNotes: allocIsExtraShift ? allocExtraShiftNotes || null : null,
                 }),
             });
             const json = await response.json();
@@ -1355,6 +1372,32 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             {assignmentFacultyId && (
                                 <div className={`rounded-xl px-3 py-2 text-xs ${isRetroactiveAdminAllocation ? "border border-sky-200 bg-sky-50 text-sky-800" : "border border-slate-200 bg-slate-50 text-slate-600"}`}>
                                     Faculdade que será registrada no plantão: {faculties.find((faculty) => faculty.id === assignmentFacultyId)?.abbreviation ?? selectedAllocUser?.facultyAbbr ?? "—"}
+                                </div>
+                            )}
+
+                            {/* Extra Shift toggle */}
+                            <div className="flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50/50 px-3 py-2">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={allocIsExtraShift}
+                                        onChange={(event) => setAllocIsExtraShift(event.target.checked)}
+                                        className="h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-sm font-medium text-indigo-900">Este é um plantão extra</span>
+                                </label>
+                                <span className="text-[10px] text-indigo-600">Não conta para o rodízio</span>
+                            </div>
+                            {allocIsExtraShift && (
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Notas (opcional)</label>
+                                    <input
+                                        type="text"
+                                        value={allocExtraShiftNotes}
+                                        onChange={(event) => setAllocExtraShiftNotes(event.target.value)}
+                                        placeholder="Ex: Cobertura de evento SAMU"
+                                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
                                 </div>
                             )}
 
