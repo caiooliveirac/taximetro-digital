@@ -1,5 +1,6 @@
 -- Materialized view: available_slots
 -- Shows slot rules with how many are currently filled vs capacity
+-- Respects: is_blocked (capacity=0), excludes is_extra_shift from filled count
 
 DROP MATERIALIZED VIEW IF EXISTS available_slots;
 
@@ -14,8 +15,10 @@ SELECT
   sr.faculty_id,
   f.abbreviation AS faculty_abbr,
   sr.capacity,
-  COALESCE(filled.count, 0)::int AS filled,
-  (sr.capacity - COALESCE(filled.count, 0))::int AS available
+  sr.is_blocked,
+  sr.blocked_reason,
+  CASE WHEN sr.is_blocked THEN 0 ELSE COALESCE(filled.count, 0)::int END AS filled,
+  CASE WHEN sr.is_blocked THEN 0 ELSE (sr.capacity - COALESCE(filled.count, 0))::int END AS available
 FROM slot_rules sr
 JOIN bases b ON b.id = sr.base_id
 JOIN faculties f ON f.id = sr.faculty_id
@@ -26,6 +29,7 @@ LEFT JOIN LATERAL (
     AND a.faculty_id = sr.faculty_id
     AND a.period = sr.period
     AND a.status NOT IN ('CANCELLED')
+    AND a.is_extra_shift = false
     AND EXTRACT(DOW FROM a.date::date) = CASE sr.day_of_week
       WHEN 'MON' THEN 1 WHEN 'TUE' THEN 2 WHEN 'WED' THEN 3
       WHEN 'THU' THEN 4 WHEN 'FRI' THEN 5 WHEN 'SAT' THEN 6 WHEN 'SUN' THEN 0

@@ -83,19 +83,45 @@ body {
 }
 
 /* ── Status badge classes ── */
-.badge-confirmed   { @apply bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20; }
-.badge-pending     { @apply bg-amber-50 text-amber-700 ring-1 ring-amber-600/20; }
-.badge-absent      { @apply bg-red-50 text-red-700 ring-1 ring-red-600/20; }
-.badge-scheduled   { @apply bg-indigo-50 text-indigo-700 ring-1 ring-indigo-600/20; }
-.badge-cancelled   { @apply bg-gray-100 text-gray-500 ring-1 ring-gray-400/20; }
-.badge-checkedin   { @apply bg-sky-50 text-sky-700 ring-1 ring-sky-600/20; }
-.badge-checkedout  { @apply bg-blue-50 text-blue-700 ring-1 ring-blue-600/20; }
+.badge-confirmed {
+  @apply bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20;
+}
+
+.badge-pending {
+  @apply bg-amber-50 text-amber-700 ring-1 ring-amber-600/20;
+}
+
+.badge-absent {
+  @apply bg-red-50 text-red-700 ring-1 ring-red-600/20;
+}
+
+.badge-scheduled {
+  @apply bg-indigo-50 text-indigo-700 ring-1 ring-indigo-600/20;
+}
+
+.badge-cancelled {
+  @apply bg-gray-100 text-gray-500 ring-1 ring-gray-400/20;
+}
+
+.badge-checkedin {
+  @apply bg-sky-50 text-sky-700 ring-1 ring-sky-600/20;
+}
+
+.badge-checkedout {
+  @apply bg-blue-50 text-blue-700 ring-1 ring-blue-600/20;
+}
 
 /* ── Skeleton loading ── */
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
 }
+
 .skeleton {
   background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
   background-size: 200% 100%;
@@ -105,24 +131,82 @@ body {
 
 /* ── Page enter transition ── */
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
-main > * {
+
+main>* {
   animation: fadeInUp 200ms ease-out;
 }
 
 /* ── Validated check animation ── */
 @keyframes checkPop {
-  0%   { transform: scale(0.5); opacity: 0; }
-  60%  { transform: scale(1.1); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+
+  60% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
-.animate-check { animation: checkPop 400ms ease-out; }
+
+.animate-check {
+  animation: checkPop 400ms ease-out;
+}
 
 /* ── Live indicator pulse ── */
 @keyframes livePulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.4; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
 }
-.animate-live { animation: livePulse 2s ease-in-out infinite; }
+
+.animate-live {
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+/* ── Extra shift shimmer overlay ── */
+@keyframes extraShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.extra-shift-shimmer {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 40%,
+      rgba(255, 255, 255, 0.25) 50%,
+      rgba(255, 255, 255, 0.15) 60%,
+      transparent 100%);
+  animation: extraShimmer 3s ease-in-out infinite;
+}
+
+.extra-shift-card {
+  position: relative;
+  overflow: hidden;
+}

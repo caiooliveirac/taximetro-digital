@@ -84,6 +84,7 @@ const FACULTY_STYLES: Record<string, {
   border: string;
   pill: string;
   label: string;
+  glowColor: string;
 }> = {
   EBMSP: {
     dot: "bg-emerald-500",
@@ -92,6 +93,7 @@ const FACULTY_STYLES: Record<string, {
     border: "border-emerald-200",
     pill: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20",
     label: "EBMSP",
+    glowColor: "rgba(16,185,129,0.6)",
   },
   UFBA: {
     dot: "bg-orange-500",
@@ -100,6 +102,7 @@ const FACULTY_STYLES: Record<string, {
     border: "border-orange-200",
     pill: "bg-orange-50 text-orange-700 ring-1 ring-orange-600/20",
     label: "UFBA",
+    glowColor: "rgba(249,115,22,0.6)",
   },
   UNIFACS: {
     dot: "bg-yellow-500",
@@ -108,6 +111,7 @@ const FACULTY_STYLES: Record<string, {
     border: "border-yellow-200",
     pill: "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-600/20",
     label: "UNIFACS",
+    glowColor: "rgba(234,179,8,0.6)",
   },
   ZARNS: {
     dot: "bg-sky-500",
@@ -116,6 +120,7 @@ const FACULTY_STYLES: Record<string, {
     border: "border-sky-200",
     pill: "bg-sky-50 text-sky-700 ring-1 ring-sky-600/20",
     label: "ZARNS",
+    glowColor: "rgba(14,165,233,0.6)",
   },
   AFYA: {
     dot: "bg-rose-500",
@@ -124,6 +129,7 @@ const FACULTY_STYLES: Record<string, {
     border: "border-rose-200",
     pill: "bg-rose-50 text-rose-700 ring-1 ring-rose-600/20",
     label: "AFYA",
+    glowColor: "rgba(244,63,94,0.6)",
   },
 };
 
@@ -134,6 +140,7 @@ const FALLBACK_FACULTY = {
   border: "border-slate-200",
   pill: "bg-slate-50 text-slate-600 ring-1 ring-slate-400/20",
   label: "?",
+  glowColor: "rgba(99,102,241,0.6)",
 };
 
 export function getFacultyStyle(abbr: string | undefined | null) {

@@ -103,6 +103,10 @@ export const slotRules = pgTable("slot_rules", {
   facultyId: uuid("faculty_id").notNull().references(() => faculties.id),
   capacity: integer("capacity").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true),
+  isBlocked: boolean("is_blocked").notNull().default(false),
+  blockedReason: varchar("blocked_reason", { length: 100 }),
+  blockedBy: uuid("blocked_by").references(() => users.id),
+  blockedAt: timestamp("blocked_at"),
 }, (t) => [
   uniqueIndex("uq_slot_rule").on(t.baseId, t.dayOfWeek, t.period, t.facultyId),
 ]);
@@ -116,6 +120,8 @@ export const assignments = pgTable("assignments", {
   period: shiftPeriodEnum("period").notNull(),
   shift: varchar("shift", { length: 10 }),  // 'MORNING' | 'AFTERNOON' | null (EBMSP only)
   status: assignmentStatusEnum("status").notNull().default("SCHEDULED"),
+  isExtraShift: boolean("is_extra_shift").notNull().default(false),
+  extraShiftNotes: text("extra_shift_notes"),
   createdBy: uuid("created_by").notNull().references(() => users.id),
   notes: text("notes"),
   absenceJustification: text("absence_justification"),

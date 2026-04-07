@@ -18,6 +18,8 @@ const createAssignmentSchema = z.object({
   notes: z.string().optional(),
   allowRetroactiveOverride: z.boolean().optional(),
   allowAdminOpenAllocation: z.boolean().optional(),
+  isExtraShift: z.boolean().optional().default(false),
+  extraShiftNotes: z.string().optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -49,6 +51,8 @@ export async function GET(req: NextRequest) {
       period: assignments.period,
       shift: assignments.shift,
       status: assignments.status,
+      isExtraShift: assignments.isExtraShift,
+      extraShiftNotes: assignments.extraShiftNotes,
       notes: assignments.notes,
       absenceJustification: assignments.absenceJustification,
       absenceJustificationActor: assignments.absenceJustificationActor,
@@ -119,8 +123,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = createAssignmentSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
-  const { allowRetroactiveOverride, allowAdminOpenAllocation, shift: rawShift, ...assignmentData } = parsed.data;
+  const { allowRetroactiveOverride, allowAdminOpenAllocation, shift: rawShift, isExtraShift, extraShiftNotes, ...assignmentData } = parsed.data;
   const shiftValue = rawShift ?? null;
+  const isExtra = isExtraShift ?? false;
   const allowCoordinatorRetroactiveOverride = user.role === "COORDINATOR"
     && allowRetroactiveOverride === true
     && assignmentData.date < localDateStr();
@@ -166,7 +171,8 @@ export async function POST(req: NextRequest) {
     && existingAssignment.facultyId === assignmentData.facultyId;
 
   if (!isCancelledSameSlot) {
-    if (!allowCoordinatorOpenAllocation) {
+    // Extra shifts don't consume slot capacity
+    if (!isExtra && !allowCoordinatorOpenAllocation) {
       const slot = await checkSlotAvailability(
         assignmentData.baseId,
         assignmentData.date,
@@ -180,7 +186,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!allowCoordinatorRetroactiveOverride) {
-      const cruCheck = await checkCruConflict(assignmentData.internId, assignmentData.date, assignmentData.period);
+      const cruCheck = await checkCruConflict(assignmentData.internId, assignmentData.date, assignmentData.period, undefined, assignmentData.baseId);
       if (cruCheck.conflicted) {
         return NextResponse.json({ success: false, error: cruCheck.reason }, { status: 409 });
       }
@@ -196,6 +202,8 @@ export async function POST(req: NextRequest) {
           baseId: assignmentData.baseId,
           shift: shiftValue,
           status: "SCHEDULED",
+          isExtraShift: isExtra,
+          extraShiftNotes: extraShiftNotes ?? null,
           notes: assignmentData.notes ?? null,
           updatedAt: new Date(),
         })
@@ -204,12 +212,14 @@ export async function POST(req: NextRequest) {
 
       await logAudit({
         userId: user.realUserId ?? user.id,
-        action: "REACTIVATE_CANCELLED_ASSIGNMENT",
+        action: isExtra ? "EXTRA_SHIFT_CREATED" : "REACTIVATE_CANCELLED_ASSIGNMENT",
         entity: "assignment",
         entityId: existingAssignment.id,
         payload: {
           ...assignmentData,
           shift: shiftValue,
+          isExtraShift: isExtra,
+          extraShiftNotes,
           allowRetroactiveOverride: allowCoordinatorRetroactiveOverride,
           allowAdminOpenAllocation: allowCoordinatorOpenAllocation,
           ...(user.isImpersonating ? { impersonating: user.id } : {}),
@@ -221,16 +231,19 @@ export async function POST(req: NextRequest) {
 
     const [created] = await db
       .insert(assignments)
-      .values({ ...assignmentData, shift: shiftValue, createdBy: user.realUserId ?? user.id })
+      .values({ ...assignmentData, shift: shiftValue, isExtraShift: isExtra, extraShiftNotes: extraShiftNotes ?? null, createdBy: user.realUserId ?? user.id })
       .returning();
 
     await logAudit({
       userId: user.realUserId ?? user.id,
-      action: "CREATE_ASSIGNMENT",
+      action: isExtra ? "EXTRA_SHIFT_CREATED" : "CREATE_ASSIGNMENT",
       entity: "assignment",
       entityId: created.id,
       payload: {
         ...assignmentData,
+        shift: shiftValue,
+        isExtraShift: isExtra,
+        extraShiftNotes,
         allowRetroactiveOverride: allowCoordinatorRetroactiveOverride,
         allowAdminOpenAllocation: allowCoordinatorOpenAllocation,
         ...(user.isImpersonating ? { impersonating: user.id } : {}),
@@ -297,6 +310,7 @@ export async function PUT(req: NextRequest) {
 
   if (!updated) return NextResponse.json({ success: false, error: "Assignment não encontrado" }, { status: 404 });
 
-  await logAudit({ userId: user.realUserId ?? user.id, action: "UPDATE_ASSIGNMENT", entity: "assignment", entityId: id, payload: { status, notes, ...(user.isImpersonating ? { impersonating: user.id } : {}) } });
+  const auditAction = (updated.isExtraShift && status === "CANCELLED") ? "EXTRA_SHIFT_CANCELLED" : "UPDATE_ASSIGNMENT";
+  await logAudit({ userId: user.realUserId ?? user.id, action: auditAction, entity: "assignment", entityId: id, payload: { status, notes, isExtraShift: updated.isExtraShift, ...(user.isImpersonating ? { impersonating: user.id } : {}) } });
   return NextResponse.json({ success: true, data: updated });
 }

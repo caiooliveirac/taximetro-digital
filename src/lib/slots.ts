@@ -33,6 +33,8 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
       facultyId: slotRules.facultyId,
       facultyAbbr: faculties.abbreviation,
       capacity: slotRules.capacity,
+      isBlocked: slotRules.isBlocked,
+      blockedReason: slotRules.blockedReason,
       nextDate: sql<string>`(
         SELECT d::date::text FROM generate_series(
           ${rangeStart}::date,
@@ -48,6 +50,7 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
            AND a.period = ${slotRules.period}
            AND a.faculty_id = ${slotRules.facultyId}
            AND a.status NOT IN ('CANCELLED', 'ABSENT')
+           AND a.is_extra_shift = false
            AND a.date = (
              SELECT d::date FROM generate_series(
                ${rangeStart}::date,
@@ -82,6 +85,8 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
     facultyId: string;
     facultyAbbr: string;
     capacity: number;
+    isBlocked: boolean;
+    blockedReason: string | null;
     nextDate: string;
     filled: number;
   }>();
@@ -103,6 +108,7 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
   }
 
   return Array.from(deduped.values())
+    .filter((r) => !r.isBlocked)
     .map((r) => ({
       ...r,
       available: r.capacity - Number(r.filled),
@@ -217,6 +223,7 @@ export async function checkSlotAvailability(
     .limit(1);
 
   if (!rule) return { available: false, capacity: 0, assigned: 0 };
+  if (rule.isBlocked) return { available: false, capacity: 0, assigned: 0 };
 
   // When shift is provided (EBMSP), count only same-shift assignments.
   // Each shift gets the full slot capacity (capacity=1 → 1 MORNING + 1 AFTERNOON).
@@ -227,6 +234,7 @@ export async function checkSlotAvailability(
     eq(assignments.facultyId, facultyId),
     ne(assignments.status, "CANCELLED"),
     ne(assignments.status, "ABSENT"),
+    eq(assignments.isExtraShift, false),
   ];
   if (shift) {
     conditions.push(eq(assignments.shift, shift));
@@ -317,6 +325,7 @@ export async function getCruBlockedSlots(
 
 /**
  * Check if a single intern has a CRU conflict for a specific date+period.
+ * CRU/CRL targets are exempt — the rule only blocks USA assignments adjacent to CRU/CRL.
  * Returns { conflicted: boolean, reason?: string }
  */
 export async function checkCruConflict(
@@ -324,7 +333,19 @@ export async function checkCruConflict(
   date: string,
   period: "DAY" | "NIGHT",
   excludeAssignmentId?: string,
+  targetBaseId?: string,
 ): Promise<{ conflicted: boolean; reason?: string }> {
+  // If the target base is CRU/CRL itself, skip ±12h conflict (CRU doesn't conflict with CRU)
+  if (targetBaseId) {
+    const [targetBase] = await db
+      .select({ code: bases.code })
+      .from(bases)
+      .where(eq(bases.id, targetBaseId))
+      .limit(1);
+    if (targetBase && (targetBase.code === "CRU" || targetBase.code === "CRL")) {
+      return { conflicted: false };
+    }
+  }
   const from = addDaysToDateStr(date, -1);
   const to = addDaysToDateStr(date, 1);
   const normalizedTargetDate = normalizeDateKey(date);

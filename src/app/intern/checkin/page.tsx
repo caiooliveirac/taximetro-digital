@@ -23,6 +23,7 @@ type Assignment = {
   period: string;
   shift?: string | null;
   status: string;
+  isExtraShift?: boolean;
   checkinStatus?: string | null;
 };
 
@@ -903,6 +904,12 @@ function InternCheckinContent() {
         /* IDLE — ready to check in */
       ) : (
         <div className="space-y-4">
+          {assignment.isExtraShift && (
+            <div className="flex items-center justify-center gap-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600" strokeWidth={1.5} />
+              <span className="text-lg font-bold uppercase tracking-wide text-amber-900">Plantão Extra</span>
+            </div>
+          )}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -927,9 +934,25 @@ function InternCheckinContent() {
               longitude={assignment.baseLongitude}
               label={`${assignment.baseCode} - ${assignment.baseName}`}
             />
-            <Button onClick={startCheckin} className="w-full gap-2" size="lg">
-              <MapPin className="h-4 w-4" strokeWidth={1.5} /> Iniciar Check-in
-            </Button>
+
+            {assignment.isExtraShift ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" strokeWidth={1.5} />
+                  <span className="inline-flex items-center rounded-full bg-amber-200 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-amber-900">Plantão Extra</span>
+                </div>
+                <p className="text-sm font-semibold text-amber-900">
+                  Este é um plantão extra e não será contabilizado no seu rodízio oficial. Não há necessidade de fazer check-in pelo sistema.
+                </p>
+                <p className="text-xs text-amber-700">
+                  Compareça normalmente à base e siga as orientações do preceptor.
+                </p>
+              </div>
+            ) : (
+              <Button onClick={startCheckin} className="w-full gap-2" size="lg">
+                <MapPin className="h-4 w-4" strokeWidth={1.5} /> Iniciar Check-in
+              </Button>
+            )}
 
             {canManageAssignment && assignment && (
               <Button asChild variant="outline" className="w-full gap-2">
