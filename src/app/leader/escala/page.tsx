@@ -24,7 +24,7 @@ type Assignment = {
 type Slot = {
   ruleId: string; baseId: string; baseCode: string; baseName: string; baseType: string;
   dayOfWeek: string; period: string; capacity: number; filled: number; available: number;
-  nextDate: string; facultyAbbr?: string;
+  nextDate: string; facultyAbbr?: string; isExtraShift?: boolean;
 };
 type CruFixed = {
   id: string; intern_id: string; intern_name: string;
@@ -213,14 +213,15 @@ export default function LeaderEscala() {
 
   /* ── Vacancy matrix from slots ── */
   const vacancyByBaseDay = useMemo(() => {
-    const m = new Map<string, { DAY: { cap: number }; NIGHT: { cap: number } }>();
+    const m = new Map<string, { DAY: { cap: number; hasExtra: boolean }; NIGHT: { cap: number; hasExtra: boolean } }>();
     for (const s of slots) {
       if (!s.nextDate || !weekDates.includes(s.nextDate)) continue;
       const key = `${s.baseId}|${s.nextDate}`;
-      if (!m.has(key)) m.set(key, { DAY: { cap: 0 }, NIGHT: { cap: 0 } });
+      if (!m.has(key)) m.set(key, { DAY: { cap: 0, hasExtra: false }, NIGHT: { cap: 0, hasExtra: false } });
       const entry = m.get(key)!;
       const p = s.period as "DAY" | "NIGHT";
       entry[p].cap += s.capacity;
+      if (s.isExtraShift) entry[p].hasExtra = true;
     }
     return m;
   }, [slots, weekDates]);
@@ -389,12 +390,12 @@ export default function LeaderEscala() {
   }
 
   /* ── Manual allocation ── */
-  function openAllocModal(baseId: string, baseCode: string, baseType: string, date: string, period: "DAY" | "NIGHT") {
+  function openAllocModal(baseId: string, baseCode: string, baseType: string, date: string, period: "DAY" | "NIGHT", isExtra?: boolean) {
     setAllocSlot({ baseId, baseCode, baseType, date, period });
     setAllocInternId("");
     setAllocSearch("");
     setAllocMsg("");
-    setAllocIsExtraShift(false);
+    setAllocIsExtraShift(isExtra ?? false);
     setAllocExtraShiftNotes("");
     const isCruShift = baseType === "CENTRAL" && period === "DAY";
     setAllocShift(isCruShift ? "MORNING" : "");
@@ -777,7 +778,7 @@ export default function LeaderEscala() {
                             {Array.from({ length: openCount }, (_, vacancyIndex) => (
                               <button
                                 key={`${base.id}|${d}|${period}|vacancy-${vacancyIndex + 1}`}
-                                onClick={() => openAllocModal(base.id, base.code, base.type, d, period)}
+                                onClick={() => openAllocModal(base.id, base.code, base.type, d, period, slotState?.[period].hasExtra)}
                                 className="flex w-full items-center gap-2 rounded-md border border-dashed border-amber-300 bg-white/90 px-2 py-1 text-left text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100"
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
@@ -910,7 +911,7 @@ export default function LeaderEscala() {
 
                             {openCount > 0 && (!filterPeriod || filterPeriod === "DAY") && (
                               <button
-                                onClick={() => openAllocModal(crlBase.id, crlBase.code, crlBase.type, d, "DAY")}
+                                onClick={() => openAllocModal(crlBase.id, crlBase.code, crlBase.type, d, "DAY", slotState?.DAY.hasExtra)}
                                 className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
                               >
                                 <Plus className="h-3.5 w-3.5" />
@@ -1025,7 +1026,7 @@ export default function LeaderEscala() {
 
                         {openCount > 0 && (
                           <button
-                            onClick={() => openAllocModal(cruBase.id, cruBase.code, cruBase.type, d, period)}
+                            onClick={() => openAllocModal(cruBase.id, cruBase.code, cruBase.type, d, period, slotState?.[period].hasExtra)}
                             className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
                           >
                             <Plus className="h-3.5 w-3.5" />

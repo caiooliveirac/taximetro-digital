@@ -13,6 +13,7 @@ const ruleSchema = z.object({
   facultyId: z.string().uuid(),
   capacity: z.number().int().min(0).max(20).default(1),
   isActive: z.boolean().default(true),
+  isExtraShift: z.boolean().default(false),
 });
 
 async function requireCoordinator(req: NextRequest) {
@@ -34,6 +35,7 @@ export async function GET() {
       facultyAbbr: faculties.abbreviation,
       capacity: slotRules.capacity,
       isActive: slotRules.isActive,
+      isExtraShift: slotRules.isExtraShift,
     })
     .from(slotRules)
     .innerJoin(bases, eq(bases.id, slotRules.baseId))

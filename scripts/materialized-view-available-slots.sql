@@ -16,6 +16,7 @@ SELECT
   sr.faculty_id,
   f.abbreviation AS faculty_abbr,
   sr.capacity,
+  sr.is_extra_shift,
   COALESCE(filled.count, 0)::int AS filled,
   (sr.capacity - COALESCE(filled.count, 0))::int AS available
 FROM slot_rules sr

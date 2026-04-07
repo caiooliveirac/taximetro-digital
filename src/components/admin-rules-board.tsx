@@ -7,14 +7,14 @@ import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 type Rule = {
     id: string; baseId: string; baseCode: string; baseName: string;
     dayOfWeek: string; period: string; facultyId: string; facultyAbbr: string;
-    capacity: number; isActive: boolean;
+    capacity: number; isActive: boolean; isExtraShift: boolean;
 };
 type Base = { id: string; code: string; name: string; type: string; isActive?: boolean };
 type Faculty = { id: string; abbreviation: string; name: string };
 
 type EditState = {
     baseId: string; baseCode: string; dayOfWeek: string; period: string;
-    facultyId: string; capacity: number; ruleId?: string;
+    facultyId: string; capacity: number; ruleId?: string; isExtraShift: boolean;
 };
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const;
@@ -56,12 +56,12 @@ export function AdminRulesBoard() {
     }
 
     function openNew(baseId: string, baseCode: string, day: string, period: string) {
-        setEditing({ baseId, baseCode, dayOfWeek: day, period, facultyId: "", capacity: 1 });
+        setEditing({ baseId, baseCode, dayOfWeek: day, period, facultyId: "", capacity: 1, isExtraShift: false });
         setError("");
     }
 
     function openEdit(rule: Rule) {
-        setEditing({ baseId: rule.baseId, baseCode: rule.baseCode, dayOfWeek: rule.dayOfWeek, period: rule.period, facultyId: rule.facultyId, capacity: rule.capacity, ruleId: rule.id });
+        setEditing({ baseId: rule.baseId, baseCode: rule.baseCode, dayOfWeek: rule.dayOfWeek, period: rule.period, facultyId: rule.facultyId, capacity: rule.capacity, ruleId: rule.id, isExtraShift: rule.isExtraShift });
         setError("");
     }
 
@@ -70,8 +70,8 @@ export function AdminRulesBoard() {
         setSaving(true);
         setError("");
         const body = editing.ruleId
-            ? { id: editing.ruleId, facultyId: editing.facultyId, capacity: editing.capacity }
-            : { baseId: editing.baseId, dayOfWeek: editing.dayOfWeek, period: editing.period, facultyId: editing.facultyId, capacity: editing.capacity };
+            ? { id: editing.ruleId, facultyId: editing.facultyId, capacity: editing.capacity, isExtraShift: editing.isExtraShift }
+            : { baseId: editing.baseId, dayOfWeek: editing.dayOfWeek, period: editing.period, facultyId: editing.facultyId, capacity: editing.capacity, isExtraShift: editing.isExtraShift };
         const res = await fetch("/taximetro/api/admin/rules", {
             method: editing.ruleId ? "PUT" : "POST",
             headers: { "Content-Type": "application/json" },
@@ -195,6 +195,15 @@ export function AdminRulesBoard() {
                                 className="mt-0.5 block w-16 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
                             />
                         </label>
+                        <label className="flex items-center gap-1.5 self-end pb-1">
+                            <input
+                                type="checkbox"
+                                checked={editing.isExtraShift}
+                                onChange={(event) => setEditing({ ...editing, isExtraShift: event.target.checked })}
+                                className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className="text-xs font-medium text-slate-700">Plantão Extra</span>
+                        </label>
                         <button
                             onClick={saveRule}
                             disabled={saving || !editing.facultyId}
@@ -249,12 +258,13 @@ export function AdminRulesBoard() {
                                                     <button
                                                         key={rule.id}
                                                         onClick={() => openEdit(rule)}
-                                                        title={`${rule.facultyAbbr} ×${rule.capacity} — Clique para editar`}
-                                                        className={`inline-flex cursor-pointer items-center gap-0.5 rounded px-1 py-px text-[10px] font-semibold transition-all hover:opacity-75 ${style.pill} ${dim ? "opacity-15" : ""}`}
+                                                        title={`${rule.facultyAbbr} ×${rule.capacity}${rule.isExtraShift ? " (Extra)" : ""} — Clique para editar`}
+                                                        className={`inline-flex cursor-pointer items-center gap-0.5 rounded px-1 py-px text-[10px] font-semibold transition-all hover:opacity-75 ${style.pill} ${dim ? "opacity-15" : ""} ${rule.isExtraShift ? "ring-1 ring-amber-400" : ""}`}
                                                     >
                                                         <Sun className="h-2.5 w-2.5 shrink-0 text-amber-500" strokeWidth={2} />
                                                         <span className="truncate">{rule.facultyAbbr}</span>
                                                         {rule.capacity > 1 && <span className="opacity-50">×{rule.capacity}</span>}
+                                                        {rule.isExtraShift && <span className="ml-0.5 rounded bg-amber-500 px-0.5 text-[8px] text-white leading-tight">EX</span>}
                                                     </button>
                                                 );
                                             })}
@@ -276,12 +286,13 @@ export function AdminRulesBoard() {
                                                     <button
                                                         key={rule.id}
                                                         onClick={() => openEdit(rule)}
-                                                        title={`${rule.facultyAbbr} ×${rule.capacity} — Clique para editar`}
-                                                        className={`inline-flex cursor-pointer items-center gap-0.5 rounded px-1 py-px text-[10px] font-semibold transition-all hover:opacity-75 ${style.pill} ${dim ? "opacity-15" : ""}`}
+                                                        title={`${rule.facultyAbbr} ×${rule.capacity}${rule.isExtraShift ? " (Extra)" : ""} — Clique para editar`}
+                                                        className={`inline-flex cursor-pointer items-center gap-0.5 rounded px-1 py-px text-[10px] font-semibold transition-all hover:opacity-75 ${style.pill} ${dim ? "opacity-15" : ""} ${rule.isExtraShift ? "ring-1 ring-amber-400" : ""}`}
                                                     >
                                                         <Moon className="h-2.5 w-2.5 shrink-0 text-indigo-500" strokeWidth={2} />
                                                         <span className="truncate">{rule.facultyAbbr}</span>
                                                         {rule.capacity > 1 && <span className="opacity-50">×{rule.capacity}</span>}
+                                                        {rule.isExtraShift && <span className="ml-0.5 rounded bg-amber-500 px-0.5 text-[8px] text-white leading-tight">EX</span>}
                                                     </button>
                                                 );
                                             })}
