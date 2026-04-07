@@ -34,6 +34,7 @@ type Faculty = {
     id: string;
     abbreviation: string;
     name: string;
+    isVirtual?: boolean;
 };
 
 type UserRow = {
@@ -387,9 +388,29 @@ function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "
     );
 }
 
-function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, facultyBadgeMode = "neutral", showBaseCode = false }: { facultyAbbr: string; allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean }) {
+function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, facultyBadgeMode = "neutral", showBaseCode = false, isVirtual = false }: { facultyAbbr: string; allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean; isVirtual?: boolean }) {
     const tone = getPeriodTone(period);
     const facultyTone = getFacultyBadgeClass(facultyAbbr, facultyBadgeMode, period === "NIGHT" ? "NIGHT" : undefined);
+
+    if (isVirtual) {
+        return (
+            <div
+                className={`flex min-h-[56px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border px-2.5 py-2 ${tone.shell} ${getMutedSlotClass(allocation.date, "vacancy")}`}
+                title={`Reservado — ${facultyAbbr}`}
+            >
+                <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-60">Reservado</span>
+                    <span className="mt-1 flex items-center gap-2">
+                        <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${facultyTone.pill}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
+                            <span className="truncate">{facultyAbbr}</span>
+                        </span>
+                        {showBaseCode && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${period === "NIGHT" ? "border border-white/10 bg-white/8 text-white/72" : "border border-stone-300 bg-white/70 text-stone-600"}`}>{allocation.baseCode}</span>}
+                    </span>
+                </span>
+            </div>
+        );
+    }
 
     return (
         <button
@@ -571,7 +592,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
     const allocationFacultyOptions = useMemo(() => {
         const source = visibleFacultyOptions.length > 0 ? visibleFacultyOptions : faculties;
-        return [...source].sort((left, right) => left.abbreviation.localeCompare(right.abbreviation));
+        return [...source].filter((f) => !f.isVirtual).sort((left, right) => left.abbreviation.localeCompare(right.abbreviation));
     }, [faculties, visibleFacultyOptions]);
 
     const filteredAssignments = useMemo(() => {
@@ -995,7 +1016,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                                     }
 
                                                                     if (slot.kind === "vacancy") {
-                                                                        return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} />;
+                                                                        return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
                                                                     }
 
                                                                     return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} />;
@@ -1104,7 +1125,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                 }
 
                                                 if (slot.kind === "vacancy") {
-                                                    return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
+                                                    return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} facultyBadgeMode="faculty" showBaseCode={showBaseCode} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
                                                 }
                                             })}
                                         </div>
@@ -1497,6 +1518,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                         }}
                                         facultyBadgeMode="faculty"
                                         showBaseCode
+                                        isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual}
                                     />
                                 );
                             })}

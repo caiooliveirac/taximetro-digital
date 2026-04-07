@@ -131,6 +131,24 @@ const FACULTY_STYLES: Record<string, {
     label: "AFYA",
     glowColor: "rgba(244,63,94,0.6)",
   },
+  "PÓS": {
+    dot: "bg-zinc-500",
+    bg: "bg-zinc-100",
+    text: "text-zinc-700",
+    border: "border-zinc-300",
+    pill: "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-500/30",
+    label: "PÓS",
+    glowColor: "rgba(113,113,122,0.6)",
+  },
+  RESI: {
+    dot: "bg-stone-500",
+    bg: "bg-stone-100",
+    text: "text-stone-700",
+    border: "border-stone-300",
+    pill: "bg-stone-100 text-stone-700 ring-1 ring-stone-500/30",
+    label: "RESI",
+    glowColor: "rgba(120,113,108,0.6)",
+  },
 };
 
 const FALLBACK_FACULTY = {

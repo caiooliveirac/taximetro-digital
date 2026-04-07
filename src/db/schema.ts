@@ -47,6 +47,7 @@ export const faculties = pgTable("faculties", {
   targetShifts: integer("target_shifts").notNull().default(0),
   targetShiftsPerWeek: integer("target_shifts_per_week").notNull().default(0),
   totalInterns: integer("total_interns").notNull().default(0),
+  isVirtual: boolean("is_virtual").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
