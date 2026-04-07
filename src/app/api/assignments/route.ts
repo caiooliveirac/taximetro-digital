@@ -19,7 +19,7 @@ const createAssignmentSchema = z.object({
   allowRetroactiveOverride: z.boolean().optional(),
   allowAdminOpenAllocation: z.boolean().optional(),
   isExtraShift: z.boolean().optional().default(false),
-  extraShiftNotes: z.string().optional(),
+  extraShiftNotes: z.string().nullish(),
 });
 
 export async function GET(req: NextRequest) {
