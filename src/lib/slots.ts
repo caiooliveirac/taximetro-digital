@@ -33,6 +33,7 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
       facultyId: slotRules.facultyId,
       facultyAbbr: faculties.abbreviation,
       capacity: slotRules.capacity,
+      isExtraShift: slotRules.isExtraShift,
       nextDate: sql<string>`(
         SELECT d::date::text FROM generate_series(
           ${rangeStart}::date,
@@ -83,6 +84,7 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
     facultyId: string;
     facultyAbbr: string;
     capacity: number;
+    isExtraShift: boolean;
     nextDate: string;
     filled: number;
   }>();

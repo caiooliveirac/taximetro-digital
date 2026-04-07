@@ -108,6 +108,7 @@ export const slotRules = pgTable("slot_rules", {
   blockedReason: varchar("blocked_reason", { length: 100 }),
   blockedBy: uuid("blocked_by").references(() => users.id),
   blockedAt: timestamp("blocked_at"),
+  isExtraShift: boolean("is_extra_shift").notNull().default(false),
 }, (t) => [
   uniqueIndex("uq_slot_rule").on(t.baseId, t.dayOfWeek, t.period, t.facultyId),
 ]);

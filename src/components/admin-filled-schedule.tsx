@@ -20,6 +20,7 @@ type Rule = {
     facultyAbbr: string;
     capacity: number;
     isActive: boolean;
+    isExtraShift: boolean;
 };
 
 type Base = {
@@ -86,6 +87,7 @@ type AllocationState = {
     period: "DAY" | "NIGHT";
     facultyId: string | null;
     facultyAbbr: string | null;
+    isExtraShift?: boolean;
 };
 
 type PeriodFocusState = {
@@ -747,7 +749,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         kind: "vacancy",
                         key: `${base.id}|${date}|${period}|${facultyId}|vacancy-${index + 1}`,
                         facultyAbbr,
-                        allocation: { baseId: base.id, baseCode: base.code, baseType: base.type, date, period, facultyId, facultyAbbr },
+                        allocation: { baseId: base.id, baseCode: base.code, baseType: base.type, date, period, facultyId, facultyAbbr, isExtraShift: facultyRule?.isExtraShift },
                     });
                 }
             }
@@ -887,7 +889,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setAllocCandidateFacultyFilter(slot.facultyId ?? "ALL");
         setAllocInternId("");
         setAllocSearch("");
-        setAllocIsExtraShift(false);
+        setAllocIsExtraShift(slot.isExtraShift ?? false);
         setAllocExtraShiftNotes("");
         const isCruShift = slot.baseType === "CENTRAL" && slot.period === "DAY"
             && (slot.facultyAbbr === "EBMSP" || faculties.find(f => f.id === slot.facultyId)?.abbreviation === "EBMSP");
