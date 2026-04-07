@@ -1,6 +1,7 @@
 -- Materialized view: available_slots
 -- Shows slot rules with how many are currently filled vs capacity
--- Respects: is_blocked (capacity=0), excludes is_extra_shift from filled count
+-- Virtual faculties (PÓS, RESI) appear as normal rules with 0 filled
+-- Excludes is_extra_shift from filled count
 
 DROP MATERIALIZED VIEW IF EXISTS available_slots;
 
@@ -15,10 +16,8 @@ SELECT
   sr.faculty_id,
   f.abbreviation AS faculty_abbr,
   sr.capacity,
-  sr.is_blocked,
-  sr.blocked_reason,
-  CASE WHEN sr.is_blocked THEN 0 ELSE COALESCE(filled.count, 0)::int END AS filled,
-  CASE WHEN sr.is_blocked THEN 0 ELSE (sr.capacity - COALESCE(filled.count, 0))::int END AS available
+  COALESCE(filled.count, 0)::int AS filled,
+  (sr.capacity - COALESCE(filled.count, 0))::int AS available
 FROM slot_rules sr
 JOIN bases b ON b.id = sr.base_id
 JOIN faculties f ON f.id = sr.faculty_id

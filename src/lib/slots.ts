@@ -33,8 +33,6 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
       facultyId: slotRules.facultyId,
       facultyAbbr: faculties.abbreviation,
       capacity: slotRules.capacity,
-      isBlocked: slotRules.isBlocked,
-      blockedReason: slotRules.blockedReason,
       nextDate: sql<string>`(
         SELECT d::date::text FROM generate_series(
           ${rangeStart}::date,
@@ -85,8 +83,6 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
     facultyId: string;
     facultyAbbr: string;
     capacity: number;
-    isBlocked: boolean;
-    blockedReason: string | null;
     nextDate: string;
     filled: number;
   }>();
@@ -108,7 +104,6 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
   }
 
   return Array.from(deduped.values())
-    .filter((r) => !r.isBlocked)
     .map((r) => ({
       ...r,
       available: r.capacity - Number(r.filled),
@@ -223,7 +218,6 @@ export async function checkSlotAvailability(
     .limit(1);
 
   if (!rule) return { available: false, capacity: 0, assigned: 0 };
-  if (rule.isBlocked) return { available: false, capacity: 0, assigned: 0 };
 
   // When shift is provided (EBMSP), count only same-shift assignments.
   // Each shift gets the full slot capacity (capacity=1 → 1 MORNING + 1 AFTERNOON).

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
-import { slotRules, bases, faculties, assignments } from "@/db/schema";
-import { eq, and, ne, gte, inArray } from "drizzle-orm";
+import { slotRules, bases, faculties } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { z } from "zod/v4";
-import { localDateStr } from "@/lib/utils";
 
 const ruleSchema = z.object({
   baseId: z.string().uuid(),
@@ -14,8 +13,6 @@ const ruleSchema = z.object({
   facultyId: z.string().uuid(),
   capacity: z.number().int().min(0).max(20).default(1),
   isActive: z.boolean().default(true),
-  isBlocked: z.boolean().default(false),
-  blockedReason: z.string().max(100).nullable().optional(),
 });
 
 async function requireCoordinator(req: NextRequest) {
@@ -37,10 +34,6 @@ export async function GET() {
       facultyAbbr: faculties.abbreviation,
       capacity: slotRules.capacity,
       isActive: slotRules.isActive,
-      isBlocked: slotRules.isBlocked,
-      blockedReason: slotRules.blockedReason,
-      blockedBy: slotRules.blockedBy,
-      blockedAt: slotRules.blockedAt,
     })
     .from(slotRules)
     .innerJoin(bases, eq(bases.id, slotRules.baseId))
@@ -60,18 +53,6 @@ export async function POST(req: NextRequest) {
 
   const data = parsed.data;
 
-  // If creating a blocked rule, set blocked metadata
-  if (data.isBlocked) {
-    const [created] = await db.insert(slotRules).values({
-      ...data,
-      blockedReason: data.blockedReason ?? null,
-      blockedBy: token.id as string,
-      blockedAt: new Date(),
-    }).returning();
-    await logAudit({ userId: token.id as string, action: "SLOT_BLOCKED", entity: "slot_rule", entityId: created.id, payload: { ...data, blockedBy: token.id } });
-    return NextResponse.json({ success: true, data: created }, { status: 201 });
-  }
-
   const [created] = await db.insert(slotRules).values(data).returning();
   await logAudit({ userId: token.id as string, action: "CREATE_SLOT_RULE", entity: "slot_rule", entityId: created.id, payload: data });
   return NextResponse.json({ success: true, data: created }, { status: 201 });
@@ -90,46 +71,10 @@ export async function PUT(req: NextRequest) {
 
   const data = parsed.data;
 
-  // If toggling to blocked, check for future assignments
-  if (data.isBlocked === true) {
-    const [existingRule] = await db.select().from(slotRules).where(eq(slotRules.id, id)).limit(1);
-    if (existingRule) {
-      const today = localDateStr();
-      const futureAssignments = await db
-        .select({ id: assignments.id, date: assignments.date })
-        .from(assignments)
-        .where(and(
-          eq(assignments.baseId, existingRule.baseId),
-          eq(assignments.period, existingRule.period),
-          eq(assignments.facultyId, existingRule.facultyId),
-          gte(assignments.date, today),
-          inArray(assignments.status, ["SCHEDULED", "CONFIRMED"]),
-        ))
-        .limit(5);
-      if (futureAssignments.length > 0) {
-        return NextResponse.json({
-          success: false,
-          error: `Existem ${futureAssignments.length} plantão(ões) futuro(s) neste slot. Cancele-os antes de bloquear.`,
-          futureAssignments,
-        }, { status: 409 });
-      }
-    }
-    (data as Record<string, unknown>).blockedBy = token.id as string;
-    (data as Record<string, unknown>).blockedAt = new Date();
-  }
-
-  // If unblocking, clear blocked metadata
-  if (data.isBlocked === false) {
-    (data as Record<string, unknown>).blockedReason = null;
-    (data as Record<string, unknown>).blockedBy = null;
-    (data as Record<string, unknown>).blockedAt = null;
-  }
-
   const [updated] = await db.update(slotRules).set(data).where(eq(slotRules.id, id)).returning();
   if (!updated) return NextResponse.json({ success: false, error: "Regra não encontrada" }, { status: 404 });
 
-  const auditAction = data.isBlocked === true ? "SLOT_BLOCKED" : data.isBlocked === false ? "SLOT_UNBLOCKED" : "UPDATE_SLOT_RULE";
-  await logAudit({ userId: token.id as string, action: auditAction, entity: "slot_rule", entityId: id, payload: data });
+  await logAudit({ userId: token.id as string, action: "UPDATE_SLOT_RULE", entity: "slot_rule", entityId: id, payload: data });
   return NextResponse.json({ success: true, data: updated });
 }
 
