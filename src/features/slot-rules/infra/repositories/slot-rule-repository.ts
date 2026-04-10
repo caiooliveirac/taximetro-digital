@@ -32,7 +32,18 @@ export async function createSlotRule(values: {
   isActive: boolean;
   isExtraShift: boolean;
 }) {
-  const [created] = await db.insert(slotRules).values(values).returning();
+  const [created] = await db
+    .insert(slotRules)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [slotRules.baseId, slotRules.dayOfWeek, slotRules.period, slotRules.facultyId],
+      set: {
+        capacity: values.capacity,
+        isActive: true,
+        isExtraShift: values.isExtraShift,
+      },
+    })
+    .returning();
   return created;
 }
 
