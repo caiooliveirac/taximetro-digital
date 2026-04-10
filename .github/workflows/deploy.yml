@@ -3,6 +3,13 @@ name: Deploy
 on:
   push:
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      apply_db_changes:
+        description: "Run schema changes manually (drizzle push --force)"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: taximetro-digital-deploy
@@ -14,7 +21,49 @@ env:
   DEPLOY_DIR: /home/ubuntu/taximetro-digital
 
 jobs:
+  db_changes:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_db_changes }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.PROD_SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Send source to server
+        run: |
+          rsync -az --delete \
+            --exclude node_modules --exclude .next --exclude .git \
+            --exclude '.env*' --include '.env.example' \
+            ./ ${{ env.REMOTE }}:${{ env.DEPLOY_DIR }}/
+
+      - name: Apply schema changes (manual only)
+        run: |
+          ssh ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
+            set -euo pipefail
+            cd ${{ env.DEPLOY_DIR }}
+
+            echo "=== Building builder image ==="
+            docker build --target builder -t ${{ env.APP }}-builder .
+
+            echo "=== Running schema changes (manual trigger) ==="
+            docker run --rm \
+              --add-host=host.docker.internal:host-gateway \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              ${{ env.APP }}-builder \
+              npx drizzle-kit push --force
+
+            echo "=== Schema changes complete ==="
+          REMOTE_SCRIPT
+
   deploy:
+    needs: db_changes
+    if: ${{ always() && (needs.db_changes.result == 'success' || needs.db_changes.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -40,26 +89,51 @@ jobs:
             set -euo pipefail
             cd ${{ env.DEPLOY_DIR }}
 
+            IMAGE_CANDIDATE="${{ env.APP }}:candidate"
+            CANARY_NAME="${{ env.APP }}-canary"
+
             echo "=== Building Docker image (native ARM64) ==="
-            docker build -t ${{ env.APP }} .
+            docker build -t "$IMAGE_CANDIDATE" .
 
-            echo "=== Replacing old container ==="
+            echo "=== Starting canary for pre-swap validation ==="
+            docker rm -f "$CANARY_NAME" 2>/dev/null || true
+            docker run --rm \
+              -d \
+              --name "$CANARY_NAME" \
+              --network repo_default \
+              --add-host=host.docker.internal:host-gateway \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              -e AUTH_SECRET="${{ secrets.AUTH_SECRET }}" \
+              -e AUTH_URL="https://mnrs.com.br" \
+              -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+              -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              -e TELEGRAM_BOT_TOKEN_NEXT="${{ secrets.TELEGRAM_BOT_TOKEN_NEXT }}" \
+              -e TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+              -e TELEGRAM_GROUP_ID="${{ secrets.TELEGRAM_GROUP_ID }}" \
+              -e SMTP_HOST="${{ secrets.SMTP_HOST }}" \
+              -e SMTP_PORT="${{ secrets.SMTP_PORT }}" \
+              -e SMTP_USER="${{ secrets.SMTP_USER }}" \
+              -e SMTP_PASS="${{ secrets.SMTP_PASS }}" \
+              -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
+              "$IMAGE_CANDIDATE"
+
+            echo "=== Validating canary health ==="
+            for i in $(seq 1 45); do
+              if docker exec "$CANARY_NAME" wget -q -O- http://127.0.0.1:3000/taximetro/api/health 2>/dev/null | grep -q healthy; then
+                echo "✅ Canary healthy after ${i}s"
+                break
+              fi
+              if [ "$i" -eq 45 ]; then
+                echo "❌ Canary health check failed after 45s"
+                docker logs --tail 40 "$CANARY_NAME" || true
+                docker rm -f "$CANARY_NAME" 2>/dev/null || true
+                exit 1
+              fi
+              sleep 1
+            done
+
+            echo "=== Replacing production container only after validation ==="
             docker rm -f ${{ env.APP }} 2>/dev/null || true
-
-            echo "=== Running migrations ==="
-            docker build --target builder -t ${{ env.APP }}-builder .
-            docker run --rm \
-              --add-host=host.docker.internal:host-gateway \
-              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-              ${{ env.APP }}-builder \
-              npx drizzle-kit push --force
-
-            echo "=== Seeding reference data (idempotent) ==="
-            docker run --rm \
-              --add-host=host.docker.internal:host-gateway \
-              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-              ${{ env.APP }}-builder \
-              npx tsx src/db/seed.ts
 
             echo "=== Starting container ==="
             docker run -d \
@@ -80,9 +154,9 @@ jobs:
               -e SMTP_PASS="${{ secrets.SMTP_PASS }}" \
               -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
               --add-host=host.docker.internal:host-gateway \
-              ${{ env.APP }}
+              "$IMAGE_CANDIDATE"
 
-            echo "=== Waiting for healthcheck ==="
+            echo "=== Waiting for production healthcheck ==="
             for i in $(seq 1 30); do
               if docker exec ${{ env.APP }} wget -q -O- http://127.0.0.1:3000/taximetro/api/health 2>/dev/null | grep -q healthy; then
                 echo "✅ App healthy after ${i}s"
@@ -105,6 +179,9 @@ jobs:
             else
               echo "⚠️ Nginx → App failed (app works but nginx may need restart)"
             fi
+
+            echo "=== Cleaning temporary canary ==="
+            docker rm -f "$CANARY_NAME" 2>/dev/null || true
 
             echo "=== Deploy complete ==="
           REMOTE_SCRIPT
