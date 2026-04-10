@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, bases, checkins, faculties, telegramBindings, userRoles, users } from "@/db/schema";
 import { logAudit } from "@/lib/audit";
-import { bot, TELEGRAM_GROUP_ID } from "@/lib/telegram";
+import { bot, TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_ID } from "@/lib/telegram";
 import { getBrazilNowParts, localDateStr } from "@/lib/utils";
 
 export type PendingCheckinRow = {
@@ -176,7 +176,7 @@ export async function canTriggerPendingReminderFromTelegram(telegramUserId: stri
 }
 
 export async function sendPendingCheckinReminder(options: SendReminderOptions) {
-    if (!process.env.TELEGRAM_BOT_TOKEN || !TELEGRAM_GROUP_ID) {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_GROUP_ID) {
         throw new Error("Telegram não configurado");
     }
 

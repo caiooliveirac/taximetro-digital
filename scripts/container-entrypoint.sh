@@ -51,7 +51,7 @@ fi
 
 if [ "${TELEGRAM_CHECKIN_REMINDER_ENABLED:-true}" = "false" ]; then
   echo "[entrypoint] lembrete de check-in pendente desabilitado por TELEGRAM_CHECKIN_REMINDER_ENABLED=false"
-elif [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_GROUP_ID:-}" ] || [ -z "${AUTH_SECRET:-}" ]; then
+elif [ -z "${TELEGRAM_BOT_TOKEN_NEXT:-${TELEGRAM_BOT_TOKEN:-}}" ] || [ -z "${TELEGRAM_GROUP_ID:-}" ] || [ -z "${AUTH_SECRET:-}" ]; then
   echo "[entrypoint] lembrete de check-in pendente desabilitado por configuração incompleta"
 else
   append_telegram_checkin_reminder_cron
