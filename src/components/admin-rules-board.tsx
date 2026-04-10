@@ -72,26 +72,36 @@ export function AdminRulesBoard() {
         const body = editing.ruleId
             ? { id: editing.ruleId, facultyId: editing.facultyId, capacity: editing.capacity, isExtraShift: editing.isExtraShift }
             : { baseId: editing.baseId, dayOfWeek: editing.dayOfWeek, period: editing.period, facultyId: editing.facultyId, capacity: editing.capacity, isExtraShift: editing.isExtraShift };
-        const res = await fetch("/taximetro/api/admin/rules", {
-            method: editing.ruleId ? "PUT" : "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-        });
-        const json = await res.json();
-        setSaving(false);
-        if (!json.success) {
-            setError(json.error);
-            return;
+        try {
+            const res = await fetch("/taximetro/api/admin/rules", {
+                method: editing.ruleId ? "PUT" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            const json = await res.json();
+            if (!json.success) {
+                setError(json.error || "Erro ao salvar regra.");
+                return;
+            }
+            setEditing(null);
+            await load();
+        } catch {
+            setError("Erro ao salvar regra.");
+        } finally {
+            setSaving(false);
         }
-        setEditing(null);
-        load();
     }
 
     async function removeRule(id: string) {
         try {
-            await fetch(`/taximetro/api/admin/rules?id=${id}`, { method: "DELETE" });
+            const res = await fetch(`/taximetro/api/admin/rules?id=${id}`, { method: "DELETE" });
+            const json = await res.json();
+            if (!json.success) {
+                setError(json.error || "Erro ao remover regra.");
+                return;
+            }
             setEditing(null);
-            load();
+            await load();
         } catch {
             setError("Erro ao remover regra.");
         }
