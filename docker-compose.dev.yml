@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: taximetro-dev-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: taximetro
+      POSTGRES_USER: taximetro
+      POSTGRES_PASSWORD: taximetro_dev
+      TZ: America/Bahia
+    ports:
+      - "5434:5432"
+    volumes:
+      - taximetro_dev_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taximetro -d taximetro"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    image: node:20-alpine
+    container_name: taximetro-dev-app
+    working_dir: /app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      TZ: America/Bahia
+      DATABASE_URL: postgresql://taximetro:taximetro_dev@db:5432/taximetro
+      AUTH_URL: http://localhost:3000
+      AUTH_SECRET: dev-only-secret-change-me
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_BOT_TOKEN_NEXT: ""
+      TELEGRAM_GROUP_ID: ""
+      GOOGLE_CLIENT_ID: dev
+      GOOGLE_CLIENT_SECRET: dev
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      SMTP_USER: dev
+      SMTP_PASS: dev
+      SMTP_FROM: Taximetro Dev <dev@local>
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./:/app
+      - taximetro_dev_node_modules:/app/node_modules
+    command: sh -lc "npm ci && npm run dev"
+
+  seed:
+    image: node:20-alpine
+    container_name: taximetro-dev-seed
+    profiles: ["seed"]
+    working_dir: /app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://taximetro:taximetro_dev@db:5432/taximetro
+    volumes:
+      - ./:/app
+      - taximetro_dev_node_modules:/app/node_modules
+    command: sh -lc "npm ci && npm run db:push && npm run db:demo"
+
+volumes:
+  taximetro_dev_db_data:
+  taximetro_dev_node_modules:
