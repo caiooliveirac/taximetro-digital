@@ -71,6 +71,7 @@ jobs:
               -e AUTH_URL="https://mnrs.com.br" \
               -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
               -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              -e TELEGRAM_BOT_TOKEN_NEXT="${{ secrets.TELEGRAM_BOT_TOKEN_NEXT }}" \
               -e TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" \
               -e TELEGRAM_GROUP_ID="${{ secrets.TELEGRAM_GROUP_ID }}" \
               -e SMTP_HOST="${{ secrets.SMTP_HOST }}" \

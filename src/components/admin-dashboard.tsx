@@ -477,24 +477,24 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
               ? "border-emerald-200 bg-emerald-50 text-emerald-700"
               : "border-amber-200 bg-amber-50 text-amber-700";
           return (
-            <li key={i} className="flex items-start justify-between gap-3 py-2">
+            <li key={i} className="flex items-start justify-between gap-4 py-3">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-start gap-2 min-w-0">
                   {r.period === "DAY"
-                    ? <Sun className="h-3 w-3 text-amber-500 shrink-0" strokeWidth={1.5} />
-                    : <Moon className="h-3 w-3 text-indigo-500 shrink-0" strokeWidth={1.5} />}
-                  <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                    ? <Sun className="mt-0.5 h-3.5 w-3.5 text-amber-500 shrink-0" strokeWidth={1.5} />
+                    : <Moon className="mt-0.5 h-3.5 w-3.5 text-indigo-500 shrink-0" strokeWidth={1.5} />}
+                  <span className="text-[15px] font-semibold leading-snug text-slate-900 break-words">{r.name}</span>
                   {r.faculty && (
                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
                       <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />{r.faculty}
                     </span>
                   )}
                 </div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                  <span>{r.baseCode}</span>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-medium text-slate-700">{r.baseCode}</span>
                   <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${statusClass}`}>{statusLabel}</span>
-                  <span>{new Date(`${r.date}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" })}</span>
-                  <span>{r.period === "DAY" ? "Diurno" : "Noturno"}</span>
+                  <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">{new Date(`${r.date}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" })}</span>
+                  <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">{r.period === "DAY" ? "Diurno" : "Noturno"}</span>
                   {r.isCarryover && (
                     <span className="rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
                       Janela estendida
@@ -502,7 +502,7 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
                   )}
                 </div>
               </div>
-              <div className="shrink-0">
+              <div className="shrink-0 pt-0.5">
                 <AdminManualAttendanceActions
                   assignmentId={r.id}
                   status={r.status}
@@ -516,7 +516,7 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeCheckinModal}>
-            <div className="relative mx-4 max-h-[85vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="relative mx-2 max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <h3 className="text-base font-semibold text-slate-900">
                   Check-ins e Ações Manuais — {checkedIn.length}/{filtered.length}
@@ -554,7 +554,7 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
                 </div>
               </div>
 
-              <div className="max-h-[55vh] overflow-y-auto px-5 py-3">
+              <div className="max-h-[64vh] overflow-y-auto px-5 py-3 md:px-6">
                 {filtered.length === 0 ? (
                   <p className="py-8 text-center text-sm text-slate-400">Nenhum plantão neste período.</p>
                 ) : (

@@ -250,29 +250,45 @@ export async function materializeCruFixedAssignments(params: {
             const isMutable = existing.status === "SCHEDULED" || existing.status === "CONFIRMED";
 
             if (existing.status === "CANCELLED") {
-                const [reactivated] = await db
-                    .update(assignments)
-                    .set({
-                        facultyId: template.facultyId,
-                        baseId: cruBaseId,
-                        status: "SCHEDULED",
-                        notes: CRU_FIXED_NOTE,
-                        updatedAt: new Date(),
-                    })
-                    .where(eq(assignments.id, existing.id))
-                    .returning({
-                        id: assignments.id,
-                        internId: assignments.internId,
-                        facultyId: assignments.facultyId,
-                        baseId: assignments.baseId,
-                        date: assignments.date,
-                        period: assignments.period,
-                        status: assignments.status,
-                        notes: assignments.notes,
-                    });
+                // Respect manual cancellations (e.g. removed by leader).
+                // Only auto-reactivate when the cancelled record still carries the CRU fixed note.
+                if (existing.notes === CRU_FIXED_NOTE) {
+                    const [reactivated] = await db
+                        .update(assignments)
+                        .set({
+                            facultyId: template.facultyId,
+                            baseId: cruBaseId,
+                            status: "SCHEDULED",
+                            notes: CRU_FIXED_NOTE,
+                            updatedAt: new Date(),
+                        })
+                        .where(eq(assignments.id, existing.id))
+                        .returning({
+                            id: assignments.id,
+                            internId: assignments.internId,
+                            facultyId: assignments.facultyId,
+                            baseId: assignments.baseId,
+                            date: assignments.date,
+                            period: assignments.period,
+                            status: assignments.status,
+                            notes: assignments.notes,
+                        });
 
-                assignmentByKey.set(key, reactivated);
-                result.reactivatedCount += 1;
+                    assignmentByKey.set(key, reactivated);
+                    result.reactivatedCount += 1;
+                    continue;
+                }
+
+                result.skippedCount += 1;
+                if (result.skipped.length < 20) {
+                    result.skipped.push({
+                        internId: template.internId,
+                        internName: template.internName,
+                        date,
+                        period: template.period,
+                        status: existing.status,
+                    });
+                }
                 continue;
             }
 

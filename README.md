@@ -460,6 +460,7 @@ npm run dev
 | `DATABASE_URL`       | Connection string PostgreSQL | `postgresql://user:pass@localhost:5432/taximetro` |
 | `AUTH_SECRET`        | Segredo JWT do NextAuth      | `openssl rand -base64 32`                         |
 | `AUTH_URL`           | URL pública sem barra final  | `https://mnrs.com.br`                             |
+| `TELEGRAM_BOT_TOKEN_NEXT` | Token novo (rotação segura; prioridade) | `123456:ABC-DEF...`                      |
 | `TELEGRAM_BOT_TOKEN` | Token do bot Telegram        | `123456:ABC-DEF...`                               |
 | `SMTP_HOST`          | Host SMTP                    | `smtp.gmail.com`                                  |
 | `SMTP_PORT`          | Porta SMTP                   | `587`                                             |
