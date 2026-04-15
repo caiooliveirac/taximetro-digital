@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { validateCode } from "@/lib/totp";
 import { bot, TELEGRAM_GROUP_ID } from "@/lib/telegram";
 import { logAudit } from "@/lib/audit";
@@ -12,6 +12,37 @@ import { z } from "zod/v4";
 function extractCommand(text: string) {
   const match = text.match(/^\/([a-zA-Z_]+)(?:@[^\s]+)?(?:\s+.*)?$/);
   return match?.[1]?.toLowerCase() ?? null;
+}
+
+function shouldUseUnifiedShiftCheckout(assignment: { period: string; shift: string | null }) {
+  return assignment.period === "DAY" && (assignment.shift === "MORNING" || assignment.shift === "AFTERNOON");
+}
+
+async function resolveUnifiedCheckoutAssignmentIds(assignment: {
+  id: string;
+  internId: string;
+  date: string;
+  period: string;
+  shift: string | null;
+}) {
+  if (!shouldUseUnifiedShiftCheckout(assignment)) return [assignment.id];
+
+  const related = await db
+    .select({ id: assignments.id })
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.internId, assignment.internId),
+        eq(assignments.date, assignment.date),
+        eq(assignments.period, "DAY"),
+        inArray(assignments.shift, ["MORNING", "AFTERNOON"]),
+        eq(assignments.status, "CHECKED_IN"),
+      ),
+    );
+
+  const ids = related.map((row) => row.id);
+  if (!ids.includes(assignment.id)) ids.push(assignment.id);
+  return ids;
 }
 
 export async function POST(req: NextRequest) {
@@ -194,10 +225,13 @@ async function handleCheckoutViaCode(
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, checkin.assignmentId)).limit(1);
   if (!assignment) return NextResponse.json({ ok: true });
 
+  const assignmentIdsToCheckout = await resolveUnifiedCheckoutAssignmentIds(assignment);
+  const now = new Date();
+
   // Transition: CHECKED_IN → CHECKED_OUT
-  await db.update(assignments).set({ status: "CHECKED_OUT", updatedAt: new Date() }).where(eq(assignments.id, assignment.id));
-  await db.update(checkins).set({ checkoutAt: new Date(), checkoutConfirmedBy: validatorId }).where(eq(checkins.id, checkin.id));
-  await db.update(qrSessions).set({ consumedAt: new Date(), consumedBy: validatorId }).where(eq(qrSessions.id, session.id));
+  await db.update(assignments).set({ status: "CHECKED_OUT", updatedAt: now }).where(inArray(assignments.id, assignmentIdsToCheckout));
+  await db.update(checkins).set({ checkoutAt: now, checkoutConfirmedBy: validatorId }).where(inArray(checkins.assignmentId, assignmentIdsToCheckout));
+  await db.update(qrSessions).set({ consumedAt: now, consumedBy: validatorId }).where(eq(qrSessions.id, session.id));
 
   const [intern] = await db.select().from(users).where(eq(users.id, assignment.internId)).limit(1);
   const [base] = await db.select().from(bases).where(eq(bases.id, assignment.baseId)).limit(1);
@@ -229,7 +263,12 @@ async function handleCheckoutViaCode(
     action: isPrivate ? "CHECKOUT_VALIDATED_TELEGRAM_QR" : "CHECKOUT_VALIDATED_TELEGRAM_GROUP",
     entity: "assignment",
     entityId: assignment.id,
-    payload: { telegramUserId, telegramName, bound: !!validatorId },
+    payload: {
+      telegramUserId,
+      telegramName,
+      bound: !!validatorId,
+      ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
+    },
   });
 
   return NextResponse.json({ ok: true });

@@ -60,8 +60,11 @@ export default function PreceptorPlantao() {
       });
       const data = await res.json();
       if (data.success) {
+        const checkedOutIds: string[] = Array.isArray(data.data?.assignmentIds)
+          ? data.data.assignmentIds
+          : [assignmentId];
         setAssignments((prev) =>
-          prev.map((a) => (a.id === assignmentId ? { ...a, status: "CHECKED_OUT" } : a))
+          prev.map((a) => (checkedOutIds.includes(a.id) ? { ...a, status: "CHECKED_OUT" } : a))
         );
       }
     } catch { /* ignore */ }
