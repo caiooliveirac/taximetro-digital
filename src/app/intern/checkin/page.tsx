@@ -570,13 +570,11 @@ function InternCheckinContent() {
             </>
           ) : (
             <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-center text-sm text-blue-900">
-              {assignment.shift === "MORNING"
-                ? "O checkout do plantão da manhã fica liberado a partir das 11:00 e permanece disponível até 00:00."
-                : assignment.shift === "AFTERNOON"
-                  ? "O checkout do plantão da tarde fica liberado a partir das 17:00 e permanece disponível até 00:00."
-                  : assignment.period === "DAY"
-                    ? "O checkout do plantão diurno fica liberado a partir das 15:00 e permanece disponível até 00:00."
-                    : "O checkout do plantão noturno fica liberado a partir das 06:00 e permanece disponível até 12:00."}
+              {assignment.shift && assignment.period === "DAY"
+                ? "O checkout deste plantão está disponível desde 05:00 e permanece até 00:00."
+                : assignment.period === "DAY"
+                  ? "O checkout do plantão diurno fica liberado a partir das 15:00 e permanece disponível até 00:00."
+                  : "O checkout do plantão noturno fica liberado a partir das 06:00 e permanece disponível até 12:00."}
             </div>
           )}
 
