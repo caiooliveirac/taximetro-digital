@@ -7,7 +7,7 @@ Objetivo: reduzir risco de regressão, evitar quebra de deploy/versionamento e m
 
 - Runtime oficial: Docker
 - App oficial: Next.js com `basePath` `/taximetro`
-- Proxy oficial: Nginx externo rodando em container na VM
+- Proxy oficial: Nginx service instalado no host da VM (systemd)
 - Banco oficial: PostgreSQL rodando na EC2 (acessível dentro da máquina)
 - Deploy oficial: GitHub Actions
 
