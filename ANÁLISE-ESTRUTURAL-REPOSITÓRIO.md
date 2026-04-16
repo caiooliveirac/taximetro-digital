@@ -91,7 +91,7 @@ Build/Deploy:            GitHub Actions + rsync + SSH
 └─────────────────────────────────────────────────────────────┘
            ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Nginx Externo (repo-nginx-1)                                │
+│ Nginx Service (host VM, systemd)                            │
 │ - Porta 80/443 (host)                                       │
 │ - Domain mnrs.com.br                                        │
 │ - Upstream app_taximetro → taximetro-digital:3000           │
@@ -654,7 +654,7 @@ Adicionar seção em AGENTS.md:
 1. Health check interno: `wget http://127.0.0.1:3000/taximetro/api/health`
 2. Health check externo (via Nginx): `curl https://127.0.0.1/taximetro/login` (com -H "Host: mnrs.com.br")
 3. Database migration status: logs sem erro de `drizzle-kit push`.
-4. Nginx reload status: `docker exec repo-nginx-1 nginx -s reload` retorna 0.
+4. Nginx reload status: `sudo systemctl reload nginx && sudo systemctl is-active nginx` retorna `active`.
 
 ### REGRA OURO: READ-ONLY FIRST
 Antes de qualquer mudança:
