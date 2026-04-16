@@ -37,6 +37,18 @@ const checkoutSchema = z.object({
   assignmentId: z.string().uuid(),
 });
 
+const checkoutNpsSchema = z.object({
+  knowledge: z.enum(["SAD", "NEUTRAL", "HAPPY"]),
+  proactivity: z.enum(["SAD", "NEUTRAL", "HAPPY"]),
+  punctuality: z.enum(["SAD", "NEUTRAL", "HAPPY"]),
+});
+
+const checkoutDirectSchema = z.object({
+  assignmentId: z.string().uuid(),
+  notes: z.string().max(2000).optional(),
+  nps: checkoutNpsSchema.optional(),
+});
+
 function shouldUseUnifiedShiftCheckout(assignment: { period: string; shift: string | null }) {
   return assignment.period === "DAY" && (assignment.shift === "MORNING" || assignment.shift === "AFTERNOON");
 }
@@ -171,9 +183,22 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
-  const body = await req.json();
-  const { assignmentId, notes } = body;
-  if (!assignmentId) return NextResponse.json({ success: false, error: "assignmentId obrigatório" }, { status: 400 });
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Corpo inválido" }, { status: 400 });
+  }
+
+  const parsed = checkoutDirectSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
+  }
+
+  const { assignmentId, notes, nps } = parsed.data;
+  if (user.role === "PRECEPTOR" && !nps) {
+    return NextResponse.json({ success: false, error: "NPS obrigatório para confirmar checkout." }, { status: 400 });
+  }
 
   const [assignment] = await db
     .select()
@@ -193,10 +218,16 @@ export async function PUT(req: NextRequest) {
     .set({ status: "CHECKED_OUT", updatedAt: now })
     .where(inArray(assignments.id, assignmentIdsToCheckout));
 
+  const normalizedNotes = notes?.trim() ? notes.trim() : null;
+  const serializedNps = nps
+    ? `NPS|knowledge=${nps.knowledge};proactivity=${nps.proactivity};punctuality=${nps.punctuality}`
+    : null;
+  const checkoutNotes = [normalizedNotes, serializedNps].filter(Boolean).join(" | ") || null;
+
   await db.update(checkins).set({
     checkoutAt: now,
     checkoutConfirmedBy: user.realUserId ?? user.id,
-    checkoutNotes: notes ?? null,
+    checkoutNotes,
   }).where(inArray(checkins.assignmentId, assignmentIdsToCheckout));
 
   await logAudit({
@@ -204,11 +235,12 @@ export async function PUT(req: NextRequest) {
     action: "CHECKOUT_CONFIRMED",
     entity: "assignment",
     entityId: assignmentId,
-    ...((user.isImpersonating || assignmentIdsToCheckout.length > 1)
+    ...((user.isImpersonating || assignmentIdsToCheckout.length > 1 || !!nps)
       ? {
         payload: {
           ...(user.isImpersonating ? { impersonating: user.id } : {}),
           ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
+          ...(nps ? { nps } : {}),
         },
       }
       : {}),
