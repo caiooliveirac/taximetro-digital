@@ -19,6 +19,34 @@ function formatValidationNudge() {
   ].join("\n");
 }
 
+async function sendTelegramMessage(
+  chatId: string,
+  text: string,
+  options?: {
+    messageThreadId?: number;
+    parseMode?: "Markdown";
+  },
+) {
+  const payload: Record<string, unknown> = {};
+  if (options?.parseMode) payload.parse_mode = options.parseMode;
+  if (typeof options?.messageThreadId === "number") payload.message_thread_id = options.messageThreadId;
+
+  try {
+    await bot.api.sendMessage(chatId, text, payload);
+    return;
+  } catch (err) {
+    // Some supergroups/topics may reject thread delivery after topic changes.
+    // Retry without thread targeting to avoid losing the confirmation message.
+    if (typeof options?.messageThreadId === "number") {
+      const fallbackPayload: Record<string, unknown> = {};
+      if (options?.parseMode) fallbackPayload.parse_mode = options.parseMode;
+      await bot.api.sendMessage(chatId, text, fallbackPayload);
+      return;
+    }
+    throw err;
+  }
+}
+
 function extractCommand(text: string) {
   const match = text.match(/^\/([a-zA-Z_]+)(?:@[^\s]+)?(?:\s+.*)?$/);
   return match?.[1]?.toLowerCase() ?? null;
@@ -65,6 +93,9 @@ export async function POST(req: NextRequest) {
     const text = message.text.trim();
     const telegramUserId = String(message.from.id);
     const chatId = String(message.chat.id);
+    const messageThreadId = typeof message.message_thread_id === "number"
+      ? message.message_thread_id
+      : undefined;
     const isGroup = message.chat.type === "group" || message.chat.type === "supergroup";
     const telegramName = message.from.first_name + (message.from.last_name ? ` ${message.from.last_name}` : "");
     const command = extractCommand(text);
@@ -105,12 +136,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (command === "pendencias" || command === "checkinspendentes") {
-      return await handleManualPendingReminderCommand(telegramUserId, telegramName, chatId, isGroup);
+      return await handleManualPendingReminderCommand(telegramUserId, telegramName, chatId, isGroup, messageThreadId);
     }
 
     // Group messages — any 6-digit code validates (no binding required)
     if (/^\d{6}$/.test(text)) {
-      return await handleGroupCodeValidation(text, telegramUserId, telegramName, chatId);
+      return await handleGroupCodeValidation(text, telegramUserId, telegramName, chatId, messageThreadId);
     }
 
     return NextResponse.json({ ok: true });
@@ -125,14 +156,15 @@ async function handleManualPendingReminderCommand(
   telegramName: string,
   chatId: string,
   isGroup: boolean,
+  messageThreadId?: number,
 ) {
   if (!isGroup) {
-    await bot.api.sendMessage(chatId, "Use este comando no grupo de validação.");
+    await sendTelegramMessage(chatId, "Use este comando no grupo de validação.", { messageThreadId });
     return NextResponse.json({ ok: true });
   }
 
   if (TELEGRAM_GROUP_ID && chatId !== TELEGRAM_GROUP_ID) {
-    await bot.api.sendMessage(chatId, "Este comando só está habilitado no grupo oficial de validação.");
+    await sendTelegramMessage(chatId, "Este comando só está habilitado no grupo oficial de validação.", { messageThreadId });
     return NextResponse.json({ ok: true });
   }
 
@@ -142,7 +174,7 @@ async function handleManualPendingReminderCommand(
     const message = permission.reason === "not-bound"
       ? "Comando indisponível para este Telegram. Faça primeiro /vincular 000.000.000-00 no privado do bot."
       : "Comando disponível apenas para coordenação, liderança ou preceptoria vinculadas.";
-    await bot.api.sendMessage(chatId, message);
+    await sendTelegramMessage(chatId, message, { messageThreadId });
     return NextResponse.json({ ok: true });
   }
 
@@ -155,7 +187,7 @@ async function handleManualPendingReminderCommand(
   });
 
   if (result.pendingCount > 0) {
-    await bot.api.sendMessage(chatId, `📣 Alerta manual disparado por ${telegramName}.`);
+    await sendTelegramMessage(chatId, `📣 Alerta manual disparado por ${telegramName}.`, { messageThreadId });
   }
 
   return NextResponse.json({ ok: true });
@@ -169,10 +201,16 @@ async function resolveBindingOptional(telegramUserId: string): Promise<string | 
 }
 
 /** Group validation — any group member can validate by typing the 6-digit code */
-async function handleGroupCodeValidation(code: string, telegramUserId: string, telegramName: string, chatId: string) {
+async function handleGroupCodeValidation(
+  code: string,
+  telegramUserId: string,
+  telegramName: string,
+  chatId: string,
+  messageThreadId?: number,
+) {
   const session = await validateCode(code);
   if (!session) {
-    await bot.api.sendMessage(chatId, "Código não encontrado ou expirado.");
+    await sendTelegramMessage(chatId, "Código não encontrado ou expirado.", { messageThreadId });
     return NextResponse.json({ ok: true });
   }
 
@@ -181,7 +219,7 @@ async function handleGroupCodeValidation(code: string, telegramUserId: string, t
 
   // If checkin is already VALIDATED, this is a CHECKOUT code
   if (checkin.status === "VALIDATED") {
-    return await handleCheckoutViaCode(session, checkin, telegramUserId, telegramName, chatId, false);
+    return await handleCheckoutViaCode(session, checkin, telegramUserId, telegramName, chatId, false, messageThreadId);
   }
 
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, checkin.assignmentId)).limit(1);
@@ -210,7 +248,7 @@ async function handleGroupCodeValidation(code: string, telegramUserId: string, t
   const facultyLabel = faculty?.abbreviation ?? "Sem faculdade";
   const baseLabel = `${base?.code ?? "--"} — ${base?.name ?? "Base não identificada"}`;
 
-  await bot.api.sendMessage(chatId,
+  await sendTelegramMessage(chatId,
     [
       "✅ Check-in validado",
       `Interno: ${intern?.name ?? "Não identificado"}`,
@@ -221,7 +259,8 @@ async function handleGroupCodeValidation(code: string, telegramUserId: string, t
       `Validação por: ${telegramName}`,
       "",
       formatValidationNudge(),
-    ].join("\n")
+    ].join("\n"),
+    { messageThreadId },
   );
 
   await logAudit({
@@ -241,6 +280,7 @@ async function handleCheckoutViaCode(
   checkin: { id: string; assignmentId: string },
   telegramUserId: string, telegramName: string, chatId: string,
   isPrivate: boolean,
+  messageThreadId?: number,
 ) {
   const validatorId = await resolveBindingOptional(telegramUserId);
 
@@ -265,7 +305,7 @@ async function handleCheckoutViaCode(
   const baseLabel = `${base?.code ?? "--"} — ${base?.name ?? "Base não identificada"}`;
 
   if (isPrivate) {
-    await bot.api.sendMessage(chatId,
+    await sendTelegramMessage(chatId,
       [
         "⬜ Checkout confirmado",
         `Interno: ${intern?.name ?? "Não identificado"}`,
@@ -275,11 +315,11 @@ async function handleCheckoutViaCode(
         `Hora: ${time}`,
         "",
         formatValidationNudge(),
-      ].join("\n")
+      ].join("\n"),
     );
     if (TELEGRAM_GROUP_ID) {
       try {
-        await bot.api.sendMessage(TELEGRAM_GROUP_ID,
+        await sendTelegramMessage(TELEGRAM_GROUP_ID,
           [
             "⬜ Checkout validado no privado",
             `Interno: ${intern?.name ?? "Não identificado"}`,
@@ -290,12 +330,12 @@ async function handleCheckoutViaCode(
             `Validação por: ${telegramName}`,
             "",
             formatValidationNudge(),
-          ].join("\n")
+          ].join("\n"),
         );
       } catch { /* group may not be configured */ }
     }
   } else {
-    await bot.api.sendMessage(chatId,
+    await sendTelegramMessage(chatId,
       [
         "⬜ Checkout validado",
         `Interno: ${intern?.name ?? "Não identificado"}`,
@@ -306,7 +346,8 @@ async function handleCheckoutViaCode(
         `Validação por: ${telegramName}`,
         "",
         formatValidationNudge(),
-      ].join("\n")
+      ].join("\n"),
+      { messageThreadId },
     );
   }
 
