@@ -122,6 +122,7 @@ function InternCheckinContent() {
   const [savedInternObservations, setSavedInternObservations] = useState("");
   const [savingObservations, setSavingObservations] = useState(false);
   const [observationsMsg, setObservationsMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showReminderModal, setShowReminderModal] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval>>(null);
   const sseRef = useRef<EventSource>(null);
 
@@ -503,6 +504,25 @@ function InternCheckinContent() {
     ? `/admin/remanejamento?assignmentId=${assignment?.id ?? ""}`
     : `/leader/remanejamento?assignmentId=${assignment?.id ?? ""}`;
   const showInternGuidance = session?.user?.role === "INTERN" && !impersonateTarget;
+  const reminderStorageKey = assignment ? `intern-checkin-reminder:${assignment.id}` : null;
+
+  useEffect(() => {
+    if (!assignment || session?.user?.role !== "INTERN" || impersonateTarget) {
+      setShowReminderModal(false);
+      return;
+    }
+    if (typeof window === "undefined") return;
+
+    if (window.sessionStorage.getItem(`intern-checkin-reminder:${assignment.id}`) === "1") return;
+    setShowReminderModal(true);
+  }, [assignment, impersonateTarget, session?.user?.role]);
+
+  function dismissReminderModal() {
+    if (typeof window !== "undefined" && reminderStorageKey) {
+      window.sessionStorage.setItem(reminderStorageKey, "1");
+    }
+    setShowReminderModal(false);
+  }
 
   if (loading) return <p className="text-sm text-slate-400">Carregando...</p>;
 
@@ -966,6 +986,48 @@ function InternCheckinContent() {
               Se a base exibida não estiver correta, você pode tocar em check-in normalmente caso não consiga contato com o líder de escala e avisá-lo assim que possível.
             </p>
           )}
+        </div>
+      )}
+      {showReminderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+            <p className="text-sm font-semibold text-slate-900">Lembrete</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-700">
+              Lembrando dos atendimentos à EAPs e PCR. Qualquer dúvida seguimos à disposição.
+            </p>
+
+            <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+              <p className="text-slate-800">
+                <span className="font-semibold">EAP:</span> Ana Beatriz Andrade {" "}
+                <a
+                  href="https://wa.me/5571900000000"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-accent-700 underline underline-offset-2"
+                >
+                  +5571900000000
+                </a>
+              </p>
+              <p className="text-slate-800">
+                <span className="font-semibold">PCR:</span> Leo Copque (REDCap:{" "}
+                <a
+                  href="https://redcap.link/BRAVOSALVADOR"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-accent-700 underline underline-offset-2"
+                >
+                  https://redcap.link/BRAVOSALVADOR
+                </a>
+                )
+              </p>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <Button type="button" onClick={dismissReminderModal} className="gap-2">
+                Entendi
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
