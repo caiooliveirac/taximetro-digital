@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sun, Moon, Calendar, LogOut, Loader2, CheckCircle } from "lucide-react";
+import { Sun, Moon, Calendar, LogOut, Loader2, Frown, Meh, Smile } from "lucide-react";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
@@ -20,12 +20,33 @@ type Assignment = {
   facultyAbbr: string;
 };
 
+type NpsAnswer = "SAD" | "NEUTRAL" | "HAPPY";
+
+type CheckoutNps = {
+  knowledge: NpsAnswer | null;
+  proactivity: NpsAnswer | null;
+  punctuality: NpsAnswer | null;
+};
+
+const EMPTY_NPS: CheckoutNps = {
+  knowledge: null,
+  proactivity: null,
+  punctuality: null,
+};
+
+const NPS_OPTIONS: Array<{ value: NpsAnswer; label: string; Icon: typeof Frown }> = [
+  { value: "SAD", label: "Triste", Icon: Frown },
+  { value: "NEUTRAL", label: "Neutra", Icon: Meh },
+  { value: "HAPPY", label: "Feliz", Icon: Smile },
+];
+
 export default function PreceptorPlantao() {
   const { base, shift } = usePreceptor();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [selectedCheckout, setSelectedCheckout] = useState<Assignment | null>(null);
+  const [checkoutNps, setCheckoutNps] = useState<CheckoutNps>(EMPTY_NPS);
 
   const today = localDateStr();
 
@@ -46,17 +67,13 @@ export default function PreceptorPlantao() {
       .finally(() => setLoading(false));
   }, [base, shift]);
 
-  async function handleCheckout(assignmentId: string) {
-    if (confirming !== assignmentId) {
-      setConfirming(assignmentId);
-      return;
-    }
+  async function handleCheckout(assignmentId: string, nps: CheckoutNps) {
     setCheckingOut(assignmentId);
     try {
       const res = await fetch("/taximetro/api/attendance/checkout", {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId }),
+        body: JSON.stringify({ assignmentId, nps }),
       });
       const data = await res.json();
       if (data.success) {
@@ -66,11 +83,28 @@ export default function PreceptorPlantao() {
         setAssignments((prev) =>
           prev.map((a) => (checkedOutIds.includes(a.id) ? { ...a, status: "CHECKED_OUT" } : a))
         );
+        setSelectedCheckout(null);
+        setCheckoutNps(EMPTY_NPS);
       }
     } catch { /* ignore */ }
     setCheckingOut(null);
-    setConfirming(null);
   }
+
+  function openCheckoutNps(assignment: Assignment) {
+    if (selectedCheckout?.id === assignment.id) {
+      setSelectedCheckout(null);
+      setCheckoutNps(EMPTY_NPS);
+      return;
+    }
+    setSelectedCheckout(assignment);
+    setCheckoutNps(EMPTY_NPS);
+  }
+
+  function setNpsAnswer(question: keyof CheckoutNps, value: NpsAnswer) {
+    setCheckoutNps((prev) => ({ ...prev, [question]: value }));
+  }
+
+  const canSubmitNps = checkoutNps.knowledge && checkoutNps.proactivity && checkoutNps.punctuality;
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -114,18 +148,12 @@ export default function PreceptorPlantao() {
                     {a.status === "CHECKED_IN" ? (
                       <Button
                         size="sm"
-                        variant={confirming === a.id ? "default" : "outline"}
-                        className={confirming === a.id ? "bg-blue-600 hover:bg-blue-700 text-white gap-1" : "gap-1"}
+                        variant={selectedCheckout?.id === a.id ? "default" : "outline"}
+                        className="gap-1"
                         disabled={checkingOut === a.id}
-                        onClick={() => handleCheckout(a.id)}
+                        onClick={() => openCheckoutNps(a)}
                       >
-                        {checkingOut === a.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : confirming === a.id ? (
-                          <><CheckCircle className="h-3.5 w-3.5" /> Confirmar</>
-                        ) : (
-                          <><LogOut className="h-3.5 w-3.5" /> Checkout</>
-                        )}
+                        {checkingOut === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><LogOut className="h-3.5 w-3.5" /> Checkout</>}
                       </Button>
                     ) : a.status === "CHECKED_OUT" ? (
                       <span className="text-xs text-blue-500 font-medium">Encerrado</span>
@@ -135,6 +163,93 @@ export default function PreceptorPlantao() {
               ))}
             </TableBody>
           </Table>
+          {selectedCheckout && selectedCheckout.status === "CHECKED_IN" && (
+            <div className="border-t border-slate-100 p-4">
+              <p className="text-xs font-semibold text-slate-700">
+                Checkout de {selectedCheckout.internName}: responda as 3 perguntas antes de confirmar.
+              </p>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <p className="text-xs text-slate-600">Conhecimentos apresentados</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {NPS_OPTIONS.map(({ value, label, Icon }) => (
+                      <Button
+                        key={`knowledge-${value}`}
+                        type="button"
+                        size="sm"
+                        variant={checkoutNps.knowledge === value ? "default" : "outline"}
+                        onClick={() => setNpsAnswer("knowledge", value)}
+                        className="min-w-24"
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-600">Proatividade</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {NPS_OPTIONS.map(({ value, label, Icon }) => (
+                      <Button
+                        key={`proactivity-${value}`}
+                        type="button"
+                        size="sm"
+                        variant={checkoutNps.proactivity === value ? "default" : "outline"}
+                        onClick={() => setNpsAnswer("proactivity", value)}
+                        className="min-w-24"
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-600">Pontualidade</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {NPS_OPTIONS.map(({ value, label, Icon }) => (
+                      <Button
+                        key={`punctuality-${value}`}
+                        type="button"
+                        size="sm"
+                        variant={checkoutNps.punctuality === value ? "default" : "outline"}
+                        onClick={() => setNpsAnswer("punctuality", value)}
+                        className="min-w-24"
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSelectedCheckout(null);
+                    setCheckoutNps(EMPTY_NPS);
+                  }}
+                  disabled={checkingOut === selectedCheckout.id}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => handleCheckout(selectedCheckout.id, checkoutNps)}
+                  disabled={checkingOut === selectedCheckout.id || !canSubmitNps}
+                  className="gap-1"
+                >
+                  {checkingOut === selectedCheckout.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+                  Confirmar checkout
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="border-t border-slate-100 px-4 py-2">
             <span className="text-xs text-slate-400">{assignments.length} interno(s)</span>
           </div>
