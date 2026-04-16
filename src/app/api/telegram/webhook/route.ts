@@ -9,6 +9,16 @@ import { formatBrazilTime } from "@/lib/utils";
 import { canTriggerPendingReminderFromTelegram, sendPendingCheckinReminder } from "@/lib/telegram-checkin-pending-reminder";
 import { z } from "zod/v4";
 
+const PRECEPTOR_REGISTRATION_URL = "https://mnrs.com.br/taximetro/registro/9NPQUwOwats7IZDuLbpuUw";
+
+function formatValidationNudge() {
+  return [
+    "💡 Dica para preceptor:",
+    "Só digitar o código no grupo funciona, mas no site é mais fácil e permite avaliar o interno (NPS), não só registrar presença.",
+    `Cadastro: ${PRECEPTOR_REGISTRATION_URL}`,
+  ].join("\n");
+}
+
 function extractCommand(text: string) {
   const match = text.match(/^\/([a-zA-Z_]+)(?:@[^\s]+)?(?:\s+.*)?$/);
   return match?.[1]?.toLowerCase() ?? null;
@@ -197,9 +207,21 @@ async function handleGroupCodeValidation(code: string, telegramUserId: string, t
 
   const period = assignment.period === "DAY" ? "DIA" : "NOITE";
   const time = formatBrazilTime(new Date());
+  const facultyLabel = faculty?.abbreviation ?? "Sem faculdade";
+  const baseLabel = `${base?.code ?? "--"} — ${base?.name ?? "Base não identificada"}`;
 
   await bot.api.sendMessage(chatId,
-    `✓ ${intern?.name} (${faculty?.abbreviation}) — ${base?.code} · ${period} · ${time} — ${telegramName}`
+    [
+      "✅ Check-in validado",
+      `Interno: ${intern?.name ?? "Não identificado"}`,
+      `Faculdade: ${facultyLabel}`,
+      `Base: ${baseLabel}`,
+      `Turno: ${period}`,
+      `Hora: ${time}`,
+      `Validação por: ${telegramName}`,
+      "",
+      formatValidationNudge(),
+    ].join("\n")
   );
 
   await logAudit({
@@ -239,22 +261,52 @@ async function handleCheckoutViaCode(
 
   const period = assignment.period === "DAY" ? "DIA" : "NOITE";
   const time = formatBrazilTime(new Date());
+  const facultyLabel = faculty?.abbreviation ?? "Sem faculdade";
+  const baseLabel = `${base?.code ?? "--"} — ${base?.name ?? "Base não identificada"}`;
 
   if (isPrivate) {
     await bot.api.sendMessage(chatId,
-      `⬜ *Checkout confirmado*\n\n*${intern?.name}*\n${faculty?.abbreviation}\nBase: ${base?.code} — ${base?.name} · ${period === "DIA" ? "Diurno" : "Noturno"}\n${time}`,
-      { parse_mode: "Markdown" }
+      [
+        "⬜ Checkout confirmado",
+        `Interno: ${intern?.name ?? "Não identificado"}`,
+        `Faculdade: ${facultyLabel}`,
+        `Base: ${baseLabel}`,
+        `Turno: ${period === "DIA" ? "Diurno" : "Noturno"}`,
+        `Hora: ${time}`,
+        "",
+        formatValidationNudge(),
+      ].join("\n")
     );
     if (TELEGRAM_GROUP_ID) {
       try {
         await bot.api.sendMessage(TELEGRAM_GROUP_ID,
-          `⬜ CHECKOUT ${intern?.name} (${faculty?.abbreviation}) — ${base?.code} · ${period} · ${time} — ${telegramName}`
+          [
+            "⬜ Checkout validado no privado",
+            `Interno: ${intern?.name ?? "Não identificado"}`,
+            `Faculdade: ${facultyLabel}`,
+            `Base: ${baseLabel}`,
+            `Turno: ${period}`,
+            `Hora: ${time}`,
+            `Validação por: ${telegramName}`,
+            "",
+            formatValidationNudge(),
+          ].join("\n")
         );
       } catch { /* group may not be configured */ }
     }
   } else {
     await bot.api.sendMessage(chatId,
-      `⬜ CHECKOUT ${intern?.name} (${faculty?.abbreviation}) — ${base?.code} · ${period} · ${time} — ${telegramName}`
+      [
+        "⬜ Checkout validado",
+        `Interno: ${intern?.name ?? "Não identificado"}`,
+        `Faculdade: ${facultyLabel}`,
+        `Base: ${baseLabel}`,
+        `Turno: ${period}`,
+        `Hora: ${time}`,
+        `Validação por: ${telegramName}`,
+        "",
+        formatValidationNudge(),
+      ].join("\n")
     );
   }
 
@@ -311,23 +363,41 @@ async function handlePrivateCodeValidation(code: string, telegramUserId: string,
   const [faculty] = await db.select().from(faculties).where(eq(faculties.id, assignment.facultyId)).limit(1);
 
   const period = assignment.period === "DAY" ? "Diurno" : "Noturno";
+  const periodShort = assignment.period === "DAY" ? "DIA" : "NOITE";
+  const time = formatBrazilTime(new Date());
+  const facultyLabel = faculty?.abbreviation ?? "Sem faculdade";
+  const baseLabel = `${base?.code ?? "--"} — ${base?.name ?? "Base não identificada"}`;
 
   // Detailed response in private chat
   await bot.api.sendMessage(chatId,
-    `✓ *Presença validada*\n\n` +
-    `*${intern?.name}*\n` +
-    `${faculty?.abbreviation} · Interno(a)\n` +
-    `Base: ${base?.code} — ${base?.name} · ${period}\n` +
-    `${assignment.date}`,
-    { parse_mode: "Markdown" }
+    [
+      "✅ Presença validada",
+      `Interno: ${intern?.name ?? "Não identificado"}`,
+      `Faculdade: ${facultyLabel}`,
+      `Base: ${baseLabel}`,
+      `Turno: ${period}`,
+      `Data: ${assignment.date}`,
+      `Hora: ${time}`,
+      "",
+      formatValidationNudge(),
+    ].join("\n")
   );
 
   // Also post confirmation in group
   if (TELEGRAM_GROUP_ID) {
-    const time = formatBrazilTime(new Date());
     try {
       await bot.api.sendMessage(TELEGRAM_GROUP_ID,
-        `✓ ${intern?.name} (${faculty?.abbreviation}) — ${base?.code} · ${period === "Diurno" ? "DIA" : "NOITE"} · ${time} — ${telegramName}`
+        [
+          "✅ Check-in validado no privado",
+          `Interno: ${intern?.name ?? "Não identificado"}`,
+          `Faculdade: ${facultyLabel}`,
+          `Base: ${baseLabel}`,
+          `Turno: ${periodShort}`,
+          `Hora: ${time}`,
+          `Validação por: ${telegramName}`,
+          "",
+          formatValidationNudge(),
+        ].join("\n")
       );
     } catch { /* group may not be configured yet */ }
   }
