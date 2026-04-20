@@ -40,7 +40,16 @@ export function AdminManualAttendanceActions({
                 body: JSON.stringify({ assignmentId, action }),
             });
 
-            const json = await response.json();
+            const contentType = response.headers.get("content-type") ?? "";
+            const json = contentType.includes("application/json") ? await response.json() : null;
+            if (!response.ok) {
+                const fallback = response.status === 401
+                    ? "Sua sessão expirou. Faça login novamente."
+                    : `Falha ao registrar a ação (HTTP ${response.status}).`;
+                setFeedback({ type: "error", text: json?.error ?? fallback });
+                return;
+            }
+
             if (!json.success) {
                 setFeedback({ type: "error", text: json.error ?? "Não foi possível registrar a ação" });
                 return;
@@ -60,8 +69,11 @@ export function AdminManualAttendanceActions({
             });
 
             await onUpdated?.();
-        } catch {
-            setFeedback({ type: "error", text: "Erro de conexão ao registrar a ação" });
+        } catch (error) {
+            setFeedback({
+                type: "error",
+                text: error instanceof Error ? error.message : "Erro de conexão ao registrar a ação",
+            });
         } finally {
             setPendingAction(null);
         }
