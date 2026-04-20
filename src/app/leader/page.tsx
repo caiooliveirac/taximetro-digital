@@ -140,6 +140,7 @@ export default function LeaderDashboard() {
   const [expandedPendingInternId, setExpandedPendingInternId] = useState<string | null>(null);
   const [archivedInternIds, setArchivedInternIds] = useState<Set<string>>(new Set());
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archivingAll, setArchivingAll] = useState(false);
   const [error, setError] = useState("");
   const [myAssignment, setMyAssignment] = useState<{ id: string; baseCode: string; baseName: string; period: string; status: string } | null>(null);
   const [preceptorRedirecting, setPreceptorRedirecting] = useState(false);
@@ -159,6 +160,26 @@ export default function LeaderDashboard() {
       }
     } finally {
       setArchivingId(null);
+    }
+  }
+
+  async function handleArchiveAllCandidates(candidates: typeof compliance) {
+    setArchivingAll(true);
+    try {
+      await Promise.all(
+        candidates.map((row) =>
+          fetch("/taximetro/api/admin/users", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: row.userId, isArchived: true }),
+          }),
+        ),
+      );
+      const ids = candidates.map((r) => r.userId);
+      setCompliance((prev) => prev.filter((r) => !ids.includes(r.userId)));
+      setArchivedInternIds((prev) => new Set([...prev, ...ids]));
+    } finally {
+      setArchivingAll(false);
     }
   }
 
@@ -726,11 +747,24 @@ export default function LeaderDashboard() {
             <Archive className="h-4 w-4 text-slate-500" strokeWidth={1.5} />
             <h2 className="text-sm font-semibold text-slate-700">Sem atividade nos últimos 21 dias</h2>
             <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">{archiveCandidates.length}</span>
+            <button
+              type="button"
+              onClick={() => handleArchiveAllCandidates(archiveCandidates)}
+              disabled={archivingAll}
+              className="ml-auto inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60 transition-colors"
+            >
+              {archivingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" strokeWidth={1.5} />}
+              Arquivar todos ({archiveCandidates.length})
+            </button>
           </div>
           <div className="space-y-2">
             {archiveCandidates.map((row) => {
               const fs = getFacultyStyle(row.facultyAbbr || null);
               const isArchiving = archivingId === row.userId;
+              const internAllAssignments = monitorAssignmentsByIntern.get(row.userId) ?? [];
+              const lastDate = internAllAssignments
+                .filter((a) => a.date <= today)
+                .sort((left, right) => right.date.localeCompare(left.date))[0]?.date ?? null;
               return (
                 <div key={row.userId} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white/90 px-3 py-2.5 text-xs">
                   <div className="flex items-center gap-2 min-w-0">
@@ -739,6 +773,12 @@ export default function LeaderDashboard() {
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${fs.pill}`}>
                         {row.facultyAbbr}
                       </span>
+                    )}
+                    {lastDate && (
+                      <span className="text-[10px] text-slate-400">último: {shortDate(lastDate)}</span>
+                    )}
+                    {!lastDate && (
+                      <span className="text-[10px] text-slate-400">sem plantão registrado</span>
                     )}
                   </div>
                   <button
