@@ -105,6 +105,10 @@ function periodEmoji(period: "DAY" | "NIGHT") {
   return period === "DAY" ? "☀️" : "🌙";
 }
 
+function normalizeDate(date: string) {
+  return date.slice(0, 10);
+}
+
 function isPendingCheckinForDay(a: WeekAssignment, day: string) {
   if (a.date !== day) return false;
   if (a.status === "CANCELLED" || a.status === "ABSENT") return false;
@@ -177,7 +181,15 @@ export default function LeaderDashboard() {
         ]);
 
         if (assignmentsJson.success) {
-          setWeekAssignments(assignmentsJson.data.filter((a: WeekAssignment) => a.status !== "CANCELLED"));
+          setWeekAssignments(
+            assignmentsJson.data
+              .filter((a: WeekAssignment) => a.status !== "CANCELLED")
+              .map((a: WeekAssignment) => ({
+                ...a,
+                date: normalizeDate(a.date),
+                period: a.period === "NIGHT" ? "NIGHT" : "DAY",
+              })),
+          );
         } else {
           setWeekAssignments([]);
         }
@@ -228,12 +240,6 @@ export default function LeaderDashboard() {
   if (loading) return <TableSkeleton rows={4} cols={5} />;
   if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
-  // Group compliance by weekly category
-  const groups: Record<WeeklyCategory, ComplianceRow[]> = { com_falta: [], sub_alocado: [], na_meta: [] };
-  for (const c of compliance) {
-    groups[categorize(c)].push(c);
-  }
-
   const today = operationalDateStr();
   const yesterday = addDaysToDateStr(today, -1);
 
@@ -243,6 +249,62 @@ export default function LeaderDashboard() {
       weeklyAssignmentsByIntern.set(assignment.internId, []);
     }
     weeklyAssignmentsByIntern.get(assignment.internId)!.push(assignment);
+  }
+
+  const weeklyTruthByIntern = new Map<string, {
+    usaCount: number;
+    cruCount: number;
+    crlCount: number;
+    eligibleScheduled: number;
+    eligibleAbsent: number;
+  }>();
+  for (const row of compliance) {
+    weeklyTruthByIntern.set(row.userId, {
+      usaCount: 0,
+      cruCount: 0,
+      crlCount: 0,
+      eligibleScheduled: 0,
+      eligibleAbsent: 0,
+    });
+  }
+  for (const assignment of weekAssignments) {
+    if (!weeklyTruthByIntern.has(assignment.internId)) {
+      weeklyTruthByIntern.set(assignment.internId, {
+        usaCount: 0,
+        cruCount: 0,
+        crlCount: 0,
+        eligibleScheduled: 0,
+        eligibleAbsent: 0,
+      });
+    }
+    const truth = weeklyTruthByIntern.get(assignment.internId)!;
+    if (assignment.baseType === "USA") truth.usaCount += 1;
+    if (assignment.baseType === "CENTRAL") truth.cruCount += 1;
+    if (assignment.baseType === "CRL") truth.crlCount += 1;
+    if (assignment.baseType === "USA" || assignment.baseType === "CENTRAL") {
+      truth.eligibleScheduled += 1;
+      if (assignment.status === "ABSENT") truth.eligibleAbsent += 1;
+    }
+  }
+
+  function weeklyCategory(c: ComplianceRow): WeeklyCategory {
+    const truth = weeklyTruthByIntern.get(c.userId) ?? {
+      usaCount: 0,
+      cruCount: 0,
+      crlCount: 0,
+      eligibleScheduled: 0,
+      eligibleAbsent: 0,
+    };
+    if (truth.eligibleAbsent > 0) return "com_falta";
+    const effective = truth.eligibleScheduled - truth.eligibleAbsent;
+    if (c.targetShiftsPerWeek > 0 && effective < c.targetShiftsPerWeek) return "sub_alocado";
+    return "na_meta";
+  }
+
+  // Group compliance by weekly category using schedule truth (same source as escala)
+  const groups: Record<WeeklyCategory, ComplianceRow[]> = { com_falta: [], sub_alocado: [], na_meta: [] };
+  for (const c of compliance) {
+    groups[weeklyCategory(c)].push(c);
   }
 
   const pendingCheckinRecent = weekAssignments
@@ -432,7 +494,14 @@ export default function LeaderDashboard() {
                 <div className="border-t border-inherit px-2 pb-2">
                   {rows.map((c) => {
                     const fs = getFacultyStyle(c.facultyAbbr);
-                    const effective = c.thisWeekScheduled - c.thisWeekAbsent;
+                    const truth = weeklyTruthByIntern.get(c.userId) ?? {
+                      usaCount: 0,
+                      cruCount: 0,
+                      crlCount: 0,
+                      eligibleScheduled: 0,
+                      eligibleAbsent: 0,
+                    };
+                    const effective = truth.eligibleScheduled - truth.eligibleAbsent;
                     const personAssignments = (weeklyAssignmentsByIntern.get(c.userId) ?? []).slice().sort((left, right) => {
                       const rank = (type: string) => {
                         if (type === "USA") return 0;
@@ -446,8 +515,8 @@ export default function LeaderDashboard() {
                       return left.period === right.period ? 0 : left.period === "DAY" ? -1 : 1;
                     });
 
-                    const hasUsa = personAssignments.some((assignment) => assignment.baseType === "USA");
-                    const hasCru = personAssignments.some((assignment) => assignment.baseType === "CENTRAL");
+                    const hasUsa = truth.usaCount > 0;
+                    const hasCru = truth.cruCount > 0;
 
                     const assignmentTags = personAssignments.map((assignment) => {
                       const checkedIn = CHECKIN_DONE.has(assignment.status);
@@ -516,9 +585,9 @@ export default function LeaderDashboard() {
                           <span className={`font-medium tabular-nums ${effective >= c.targetShiftsPerWeek ? "text-emerald-600" : "text-red-600"}`}>
                             {effective}/{c.targetShiftsPerWeek}
                           </span>
-                          {c.thisWeekAbsent > 0 && (
+                          {truth.eligibleAbsent > 0 && (
                             <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-700 font-medium">
-                              {c.thisWeekAbsent} falta{c.thisWeekAbsent > 1 ? "s" : ""}
+                              {truth.eligibleAbsent} falta{truth.eligibleAbsent > 1 ? "s" : ""}
                             </span>
                           )}
                           {cat === "sub_alocado" && (
