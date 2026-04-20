@@ -9,6 +9,7 @@ import {
   AlertTriangle, AlertCircle, Target, ChevronDown, ChevronUp, ArrowRight, MapPinOff, MapPin, Sun, Moon, Stethoscope, Loader2,
 } from "lucide-react";
 import { MetricCard } from "@/components/metric-card";
+import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr } from "@/lib/utils";
@@ -81,10 +82,14 @@ type WeekAssignment = {
   internId: string;
   internName: string;
   baseCode: string;
+  baseName?: string;
   baseType: string;
   date: string;
   period: "DAY" | "NIGHT";
   status: string;
+  absenceJustification?: string | null;
+  absenceJustificationActor?: string | null;
+  absenceJustificationAt?: string | null;
 };
 
 type WeeklyCategory = "com_falta" | "sub_alocado" | "na_meta";
@@ -127,6 +132,7 @@ export default function LeaderDashboard() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedGroup, setExpandedGroup] = useState<WeeklyCategory | null>(null);
+  const [expandedPendingInternId, setExpandedPendingInternId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [myAssignment, setMyAssignment] = useState<{ id: string; baseCode: string; baseName: string; period: string; status: string } | null>(null);
   const [preceptorRedirecting, setPreceptorRedirecting] = useState(false);
@@ -161,7 +167,7 @@ export default function LeaderDashboard() {
         const [usersRes, assignmentsRes, monitorAssignmentsRes, requestsRes, todayRes, complianceRes, alertsRes] = await Promise.all([
           fetch("/taximetro/api/admin/users"),
           fetch(`/taximetro/api/assignments?from=${weekStart}&to=${weekEnd}`),
-          fetch(`/taximetro/api/assignments?from=${monitorStart}&to=${today}`),
+          fetch(`/taximetro/api/assignments?from=${monitorStart}&to=${weekEnd}`),
           fetch("/taximetro/api/requests"),
           fetch(`/taximetro/api/assignments?from=${today}&to=${today}`),
           fetch("/taximetro/api/compliance"),
@@ -346,6 +352,10 @@ export default function LeaderDashboard() {
     cruDebt: number; // Only CRU debt appears in pending list
     usaDebt: number;
     crlDebt: number;
+    totalDeficit: number;
+    targetShifts: number;
+    totalCompleted: number;
+    unresolvedAbsence: number;
     attendance: WeekAssignment[];
   }>();
 
@@ -357,8 +367,33 @@ export default function LeaderDashboard() {
       cruDebt: row.weeklyCRUDeficit > 0 ? row.weeklyCRUDeficit : 0,
       usaDebt: row.weeklyUSADeficit > 0 ? row.weeklyUSADeficit : 0,
       crlDebt: row.weeklyCRLDeficit > 0 ? row.weeklyCRLDeficit : 0,
+      totalDeficit: row.totalDeficit > 0 ? row.totalDeficit : 0,
+      targetShifts: row.targetShifts,
+      totalCompleted: row.totalCompleted,
+      unresolvedAbsence: 0,
       attendance: [],
     });
+  }
+
+  for (const assignment of monitorAssignments) {
+    if (assignment.status !== "ABSENT") continue;
+    if (assignment.absenceJustification && assignment.absenceJustification.trim().length > 0) continue;
+    if (!pendingByIntern.has(assignment.internId)) {
+      pendingByIntern.set(assignment.internId, {
+        internId: assignment.internId,
+        name: assignment.internName,
+        facultyAbbr: "",
+        cruDebt: 0,
+        usaDebt: 0,
+        crlDebt: 0,
+        totalDeficit: 0,
+        targetShifts: 0,
+        totalCompleted: 0,
+        unresolvedAbsence: 0,
+        attendance: [],
+      });
+    }
+    pendingByIntern.get(assignment.internId)!.unresolvedAbsence += 1;
   }
 
   for (const assignment of pendingAttendance) {
@@ -370,6 +405,10 @@ export default function LeaderDashboard() {
         cruDebt: 0,
         usaDebt: 0,
         crlDebt: 0,
+        totalDeficit: 0,
+        targetShifts: 0,
+        totalCompleted: 0,
+        unresolvedAbsence: 0,
         attendance: [],
       });
     }
@@ -377,8 +416,18 @@ export default function LeaderDashboard() {
   }
 
   const pendingRows = [...pendingByIntern.values()]
-    .filter((row) => row.cruDebt > 0 || row.attendance.length > 0)
+    .filter((row) => (
+      row.cruDebt > 0
+      || row.usaDebt > 0
+      || row.crlDebt > 0
+      || row.totalDeficit > 0
+      || row.unresolvedAbsence > 0
+      || row.attendance.length > 0
+    ))
     .sort((left, right) => {
+      const leftWeight = left.unresolvedAbsence * 100 + left.totalDeficit * 10 + left.cruDebt + left.usaDebt + left.crlDebt;
+      const rightWeight = right.unresolvedAbsence * 100 + right.totalDeficit * 10 + right.cruDebt + right.usaDebt + right.crlDebt;
+      if (leftWeight !== rightWeight) return rightWeight - leftWeight;
       const leftDate = left.attendance[0]?.date;
       const rightDate = right.attendance[0]?.date;
       if (leftDate && rightDate && leftDate !== rightDate) return leftDate < rightDate ? -1 : 1;
@@ -495,12 +544,25 @@ export default function LeaderDashboard() {
             {pendingRows.map((row) => {
               const fs = getFacultyStyle(row.facultyAbbr || null);
               const attendancePreview = row.attendance.slice(0, 3);
+              const isExpanded = expandedPendingInternId === row.internId;
+              const personAssignments = monitorAssignments
+                .filter((assignment) => assignment.internId === row.internId)
+                .slice()
+                .sort((left, right) => right.date.localeCompare(left.date));
+              const completedRows = personAssignments.filter((assignment) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(assignment.status));
+              const cruDone = completedRows.filter((assignment) => assignment.baseType === "CENTRAL").length;
+              const usaDone = completedRows.filter((assignment) => assignment.baseType === "USA").length;
+              const crlDone = completedRows.filter((assignment) => assignment.baseType === "CRL").length;
               return (
                 <div key={row.internId} className="rounded-lg border border-red-200 bg-white/90 px-3 py-2.5 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Link href="/leader/escala" className="font-semibold text-red-800 hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPendingInternId(isExpanded ? null : row.internId)}
+                      className="font-semibold text-red-800 hover:underline"
+                    >
                       {row.name}
-                    </Link>
+                    </button>
                     {row.facultyAbbr && (
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${fs.pill}`}>
                         {row.facultyAbbr}
@@ -530,6 +592,16 @@ export default function LeaderDashboard() {
                         Débito CRL: -{row.crlDebt}
                       </span>
                     )}
+                    {row.totalDeficit > 0 && (
+                      <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-800">
+                        Déficit total: -{row.totalDeficit}
+                      </span>
+                    )}
+                    {row.unresolvedAbsence > 0 && (
+                      <span className="rounded-full border border-red-200 bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-800">
+                        Faltas sem resposta: {row.unresolvedAbsence}
+                      </span>
+                    )}
                     {attendancePreview.map((assignment) => (
                       <span key={assignment.id} className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-800">
                         Sem check-in {assignment.baseCode} {dayLabel(assignment.date)} {shortDate(assignment.date)} {periodEmoji(assignment.period)}
@@ -541,11 +613,58 @@ export default function LeaderDashboard() {
                       </span>
                     )}
                   </div>
+
+                  {isExpanded && (
+                    <div className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                          <p className="text-[10px] uppercase text-slate-500">Realizados</p>
+                          <p className="text-sm font-semibold text-slate-900">{row.totalCompleted}<span className="text-xs text-slate-500">/{row.targetShifts || 0}</span></p>
+                        </div>
+                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                          <p className="text-[10px] uppercase text-slate-500">CRU</p>
+                          <p className="text-sm font-semibold text-violet-700">{cruDone}</p>
+                        </div>
+                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                          <p className="text-[10px] uppercase text-slate-500">USA</p>
+                          <p className="text-sm font-semibold text-blue-700">{usaDone}</p>
+                        </div>
+                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                          <p className="text-[10px] uppercase text-slate-500">CRL</p>
+                          <p className="text-sm font-semibold text-fuchsia-700">{crlDone}</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Histórico recente</h3>
+                        {personAssignments.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {personAssignments.slice(0, 12).map((assignment) => (
+                              <div key={assignment.id} className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-slate-900">{assignment.baseCode}</span>
+                                  <span className="text-[11px] text-slate-500">{shortDate(assignment.date)} {dayLabel(assignment.date)} {periodEmoji(assignment.period)}</span>
+                                  <span className="ml-auto"><StatusBadge status={assignment.status} /></span>
+                                </div>
+                                {assignment.status === "ABSENT" && (
+                                  <p className={`mt-1 text-[11px] ${assignment.absenceJustification ? "text-slate-600" : "text-red-600"}`}>
+                                    {assignment.absenceJustification ? `Justificada: ${assignment.absenceJustification}` : "Sem justificativa registrada."}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500">Sem histórico recente.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
             <p className="pt-1 text-[11px] text-red-700">
-              Mostra internos com débito de CRU (e USA/CRL se houver) e check-in vencido (após 07h diurno, 19h noturno). Remove automaticamente quando check-in confirmado, falta justificada ou removido da escala.
+              Mostra internos com déficit semanal (CRU/USA/CRL), déficit total, faltas sem justificativa e check-in vencido (após 07h diurno, 19h noturno).
             </p>
               </div>
         </div>
