@@ -35,6 +35,7 @@ Processamento:
 - src/app/api/assignments/route.ts
 - Regras de capacidade e conflito em src/lib/slots.ts
 - Regras CRU fixo em src/lib/cru-fixed.ts
+- **Filtragem de papéis**: Apenas usuários com papel `INTERN` podem ser alocados (ver [docs/role-filtering.md](role-filtering.md))
 
 Persistência:
 - assignments, slot_rules, cru_fixed_assignments, audit_log
@@ -47,6 +48,9 @@ Pontos sensíveis:
 - Conflito CRU/CRL ±12h
 - Reativação de cancelados
 - Regras por papel (leader/coordinator)
+- **Regra crítica**: Líderes que devem ser escaláveis precisam ter AMBOS os papéis `LEADER` + `INTERN`
+  - Líderes com apenas `LEADER` não aparecem em sorteio ou alocação manual
+  - Mudar papel de alguém afeta IMEDIATAMENTE a próxima operação de escala
 
 ## 2) Check-in e validação de presença
 Entrada:
