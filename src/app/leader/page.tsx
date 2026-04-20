@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Users, Calendar, CheckCircle, Clock, XCircle, RefreshCw,
-  AlertTriangle, AlertCircle, Target, ChevronDown, ChevronUp, ArrowRight, MapPinOff, MapPin, Sun, Moon, Stethoscope, Loader2,
+  AlertTriangle, AlertCircle, Target, ChevronDown, ChevronUp, ArrowRight, MapPinOff, MapPin, Sun, Moon, Stethoscope, Loader2, Archive,
 } from "lucide-react";
 import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
@@ -138,10 +138,30 @@ export default function LeaderDashboard() {
   const [loading, setLoading] = useState(true);
   const [expandedGroup, setExpandedGroup] = useState<WeeklyCategory | null>(null);
   const [expandedPendingInternId, setExpandedPendingInternId] = useState<string | null>(null);
+  const [archivedInternIds, setArchivedInternIds] = useState<Set<string>>(new Set());
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [myAssignment, setMyAssignment] = useState<{ id: string; baseCode: string; baseName: string; period: string; status: string } | null>(null);
   const [preceptorRedirecting, setPreceptorRedirecting] = useState(false);
   const [preceptorAccessError, setPreceptorAccessError] = useState("");
+  async function handleArchiveIntern(internId: string) {
+    setArchivingId(internId);
+    try {
+      const res = await fetch("/taximetro/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: internId, isArchived: true }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCompliance((prev) => prev.filter((r) => r.userId !== internId));
+        setArchivedInternIds((prev) => new Set([...prev, internId]));
+      }
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
   const sessionRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canActAsPreceptor = sessionRoles.includes("PRECEPTOR");
 
@@ -239,6 +259,15 @@ export default function LeaderDashboard() {
         if (complianceJson.success) {
           setCompliance(complianceJson.data ?? []);
           setSummary(complianceJson.summary ?? null);
+        }
+
+        if (usersJson.success) {
+          const archived = new Set<string>(
+            (usersJson.data as Array<{ id: string; role: string; isArchived: boolean; isActive: boolean }>)
+              .filter((u) => u.role === "INTERN" && u.isActive && u.isArchived)
+              .map((u) => u.id),
+          );
+          setArchivedInternIds(archived);
         }
 
         if (alertsJson.data) setAlerts(alertsJson.data.slice(0, 5));
@@ -343,8 +372,16 @@ export default function LeaderDashboard() {
     groups[weeklyCategory(c)].push(c);
   }
 
+  const twentyOneDaysAgo = addDaysToDateStr(today, -21);
+
+  const archiveCandidates = compliance.filter((row) => {
+    const internAssignments = monitorAssignmentsByIntern.get(row.userId) ?? [];
+    return !internAssignments.some((a) => a.date >= twentyOneDaysAgo);
+  });
+
   const pendingAttendance = monitorAssignments
     .filter((assignment) => {
+      if (archivedInternIds.has(assignment.internId)) return false;
       if (CHECKIN_DONE.has(assignment.status)) return false;
       if (assignment.status === "ABSENT" || assignment.status === "CANCELLED") return false;
       if (assignment.date < today) return true;
@@ -679,6 +716,47 @@ export default function LeaderDashboard() {
               Mostra pendências históricas por tipo (CRU/USA/CRL), considerando realizados + agendados projetados, além de faltas sem justificativa e check-in vencido (após 07h diurno, 19h noturno).
             </p>
               </div>
+        </div>
+      )}
+
+      {/* Archive candidates: active interns with no activity in 21+ days */}
+      {archiveCandidates.length > 0 && (
+        <div className="rounded-xl border border-slate-300 bg-slate-50/60 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="mb-3 flex items-center gap-2">
+            <Archive className="h-4 w-4 text-slate-500" strokeWidth={1.5} />
+            <h2 className="text-sm font-semibold text-slate-700">Sem atividade nos últimos 21 dias</h2>
+            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">{archiveCandidates.length}</span>
+          </div>
+          <div className="space-y-2">
+            {archiveCandidates.map((row) => {
+              const fs = getFacultyStyle(row.facultyAbbr || null);
+              const isArchiving = archivingId === row.userId;
+              return (
+                <div key={row.userId} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white/90 px-3 py-2.5 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium text-slate-800 truncate">{row.name}</span>
+                    {row.facultyAbbr && (
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${fs.pill}`}>
+                        {row.facultyAbbr}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleArchiveIntern(row.userId)}
+                    disabled={isArchiving}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-slate-400 hover:bg-slate-100 disabled:cursor-wait disabled:opacity-60 transition-colors"
+                  >
+                    {isArchiving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" strokeWidth={1.5} />}
+                    Arquivar
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Internos ativos sem nenhum plantão (realizado ou agendado) nos últimos 21 dias. Arquivar remove da escala e das pendências.
+          </p>
         </div>
       )}
 
