@@ -12,7 +12,7 @@ import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr } from "@/lib/utils";
+import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr, weeksBetweenDateStr } from "@/lib/utils";
 
 type Stats = {
   totalInterns: number;
@@ -27,6 +27,7 @@ type ComplianceRow = {
   userId: string;
   name: string;
   facultyAbbr: string;
+  rotationStartDate: string;
   targetShifts: number;
   targetShiftsPerWeek: number;
   targetUSAPerWeek: number;
@@ -102,6 +103,8 @@ const CATEGORY_CONFIG: Record<WeeklyCategory, { label: string; border: string; b
 
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 const CHECKIN_DONE = new Set(["CHECKED_IN", "CHECKED_OUT"]);
+const COMPLETED_STATUSES = new Set(["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"]);
+const PROJECTABLE_FUTURE_STATUSES = new Set(["SCHEDULED", "CONFIRMED"]);
 
 function dayLabel(date: string) {
   const d = new Date(`${date}T12:00:00Z`);
@@ -162,12 +165,13 @@ export default function LeaderDashboard() {
         const today = localDateStr();
         const weekStart = startOfWeekDateStr(today);
         const weekEnd = addDaysToDateStr(weekStart, 6);
-        const monitorStart = addDaysToDateStr(weekStart, -7);
+        const monitorStart = addDaysToDateStr(weekStart, -365);
+        const monitorEnd = addDaysToDateStr(weekEnd, 120);
 
         const [usersRes, assignmentsRes, monitorAssignmentsRes, requestsRes, todayRes, complianceRes, alertsRes] = await Promise.all([
           fetch("/taximetro/api/admin/users"),
           fetch(`/taximetro/api/assignments?from=${weekStart}&to=${weekEnd}`),
-          fetch(`/taximetro/api/assignments?from=${monitorStart}&to=${weekEnd}`),
+          fetch(`/taximetro/api/assignments?from=${monitorStart}&to=${monitorEnd}`),
           fetch("/taximetro/api/requests"),
           fetch(`/taximetro/api/assignments?from=${today}&to=${today}`),
           fetch("/taximetro/api/compliance"),
@@ -267,11 +271,18 @@ export default function LeaderDashboard() {
   const nowHour = getBrazilNowParts().hour;
 
   const weeklyAssignmentsByIntern = new Map<string, WeekAssignment[]>();
+  const monitorAssignmentsByIntern = new Map<string, WeekAssignment[]>();
   for (const assignment of weekAssignments) {
     if (!weeklyAssignmentsByIntern.has(assignment.internId)) {
       weeklyAssignmentsByIntern.set(assignment.internId, []);
     }
     weeklyAssignmentsByIntern.get(assignment.internId)!.push(assignment);
+  }
+  for (const assignment of monitorAssignments) {
+    if (!monitorAssignmentsByIntern.has(assignment.internId)) {
+      monitorAssignmentsByIntern.set(assignment.internId, []);
+    }
+    monitorAssignmentsByIntern.get(assignment.internId)!.push(assignment);
   }
 
   const weeklyTruthByIntern = new Map<string, {
@@ -349,10 +360,9 @@ export default function LeaderDashboard() {
     internId: string;
     name: string;
     facultyAbbr: string;
-    cruDebt: number; // Only CRU debt appears in pending list
+    cruDebt: number;
     usaDebt: number;
     crlDebt: number;
-    totalDeficit: number;
     targetShifts: number;
     totalCompleted: number;
     unresolvedAbsence: number;
@@ -360,40 +370,41 @@ export default function LeaderDashboard() {
   }>();
 
   for (const row of compliance) {
+    const personAllRows = (monitorAssignmentsByIntern.get(row.userId) ?? []).filter((assignment) => assignment.status !== "CANCELLED");
+    const rotationStart = row.rotationStartDate || startOfWeekDateStr(today);
+    const relevantRows = personAllRows.filter((assignment) => assignment.date >= rotationStart);
+    const currentWeekStart = startOfWeekDateStr(today);
+    const rotationWeekStart = startOfWeekDateStr(rotationStart);
+    const elapsedWeeksIncludingCurrent = weeksBetweenDateStr(rotationWeekStart, currentWeekStart) + 1;
+    const elapsedPastWeeks = Math.max(0, elapsedWeeksIncludingCurrent - 1);
+
+    const usaExpectedPast = elapsedPastWeeks * (row.targetUSAPerWeek ?? 0);
+    const usaCompletedPast = relevantRows.filter((assignment) => assignment.baseType === "USA" && assignment.date < currentWeekStart && COMPLETED_STATUSES.has(assignment.status)).length;
+    const usaFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "USA" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
+    const usaDebt = Math.max(0, usaExpectedPast - (usaCompletedPast + usaFutureScheduled));
+
+    const cruCompleted = relevantRows.filter((assignment) => assignment.baseType === "CENTRAL" && COMPLETED_STATUSES.has(assignment.status)).length;
+    const cruFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "CENTRAL" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
+    const cruDebt = Math.max(0, (row.targetCRUPerWeek ?? 0) - (cruCompleted + cruFutureScheduled));
+
+    const crlCompleted = relevantRows.filter((assignment) => assignment.baseType === "CRL" && COMPLETED_STATUSES.has(assignment.status)).length;
+    const crlFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "CRL" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
+    const crlDebt = Math.max(0, (row.targetCRLPerWeek ?? 0) - (crlCompleted + crlFutureScheduled));
+
+    const unresolvedAbsence = relevantRows.filter((assignment) => assignment.status === "ABSENT" && !(assignment.absenceJustification && assignment.absenceJustification.trim().length > 0)).length;
+
     pendingByIntern.set(row.userId, {
       internId: row.userId,
       name: row.name,
       facultyAbbr: row.facultyAbbr,
-      cruDebt: row.weeklyCRUDeficit > 0 ? row.weeklyCRUDeficit : 0,
-      usaDebt: row.weeklyUSADeficit > 0 ? row.weeklyUSADeficit : 0,
-      crlDebt: row.weeklyCRLDeficit > 0 ? row.weeklyCRLDeficit : 0,
-      totalDeficit: row.totalDeficit > 0 ? row.totalDeficit : 0,
+      cruDebt,
+      usaDebt,
+      crlDebt,
       targetShifts: row.targetShifts,
       totalCompleted: row.totalCompleted,
-      unresolvedAbsence: 0,
+      unresolvedAbsence,
       attendance: [],
     });
-  }
-
-  for (const assignment of monitorAssignments) {
-    if (assignment.status !== "ABSENT") continue;
-    if (assignment.absenceJustification && assignment.absenceJustification.trim().length > 0) continue;
-    if (!pendingByIntern.has(assignment.internId)) {
-      pendingByIntern.set(assignment.internId, {
-        internId: assignment.internId,
-        name: assignment.internName,
-        facultyAbbr: "",
-        cruDebt: 0,
-        usaDebt: 0,
-        crlDebt: 0,
-        totalDeficit: 0,
-        targetShifts: 0,
-        totalCompleted: 0,
-        unresolvedAbsence: 0,
-        attendance: [],
-      });
-    }
-    pendingByIntern.get(assignment.internId)!.unresolvedAbsence += 1;
   }
 
   for (const assignment of pendingAttendance) {
@@ -405,7 +416,6 @@ export default function LeaderDashboard() {
         cruDebt: 0,
         usaDebt: 0,
         crlDebt: 0,
-        totalDeficit: 0,
         targetShifts: 0,
         totalCompleted: 0,
         unresolvedAbsence: 0,
@@ -420,13 +430,12 @@ export default function LeaderDashboard() {
       row.cruDebt > 0
       || row.usaDebt > 0
       || row.crlDebt > 0
-      || row.totalDeficit > 0
       || row.unresolvedAbsence > 0
       || row.attendance.length > 0
     ))
     .sort((left, right) => {
-      const leftWeight = left.unresolvedAbsence * 100 + left.totalDeficit * 10 + left.cruDebt + left.usaDebt + left.crlDebt;
-      const rightWeight = right.unresolvedAbsence * 100 + right.totalDeficit * 10 + right.cruDebt + right.usaDebt + right.crlDebt;
+      const leftWeight = left.unresolvedAbsence * 100 + left.cruDebt * 10 + left.usaDebt * 10 + left.crlDebt * 10;
+      const rightWeight = right.unresolvedAbsence * 100 + right.cruDebt * 10 + right.usaDebt * 10 + right.crlDebt * 10;
       if (leftWeight !== rightWeight) return rightWeight - leftWeight;
       const leftDate = left.attendance[0]?.date;
       const rightDate = right.attendance[0]?.date;
@@ -592,11 +601,6 @@ export default function LeaderDashboard() {
                         Débito CRL: -{row.crlDebt}
                       </span>
                     )}
-                    {row.totalDeficit > 0 && (
-                      <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-800">
-                        Déficit total: -{row.totalDeficit}
-                      </span>
-                    )}
                     {row.unresolvedAbsence > 0 && (
                       <span className="rounded-full border border-red-200 bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-800">
                         Faltas sem resposta: {row.unresolvedAbsence}
@@ -664,7 +668,7 @@ export default function LeaderDashboard() {
               );
             })}
             <p className="pt-1 text-[11px] text-red-700">
-              Mostra internos com déficit semanal (CRU/USA/CRL), déficit total, faltas sem justificativa e check-in vencido (após 07h diurno, 19h noturno).
+              Mostra pendências históricas por tipo (CRU/USA/CRL), considerando realizados + agendados projetados, além de faltas sem justificativa e check-in vencido (após 07h diurno, 19h noturno).
             </p>
               </div>
         </div>
