@@ -12,6 +12,9 @@ export const facultySchema = z.object({
   targetHours: z.number().int().min(0).default(0),
   targetShifts: z.number().int().min(0).default(0),
   targetShiftsPerWeek: z.number().int().min(0).default(0),
+  targetUSAsPerWeek: z.number().int().min(0).default(0),
+  targetCRUsPerWeek: z.number().int().min(0).default(0),
+  targetCRLsPerWeek: z.number().int().min(0).default(0),
   totalInterns: z.number().int().min(0).default(0),
 });
 
