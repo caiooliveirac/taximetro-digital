@@ -119,14 +119,10 @@ export async function executeGetComplianceOverview(params: {
     const totalCRUCompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
     const totalCRLCompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CRL").length;
 
-    // For weekly deficits, count current week's scheduled (future + today) by type
-    const thisWeekUSAFuture = futureRows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to && r.baseType === "USA").length;
-    const thisWeekCRUFuture = futureRows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to && r.baseType === "CENTRAL").length;
-    const thisWeekCRLFuture = futureRows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to && r.baseType === "CRL").length;
-
-    const thisWeekUSACompleted = thisWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "USA").length;
-    const thisWeekCRUCompleted = thisWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
-    const thisWeekCRLCompleted = thisWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CRL").length;
+    // For weekly deficits, count all planned shifts in the week (completed + scheduled), excluding absences
+    const thisWeekUSAPlanned = thisWeekRows.filter((r) => r.baseType === "USA" && r.status !== "ABSENT").length;
+    const thisWeekCRUPlanned = thisWeekRows.filter((r) => r.baseType === "CENTRAL" && r.status !== "ABSENT").length;
+    const thisWeekCRLPlanned = thisWeekRows.filter((r) => r.baseType === "CRL" && r.status !== "ABSENT").length;
 
     const lastWeekUSACompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "USA").length;
     const lastWeekCRUCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
@@ -138,9 +134,9 @@ export async function executeGetComplianceOverview(params: {
     const targetCRLPerWeek = intern.targetCRLsPerWeek ?? 0;
 
     // Weekly deficit: count what's missing THIS WEEK considering scheduled future
-    const thisWeekUSAScheduledOrCompleted = thisWeekUSACompleted + thisWeekUSAFuture;
-    const thisWeekCRUScheduledOrCompleted = thisWeekCRUCompleted + thisWeekCRUFuture;
-    const thisWeekCRLScheduledOrCompleted = thisWeekCRLCompleted + thisWeekCRLFuture;
+    const thisWeekUSAScheduledOrCompleted = thisWeekUSAPlanned;
+    const thisWeekCRUScheduledOrCompleted = thisWeekCRUPlanned;
+    const thisWeekCRLScheduledOrCompleted = thisWeekCRLPlanned;
 
     const weeklyUSADeficit = Math.max(0, targetUSAPerWeek - thisWeekUSAScheduledOrCompleted);
     const weeklyCRUDeficit = Math.max(0, targetCRUPerWeek - thisWeekCRUScheduledOrCompleted);

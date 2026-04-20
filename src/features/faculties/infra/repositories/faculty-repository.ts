@@ -12,7 +12,11 @@ export async function createFaculty(values: {
   targetHours: number;
   targetShifts: number;
   targetShiftsPerWeek: number;
+  targetUSAsPerWeek: number;
+  targetCRUsPerWeek: number;
+  targetCRLsPerWeek: number;
   totalInterns: number;
+  rotationStartDate: string;
 }) {
   const [created] = await db.insert(faculties).values(values).returning();
   return created;
@@ -26,7 +30,11 @@ export async function updateFacultyById(params: {
     targetHours: number;
     targetShifts: number;
     targetShiftsPerWeek: number;
+    targetUSAsPerWeek: number;
+    targetCRUsPerWeek: number;
+    targetCRLsPerWeek: number;
     totalInterns: number;
+    rotationStartDate: string;
   }>;
 }) {
   const [updated] = await db.update(faculties).set(params.values).where(eq(faculties.id, params.id)).returning();
