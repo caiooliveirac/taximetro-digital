@@ -3,7 +3,13 @@ import { checkCruConflict, checkSlotAvailability } from "@/lib/slots";
 import { localDateStr } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { canLeaderManageFaculty } from "@/features/scheduling/domain/policies/assignment-policy";
-import { createAssignment, findAssignmentByInternSlot, reactivateAssignment, type ShiftValue } from "@/features/scheduling/infra/repositories/assignment-repository";
+import {
+  createAssignment,
+  findAssignmentByInternSlot,
+  getFacultyAbbreviationById,
+  reactivateAssignment,
+  type ShiftValue,
+} from "@/features/scheduling/infra/repositories/assignment-repository";
 
 export const createAssignmentSchema = z.object({
   internId: z.string().uuid(),
@@ -41,7 +47,8 @@ export async function executeCreateAssignment(params: {
     return { status: 403, body: { success: false, error: "Só pode alocar internos da sua faculdade" } } as const;
   }
 
-  const shiftValue: ShiftValue = input.shift ?? null;
+  const facultyAbbreviation = await getFacultyAbbreviationById(input.facultyId);
+  const shiftValue: ShiftValue = facultyAbbreviation === "EBMSP" ? (input.shift ?? null) : null;
   const isExtra = input.isExtraShift ?? false;
   const allowCoordinatorRetroactiveOverride = actor.role === "COORDINATOR"
     && input.allowRetroactiveOverride === true
