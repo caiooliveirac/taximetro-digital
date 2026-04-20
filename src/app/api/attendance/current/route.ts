@@ -38,6 +38,21 @@ type EnrichedRow = {
     isRecentCheckout: boolean;
 };
 
+function shiftOrder(shift: string | null): number {
+    if (shift === "MORNING") return 0;
+    if (shift === "AFTERNOON") return 1;
+    if (shift === "NIGHT") return 2;
+    return 99;
+}
+
+function localHour(date: Date): number {
+    return Number(new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+        hour: "2-digit",
+        hourCycle: "h23",
+    }).format(date));
+}
+
 function hoursDiff(from: Date, to: Date): number {
     return Math.abs(to.getTime() - from.getTime()) / (1000 * 60 * 60);
 }
@@ -47,7 +62,11 @@ function isVisibleRecentCheckout(checkoutAt: Date | null, now: Date, localToday:
     return hoursDiff(checkoutAt, now) <= 24 && localDateStr(checkoutAt) === localToday;
 }
 
-function isCurrentAssignmentCandidate(row: EnrichedRow, today: string, localToday: string): boolean {
+function isCurrentAssignmentCandidate(row: EnrichedRow, today: string, localToday: string, nowHour: number): boolean {
+    if (row.shift && row.period === "DAY") {
+        return row.date === localToday && nowHour >= 5;
+    }
+
     if (["SCHEDULED", "CONFIRMED", "CHECKED_IN"].includes(row.status)) {
         return isWithinAttendanceWindow(row.date, row.period as "DAY" | "NIGHT");
     }
@@ -94,6 +113,7 @@ export async function GET(req: NextRequest) {
     }
 
     const now = new Date();
+    const nowHour = localHour(now);
     const forcedAssignmentId = req.nextUrl.searchParams.get("assignmentId");
     const today = operationalDateStr();
     const localToday = localDateStr(now);
@@ -179,32 +199,42 @@ export async function GET(req: NextRequest) {
         };
     });
 
-    const hasActionableScheduledAssignment = enriched.some((row) =>
+    const prioritized = [...enriched].sort((a, b) => {
+        const dateSort = b.date.localeCompare(a.date);
+        if (dateSort !== 0) return dateSort;
+
+        const shiftSort = shiftOrder(a.shift) - shiftOrder(b.shift);
+        if (shiftSort !== 0) return shiftSort;
+
+        return b.updatedAt.getTime() - a.updatedAt.getTime();
+    });
+
+    const hasActionableScheduledAssignment = prioritized.some((row) =>
         ["SCHEDULED", "CONFIRMED"].includes(row.status) && (
             (row.checkinStatus === "PENDING" && Boolean(row.activeSession)) ||
-            isCurrentAssignmentCandidate(row, today, localToday)
+            isCurrentAssignmentCandidate(row, today, localToday, nowHour)
         ),
     );
 
     const selected = forcedAssignmentId
-        ? enriched.find((row) => row.id === forcedAssignmentId) ?? null
+        ? prioritized.find((row) => row.id === forcedAssignmentId) ?? null
         : (
-            enriched.find((row) => row.status === "CHECKED_IN" && row.activeSession && isCurrentAssignmentCandidate(row, today, localToday)) ??
-            enriched.find((row) => row.status === "CHECKED_IN" && isCurrentAssignmentCandidate(row, today, localToday)) ??
-            enriched.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && row.checkinStatus === "PENDING" && row.activeSession) ??
-            enriched.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && isCurrentAssignmentCandidate(row, today, localToday)) ??
+            prioritized.find((row) => row.status === "CHECKED_IN" && row.activeSession && isCurrentAssignmentCandidate(row, today, localToday, nowHour)) ??
+            prioritized.find((row) => row.status === "CHECKED_IN" && isCurrentAssignmentCandidate(row, today, localToday, nowHour)) ??
+            prioritized.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && row.checkinStatus === "PENDING" && row.activeSession) ??
+            prioritized.find((row) => ["SCHEDULED", "CONFIRMED"].includes(row.status) && isCurrentAssignmentCandidate(row, today, localToday, nowHour)) ??
             (!hasActionableScheduledAssignment
-                ? enriched.find((row) => row.status === "CHECKED_OUT" && row.isRecentCheckout)
+                ? prioritized.find((row) => row.status === "CHECKED_OUT" && row.isRecentCheckout)
                 : null) ??
             null
         );
 
     const latestPendingCheckout =
-        enriched.find((row) => row.status === "CHECKED_IN" && row.activeSession && isCheckoutWindowForRow(row)) ??
-        enriched.find((row) => row.status === "CHECKED_IN" && isCheckoutWindowForRow(row)) ??
+        prioritized.find((row) => row.status === "CHECKED_IN" && row.activeSession && isCheckoutWindowForRow(row)) ??
+        prioritized.find((row) => row.status === "CHECKED_IN" && isCheckoutWindowForRow(row)) ??
         null;
 
-    const latestCompletedCheckout = enriched.find((row) => row.status === "CHECKED_OUT" && row.isRecentCheckout) ?? null;
+    const latestCompletedCheckout = prioritized.find((row) => row.status === "CHECKED_OUT" && row.isRecentCheckout) ?? null;
 
     const checkoutStatus = latestPendingCheckout
         ? {

@@ -31,8 +31,8 @@ Se houver divergencia entre documentacao antiga e este arquivo, este arquivo pre
 
 ## 2. Processo oficial que atende o dominio
 
-- O dominio e atendido por Nginx externo em container na VM (`repo-nginx-1`)
-- O Nginx roteia `/taximetro/*` para `taximetro-digital:3000` na rede Docker
+- O dominio e atendido por Nginx service instalado no host da VM (systemd)
+- O Nginx roteia `/taximetro/*` para `127.0.0.1:3010` (container `taximetro-digital` publicado em loopback)
 - A app oficial usa `basePath` `/taximetro`
 
 ## 3. Banco oficial

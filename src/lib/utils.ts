@@ -235,8 +235,8 @@ export function formatBrazilTime(value: Date | string) {
 
 export type EbmspShift = "MORNING" | "AFTERNOON";
 
-/** EBMSP-specific checkout window start for MORNING shifts (11:00 instead of 15:00) */
-const EBMSP_MORNING_CHECKOUT_START_HOUR = 11;
+/** Unified day-shift checkout window start for shift-based schedules */
+const SHIFT_DAY_CHECKOUT_START_HOUR = 5;
 
 export function getShiftLabel(shift: string | null | undefined): string {
   if (shift === "MORNING") return "Manhã (07h–13h)";
@@ -252,8 +252,7 @@ export function getShiftShortLabel(shift: string | null | undefined): string {
 
 /**
  * Shift-aware checkout window.
- * For EBMSP MORNING shifts, checkout opens at 11:00 (instead of default 15:00 for DAY).
- * For EBMSP AFTERNOON shifts, uses default DAY window (15:00-00:00).
+ * For shift-based DAY schedules, checkout opens uniformly at 05:00 and stays available until 00:00.
  */
 export function isWithinShiftCheckoutWindow(
   assignmentDate: string,
@@ -261,25 +260,19 @@ export function isWithinShiftCheckoutWindow(
   shift: string | null | undefined,
   date: Date = new Date(),
 ): boolean {
-  // Non-EBMSP or NIGHT: use default
+  // Non-shift or NIGHT: use default
   if (!shift || period !== "DAY") {
     return isWithinInternCheckoutWindow(assignmentDate, period, date);
   }
 
   const now = currentLocalPoint(date);
+  const start: LocalDateTimePoint = {
+    dateStr: assignmentDate,
+    hour: SHIFT_DAY_CHECKOUT_START_HOUR,
+    minute: 0,
+  };
   const deadline = shiftCheckoutDeadlinePoint(assignmentDate, period);
-
-  if (shift === "MORNING") {
-    const start: LocalDateTimePoint = {
-      dateStr: assignmentDate,
-      hour: EBMSP_MORNING_CHECKOUT_START_HOUR,
-      minute: 0,
-    };
-    return compareLocalDateTime(now, start) >= 0 && compareLocalDateTime(now, deadline) <= 0;
-  }
-
-  // AFTERNOON: default DAY checkout window (15:00-00:00)
-  return isWithinInternCheckoutWindow(assignmentDate, period, date);
+  return compareLocalDateTime(now, start) >= 0 && compareLocalDateTime(now, deadline) <= 0;
 }
 
 /**

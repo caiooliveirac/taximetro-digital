@@ -1,7 +1,7 @@
 import { generateSync, verifySync, generateSecret } from "otplib";
 import { db } from "@/db";
 import { qrSessions } from "@/db/schema";
-import { and, isNull, gt } from "drizzle-orm";
+import { and, isNull, gt, desc } from "drizzle-orm";
 import { SESSION_TTL_SECONDS, TOTP_STEP_SECONDS } from "@/lib/totp-config";
 
 // TOTP rotates every 5 minutes; session lasts 15 minutes
@@ -37,7 +37,12 @@ export async function validateTotpCode(code: string) {
         isNull(qrSessions.consumedAt),
         gt(qrSessions.expiresAt, new Date()),
       ),
-    );
+    )
+    .orderBy(desc(qrSessions.createdAt));
+
+  // Fast path: exact activeCode match from the newest active session.
+  const byActiveCode = sessions.find((session) => session.activeCode === code);
+  if (byActiveCode) return byActiveCode;
 
   for (const session of sessions) {
     if (verifyCode(code, session.totpSecret)) {

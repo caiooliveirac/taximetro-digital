@@ -140,6 +140,7 @@ jobs:
               --name ${{ env.APP }} \
               --restart unless-stopped \
               --network repo_default \
+              -p 127.0.0.1:3010:3000 \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e AUTH_SECRET="${{ secrets.AUTH_SECRET }}" \
               -e AUTH_URL="https://mnrs.com.br" \
@@ -171,14 +172,16 @@ jobs:
             done
 
             echo "=== Reloading nginx ==="
-            docker exec repo-nginx-1 nginx -s reload
+            sudo systemctl reload nginx
+            sudo systemctl is-active nginx
 
             echo "=== Smoke test via nginx ==="
-            if docker exec repo-nginx-1 wget -q -O- http://taximetro-digital:3000/taximetro/api/health 2>/dev/null | grep -q healthy; then
-              echo "✅ Nginx → App OK"
-            else
-              echo "⚠️ Nginx → App failed (app works but nginx may need restart)"
+            HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" "https://127.0.0.1/taximetro/login" -H "Host: mnrs.com.br")
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "❌ External smoke failed: HTTP $HTTP_CODE"
+              exit 1
             fi
+            echo "✅ External smoke OK (HTTP 200)"
 
             echo "=== Cleaning temporary canary ==="
             docker rm -f "$CANARY_NAME" 2>/dev/null || true

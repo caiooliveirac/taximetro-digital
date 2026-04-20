@@ -8,6 +8,7 @@ import {
   getValidInternIdsForFaculty,
   insertLotteryAssignments,
 } from "@/features/scheduling/infra/repositories/lottery-repository";
+import { allocatePositions, type AllocPos } from "./allocate-positions";
 
 /**
  * Base priority for the lottery (DAY shifts fill first, then in this order).
@@ -34,15 +35,6 @@ export type LeaderLotteryActor = {
   facultyId: string | null;
   isImpersonating: boolean;
   realUserId: string | null;
-};
-
-type Pos = {
-  baseId: string;
-  baseCode: string;
-  baseType: string;
-  date: string;
-  period: "DAY" | "NIGHT";
-  shift: string | null;
 };
 
 export async function executeRunLeaderLottery(params: {
@@ -87,7 +79,7 @@ export async function executeRunLeaderLottery(params: {
   const facultyAbbreviation = await getFacultyAbbreviation(facultyId);
   const isEbmsp = facultyAbbreviation === "EBMSP";
 
-  const positions: Pos[] = [];
+  const positions: AllocPos[] = [];
 
   for (const rule of rules) {
     const dayIdx = DOW_INDEX[rule.dayOfWeek];
@@ -166,87 +158,30 @@ export async function executeRunLeaderLottery(params: {
   const existingShiftCount = new Map<string, number>();
   for (const id of safeIds) existingShiftCount.set(id, 0);
   for (const assignment of existing) {
+    if (assignment.baseType !== "USA") continue;
     if (!existingShiftCount.has(assignment.internId)) continue;
     existingShiftCount.set(assignment.internId, (existingShiftCount.get(assignment.internId) ?? 0) + 1);
   }
 
-  function canAssign(internId: string, pos: Pos, shiftCount: number): boolean {
-    const key = isEbmsp && pos.shift ? `${pos.date}|${pos.period}|${pos.shift}` : `${pos.date}|${pos.period}`;
-    if (usedSlots.get(internId)?.has(key)) return false;
-    if (pos.baseType !== "CENTRAL" && pos.baseCode !== "CRL") {
-      if (cruBlocked.get(internId)?.has(`${pos.date}|${pos.period}`)) return false;
-    }
-    if (shiftCount >= input.maxShifts) return false;
-    return true;
-  }
+  const { matches, remainingPositions: remainingPos } = allocatePositions({
+    positions,
+    internIds: shuffled,
+    maxShifts: input.maxShifts,
+    isEbmsp,
+    existingUsaShiftCount: existingShiftCount,
+    usedSlots,
+    cruBlocked,
+  });
 
-  function addCruBlocking(internId: string, pos: Pos) {
-    if (pos.baseType !== "CENTRAL") return;
-    if (!cruBlocked.has(internId)) cruBlocked.set(internId, new Set());
-    const blocked = cruBlocked.get(internId)!;
-    blocked.add(`${pos.date}|${pos.period}`);
-    if (pos.period === "DAY") {
-      const prevDay = new Date(pos.date + "T12:00:00Z");
-      prevDay.setUTCDate(prevDay.getUTCDate() - 1);
-      blocked.add(`${prevDay.toISOString().slice(0, 10)}|NIGHT`);
-      blocked.add(`${pos.date}|NIGHT`);
-    } else {
-      const nextDay = new Date(pos.date + "T12:00:00Z");
-      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-      blocked.add(`${pos.date}|DAY`);
-      blocked.add(`${nextDay.toISOString().slice(0, 10)}|DAY`);
-    }
-  }
-
-  const toCreate: Array<{
-    internId: string;
-    facultyId: string;
-    baseId: string;
-    date: string;
-    period: "DAY" | "NIGHT";
-    shift: string | null;
-    createdBy: string;
-  }> = [];
-
-  const newShiftCount = new Map<string, number>();
-  for (const id of safeIds) newShiftCount.set(id, 0);
-
-  const positionTaken = new Array(positions.length).fill(false);
-
-  for (let round = 0; round < input.maxShifts; round++) {
-    for (const internId of shuffled) {
-      const totalShifts = (existingShiftCount.get(internId) ?? 0) + (newShiftCount.get(internId) ?? 0);
-      if (totalShifts >= input.maxShifts) continue;
-
-      let bestIdx = -1;
-      for (let i = 0; i < positions.length; i++) {
-        if (positionTaken[i]) continue;
-        if (!canAssign(internId, positions[i], totalShifts)) continue;
-        bestIdx = i;
-        break;
-      }
-
-      if (bestIdx === -1) continue;
-
-      const pos = positions[bestIdx];
-      const key = isEbmsp && pos.shift ? `${pos.date}|${pos.period}|${pos.shift}` : `${pos.date}|${pos.period}`;
-
-      positionTaken[bestIdx] = true;
-      usedSlots.get(internId)!.add(key);
-      newShiftCount.set(internId, (newShiftCount.get(internId) ?? 0) + 1);
-      addCruBlocking(internId, pos);
-
-      toCreate.push({
-        internId,
-        facultyId,
-        baseId: pos.baseId,
-        date: pos.date,
-        period: pos.period,
-        shift: pos.shift,
-        createdBy: actor.realUserId ?? actor.id,
-      });
-    }
-  }
+  const toCreate = matches.map(({ internId, position: pos }) => ({
+    internId,
+    facultyId,
+    baseId: pos.baseId,
+    date: pos.date,
+    period: pos.period,
+    shift: pos.shift,
+    createdBy: actor.realUserId ?? actor.id,
+  }));
 
   await insertLotteryAssignments(toCreate);
 
@@ -267,7 +202,6 @@ export async function executeRunLeaderLottery(params: {
   }
 
   const internsAllocated = new Set(toCreate.map((item) => item.internId)).size;
-  const remainingPositions = positionTaken.filter((taken) => !taken).length;
 
   return {
     status: 200,
@@ -279,7 +213,7 @@ export async function executeRunLeaderLottery(params: {
         maxShifts: input.maxShifts,
         internsAllocated,
         internsTotal: safeIds.length,
-        remainingPositions,
+        remainingPositions: remainingPos,
       },
     },
   } as const;
