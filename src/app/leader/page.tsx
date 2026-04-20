@@ -11,7 +11,7 @@ import {
 import { MetricCard } from "@/components/metric-card";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { addDaysToDateStr, isCurrentOperationalAssignment, localDateStr, operationalDateStr, startOfWeekDateStr } from "@/lib/utils";
+import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr } from "@/lib/utils";
 
 type Stats = {
   totalInterns: number;
@@ -80,13 +80,6 @@ type WeekAssignment = {
 
 type WeeklyCategory = "com_falta" | "sub_alocado" | "na_meta";
 
-function categorize(c: ComplianceRow): WeeklyCategory {
-  if (c.thisWeekAbsent > 0) return "com_falta";
-  const effective = c.thisWeekScheduled - c.thisWeekAbsent;
-  if (c.targetShiftsPerWeek > 0 && effective < c.targetShiftsPerWeek) return "sub_alocado";
-  return "na_meta";
-}
-
 const CATEGORY_CONFIG: Record<WeeklyCategory, { label: string; border: string; bg: string; text: string; icon: typeof XCircle }> = {
   com_falta: { label: "Com falta", border: "border-red-200", bg: "bg-red-50/50", text: "text-red-700", icon: XCircle },
   sub_alocado: { label: "Sub-alocados", border: "border-amber-200", bg: "bg-amber-50/50", text: "text-amber-700", icon: AlertTriangle },
@@ -109,10 +102,8 @@ function normalizeDate(date: string) {
   return date.slice(0, 10);
 }
 
-function isPendingCheckinForDay(a: WeekAssignment, day: string) {
-  if (a.date !== day) return false;
-  if (a.status === "CANCELLED" || a.status === "ABSENT") return false;
-  return !CHECKIN_DONE.has(a.status);
+function shortDate(date: string) {
+  return `${date.slice(8, 10)}/${date.slice(5, 7)}`;
 }
 
 export default function LeaderDashboard() {
@@ -120,6 +111,7 @@ export default function LeaderDashboard() {
   const { data: session, status } = useSession();
   const [stats, setStats] = useState<Stats>({ totalInterns: 0, scheduledThisWeek: 0, pendingRequests: 0, confirmedToday: 0, absentToday: 0, checkedInToday: 0 });
   const [weekAssignments, setWeekAssignments] = useState<WeekAssignment[]>([]);
+  const [monitorAssignments, setMonitorAssignments] = useState<WeekAssignment[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
   const [summary, setSummary] = useState<ComplianceSummary | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -155,10 +147,12 @@ export default function LeaderDashboard() {
         const today = localDateStr();
         const weekStart = startOfWeekDateStr(today);
         const weekEnd = addDaysToDateStr(weekStart, 6);
+        const monitorStart = addDaysToDateStr(weekStart, -7);
 
-        const [usersRes, assignmentsRes, requestsRes, todayRes, complianceRes, alertsRes] = await Promise.all([
+        const [usersRes, assignmentsRes, monitorAssignmentsRes, requestsRes, todayRes, complianceRes, alertsRes] = await Promise.all([
           fetch("/taximetro/api/admin/users"),
           fetch(`/taximetro/api/assignments?from=${weekStart}&to=${weekEnd}`),
+          fetch(`/taximetro/api/assignments?from=${monitorStart}&to=${today}`),
           fetch("/taximetro/api/requests"),
           fetch(`/taximetro/api/assignments?from=${today}&to=${today}`),
           fetch("/taximetro/api/compliance"),
@@ -176,8 +170,8 @@ export default function LeaderDashboard() {
           setMyAssignment(null);
         }
 
-        const [usersJson, assignmentsJson, requestsJson, todayJson, complianceJson] = await Promise.all([
-          usersRes.json(), assignmentsRes.json(), requestsRes.json(), todayRes.json(), complianceRes.json(),
+        const [usersJson, assignmentsJson, monitorAssignmentsJson, requestsJson, todayJson, complianceJson] = await Promise.all([
+          usersRes.json(), assignmentsRes.json(), monitorAssignmentsRes.json(), requestsRes.json(), todayRes.json(), complianceRes.json(),
         ]);
 
         if (assignmentsJson.success) {
@@ -192,6 +186,20 @@ export default function LeaderDashboard() {
           );
         } else {
           setWeekAssignments([]);
+        }
+
+        if (monitorAssignmentsJson.success) {
+          setMonitorAssignments(
+            monitorAssignmentsJson.data
+              .filter((a: WeekAssignment) => a.status !== "CANCELLED")
+              .map((a: WeekAssignment) => ({
+                ...a,
+                date: normalizeDate(a.date),
+                period: a.period === "NIGHT" ? "NIGHT" : "DAY",
+              })),
+          );
+        } else {
+          setMonitorAssignments([]);
         }
 
         const alertsJson = alertsRes ? await alertsRes.json().catch(() => ({ data: [] })) : { data: [] };
@@ -241,7 +249,7 @@ export default function LeaderDashboard() {
   if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
   const today = localDateStr();
-  const yesterday = addDaysToDateStr(today, -1);
+  const nowHour = getBrazilNowParts().hour;
 
   const weeklyAssignmentsByIntern = new Map<string, WeekAssignment[]>();
   for (const assignment of weekAssignments) {
@@ -307,20 +315,62 @@ export default function LeaderDashboard() {
     groups[weeklyCategory(c)].push(c);
   }
 
-  const pendingCheckinRecent = weekAssignments
-    .filter((a) => {
-      if (a.date === today) {
-        return isCurrentOperationalAssignment(a.date, a.period) && isPendingCheckinForDay(a, today);
-      }
-      if (a.date === yesterday) {
-        return isPendingCheckinForDay(a, yesterday);
-      }
-      return false;
+  const pendingAttendance = monitorAssignments
+    .filter((assignment) => {
+      if (CHECKIN_DONE.has(assignment.status)) return false;
+      if (assignment.status === "ABSENT" || assignment.status === "CANCELLED") return false;
+      if (assignment.date < today) return true;
+      if (assignment.date > today) return false;
+      if (assignment.period === "DAY") return nowHour >= 7;
+      return nowHour >= 19;
     })
     .sort((left, right) => {
-      if (left.date !== right.date) return left.date < right.date ? 1 : -1;
+      if (left.date !== right.date) return left.date < right.date ? -1 : 1;
       if (left.period !== right.period) return left.period === "DAY" ? -1 : 1;
       return left.baseCode.localeCompare(right.baseCode);
+    });
+
+  const pendingByIntern = new Map<string, {
+    internId: string;
+    name: string;
+    facultyAbbr: string;
+    previousWeekDebt: number;
+    attendance: WeekAssignment[];
+  }>();
+
+  for (const row of compliance) {
+    pendingByIntern.set(row.userId, {
+      internId: row.userId,
+      name: row.name,
+      facultyAbbr: row.facultyAbbr,
+      previousWeekDebt: row.weeklyDeficit > 0 ? row.weeklyDeficit : 0,
+      attendance: [],
+    });
+  }
+
+  for (const assignment of pendingAttendance) {
+    if (!pendingByIntern.has(assignment.internId)) {
+      pendingByIntern.set(assignment.internId, {
+        internId: assignment.internId,
+        name: assignment.internName,
+        facultyAbbr: "",
+        previousWeekDebt: 0,
+        attendance: [],
+      });
+    }
+    pendingByIntern.get(assignment.internId)!.attendance.push(assignment);
+  }
+
+  const pendingRows = [...pendingByIntern.values()]
+    .filter((row) => row.previousWeekDebt > 0 || row.attendance.length > 0)
+    .sort((left, right) => {
+      const leftDate = left.attendance[0]?.date;
+      const rightDate = right.attendance[0]?.date;
+      if (leftDate && rightDate && leftDate !== rightDate) return leftDate < rightDate ? -1 : 1;
+      if (leftDate && !rightDate) return -1;
+      if (!leftDate && rightDate) return 1;
+      if (left.previousWeekDebt !== right.previousWeekDebt) return right.previousWeekDebt - left.previousWeekDebt;
+      return left.name.localeCompare(right.name);
     });
 
   // Auto-expand first non-empty alert group
@@ -418,26 +468,61 @@ export default function LeaderDashboard() {
         </div>
       )}
 
-      {/* Pending check-ins today/yesterday */}
-      {pendingCheckinRecent.length > 0 && (
+      {/* Pendencias do leader: semanas anteriores + check-in vencido */}
+      {pendingRows.length > 0 && (
         <div className="rounded-xl border border-red-200 bg-red-50/50 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-red-700" strokeWidth={1.5} />
-            <h2 className="text-sm font-semibold text-red-900">Sem check-in hoje/ontem</h2>
-            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{pendingCheckinRecent.length}</span>
+            <h2 className="text-sm font-semibold text-red-900">Pendencias</h2>
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{pendingRows.length}</span>
           </div>
-          <div className="space-y-1">
-            {pendingCheckinRecent.map((assignment) => (
-              <div key={assignment.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-white/90 px-3 py-2 text-xs">
-                <span className="font-semibold text-slate-900">{assignment.internName}</span>
-                <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
-                  {assignment.date === today ? "Hoje" : "Ontem"}
-                </span>
-                <span className="text-slate-600">{assignment.baseCode}</span>
-                <span className="text-slate-500">{dayLabel(assignment.date)} {periodEmoji(assignment.period)}</span>
+          <div className="space-y-2">
+            {pendingRows.map((row) => {
+              const fs = getFacultyStyle(row.facultyAbbr || null);
+              const attendancePreview = row.attendance.slice(0, 3);
+              return (
+                <div key={row.internId} className="rounded-lg border border-red-200 bg-white/90 px-3 py-2.5 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href="/leader/escala" className="font-semibold text-red-800 hover:underline">
+                      {row.name}
+                    </Link>
+                    {row.facultyAbbr && (
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${fs.pill}`}>
+                        {row.facultyAbbr}
+                      </span>
+                    )}
+                    <Link
+                      href="/leader/escala"
+                      className="ml-auto inline-flex items-center gap-1 rounded-md bg-accent-50 px-2 py-1 text-accent-700 font-medium hover:bg-accent-100 transition-colors"
+                    >
+                      Alocar <ArrowRight className="h-3 w-3" strokeWidth={2} />
+                    </Link>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {row.previousWeekDebt > 0 && (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                        Debito semana anterior: -{row.previousWeekDebt}
+                      </span>
+                    )}
+                    {attendancePreview.map((assignment) => (
+                      <span key={assignment.id} className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-800">
+                        Sem check-in {assignment.baseCode} {dayLabel(assignment.date)} {shortDate(assignment.date)} {periodEmoji(assignment.period)}
+                      </span>
+                    ))}
+                    {row.attendance.length > attendancePreview.length && (
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                        +{row.attendance.length - attendancePreview.length} pendencia(s)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <p className="pt-1 text-[11px] text-red-700">
+              A lista mostra apenas intern que exige acao agora: check-in vencido (apenas apos 07h diurno e 19h noturno), debito da semana anterior, e remove automaticamente quando houver check-in, falta confirmada ou remocao da escala.
+            </p>
               </div>
-            ))}
-          </div>
         </div>
       )}
 
