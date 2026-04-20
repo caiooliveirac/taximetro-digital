@@ -93,26 +93,40 @@ export async function executeGetComplianceOverview(params: {
 
   const data = interns.map((intern) => {
     const rows = assignmentsByIntern.get(intern.userId) ?? [];
-    const pastRows = rows.filter((r) => r.date <= todayStr);
+    
+    // Filter assignments from rotation start date onwards
+    const rotationStart = intern.rotationStartDate || todayStr;
+    const relevantRows = rows.filter((r) => r.date >= rotationStart);
+    
+    const pastRows = relevantRows.filter((r) => r.date <= todayStr);
     const totalCompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number])).length;
     const totalAbsent = pastRows.filter((r) => r.status === "ABSENT").length;
 
-    const futureRows = rows.filter((r) => r.date > todayStr);
+    const futureRows = relevantRows.filter((r) => r.date > todayStr);
     const futureScheduled = futureRows.length;
-    const totalScheduled = rows.length;
+    const totalScheduled = relevantRows.length;
 
-    const thisWeekRows = rows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to);
+    const thisWeekRows = relevantRows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to);
     const thisWeekCompleted = thisWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number])).length;
     const thisWeekAbsent = thisWeekRows.filter((r) => r.status === "ABSENT").length;
     const thisWeekScheduled = thisWeekRows.length;
 
-    const lastWeekRows = rows.filter((r) => r.date >= lastWeek.from && r.date <= lastWeek.to);
+    const lastWeekRows = relevantRows.filter((r) => r.date >= lastWeek.from && r.date <= lastWeek.to);
     const lastWeekCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number])).length;
 
-    // Segmented by base type (USA/CRU/CRL)
+    // Segmented by base type (USA/CRU/CRL) — counts completions + futures for this week
     const totalUSACompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "USA").length;
     const totalCRUCompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
     const totalCRLCompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CRL").length;
+
+    // For weekly deficits, count current week's scheduled (future + today) by type
+    const thisWeekUSAFuture = futureRows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to && r.baseType === "USA").length;
+    const thisWeekCRUFuture = futureRows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to && r.baseType === "CENTRAL").length;
+    const thisWeekCRLFuture = futureRows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to && r.baseType === "CRL").length;
+
+    const thisWeekUSACompleted = thisWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "USA").length;
+    const thisWeekCRUCompleted = thisWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
+    const thisWeekCRLCompleted = thisWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CRL").length;
 
     const lastWeekUSACompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "USA").length;
     const lastWeekCRUCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
@@ -123,16 +137,19 @@ export async function executeGetComplianceOverview(params: {
     const targetCRUPerWeek = intern.targetCRUsPerWeek ?? 0;
     const targetCRLPerWeek = intern.targetCRLsPerWeek ?? 0;
 
-    // Debt is calculated from week-to-week progress (last week deficit)
-    const weeklyUSADeficit = Math.max(0, targetUSAPerWeek - lastWeekUSACompleted);
-    const weeklyCRUDeficit = Math.max(0, targetCRUPerWeek - lastWeekCRUCompleted);
-    const weeklyCRLDeficit = Math.max(0, targetCRLPerWeek - lastWeekCRLCompleted);
+    // Weekly deficit: count what's missing THIS WEEK considering scheduled future
+    const thisWeekUSAScheduledOrCompleted = thisWeekUSACompleted + thisWeekUSAFuture;
+    const thisWeekCRUScheduledOrCompleted = thisWeekCRUCompleted + thisWeekCRUFuture;
+    const thisWeekCRLScheduledOrCompleted = thisWeekCRLCompleted + thisWeekCRLFuture;
+
+    const weeklyUSADeficit = Math.max(0, targetUSAPerWeek - thisWeekUSAScheduledOrCompleted);
+    const weeklyCRUDeficit = Math.max(0, targetCRUPerWeek - thisWeekCRUScheduledOrCompleted);
+    const weeklyCRLDeficit = Math.max(0, targetCRLPerWeek - thisWeekCRLScheduledOrCompleted);
 
     let expectedToNow = 0;
-    if (weeklyTarget > 0 && rows.length > 0) {
-      const earliest = rows.reduce((min, r) => r.date < min ? r.date : min, rows[0].date);
-      const earlyMonStr = startOfWeekDateStr(earliest);
-      const weeksElapsed = weeksBetweenDateStr(earlyMonStr, thisWeek.from) + 1;
+    if (weeklyTarget > 0 && relevantRows.length > 0) {
+      const rotationMonStr = startOfWeekDateStr(rotationStart);
+      const weeksElapsed = weeksBetweenDateStr(rotationMonStr, thisWeek.from) + 1;
       expectedToNow = weeksElapsed * weeklyTarget;
     }
 

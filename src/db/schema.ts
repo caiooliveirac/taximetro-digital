@@ -51,6 +51,7 @@ export const faculties = pgTable("faculties", {
   targetCRLsPerWeek: integer("target_crls_per_week").notNull().default(0),
   totalInterns: integer("total_interns").notNull().default(0),
   isVirtual: boolean("is_virtual").notNull().default(false),
+  rotationStartDate: date("rotation_start_date").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

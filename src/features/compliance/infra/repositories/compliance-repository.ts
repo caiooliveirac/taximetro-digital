@@ -30,6 +30,7 @@ export async function listActiveComplianceSubjects(params: {
       role: userRoles.role,
       facultyId: userRoles.facultyId,
       facultyAbbr: faculties.abbreviation,
+      rotationStartDate: faculties.rotationStartDate,
       targetShifts: faculties.targetShifts,
       targetHours: faculties.targetHours,
       targetShiftsPerWeek: faculties.targetShiftsPerWeek,
