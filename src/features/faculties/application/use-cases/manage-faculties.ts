@@ -16,6 +16,7 @@ export const facultySchema = z.object({
   targetCRUsPerWeek: z.number().int().min(0).default(0),
   targetCRLsPerWeek: z.number().int().min(0).default(0),
   totalInterns: z.number().int().min(0).default(0),
+  rotationStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
 export async function executeListFaculties() {
