@@ -30,7 +30,7 @@ export async function internBelongsToFaculty(params: {
     .where(and(
       eq(userRoles.userId, params.internId),
       eq(userRoles.facultyId, params.facultyId),
-      inArray(userRoles.role, ["INTERN", "LEADER"]),
+      eq(userRoles.role, "INTERN"),
     ))
     .limit(1);
 
