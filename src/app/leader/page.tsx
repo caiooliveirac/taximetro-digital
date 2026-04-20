@@ -11,7 +11,7 @@ import {
 import { MetricCard } from "@/components/metric-card";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { addDaysToDateStr, isCurrentOperationalAssignment, operationalDateStr } from "@/lib/utils";
+import { addDaysToDateStr, isCurrentOperationalAssignment, operationalDateStr, startOfWeekDateStr } from "@/lib/utils";
 
 type Stats = {
   totalInterns: number;
@@ -67,6 +67,17 @@ type Incident = {
   reason: string;
 };
 
+type WeekAssignment = {
+  id: string;
+  internId: string;
+  internName: string;
+  baseCode: string;
+  baseType: string;
+  date: string;
+  period: "DAY" | "NIGHT";
+  status: string;
+};
+
 type WeeklyCategory = "com_falta" | "sub_alocado" | "na_meta";
 
 function categorize(c: ComplianceRow): WeeklyCategory {
@@ -82,10 +93,29 @@ const CATEGORY_CONFIG: Record<WeeklyCategory, { label: string; border: string; b
   na_meta: { label: "Na meta", border: "border-emerald-200", bg: "bg-emerald-50/30", text: "text-emerald-700", icon: CheckCircle },
 };
 
+const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
+const CHECKIN_DONE = new Set(["CHECKED_IN", "CHECKED_OUT"]);
+
+function dayLabel(date: string) {
+  const d = new Date(`${date}T12:00:00Z`);
+  return DAY_LABELS[d.getUTCDay()] ?? "";
+}
+
+function periodEmoji(period: "DAY" | "NIGHT") {
+  return period === "DAY" ? "☀️" : "🌙";
+}
+
+function isPendingCheckinForDay(a: WeekAssignment, day: string) {
+  if (a.date !== day) return false;
+  if (a.status === "CANCELLED" || a.status === "ABSENT") return false;
+  return !CHECKIN_DONE.has(a.status);
+}
+
 export default function LeaderDashboard() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [stats, setStats] = useState<Stats>({ totalInterns: 0, scheduledThisWeek: 0, pendingRequests: 0, confirmedToday: 0, absentToday: 0, checkedInToday: 0 });
+  const [weekAssignments, setWeekAssignments] = useState<WeekAssignment[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
   const [summary, setSummary] = useState<ComplianceSummary | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -119,11 +149,12 @@ export default function LeaderDashboard() {
     async function load() {
       try {
         const today = operationalDateStr();
-        const weekEnd = addDaysToDateStr(today, 7);
+        const weekStart = startOfWeekDateStr(today);
+        const weekEnd = addDaysToDateStr(weekStart, 6);
 
         const [usersRes, assignmentsRes, requestsRes, todayRes, complianceRes, alertsRes] = await Promise.all([
           fetch("/taximetro/api/admin/users"),
-          fetch(`/taximetro/api/assignments?from=${today}&to=${weekEnd}`),
+          fetch(`/taximetro/api/assignments?from=${weekStart}&to=${weekEnd}`),
           fetch("/taximetro/api/requests"),
           fetch(`/taximetro/api/assignments?from=${today}&to=${today}`),
           fetch("/taximetro/api/compliance"),
@@ -144,6 +175,12 @@ export default function LeaderDashboard() {
         const [usersJson, assignmentsJson, requestsJson, todayJson, complianceJson] = await Promise.all([
           usersRes.json(), assignmentsRes.json(), requestsRes.json(), todayRes.json(), complianceRes.json(),
         ]);
+
+        if (assignmentsJson.success) {
+          setWeekAssignments(assignmentsJson.data.filter((a: WeekAssignment) => a.status !== "CANCELLED"));
+        } else {
+          setWeekAssignments([]);
+        }
 
         const alertsJson = alertsRes ? await alertsRes.json().catch(() => ({ data: [] })) : { data: [] };
 
@@ -196,6 +233,33 @@ export default function LeaderDashboard() {
   for (const c of compliance) {
     groups[categorize(c)].push(c);
   }
+
+  const today = operationalDateStr();
+  const yesterday = addDaysToDateStr(today, -1);
+
+  const weeklyAssignmentsByIntern = new Map<string, WeekAssignment[]>();
+  for (const assignment of weekAssignments) {
+    if (!weeklyAssignmentsByIntern.has(assignment.internId)) {
+      weeklyAssignmentsByIntern.set(assignment.internId, []);
+    }
+    weeklyAssignmentsByIntern.get(assignment.internId)!.push(assignment);
+  }
+
+  const pendingCheckinRecent = weekAssignments
+    .filter((a) => {
+      if (a.date === today) {
+        return isCurrentOperationalAssignment(a.date, a.period) && isPendingCheckinForDay(a, today);
+      }
+      if (a.date === yesterday) {
+        return isPendingCheckinForDay(a, yesterday);
+      }
+      return false;
+    })
+    .sort((left, right) => {
+      if (left.date !== right.date) return left.date < right.date ? 1 : -1;
+      if (left.period !== right.period) return left.period === "DAY" ? -1 : 1;
+      return left.baseCode.localeCompare(right.baseCode);
+    });
 
   // Auto-expand first non-empty alert group
   const autoExpand = expandedGroup ?? (groups.com_falta.length > 0 ? "com_falta" : groups.sub_alocado.length > 0 ? "sub_alocado" : null);
@@ -292,10 +356,33 @@ export default function LeaderDashboard() {
         </div>
       )}
 
+      {/* Pending check-ins today/yesterday */}
+      {pendingCheckinRecent.length > 0 && (
+        <div className="rounded-xl border border-red-200 bg-red-50/50 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-700" strokeWidth={1.5} />
+            <h2 className="text-sm font-semibold text-red-900">Sem check-in hoje/ontem</h2>
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{pendingCheckinRecent.length}</span>
+          </div>
+          <div className="space-y-1">
+            {pendingCheckinRecent.map((assignment) => (
+              <div key={assignment.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-white/90 px-3 py-2 text-xs">
+                <span className="font-semibold text-slate-900">{assignment.internName}</span>
+                <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
+                  {assignment.date === today ? "Hoje" : "Ontem"}
+                </span>
+                <span className="text-slate-600">{assignment.baseCode}</span>
+                <span className="text-slate-500">{dayLabel(assignment.date)} {periodEmoji(assignment.period)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Weekly goal tracking */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-900">Meta Semanal</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Meta Semanal e Vida da Escala</h2>
           <div className="flex items-center gap-2">
             {(["com_falta", "sub_alocado", "na_meta"] as const).map((cat) => {
               const cfg = CATEGORY_CONFIG[cat];
@@ -346,18 +433,86 @@ export default function LeaderDashboard() {
                   {rows.map((c) => {
                     const fs = getFacultyStyle(c.facultyAbbr);
                     const effective = c.thisWeekScheduled - c.thisWeekAbsent;
+                    const personAssignments = (weeklyAssignmentsByIntern.get(c.userId) ?? []).slice().sort((left, right) => {
+                      const rank = (type: string) => {
+                        if (type === "USA") return 0;
+                        if (type === "CENTRAL") return 1;
+                        if (type === "CRL") return 2;
+                        return 3;
+                      };
+                      const typeRank = rank(left.baseType) - rank(right.baseType);
+                      if (typeRank !== 0) return typeRank;
+                      if (left.date !== right.date) return left.date < right.date ? -1 : 1;
+                      return left.period === right.period ? 0 : left.period === "DAY" ? -1 : 1;
+                    });
+
+                    const hasUsa = personAssignments.some((assignment) => assignment.baseType === "USA");
+                    const hasCru = personAssignments.some((assignment) => assignment.baseType === "CENTRAL");
+
+                    const assignmentTags = personAssignments.map((assignment) => {
+                      const checkedIn = CHECKIN_DONE.has(assignment.status);
+                      const pendingNow = assignment.date === today
+                        && isCurrentOperationalAssignment(assignment.date, assignment.period)
+                        && !checkedIn
+                        && assignment.status !== "ABSENT"
+                        && assignment.status !== "CANCELLED";
+
+                      const baseTone = assignment.baseType === "USA"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : assignment.baseType === "CENTRAL"
+                          ? "border-violet-200 bg-violet-50 text-violet-800"
+                          : "border-orange-200 bg-orange-50 text-orange-800";
+
+                      const stateTone = checkedIn
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                        : pendingNow
+                          ? "border-red-400 bg-red-50 text-red-800 shadow-[0_0_0_2px_rgba(248,113,113,0.25),0_8px_16px_rgba(248,113,113,0.20)]"
+                          : baseTone;
+
+                      return (
+                        <span
+                          key={assignment.id}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${stateTone}`}
+                          title={`${assignment.baseCode} · ${assignment.date} · ${assignment.period === "DAY" ? "Diurno" : "Noturno"} · ${assignment.status}`}
+                        >
+                          <span>{assignment.baseCode}</span>
+                          <span>{dayLabel(assignment.date)}</span>
+                          <span>{periodEmoji(assignment.period)}</span>
+                        </span>
+                      );
+                    });
+
                     return (
                       <div
                         key={c.userId}
-                        className="flex items-center justify-between rounded-lg bg-white/80 px-3 py-2.5 mt-1 first:mt-0 text-sm hover:bg-white transition-colors"
+                        className="mt-1 first:mt-0 flex flex-wrap items-start justify-between gap-3 rounded-lg bg-white/80 px-3 py-2.5 text-sm transition-colors hover:bg-white"
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-medium text-slate-900 truncate">{c.name}</span>
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${fs.pill}`}>
-                            {c.facultyAbbr}
-                          </span>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-medium text-slate-900 truncate">{c.name}</span>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${fs.pill}`}>
+                              {c.facultyAbbr}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {!hasUsa && (
+                              <span className="rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                                Sem USA
+                              </span>
+                            )}
+                            {!hasCru && (
+                              <span className="rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                                Sem CRU
+                              </span>
+                            )}
+                            {assignmentTags.length > 0 ? assignmentTags : (
+                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                                Sem USA/CRU/CRL na semana
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0 text-xs">
+                        <div className="mt-2 flex items-center gap-3 text-xs sm:mt-0">
                           <span className={`font-medium tabular-nums ${effective >= c.targetShiftsPerWeek ? "text-emerald-600" : "text-red-600"}`}>
                             {effective}/{c.targetShiftsPerWeek}
                           </span>
