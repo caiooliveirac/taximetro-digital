@@ -28,6 +28,9 @@ type ComplianceRow = {
   facultyAbbr: string;
   targetShifts: number;
   targetShiftsPerWeek: number;
+  targetUSAPerWeek: number;
+  targetCRUPerWeek: number;
+  targetCRLPerWeek: number;
   totalCompleted: number;
   totalDeficit: number;
   totalPct: number | null;
@@ -35,6 +38,12 @@ type ComplianceRow = {
   thisWeekCompleted: number;
   thisWeekAbsent: number;
   lastWeekCompleted: number;
+  lastWeekUSACompleted: number;
+  lastWeekCRUCompleted: number;
+  lastWeekCRLCompleted: number;
+  weeklyUSADeficit: number;
+  weeklyCRUDeficit: number;
+  weeklyCRLDeficit: number;
   weeklyDeficit: number;
   belowWeeklyTarget: boolean;
   futureScheduled: number;
@@ -334,7 +343,9 @@ export default function LeaderDashboard() {
     internId: string;
     name: string;
     facultyAbbr: string;
-    previousWeekDebt: number;
+    cruDebt: number; // Only CRU debt appears in pending list
+    usaDebt: number;
+    crlDebt: number;
     attendance: WeekAssignment[];
   }>();
 
@@ -343,7 +354,9 @@ export default function LeaderDashboard() {
       internId: row.userId,
       name: row.name,
       facultyAbbr: row.facultyAbbr,
-      previousWeekDebt: row.weeklyDeficit > 0 ? row.weeklyDeficit : 0,
+      cruDebt: row.weeklyCRUDeficit > 0 ? row.weeklyCRUDeficit : 0,
+      usaDebt: row.weeklyUSADeficit > 0 ? row.weeklyUSADeficit : 0,
+      crlDebt: row.weeklyCRLDeficit > 0 ? row.weeklyCRLDeficit : 0,
       attendance: [],
     });
   }
@@ -354,7 +367,9 @@ export default function LeaderDashboard() {
         internId: assignment.internId,
         name: assignment.internName,
         facultyAbbr: "",
-        previousWeekDebt: 0,
+        cruDebt: 0,
+        usaDebt: 0,
+        crlDebt: 0,
         attendance: [],
       });
     }
@@ -362,14 +377,14 @@ export default function LeaderDashboard() {
   }
 
   const pendingRows = [...pendingByIntern.values()]
-    .filter((row) => row.previousWeekDebt > 0 || row.attendance.length > 0)
+    .filter((row) => row.cruDebt > 0 || row.attendance.length > 0)
     .sort((left, right) => {
       const leftDate = left.attendance[0]?.date;
       const rightDate = right.attendance[0]?.date;
       if (leftDate && rightDate && leftDate !== rightDate) return leftDate < rightDate ? -1 : 1;
       if (leftDate && !rightDate) return -1;
       if (!leftDate && rightDate) return 1;
-      if (left.previousWeekDebt !== right.previousWeekDebt) return right.previousWeekDebt - left.previousWeekDebt;
+      if (left.cruDebt !== right.cruDebt) return right.cruDebt - left.cruDebt;
       return left.name.localeCompare(right.name);
     });
 
@@ -500,9 +515,19 @@ export default function LeaderDashboard() {
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {row.previousWeekDebt > 0 && (
+                    {row.cruDebt > 0 && (
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
-                        Debito semana anterior: -{row.previousWeekDebt}
+                        Débito CRU: -{row.cruDebt}
+                      </span>
+                    )}
+                    {row.usaDebt > 0 && (
+                      <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-800">
+                        Débito USA: -{row.usaDebt}
+                      </span>
+                    )}
+                    {row.crlDebt > 0 && (
+                      <span className="rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-medium text-purple-800">
+                        Débito CRL: -{row.crlDebt}
                       </span>
                     )}
                     {attendancePreview.map((assignment) => (
@@ -520,7 +545,7 @@ export default function LeaderDashboard() {
               );
             })}
             <p className="pt-1 text-[11px] text-red-700">
-              A lista mostra apenas intern que exige acao agora: check-in vencido (apenas apos 07h diurno e 19h noturno), debito da semana anterior, e remove automaticamente quando houver check-in, falta confirmada ou remocao da escala.
+              Mostra internos com débito de CRU (e USA/CRL se houver) e check-in vencido (após 07h diurno, 19h noturno). Remove automaticamente quando check-in confirmado, falta justificada ou removido da escala.
             </p>
               </div>
         </div>
