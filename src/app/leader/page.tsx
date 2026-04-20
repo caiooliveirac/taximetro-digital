@@ -11,7 +11,7 @@ import {
 import { MetricCard } from "@/components/metric-card";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { addDaysToDateStr, isCurrentOperationalAssignment, operationalDateStr, startOfWeekDateStr } from "@/lib/utils";
+import { addDaysToDateStr, isCurrentOperationalAssignment, localDateStr, operationalDateStr, startOfWeekDateStr } from "@/lib/utils";
 
 type Stats = {
   totalInterns: number;
@@ -152,7 +152,7 @@ export default function LeaderDashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const today = operationalDateStr();
+        const today = localDateStr();
         const weekStart = startOfWeekDateStr(today);
         const weekEnd = addDaysToDateStr(weekStart, 6);
 
@@ -240,7 +240,7 @@ export default function LeaderDashboard() {
   if (loading) return <TableSkeleton rows={4} cols={5} />;
   if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
-  const today = operationalDateStr();
+  const today = localDateStr();
   const yesterday = addDaysToDateStr(today, -1);
 
   const weeklyAssignmentsByIntern = new Map<string, WeekAssignment[]>();
