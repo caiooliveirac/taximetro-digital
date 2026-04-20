@@ -35,7 +35,9 @@ export async function listActiveComplianceSubjects(params: {
       targetHours: faculties.targetHours,
       targetShiftsPerWeek: faculties.targetShiftsPerWeek,
       targetUSAsPerWeek: faculties.targetUSAsPerWeek,
+      targetUSAsTotal: faculties.targetUSAsTotal,
       targetCRUsPerWeek: faculties.targetCRUsPerWeek,
+      targetCRUsTotal: faculties.targetCRUsTotal,
       targetCRLsPerWeek: faculties.targetCRLsPerWeek,
     })
     .from(userRoles)

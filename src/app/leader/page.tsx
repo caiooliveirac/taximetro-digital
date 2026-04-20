@@ -31,7 +31,9 @@ type ComplianceRow = {
   targetShifts: number;
   targetShiftsPerWeek: number;
   targetUSAPerWeek: number;
+  targetUSATotal: number;
   targetCRUPerWeek: number;
+  targetCRUTotal: number;
   targetCRLPerWeek: number;
   totalCompleted: number;
   totalDeficit: number;
@@ -378,14 +380,20 @@ export default function LeaderDashboard() {
     const elapsedWeeksIncludingCurrent = weeksBetweenDateStr(rotationWeekStart, currentWeekStart) + 1;
     const elapsedPastWeeks = Math.max(0, elapsedWeeksIncludingCurrent - 1);
 
-    const usaExpectedPast = elapsedPastWeeks * (row.targetUSAPerWeek ?? 0);
+    const usaTotalTarget = row.targetUSATotal > 0
+      ? row.targetUSATotal
+      : Math.max(0, (row.targetUSAPerWeek ?? 0) * 5);
+    const usaExpectedPast = Math.min(usaTotalTarget, elapsedPastWeeks * (row.targetUSAPerWeek ?? 0));
     const usaCompletedPast = relevantRows.filter((assignment) => assignment.baseType === "USA" && assignment.date < currentWeekStart && COMPLETED_STATUSES.has(assignment.status)).length;
     const usaFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "USA" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
     const usaDebt = Math.max(0, usaExpectedPast - (usaCompletedPast + usaFutureScheduled));
 
+    const cruTotalTarget = row.targetCRUTotal > 0
+      ? row.targetCRUTotal
+      : Math.max(0, (row.targetCRUPerWeek ?? 0) * 5);
     const cruCompleted = relevantRows.filter((assignment) => assignment.baseType === "CENTRAL" && COMPLETED_STATUSES.has(assignment.status)).length;
     const cruFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "CENTRAL" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
-    const cruDebt = Math.max(0, (row.targetCRUPerWeek ?? 0) - (cruCompleted + cruFutureScheduled));
+    const cruDebt = Math.max(0, cruTotalTarget - (cruCompleted + cruFutureScheduled));
 
     const crlCompleted = relevantRows.filter((assignment) => assignment.baseType === "CRL" && COMPLETED_STATUSES.has(assignment.status)).length;
     const crlFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "CRL" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
