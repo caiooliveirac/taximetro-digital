@@ -130,7 +130,9 @@ export async function executeGetComplianceOverview(params: {
 
     const weeklyTarget = intern.targetShiftsPerWeek ?? 0;
     const targetUSAPerWeek = intern.targetUSAsPerWeek ?? 0;
+    const targetUSATotal = intern.targetUSAsTotal ?? 0;
     const targetCRUPerWeek = intern.targetCRUsPerWeek ?? 0;
+    const targetCRUTotal = intern.targetCRUsTotal ?? 0;
     const targetCRLPerWeek = intern.targetCRLsPerWeek ?? 0;
 
     // Weekly deficit: count what's missing THIS WEEK considering scheduled future
@@ -177,7 +179,9 @@ export async function executeGetComplianceOverview(params: {
       targetHours: intern.targetHours ?? 0,
       targetShiftsPerWeek: intern.targetShiftsPerWeek ?? 0,
       targetUSAPerWeek,
+      targetUSATotal,
       targetCRUPerWeek,
+      targetCRUTotal,
       targetCRLPerWeek,
       totalScheduled,
       totalCompleted,

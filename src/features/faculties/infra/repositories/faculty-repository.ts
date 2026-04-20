@@ -13,7 +13,9 @@ export async function createFaculty(values: {
   targetShifts: number;
   targetShiftsPerWeek: number;
   targetUSAsPerWeek: number;
+  targetUSAsTotal: number;
   targetCRUsPerWeek: number;
+  targetCRUsTotal: number;
   targetCRLsPerWeek: number;
   totalInterns: number;
   rotationStartDate: string;
@@ -31,7 +33,9 @@ export async function updateFacultyById(params: {
     targetShifts: number;
     targetShiftsPerWeek: number;
     targetUSAsPerWeek: number;
+    targetUSAsTotal: number;
     targetCRUsPerWeek: number;
+    targetCRUsTotal: number;
     targetCRLsPerWeek: number;
     totalInterns: number;
     rotationStartDate: string;
