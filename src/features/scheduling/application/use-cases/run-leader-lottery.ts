@@ -166,6 +166,7 @@ export async function executeRunLeaderLottery(params: {
   const existingShiftCount = new Map<string, number>();
   for (const id of safeIds) existingShiftCount.set(id, 0);
   for (const assignment of existing) {
+    if (assignment.baseType !== "USA") continue;
     if (!existingShiftCount.has(assignment.internId)) continue;
     existingShiftCount.set(assignment.internId, (existingShiftCount.get(assignment.internId) ?? 0) + 1);
   }
@@ -233,7 +234,9 @@ export async function executeRunLeaderLottery(params: {
 
       positionTaken[bestIdx] = true;
       usedSlots.get(internId)!.add(key);
-      newShiftCount.set(internId, (newShiftCount.get(internId) ?? 0) + 1);
+      if (pos.baseType === "USA") {
+        newShiftCount.set(internId, (newShiftCount.get(internId) ?? 0) + 1);
+      }
       addCruBlocking(internId, pos);
 
       toCreate.push({

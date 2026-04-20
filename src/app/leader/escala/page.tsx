@@ -371,6 +371,19 @@ export default function LeaderEscala() {
     setLotteryLoading(true);
     setLotteryMsg("");
     const ids = [...lotterySelected].filter((id) => !lotteryExcluded.has(id));
+
+    const atCapCount = ids.filter((id) => (lotteryShiftsByIntern.get(id) ?? 0) >= maxShifts).length;
+    if (atCapCount === ids.length) {
+      const suggestion = maxShifts < 3
+        ? `Aumente para ${maxShifts + 1} plantões em USA por interno e tente novamente.`
+        : "Reduza os selecionados ou remova plantões em USA já existentes para liberar vagas.";
+      setLotteryMsg(
+        `⚠️ Nenhuma alocação possível com limite ${maxShifts}: todos os ${ids.length} selecionados já têm ${maxShifts} ou mais plantões em USA nesta semana. ${suggestion}`,
+      );
+      setLotteryLoading(false);
+      return;
+    }
+
     const res = await fetch("/taximetro/api/leader/lottery", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -603,7 +616,17 @@ export default function LeaderEscala() {
   }, [activeInterns, allocSearch, allocShift, allocSlot, assignmentsByInternDate, cruConflicts, isEbmsp]);
 
   const today = localDateStr();
-  const selectedCount = [...lotterySelected].filter((id) => !lotteryExcluded.has(id)).length;
+  const selectedLotteryIds = [...lotterySelected].filter((id) => !lotteryExcluded.has(id));
+  const selectedCount = selectedLotteryIds.length;
+  const lotteryShiftsByIntern = assignments.reduce((acc, assignment) => {
+    if (assignment.status === "CANCELLED") return acc;
+    if (assignment.baseType !== "USA") return acc;
+    acc.set(assignment.internId, (acc.get(assignment.internId) ?? 0) + 1);
+    return acc;
+  }, new Map<string, number>());
+  const selectedAtCapCount = selectedLotteryIds.filter(
+    (id) => (lotteryShiftsByIntern.get(id) ?? 0) >= maxShifts,
+  ).length;
 
   if (loading) return <p className="p-8 text-slate-400">Carregando...</p>;
 
@@ -1295,6 +1318,11 @@ export default function LeaderEscala() {
                   </button>
                 ))}
               </div>
+              {selectedCount > 0 && (
+                <p className="mb-3 text-xs text-slate-500">
+                  {selectedAtCapCount} de {selectedCount} selecionados já têm {maxShifts} ou mais plantões em USA nesta semana.
+                </p>
+              )}
               {lotteryMsg && <p className="text-sm mb-3">{lotteryMsg}</p>}
               <button
                 onClick={runLottery}
