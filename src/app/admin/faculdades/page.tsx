@@ -9,6 +9,9 @@ type Faculty = {
   targetHours: number;
   targetShifts: number;
   targetShiftsPerWeek: number;
+  targetUSAsPerWeek: number;
+  targetCRUsPerWeek: number;
+  targetCRLsPerWeek: number;
   totalInterns: number;
 };
 
@@ -57,7 +60,7 @@ export default function AdminFaculdades() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Faculdades</h1>
-        <button onClick={() => setEditing({ name: "", abbreviation: "", targetHours: 0, targetShifts: 0, targetShiftsPerWeek: 0, totalInterns: 0 })} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600">
+        <button onClick={() => setEditing({ name: "", abbreviation: "", targetHours: 0, targetShifts: 0, targetShiftsPerWeek: 0, targetUSAsPerWeek: 0, targetCRUsPerWeek: 0, targetCRLsPerWeek: 0, totalInterns: 0 })} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600">
           + Nova Faculdade
         </button>
       </div>
@@ -70,7 +73,10 @@ export default function AdminFaculdades() {
             <Input label="Sigla" value={editing.abbreviation ?? ""} onChange={(v) => setEditing({ ...editing, abbreviation: v })} />
             <Input label="Meta Horas (total)" type="number" value={String(editing.targetHours ?? 0)} onChange={(v) => setEditing({ ...editing, targetHours: +v })} />
             <Input label="Meta Plantões (total)" type="number" value={String(editing.targetShifts ?? 0)} onChange={(v) => setEditing({ ...editing, targetShifts: +v })} />
-            <Input label="Meta Plantões/Semana" type="number" value={String(editing.targetShiftsPerWeek ?? 0)} onChange={(v) => setEditing({ ...editing, targetShiftsPerWeek: +v })} />
+            <Input label="Meta Plantões/Semana (deprecated)" type="number" value={String(editing.targetShiftsPerWeek ?? 0)} onChange={(v) => setEditing({ ...editing, targetShiftsPerWeek: +v })} />
+            <Input label="Meta USAs/Semana" type="number" value={String(editing.targetUSAsPerWeek ?? 0)} onChange={(v) => setEditing({ ...editing, targetUSAsPerWeek: +v })} />
+            <Input label="Meta CRUs/Semana" type="number" value={String(editing.targetCRUsPerWeek ?? 0)} onChange={(v) => setEditing({ ...editing, targetCRUsPerWeek: +v })} />
+            <Input label="Meta CRLs/Semana" type="number" value={String(editing.targetCRLsPerWeek ?? 0)} onChange={(v) => setEditing({ ...editing, targetCRLsPerWeek: +v })} />
             <Input label="Total Internos" type="number" value={String(editing.totalInterns ?? 0)} onChange={(v) => setEditing({ ...editing, totalInterns: +v })} />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -89,7 +95,9 @@ export default function AdminFaculdades() {
               <th className="pb-2 pr-4">Nome</th>
               <th className="pb-2 pr-4">Meta Horas</th>
               <th className="pb-2 pr-4">Meta Plantões</th>
-              <th className="pb-2 pr-4">Meta/Semana</th>
+              <th className="pb-2 pr-4">USA/sem</th>
+              <th className="pb-2 pr-4">CRU/sem</th>
+              <th className="pb-2 pr-4">CRL/sem</th>
               <th className="pb-2 pr-4">Internos</th>
               <th className="pb-2">Ações</th>
             </tr>
@@ -101,7 +109,9 @@ export default function AdminFaculdades() {
                 <td className="py-2 pr-4">{f.name}</td>
                 <td className="py-2 pr-4">{f.targetHours}h</td>
                 <td className="py-2 pr-4">{f.targetShifts}</td>
-                <td className="py-2 pr-4">{f.targetShiftsPerWeek}/sem</td>
+                <td className="py-2 pr-4">{f.targetUSAsPerWeek ?? 0}</td>
+                <td className="py-2 pr-4">{f.targetCRUsPerWeek ?? 0}</td>
+                <td className="py-2 pr-4">{f.targetCRLsPerWeek ?? 0}</td>
                 <td className="py-2 pr-4">{f.totalInterns}</td>
                 <td className="py-2">
                   <button onClick={() => setEditing(f)} className="text-accent-600 hover:text-accent-500">Editar</button>

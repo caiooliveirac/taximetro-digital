@@ -28,6 +28,9 @@ export async function middleware(req: NextRequest) {
 
   // Not authenticated → redirect to login
   if (!token) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+    }
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

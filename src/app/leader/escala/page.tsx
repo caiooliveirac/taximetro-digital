@@ -151,6 +151,7 @@ export default function LeaderEscala() {
   /* ── Remove assignment (cancel) ── */
   const [removeTarget, setRemoveTarget] = useState<Assignment | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
+  const [removeError, setRemoveError] = useState("");
 
   /* ── CRU fixed weekly ── */
   const [cruFixed, setCruFixed] = useState<CruFixed[]>([]);
@@ -462,6 +463,7 @@ export default function LeaderEscala() {
   async function confirmRemoveAssignment() {
     if (!removeTarget) return;
     setRemoveLoading(true);
+    setRemoveError("");
     try {
       const res = await fetch("/taximetro/api/assignments", {
         method: "PUT",
@@ -472,12 +474,20 @@ export default function LeaderEscala() {
           notes: `Removido da escala pelo líder em ${formatDateLabel(localDateStr(), { day: "2-digit", month: "2-digit", year: "numeric" })}`,
         }),
       });
-      const json = await res.json();
+      const contentType = res.headers.get("content-type") ?? "";
+      const json = contentType.includes("application/json") ? await res.json() : null;
       if (json.success) {
         await load();
+        setRemoveTarget(null);
+      } else {
+        const fallback = res.ok
+          ? "Não foi possível remover este plantão."
+          : `Falha ao remover plantão (HTTP ${res.status}).`;
+        setRemoveError(json?.error ?? fallback);
       }
-    } catch { /* silently fail */ }
-    setRemoveTarget(null);
+    } catch (error) {
+      setRemoveError(error instanceof Error ? error.message : "Erro de conexão ao remover plantão.");
+    }
     setRemoveLoading(false);
   }
 
@@ -788,7 +798,7 @@ export default function LeaderEscala() {
                                   <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                                   {assignment.status === "SCHEDULED" && (
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); setRemoveTarget(assignment); }}
+                                      onClick={(e) => { e.stopPropagation(); setRemoveError(""); setRemoveTarget(assignment); }}
                                       className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
                                       title="Remover da escala"
                                     >
@@ -922,7 +932,7 @@ export default function LeaderEscala() {
                                   <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                                   {assignment.status === "SCHEDULED" && (
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); setRemoveTarget(assignment); }}
+                                      onClick={(e) => { e.stopPropagation(); setRemoveError(""); setRemoveTarget(assignment); }}
                                       className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
                                       title="Remover da escala"
                                     >
@@ -1037,7 +1047,7 @@ export default function LeaderEscala() {
                               <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                               {assignment.status === "SCHEDULED" && (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); setRemoveTarget(assignment); }}
+                                  onClick={(e) => { e.stopPropagation(); setRemoveError(""); setRemoveTarget(assignment); }}
                                   className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
                                   title="Remover da escala"
                                 >
@@ -1363,10 +1373,15 @@ export default function LeaderEscala() {
                   ℹ️ Se este plantão veio do CRU fixo semanal, remover aqui afeta somente este dia. Para remover recorrência, use o painel "CRU — Fixos Semanais".
                 </div>
               )}
+              {removeError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                  ❌ {removeError}
+                </div>
+              )}
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
               <button
-                onClick={() => setRemoveTarget(null)}
+                onClick={() => { setRemoveTarget(null); setRemoveError(""); }}
                 disabled={removeLoading}
                 className="flex-1 rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 transition"
               >

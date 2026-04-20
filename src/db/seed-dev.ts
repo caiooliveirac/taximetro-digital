@@ -134,13 +134,26 @@ async function seedDev() {
   const coordId = admin!.id;
 
   // ============================================================
-  // 2. Faculty targets
+  // 2. Faculty targets (segmented by base type: USA/CRU/CRL)
   // ============================================================
-  console.log("🎯 Atualizando metas...");
+  console.log("🎯 Atualizando metas por tipo de base...");
+  const targets: Record<string, { usas: number; crus: number; crls: number; hours: number; total: number }> = {
+    ZARNS: { usas: 1, crus: 1, crls: 1, hours: 480, total: 3 },     // dev: higher targets
+    UFBA: { usas: 1, crus: 1, crls: 0, hours: 480, total: 2 },
+    AFYA: { usas: 1, crus: 1, crls: 1, hours: 480, total: 3 },
+    UNIFACS: { usas: 0, crus: 1, crls: 1, hours: 480, total: 2 },
+    EBMSP: { usas: 0, crus: 4, crls: 0, hours: 480, total: 4 },     // EBMSP: 4 CRU per week (6h shifts)
+  };
+  
   for (const abbr of FAC_ABBR) {
+    const t = targets[abbr];
     await db.update(faculties).set({
-      targetHours: 480, targetShifts: 50,
-      targetShiftsPerWeek: 2, totalInterns: 40,
+      targetHours: t.hours, targetShifts: 50,
+      targetShiftsPerWeek: t.total, // backward compat
+      targetUSAsPerWeek: t.usas,
+      targetCRUsPerWeek: t.crus,
+      targetCRLsPerWeek: t.crls,
+      totalInterns: 40,
     }).where(eq(faculties.id, facByAbbr[abbr].id));
   }
 

@@ -58,6 +58,9 @@ jobs:
               ${{ env.APP }}-builder \
               npx drizzle-kit push --force
 
+            echo "=== Recreating available_slots materialized view/triggers ==="
+            psql "${{ secrets.DATABASE_URL }}" -v ON_ERROR_STOP=1 -f scripts/materialized-view-available-slots.sql
+
             echo "=== Schema changes complete ==="
           REMOTE_SCRIPT
 

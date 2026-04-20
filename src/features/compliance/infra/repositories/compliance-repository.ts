@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, faculties, userRoles, users } from "@/shared/db/schema";
+import { assignments, bases, faculties, userRoles, users } from "@/shared/db/schema";
 
 export async function listActiveComplianceSubjects(params: {
   roleFilter: Array<"INTERN" | "LEADER">;
@@ -33,6 +33,9 @@ export async function listActiveComplianceSubjects(params: {
       targetShifts: faculties.targetShifts,
       targetHours: faculties.targetHours,
       targetShiftsPerWeek: faculties.targetShiftsPerWeek,
+      targetUSAsPerWeek: faculties.targetUSAsPerWeek,
+      targetCRUsPerWeek: faculties.targetCRUsPerWeek,
+      targetCRLsPerWeek: faculties.targetCRLsPerWeek,
     })
     .from(userRoles)
     .innerJoin(users, and(eq(users.id, userRoles.userId), eq(users.isActive, true)))
@@ -47,8 +50,10 @@ export async function listNonCancelledAssignmentsForInterns(internIds: string[])
       internId: assignments.internId,
       date: assignments.date,
       status: assignments.status,
+      baseType: bases.type,
     })
     .from(assignments)
+    .innerJoin(bases, eq(assignments.baseId, bases.id))
     .where(and(
       inArray(assignments.internId, internIds),
       sql`${assignments.status} != 'CANCELLED'`,
