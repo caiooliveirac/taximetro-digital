@@ -104,7 +104,7 @@ export async function findFacultyInternIds(facultyId: string) {
   const facultyInterns = await db
     .select({ userId: userRoles.userId })
     .from(userRoles)
-    .where(and(inArray(userRoles.role, ["INTERN", "LEADER"]), eq(userRoles.facultyId, facultyId), eq(userRoles.isActive, true)));
+    .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.facultyId, facultyId), eq(userRoles.isActive, true)));
 
   return new Set(facultyInterns.map((r) => r.userId));
 }
@@ -138,7 +138,7 @@ export async function findRequesterFacultyRole(requesterId: string) {
     .from(userRoles)
     .where(and(
       eq(userRoles.userId, requesterId),
-      inArray(userRoles.role, ["INTERN", "LEADER"]),
+      eq(userRoles.role, "INTERN"),
       eq(userRoles.isActive, true),
     ))
     .limit(1);

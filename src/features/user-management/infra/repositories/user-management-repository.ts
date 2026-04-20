@@ -14,7 +14,7 @@ export async function listFacultyInternRows(facultyId: string) {
     .from(users)
     .innerJoin(
       userRoles,
-      and(eq(userRoles.userId, users.id), inArray(userRoles.role, ["INTERN", "LEADER"])),
+      and(eq(userRoles.userId, users.id), eq(userRoles.role, "INTERN")),
     )
     .where(eq(userRoles.facultyId, facultyId))
     .orderBy(users.name);

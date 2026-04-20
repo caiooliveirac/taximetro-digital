@@ -12,7 +12,7 @@ export async function getValidInternIdsForFaculty(params: {
     .where(
       and(
         eq(userRoles.facultyId, params.facultyId),
-        inArray(userRoles.role, ["INTERN", "LEADER"]),
+        eq(userRoles.role, "INTERN"),
         eq(userRoles.isActive, true),
         inArray(userRoles.userId, params.internIds),
       ),
