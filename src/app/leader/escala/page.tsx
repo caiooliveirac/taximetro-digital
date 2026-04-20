@@ -18,6 +18,7 @@ type Assignment = {
   id: string; internId: string; internName: string;
   baseId: string; baseCode: string; baseName: string; baseType: string;
   date: string; period: string; shift: string | null; status: string;
+  notes?: string | null;
   isExtraShift?: boolean; extraShiftNotes?: string | null;
   checkinGeoValid?: boolean | null;
 };
@@ -370,6 +371,19 @@ export default function LeaderEscala() {
     setLotteryLoading(true);
     setLotteryMsg("");
     const ids = [...lotterySelected].filter((id) => !lotteryExcluded.has(id));
+
+    const atCapCount = ids.filter((id) => (lotteryShiftsByIntern.get(id) ?? 0) >= maxShifts).length;
+    if (atCapCount === ids.length) {
+      const suggestion = maxShifts < 3
+        ? `Aumente para ${maxShifts + 1} plantões em USA por interno e tente novamente.`
+        : "Reduza os selecionados ou remova plantões em USA já existentes para liberar vagas.";
+      setLotteryMsg(
+        `⚠️ Nenhuma alocação possível com limite ${maxShifts}: todos os ${ids.length} selecionados já têm ${maxShifts} ou mais plantões em USA nesta semana. ${suggestion}`,
+      );
+      setLotteryLoading(false);
+      return;
+    }
+
     const res = await fetch("/taximetro/api/leader/lottery", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -397,13 +411,13 @@ export default function LeaderEscala() {
     setAllocMsg("");
     setAllocIsExtraShift(isExtra ?? false);
     setAllocExtraShiftNotes("");
-    const isCruShift = baseType === "CENTRAL" && period === "DAY";
+    const isCruShift = isEbmsp && baseType === "CENTRAL" && period === "DAY";
     setAllocShift(isCruShift ? "MORNING" : "");
   }
 
   async function submitAllocation() {
     if (!allocSlot || !allocInternId || !effectiveFacultyId) return;
-    const isCruShift = allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY";
+    const isCruShift = isEbmsp && allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY";
     if (isCruShift && !allocShift) {
       setAllocMsg("❌ Selecione o turno (Manhã ou Tarde) para CRU.");
       return;
@@ -570,7 +584,7 @@ export default function LeaderEscala() {
         const existing = assignmentsByInternDate.get(key) ?? [];
 
         // For CRU DAY with shift: only block CRU if same shift; still block non-CRU same-period
-        const isCruShift = allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && allocShift;
+        const isCruShift = isEbmsp && allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && Boolean(allocShift);
         const busy = existing.some((assignment) => {
           if (assignment.period !== allocSlot.period) return false;
           if (isCruShift && assignment.baseType === "CENTRAL") {
@@ -599,10 +613,20 @@ export default function LeaderEscala() {
       .sort((left, right) => left.name.localeCompare(right.name));
 
     return { eligibleInterns, blockedCount, busyCount };
-  }, [activeInterns, allocSearch, allocShift, allocSlot, assignmentsByInternDate, cruConflicts]);
+  }, [activeInterns, allocSearch, allocShift, allocSlot, assignmentsByInternDate, cruConflicts, isEbmsp]);
 
   const today = localDateStr();
-  const selectedCount = [...lotterySelected].filter((id) => !lotteryExcluded.has(id)).length;
+  const selectedLotteryIds = [...lotterySelected].filter((id) => !lotteryExcluded.has(id));
+  const selectedCount = selectedLotteryIds.length;
+  const lotteryShiftsByIntern = assignments.reduce((acc, assignment) => {
+    if (assignment.status === "CANCELLED") return acc;
+    if (assignment.baseType !== "USA") return acc;
+    acc.set(assignment.internId, (acc.get(assignment.internId) ?? 0) + 1);
+    return acc;
+  }, new Map<string, number>());
+  const selectedAtCapCount = selectedLotteryIds.filter(
+    (id) => (lotteryShiftsByIntern.get(id) ?? 0) >= maxShifts,
+  ).length;
 
   if (loading) return <p className="p-8 text-slate-400">Carregando...</p>;
 
@@ -1294,6 +1318,11 @@ export default function LeaderEscala() {
                   </button>
                 ))}
               </div>
+              {selectedCount > 0 && (
+                <p className="mb-3 text-xs text-slate-500">
+                  {selectedAtCapCount} de {selectedCount} selecionados já têm {maxShifts} ou mais plantões em USA nesta semana.
+                </p>
+              )}
               {lotteryMsg && <p className="text-sm mb-3">{lotteryMsg}</p>}
               <button
                 onClick={runLottery}
@@ -1329,6 +1358,11 @@ export default function LeaderEscala() {
               <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                 ⚠️ Atenção: o plantão será cancelado e o interno precisará compensar com outro plantão para manter a meta.
               </div>
+              {removeTarget.baseCode === "CRU" && (
+                <div className="rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 text-xs text-violet-800">
+                  ℹ️ Se este plantão veio do CRU fixo semanal, remover aqui afeta somente este dia. Para remover recorrência, use o painel "CRU — Fixos Semanais".
+                </div>
+              )}
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
               <button
@@ -1369,7 +1403,7 @@ export default function LeaderEscala() {
             </div>
             <div className="px-6 py-4 space-y-3">
               <label className="block text-sm font-medium text-slate-700">Buscar e selecionar interno:</label>
-              {allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && (
+              {allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && isEbmsp && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Turno CRU:</label>
                   <div className="flex gap-2">

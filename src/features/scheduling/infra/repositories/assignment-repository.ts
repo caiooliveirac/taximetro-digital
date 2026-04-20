@@ -1,6 +1,6 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments } from "@/shared/db/schema";
+import { assignments, faculties } from "@/shared/db/schema";
 
 export type ShiftValue = "MORNING" | "AFTERNOON" | null;
 
@@ -141,4 +141,14 @@ export async function countNonCancelledForSlot(params: {
     );
 
   return Number(result?.count ?? 0);
+}
+
+export async function getFacultyAbbreviationById(facultyId: string) {
+  const [facultyRow] = await db
+    .select({ abbreviation: faculties.abbreviation })
+    .from(faculties)
+    .where(eq(faculties.id, facultyId))
+    .limit(1);
+
+  return facultyRow?.abbreviation ?? null;
 }

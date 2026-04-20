@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
-import { addDaysToDateStr, formatBrazilTime, getShiftShortLabel, isCurrentOperationalAssignment, isWithinAttendanceWindow, operationalDateStr, operationalPeriod } from "@/lib/utils";
+import { addDaysToDateStr, formatBrazilTime, getBrazilNowParts, getShiftShortLabel, isCurrentOperationalAssignment, isWithinAttendanceWindow, localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -65,8 +65,22 @@ function formatShortDate(dateStr: string) {
   return new Date(`${dateStr}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+function shiftOrder(shift?: string | null): number {
+  if (shift === "MORNING") return 0;
+  if (shift === "AFTERNOON") return 1;
+  if (shift === "NIGHT") return 2;
+  return 99;
+}
+
+function isDayShiftVisibleNow(assignment: Assignment, nowDate: string, nowHour: number): boolean {
+  return assignment.period === "DAY"
+    && (assignment.shift === "MORNING" || assignment.shift === "AFTERNOON")
+    && assignment.date === nowDate
+    && nowHour >= 5;
+}
+
 export default function InternHoje() {
-  const [assignment, setAssignment] = useState<Assignment | null>(null);
+  const [todayAssignments, setTodayAssignments] = useState<Assignment[]>([]);
   const [upcoming, setUpcoming] = useState<Assignment[]>([]);
   const [vacantSlots, setVacantSlots] = useState<Slot[]>([]);
   const [weekly, setWeekly] = useState<WeeklyCompliance | null>(null);
@@ -74,8 +88,8 @@ export default function InternHoje() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const today = operationalDateStr();
-  const currentPeriod = operationalPeriod();
+  const today = localDateStr();
+  const nowHour = getBrazilNowParts().hour;
   const futureEnd = addDaysToDateStr(today, 14);
 
   useEffect(() => {
@@ -87,19 +101,31 @@ export default function InternHoje() {
     ]).then(([assignJson, slotsJson, complianceJson, attendanceJson]) => {
       if (assignJson.success) {
         const active = assignJson.data.filter((a: Assignment) => a.status !== "CANCELLED");
-        const todayAssign = active.find((a: Assignment) => ["SCHEDULED", "CONFIRMED", "CHECKED_IN"].includes(a.status) && isWithinAttendanceWindow(a.date, a.period as "DAY" | "NIGHT"))
-          ?? active.find((a: Assignment) => isCurrentOperationalAssignment(a.date, a.period as "DAY" | "NIGHT"))
-          ?? active.find((a: Assignment) => a.date === today);
-        setAssignment(todayAssign ?? null);
+
+        const actionableToday = active
+          .filter((a: Assignment) => {
+            if (!["SCHEDULED", "CONFIRMED", "CHECKED_IN"].includes(a.status)) return false;
+            if (isDayShiftVisibleNow(a, today, nowHour)) return true;
+
+            return isWithinAttendanceWindow(a.date, a.period as "DAY" | "NIGHT")
+              || isCurrentOperationalAssignment(a.date, a.period as "DAY" | "NIGHT")
+              || a.date === today;
+          })
+          .sort((a: Assignment, b: Assignment) => {
+            const byDate = a.date.localeCompare(b.date);
+            if (byDate !== 0) return byDate;
+
+            const byShift = shiftOrder(a.shift) - shiftOrder(b.shift);
+            if (byShift !== 0) return byShift;
+
+            return a.baseCode.localeCompare(b.baseCode, "pt-BR");
+          });
+
+        setTodayAssignments(actionableToday);
+        const actionableIds = new Set(actionableToday.map((a: Assignment) => a.id));
         setUpcoming(
           active
-            .filter((a: Assignment) => {
-              if (["SCHEDULED", "CONFIRMED", "CHECKED_IN"].includes(a.status) && isWithinAttendanceWindow(a.date, a.period as "DAY" | "NIGHT")) {
-                return false;
-              }
-
-              return a.date > today || (a.date === today && a.period !== currentPeriod);
-            })
+            .filter((a: Assignment) => !actionableIds.has(a.id) && (a.date > today || a.date === today))
             .slice(0, 5),
         );
       } else {
@@ -135,6 +161,38 @@ export default function InternHoje() {
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <p className="text-sm font-semibold text-blue-900">Lembrete</p>
+        <p className="mt-1 text-sm text-blue-800">
+          Lembrando dos atendimentos à EAPs e PCR. Qualquer dúvida seguimos à disposição.
+        </p>
+        <div className="mt-3 space-y-1 text-sm text-blue-900">
+          <p>
+            <span className="font-semibold">EAP:</span> Ana Beatriz Andrade {" "}
+            <a
+              href="https://wa.me/5571900000000"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium underline underline-offset-2"
+            >
+              +5571900000000
+            </a>
+          </p>
+          <p>
+            <span className="font-semibold">PCR:</span> Leo Copque (REDCap:{" "}
+            <a
+              href="https://redcap.link/BRAVOSALVADOR"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium underline underline-offset-2"
+            >
+              https://redcap.link/BRAVOSALVADOR
+            </a>
+            )
+          </p>
+        </div>
+      </div>
+
       {/* Header + weekly goal */}
       <div className="flex items-start justify-between">
         <div>
@@ -213,46 +271,50 @@ export default function InternHoje() {
         </div>
       )}
 
-      {/* Today's assignment */}
-      {assignment ? (
-        <div className={`rounded-xl border bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-4 ${getBaseStyle(assignment.baseType).border}`}>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-medium text-slate-500">Base</p>
-              <div className="mt-0.5 flex items-center gap-2">
-                <span className={`inline-block h-2.5 w-2.5 rounded-full ${getBaseStyle(assignment.baseType).dot}`} />
-                <p className="text-lg font-semibold text-slate-900">{assignment.baseCode}</p>
+      {/* Today's assignments */}
+      {todayAssignments.length > 0 ? (
+        <div className="space-y-3">
+          {todayAssignments.map((assignment) => (
+            <div key={assignment.id} className={`rounded-xl border bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-4 ${getBaseStyle(assignment.baseType).border}`}>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-medium text-slate-500">Base</p>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${getBaseStyle(assignment.baseType).dot}`} />
+                    <p className="text-lg font-semibold text-slate-900">{assignment.baseCode}</p>
+                  </div>
+                  <p className="text-sm text-slate-500">{assignment.baseName}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-500">Turno</p>
+                  <div className={`mt-0.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold ${getPeriodStyle(assignment.period).bg} ${getPeriodStyle(assignment.period).text}`}>
+                    {assignment.period === "DAY"
+                      ? <Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} />
+                      : <Moon className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />}
+                    {assignment.shift ? getShiftShortLabel(assignment.shift) : getPeriodStyle(assignment.period).label}
+                  </div>
+                </div>
               </div>
-              <p className="text-sm text-slate-500">{assignment.baseName}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500">Turno</p>
-              <div className={`mt-0.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold ${getPeriodStyle(assignment.period).bg} ${getPeriodStyle(assignment.period).text}`}>
-                {assignment.period === "DAY"
-                  ? <Sun className="h-4 w-4 text-amber-500" strokeWidth={1.5} />
-                  : <Moon className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />}
-                {assignment.shift ? getShiftShortLabel(assignment.shift) : getPeriodStyle(assignment.period).label}
+              <div>
+                <p className="text-xs font-medium text-slate-500">Status</p>
+                <div className="mt-1"><StatusBadge status={assignment.status} /></div>
               </div>
+              <NavigationLinks
+                latitude={assignment.baseLatitude}
+                longitude={assignment.baseLongitude}
+                label={`${assignment.baseCode} - ${assignment.baseName}`}
+              />
+              {(assignment.status === "SCHEDULED" || assignment.status === "CONFIRMED") && (
+                <Link href={`/intern/checkin?assignmentId=${assignment.id}`}>
+                  <Button className="w-full gap-2">
+                    <MapPin className="h-4 w-4" strokeWidth={1.5} />
+                    Fazer Check-in
+                    <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
+                  </Button>
+                </Link>
+              )}
             </div>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">Status</p>
-            <div className="mt-1"><StatusBadge status={assignment.status} /></div>
-          </div>
-          <NavigationLinks
-            latitude={assignment.baseLatitude}
-            longitude={assignment.baseLongitude}
-            label={`${assignment.baseCode} - ${assignment.baseName}`}
-          />
-          {(assignment.status === "SCHEDULED" || assignment.status === "CONFIRMED") && (
-            <Link href={`/intern/checkin?assignmentId=${assignment.id}`}>
-              <Button className="w-full gap-2">
-                <MapPin className="h-4 w-4" strokeWidth={1.5} />
-                Fazer Check-in
-                <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
-              </Button>
-            </Link>
-          )}
+          ))}
         </div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-[0_1px_3px_rgba(0,0,0,0.04)]">

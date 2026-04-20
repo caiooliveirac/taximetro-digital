@@ -46,11 +46,13 @@ export async function getExistingAssignmentsForWeek(params: {
     .select({
       internId: assignments.internId,
       baseId: assignments.baseId,
+      baseType: bases.type,
       date: assignments.date,
       period: assignments.period,
       shift: assignments.shift,
     })
     .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
     .where(
       and(
         eq(assignments.facultyId, params.facultyId),

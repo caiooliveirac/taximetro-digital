@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { assignments, bases, checkins, qrSessions, users } from "@/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
@@ -36,6 +36,49 @@ function isImpersonating(req: NextRequest, token: { role?: unknown }): boolean {
 const checkoutSchema = z.object({
   assignmentId: z.string().uuid(),
 });
+
+const checkoutNpsSchema = z.object({
+  knowledge: z.enum(["SAD", "NEUTRAL", "HAPPY"]),
+  proactivity: z.enum(["SAD", "NEUTRAL", "HAPPY"]),
+  punctuality: z.enum(["SAD", "NEUTRAL", "HAPPY"]),
+});
+
+const checkoutDirectSchema = z.object({
+  assignmentId: z.string().uuid(),
+  notes: z.string().max(2000).optional(),
+  nps: checkoutNpsSchema.optional(),
+});
+
+function shouldUseUnifiedShiftCheckout(assignment: { period: string; shift: string | null }) {
+  return assignment.period === "DAY" && (assignment.shift === "MORNING" || assignment.shift === "AFTERNOON");
+}
+
+async function resolveUnifiedCheckoutAssignmentIds(assignment: {
+  id: string;
+  internId: string;
+  date: string;
+  period: string;
+  shift: string | null;
+}) {
+  if (!shouldUseUnifiedShiftCheckout(assignment)) return [assignment.id];
+
+  const related = await db
+    .select({ id: assignments.id })
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.internId, assignment.internId),
+        eq(assignments.date, assignment.date),
+        eq(assignments.period, "DAY"),
+        inArray(assignments.shift, ["MORNING", "AFTERNOON"]),
+        eq(assignments.status, "CHECKED_IN"),
+      ),
+    );
+
+  const ids = related.map((row) => row.id);
+  if (!ids.includes(assignment.id)) ids.push(assignment.id);
+  return ids;
+}
 
 // POST: Intern initiates checkout — generates TOTP for preceptor validation via Telegram
 export async function POST(req: NextRequest) {
@@ -140,9 +183,22 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
-  const body = await req.json();
-  const { assignmentId, notes } = body;
-  if (!assignmentId) return NextResponse.json({ success: false, error: "assignmentId obrigatório" }, { status: 400 });
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Corpo inválido" }, { status: 400 });
+  }
+
+  const parsed = checkoutDirectSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
+  }
+
+  const { assignmentId, notes, nps } = parsed.data;
+  if (user.role === "PRECEPTOR" && !nps) {
+    return NextResponse.json({ success: false, error: "NPS obrigatório para confirmar checkout." }, { status: 400 });
+  }
 
   const [assignment] = await db
     .select()
@@ -155,21 +211,40 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Interno não está em check-in" }, { status: 400 });
   }
 
-  await db.update(assignments).set({ status: "CHECKED_OUT", updatedAt: new Date() }).where(eq(assignments.id, assignmentId));
+  const assignmentIdsToCheckout = await resolveUnifiedCheckoutAssignmentIds(assignment);
+  const now = new Date();
+
+  await db.update(assignments)
+    .set({ status: "CHECKED_OUT", updatedAt: now })
+    .where(inArray(assignments.id, assignmentIdsToCheckout));
+
+  const normalizedNotes = notes?.trim() ? notes.trim() : null;
+  const serializedNps = nps
+    ? `NPS|knowledge=${nps.knowledge};proactivity=${nps.proactivity};punctuality=${nps.punctuality}`
+    : null;
+  const checkoutNotes = [normalizedNotes, serializedNps].filter(Boolean).join(" | ") || null;
 
   await db.update(checkins).set({
-    checkoutAt: new Date(),
+    checkoutAt: now,
     checkoutConfirmedBy: user.realUserId ?? user.id,
-    checkoutNotes: notes ?? null,
-  }).where(eq(checkins.assignmentId, assignmentId));
+    checkoutNotes,
+  }).where(inArray(checkins.assignmentId, assignmentIdsToCheckout));
 
   await logAudit({
     userId: user.realUserId ?? user.id,
     action: "CHECKOUT_CONFIRMED",
     entity: "assignment",
     entityId: assignmentId,
-    ...(user.isImpersonating ? { payload: { impersonating: user.id } } : {}),
+    ...((user.isImpersonating || assignmentIdsToCheckout.length > 1 || !!nps)
+      ? {
+        payload: {
+          ...(user.isImpersonating ? { impersonating: user.id } : {}),
+          ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
+          ...(nps ? { nps } : {}),
+        },
+      }
+      : {}),
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, data: { assignmentIds: assignmentIdsToCheckout } });
 }

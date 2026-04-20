@@ -1,16 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Clock, Sun, Moon, KeyRound, Send, LogOut, Loader2 } from "lucide-react";
+import { CheckCircle, Clock, Sun, Moon, KeyRound, Send, LogOut, Loader2, Frown, Meh, Smile } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { usePreceptor } from "./preceptor-context";
 import { baseViewIndex } from "@/lib/base-colors";
-import { localDateStr } from "@/lib/utils";
+import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -20,8 +19,52 @@ type Assignment = {
   baseName: string;
   date: string;
   period: string;
+  shift: string;
   status: string;
+  facultyAbbr: string;
+  checkinStatus: string | null;
 };
+
+type NpsAnswer = "SAD" | "NEUTRAL" | "HAPPY";
+
+type CheckoutNps = {
+  knowledge: NpsAnswer | null;
+  proactivity: NpsAnswer | null;
+  punctuality: NpsAnswer | null;
+};
+
+const EMPTY_NPS: CheckoutNps = {
+  knowledge: null,
+  proactivity: null,
+  punctuality: null,
+};
+
+const NPS_OPTIONS: Array<{ value: NpsAnswer; label: string; Icon: typeof Frown }> = [
+  { value: "SAD", label: "Triste", Icon: Frown },
+  { value: "NEUTRAL", label: "Neutra", Icon: Meh },
+  { value: "HAPPY", label: "Feliz", Icon: Smile },
+];
+
+function shiftLabel(shift: string) {
+  if (shift === "MORNING") return "Manhã";
+  if (shift === "AFTERNOON") return "Tarde";
+  if (shift === "NIGHT") return "Noite";
+  return shift;
+}
+
+function shiftOrder(shift: string) {
+  if (shift === "MORNING") return 0;
+  if (shift === "AFTERNOON") return 1;
+  if (shift === "NIGHT") return 2;
+  return 99;
+}
+
+function shiftActionLabel(shift: string) {
+  if (shift === "MORNING") return "Check-in manhã";
+  if (shift === "AFTERNOON") return "Check-in tarde";
+  if (shift === "NIGHT") return "Check-in noite";
+  return "Check-in";
+}
 
 export default function PreceptorValidar() {
   const { base, shift } = usePreceptor();
@@ -31,23 +74,36 @@ export default function PreceptorValidar() {
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [codeInput, setCodeInput] = useState("");
   const [codeObservations, setCodeObservations] = useState("");
-  const [rowObservations, setRowObservations] = useState<Record<string, string>>({});
+  const [facultyFilter, setFacultyFilter] = useState<string>("ALL");
   const [validatingCode, setValidatingCode] = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
-  const [confirmingCheckout, setConfirmingCheckout] = useState<string | null>(null);
+  const [checkoutQuestionnaireId, setCheckoutQuestionnaireId] = useState<string | null>(null);
+  const [checkoutNps, setCheckoutNps] = useState<CheckoutNps>(EMPTY_NPS);
 
   const today = localDateStr();
+  const fromDate = addDaysToDateStr(today, -1);
 
   async function load() {
     if (!base || !shift) return;
     try {
-      const params = new URLSearchParams({ from: today, to: today, baseId: base.id, period: shift });
+      const params = new URLSearchParams({ from: fromDate, to: today, baseId: base.id, period: shift });
       const res = await fetch(`/taximetro/api/assignments?${params}`, { headers: { "x-force-role": "PRECEPTOR" } });
       const json = await res.json();
       if (json.success) {
         const sorted = json.data
           .filter((a: Assignment) => a.status !== "CANCELLED")
-          .sort((a: Assignment, b: Assignment) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode));
+          .sort((a: Assignment, b: Assignment) => {
+            const byBase = baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode);
+            if (byBase !== 0) return byBase;
+
+            const byIntern = a.internName.localeCompare(b.internName, "pt-BR");
+            if (byIntern !== 0) return byIntern;
+
+            const byShift = shiftOrder(a.shift) - shiftOrder(b.shift);
+            if (byShift !== 0) return byShift;
+
+            return a.id.localeCompare(b.id);
+          });
         setAssignments(sorted);
       }
     } catch { /* silently retry on next interval */ }
@@ -63,12 +119,11 @@ export default function PreceptorValidar() {
       const res = await fetch("/taximetro/api/attendance/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId, observations: rowObservations[assignmentId] ?? "" }),
+        body: JSON.stringify({ assignmentId }),
       });
       const json = await res.json();
       if (json.success) {
         setMsg({ type: "success", text: "Presença validada" });
-        setRowObservations((prev) => ({ ...prev, [assignmentId]: "" }));
         load();
       }
       else setMsg({ type: "error", text: json.error });
@@ -89,7 +144,10 @@ export default function PreceptorValidar() {
       });
       const json = await res.json();
       if (json.success) {
-        setMsg({ type: "success", text: "Presença validada (código)" });
+        const successText = json.data?.flow === "CHECKOUT"
+          ? "Checkout confirmado (código)"
+          : "Presença validada (código)";
+        setMsg({ type: "success", text: successText });
         setCodeInput("");
         setCodeObservations("");
         load();
@@ -101,38 +159,86 @@ export default function PreceptorValidar() {
     setValidatingCode(false);
   }
 
-  async function handleCheckout(assignmentId: string) {
-    if (confirmingCheckout !== assignmentId) {
-      setConfirmingCheckout(assignmentId);
-      return;
-    }
-
+  async function checkoutDirect(assignmentId: string, nps: CheckoutNps) {
     setCheckingOut(assignmentId);
     setMsg(null);
     try {
       const res = await fetch("/taximetro/api/attendance/checkout", {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId }),
+        body: JSON.stringify({ assignmentId, nps }),
       });
       const json = await res.json();
       if (json.success) {
-        setAssignments((prev) => prev.map((assignment) => (
-          assignment.id === assignmentId ? { ...assignment, status: "CHECKED_OUT" } : assignment
-        )));
-        setMsg({ type: "success", text: "Checkout registrado" });
+        const total = Array.isArray(json.data?.assignmentIds) ? json.data.assignmentIds.length : 1;
+        setMsg({
+          type: "success",
+          text: total > 1 ? `Checkout confirmado (${total} turnos encerrados)` : "Checkout confirmado",
+        });
+        setCheckoutQuestionnaireId(null);
+        setCheckoutNps(EMPTY_NPS);
+        load();
       } else {
-        setMsg({ type: "error", text: json.error });
+        setMsg({ type: "error", text: json.error || "Não foi possível confirmar checkout." });
       }
     } catch {
       setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
+    } finally {
+      setCheckingOut(null);
     }
-    setCheckingOut(null);
-    setConfirmingCheckout(null);
   }
 
-  const filtered = assignments.filter((a) => !search || a.internName.toLowerCase().includes(search.toLowerCase()));
-  const pending = assignments.filter((a) => a.status === "SCHEDULED");
+  function openCheckoutQuestionnaire(assignmentId: string) {
+    if (checkoutQuestionnaireId === assignmentId) {
+      setCheckoutQuestionnaireId(null);
+      setCheckoutNps(EMPTY_NPS);
+      return;
+    }
+    setCheckoutQuestionnaireId(assignmentId);
+    setCheckoutNps(EMPTY_NPS);
+    setMsg(null);
+  }
+
+  function setNpsAnswer(question: keyof CheckoutNps, value: NpsAnswer) {
+    setCheckoutNps((prev) => ({ ...prev, [question]: value }));
+  }
+
+  const canSubmitNps = checkoutNps.knowledge && checkoutNps.proactivity && checkoutNps.punctuality;
+
+  const filteredByName = assignments.filter((a) => !search || a.internName.toLowerCase().includes(search.toLowerCase()));
+  const facultyOptions = Array.from(new Set(assignments.map((a) => a.facultyAbbr).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const scoped = filteredByName.filter((a) => {
+    if (base?.code !== "CRU" || facultyFilter === "ALL") return true;
+    return a.facultyAbbr === facultyFilter;
+  });
+
+  const checkinQueue = scoped.filter((a) => a.status === "SCHEDULED");
+  const checkoutQueue = scoped.filter((a) =>
+    a.status === "CHECKED_IN"
+    || (a.checkinStatus === "VALIDATED" && a.status !== "CHECKED_OUT" && a.status !== "CANCELLED"),
+  );
+
+  const shiftsByIntern = scoped.reduce<Record<string, Assignment[]>>((acc, item) => {
+    if (!acc[item.internId]) acc[item.internId] = [];
+    acc[item.internId].push(item);
+    return acc;
+  }, {});
+
+  for (const internId of Object.keys(shiftsByIntern)) {
+    shiftsByIntern[internId].sort((a, b) => shiftOrder(a.shift) - shiftOrder(b.shift));
+  }
+
+  function getShiftPosition(item: Assignment) {
+    const internShifts = shiftsByIntern[item.internId] ?? [];
+    const index = internShifts.findIndex((shiftItem) => shiftItem.id === item.id);
+    const position = index >= 0 ? index + 1 : 1;
+    return `${position}/${internShifts.length}`;
+  }
+
+  function hasDoubleShift(item: Assignment) {
+    return (shiftsByIntern[item.internId]?.length ?? 0) > 1;
+  }
+  const pending = checkinQueue.filter((a) => a.checkinStatus === "PENDING");
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -188,76 +294,234 @@ export default function PreceptorValidar() {
         </div>
       )}
 
+      {checkoutQueue.length > 0 && (
+        <div className="flex items-center gap-1.5 text-xs text-blue-700">
+          <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
+          {checkoutQueue.length} checkout(s) pendente(s)
+        </div>
+      )}
+
       <Input placeholder="Buscar por nome do interno..." value={search} onChange={(e) => setSearch(e.target.value)} />
 
+      {base?.code === "CRU" && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <label className="mb-1 block text-xs font-medium text-slate-600">Filtrar CRU por faculdade</label>
+          <select
+            value={facultyFilter}
+            onChange={(e) => setFacultyFilter(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-accent-500/30"
+          >
+            <option value="ALL">Todas as faculdades</option>
+            {facultyOptions.map((faculty) => (
+              <option key={faculty} value={faculty}>{faculty}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {loading ? <TableSkeleton rows={5} cols={5} /> : (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <>
+          {checkoutQueue.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-slate-900">Checkout pendente</h2>
+              <div className="space-y-3">
+                {checkoutQueue.map((a) => (
+                  <div key={`checkout-${a.id}`} className="rounded-xl border border-blue-200 bg-blue-50 p-3 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="whitespace-normal break-words text-sm font-semibold leading-tight text-slate-900">{a.internName}</p>
+                          {hasDoubleShift(a) && (
+                            <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno</Badge>
+                          )}
+                          <Badge variant="outline" className="text-[11px]">{shiftLabel(a.shift)} ({getShiftPosition(a)})</Badge>
+                        </div>
+                        <p className="text-xs text-slate-500">{a.facultyAbbr || "Sem faculdade"}</p>
+                      </div>
+                      <div className="shrink-0">
+                        <Button
+                          size="sm"
+                          variant={checkoutQuestionnaireId === a.id ? "default" : "outline"}
+                          onClick={() => openCheckoutQuestionnaire(a.id)}
+                          disabled={checkingOut === a.id}
+                          className="gap-1"
+                        >
+                          {checkingOut === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> : <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />}
+                          Checkout
+                        </Button>
+                      </div>
+                    </div>
+
+                    {checkoutQuestionnaireId === a.id && (
+                      <div className="mt-3 rounded-lg border border-blue-200 bg-white p-3">
+                        <p className="text-xs font-semibold text-slate-700">Antes de confirmar checkout, responda as 3 perguntas:</p>
+                        <div className="mt-2 space-y-3">
+                          <div>
+                            <p className="text-xs text-slate-600">Conhecimentos apresentados</p>
+                            <div className="mt-1 flex gap-2">
+                              {NPS_OPTIONS.map(({ value, label, Icon }) => (
+                                <Button
+                                  key={`knowledge-${value}`}
+                                  type="button"
+                                  size="sm"
+                                  variant={checkoutNps.knowledge === value ? "default" : "outline"}
+                                  onClick={() => setNpsAnswer("knowledge", value)}
+                                  className="min-w-24"
+                                >
+                                  <Icon className="h-3.5 w-3.5" />
+                                  {label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-600">Proatividade</p>
+                            <div className="mt-1 flex gap-2">
+                              {NPS_OPTIONS.map(({ value, label, Icon }) => (
+                                <Button
+                                  key={`proactivity-${value}`}
+                                  type="button"
+                                  size="sm"
+                                  variant={checkoutNps.proactivity === value ? "default" : "outline"}
+                                  onClick={() => setNpsAnswer("proactivity", value)}
+                                  className="min-w-24"
+                                >
+                                  <Icon className="h-3.5 w-3.5" />
+                                  {label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-600">Pontualidade</p>
+                            <div className="mt-1 flex gap-2">
+                              {NPS_OPTIONS.map(({ value, label, Icon }) => (
+                                <Button
+                                  key={`punctuality-${value}`}
+                                  type="button"
+                                  size="sm"
+                                  variant={checkoutNps.punctuality === value ? "default" : "outline"}
+                                  onClick={() => setNpsAnswer("punctuality", value)}
+                                  className="min-w-24"
+                                >
+                                  <Icon className="h-3.5 w-3.5" />
+                                  {label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setCheckoutQuestionnaireId(null);
+                              setCheckoutNps(EMPTY_NPS);
+                            }}
+                            disabled={checkingOut === a.id}
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => checkoutDirect(a.id, checkoutNps)}
+                            disabled={checkingOut === a.id || !canSubmitNps}
+                            className="gap-1"
+                          >
+                            {checkingOut === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> : <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />}
+                            Confirmar checkout
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <h2 className="text-sm font-semibold text-slate-900">Validação de check-in</h2>
+          <div className="space-y-3 md:hidden">
+            {checkinQueue.map((a) => (
+              <div key={a.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="whitespace-normal break-words text-sm font-semibold leading-tight text-slate-900">{a.internName}</p>
+                      {hasDoubleShift(a) && (
+                        <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno</Badge>
+                      )}
+                      <Badge variant="outline" className="text-[11px]">{shiftLabel(a.shift)} ({getShiftPosition(a)})</Badge>
+                    </div>
+                    <p className="text-xs text-slate-500">{a.facultyAbbr || "Sem faculdade"}</p>
+                  </div>
+                  <div className="shrink-0">
+                    <Button
+                      size="sm"
+                      onClick={() => validateDirect(a.id)}
+                    >
+                      <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      {shiftActionLabel(a.shift)}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                  <span className="flex items-center gap-1">
+                    {a.period === "DAY" ? <Sun className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.5} /> : <Moon className="h-3.5 w-3.5 text-indigo-500" strokeWidth={1.5} />}
+                    {a.period === "DAY" ? "Diurno" : "Noturno"}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {checkinQueue.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Nenhum interno aguardando check-in na sua base/turno hoje.</p>}
+          </div>
+
+          <div className="hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] md:block">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Interno</TableHead>
-                <TableHead>Base</TableHead>
+                <TableHead>Faculdade</TableHead>
                 <TableHead>Turno</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead>Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((a) => (
+              {checkinQueue.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-medium">{a.internName}</TableCell>
-                  <TableCell>{a.baseCode}</TableCell>
+                  <TableCell className="font-medium whitespace-normal break-words">{a.internName}</TableCell>
+                  <TableCell className="text-xs">{a.facultyAbbr}</TableCell>
                   <TableCell>
-                    <span className="flex items-center gap-1">
+                    <span className="flex flex-wrap items-center gap-1">
                       {a.period === "DAY" ? <Sun className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.5} /> : <Moon className="h-3.5 w-3.5 text-indigo-500" strokeWidth={1.5} />}
-                      {a.period === "DAY" ? "Diurno" : "Noturno"}
+                      {a.period === "DAY" ? "Diurno" : "Noturno"} · {shiftLabel(a.shift)}
+                      {hasDoubleShift(a) && (
+                        <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno</Badge>
+                      )}
+                      <Badge variant="outline" className="text-[11px]">{getShiftPosition(a)}</Badge>
                     </span>
                   </TableCell>
-                  <TableCell><StatusBadge status={a.status} /></TableCell>
                   <TableCell>
-                    {a.status === "SCHEDULED" ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={rowObservations[a.id] ?? ""}
-                          onChange={(e) => setRowObservations((prev) => ({ ...prev, [a.id]: e.target.value }))}
-                          placeholder="Observações"
-                          maxLength={2000}
-                          rows={3}
-                          className="w-full min-w-56 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20"
-                        />
-                        <Button size="sm" variant="default" onClick={() => validateDirect(a.id)}>
-                          <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                          Confirmar
-                        </Button>
-                      </div>
-                    ) : a.status === "CHECKED_IN" ? (
-                      <Button
-                        size="sm"
-                        variant={confirmingCheckout === a.id ? "default" : "outline"}
-                        className={confirmingCheckout === a.id ? "bg-blue-600 hover:bg-blue-700 text-white gap-1" : "gap-1"}
-                        disabled={checkingOut === a.id}
-                        onClick={() => handleCheckout(a.id)}
-                      >
-                        {checkingOut === a.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : confirmingCheckout === a.id ? (
-                          <><CheckCircle className="h-3.5 w-3.5" /> Confirmar</>
-                        ) : (
-                          <><LogOut className="h-3.5 w-3.5" /> Checkout</>
-                        )}
-                      </Button>
-                    ) : a.status === "CHECKED_OUT" ? (
-                      <span className="text-xs font-medium text-blue-500">Encerrado</span>
-                    ) : (
-                      <span className="text-xs text-slate-400">—</span>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={() => validateDirect(a.id)}
+                    >
+                      <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      {shiftActionLabel(a.shift)}
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          {filtered.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Nenhum interno escalado para sua base/turno hoje.</p>}
-        </div>
+          {checkinQueue.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Nenhum interno aguardando check-in na sua base/turno hoje.</p>}
+          </div>
+        </>
       )}
     </div>
   );
