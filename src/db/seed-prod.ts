@@ -135,12 +135,25 @@ async function seedProd() {
   const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.email, "caio.olive94@gmail.com"));
   const coordId = admin!.id;
 
-  // 2. Faculty targets
-  console.log("🎯 Atualizando metas...");
+  // 2. Faculty targets (segmented by base type: USA/CRU/CRL)
+  console.log("🎯 Atualizando metas por tipo de base...");
+  const targets: Record<string, { usas: number; crus: number; crls: number; hours: number; total: number }> = {
+    ZARNS: { usas: 2, crus: 2, crls: 2, hours: 240, total: 6 },     // 2+2+2 = 6 por semana (12h each)
+    UFBA: { usas: 2, crus: 2, crls: 1, hours: 240, total: 5 },      // 2+2+1 = 5 por semana (12h each)
+    AFYA: { usas: 2, crus: 2, crls: 2, hours: 240, total: 6 },      // 2+2+2 = 6 por semana (12h each)
+    UNIFACS: { usas: 1, crus: 2, crls: 2, hours: 240, total: 5 },   // 1+2+2 = 5 por semana (12h each)
+    EBMSP: { usas: 0, crus: 8, crls: 0, hours: 240, total: 8 },     // 0+8+0 = 8 por semana (6h each turno)
+  };
+  
   for (const abbr of FAC_ABBR) {
+    const t = targets[abbr];
     await db.update(faculties).set({
-      targetHours: 240, targetShifts: 24,
-      targetShiftsPerWeek: 3, totalInterns: 12,
+      targetHours: t.hours, targetShifts: t.total * 4, // ~4 semanas por mês
+      targetShiftsPerWeek: t.total, // backward compat
+      targetUSAsPerWeek: t.usas,
+      targetCRUsPerWeek: t.crus,
+      targetCRLsPerWeek: t.crls,
+      totalInterns: 12,
     }).where(eq(faculties.id, facByAbbr[abbr].id));
   }
 

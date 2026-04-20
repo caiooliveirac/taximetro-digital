@@ -29,10 +29,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: "Dados inválidos" }, { status: 400 });
     }
 
-    const result = await executeManualAttendance({
-        actor: { id: token.id as string, name: token.name },
-        input: parsed.data,
-    });
+    try {
+        const result = await executeManualAttendance({
+            actor: { id: token.id as string, name: token.name },
+            input: parsed.data,
+        });
 
-    return NextResponse.json(result.body, { status: result.status });
+        return NextResponse.json(result.body, { status: result.status });
+    } catch (error) {
+        return NextResponse.json(
+            {
+                success: false,
+                error: error instanceof Error ? error.message : "Falha interna ao processar presença manual",
+            },
+            { status: 500 },
+        );
+    }
 }

@@ -109,7 +109,25 @@ export async function executeGetComplianceOverview(params: {
     const lastWeekRows = rows.filter((r) => r.date >= lastWeek.from && r.date <= lastWeek.to);
     const lastWeekCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number])).length;
 
+    // Segmented by base type (USA/CRU/CRL)
+    const totalUSACompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "USA").length;
+    const totalCRUCompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
+    const totalCRLCompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CRL").length;
+
+    const lastWeekUSACompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "USA").length;
+    const lastWeekCRUCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
+    const lastWeekCRLCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CRL").length;
+
     const weeklyTarget = intern.targetShiftsPerWeek ?? 0;
+    const targetUSAPerWeek = intern.targetUSAsPerWeek ?? 0;
+    const targetCRUPerWeek = intern.targetCRUsPerWeek ?? 0;
+    const targetCRLPerWeek = intern.targetCRLsPerWeek ?? 0;
+
+    // Debt is calculated from week-to-week progress (last week deficit)
+    const weeklyUSADeficit = Math.max(0, targetUSAPerWeek - lastWeekUSACompleted);
+    const weeklyCRUDeficit = Math.max(0, targetCRUPerWeek - lastWeekCRUCompleted);
+    const weeklyCRLDeficit = Math.max(0, targetCRLPerWeek - lastWeekCRLCompleted);
+
     let expectedToNow = 0;
     if (weeklyTarget > 0 && rows.length > 0) {
       const earliest = rows.reduce((min, r) => r.date < min ? r.date : min, rows[0].date);
@@ -144,9 +162,15 @@ export async function executeGetComplianceOverview(params: {
       targetShifts: intern.targetShifts ?? 0,
       targetHours: intern.targetHours ?? 0,
       targetShiftsPerWeek: intern.targetShiftsPerWeek ?? 0,
+      targetUSAPerWeek,
+      targetCRUPerWeek,
+      targetCRLPerWeek,
       totalScheduled,
       totalCompleted,
       totalAbsent,
+      totalUSACompleted,
+      totalCRUCompleted,
+      totalCRLCompleted,
       totalHours: totalCompleted * 12,
       totalDeficit,
       totalPct,
@@ -160,6 +184,12 @@ export async function executeGetComplianceOverview(params: {
       thisWeekCompleted,
       thisWeekAbsent,
       lastWeekCompleted,
+      lastWeekUSACompleted,
+      lastWeekCRUCompleted,
+      lastWeekCRLCompleted,
+      weeklyUSADeficit,
+      weeklyCRUDeficit,
+      weeklyCRLDeficit,
       weeklyDeficit,
       belowWeeklyTarget,
     };
