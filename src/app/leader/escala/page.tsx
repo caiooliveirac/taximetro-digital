@@ -18,6 +18,7 @@ type Assignment = {
   id: string; internId: string; internName: string;
   baseId: string; baseCode: string; baseName: string; baseType: string;
   date: string; period: string; shift: string | null; status: string;
+  notes?: string | null;
   isExtraShift?: boolean; extraShiftNotes?: string | null;
   checkinGeoValid?: boolean | null;
 };
@@ -397,13 +398,13 @@ export default function LeaderEscala() {
     setAllocMsg("");
     setAllocIsExtraShift(isExtra ?? false);
     setAllocExtraShiftNotes("");
-    const isCruShift = baseType === "CENTRAL" && period === "DAY";
+    const isCruShift = isEbmsp && baseType === "CENTRAL" && period === "DAY";
     setAllocShift(isCruShift ? "MORNING" : "");
   }
 
   async function submitAllocation() {
     if (!allocSlot || !allocInternId || !effectiveFacultyId) return;
-    const isCruShift = allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY";
+    const isCruShift = isEbmsp && allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY";
     if (isCruShift && !allocShift) {
       setAllocMsg("❌ Selecione o turno (Manhã ou Tarde) para CRU.");
       return;
@@ -570,7 +571,7 @@ export default function LeaderEscala() {
         const existing = assignmentsByInternDate.get(key) ?? [];
 
         // For CRU DAY with shift: only block CRU if same shift; still block non-CRU same-period
-        const isCruShift = allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && allocShift;
+        const isCruShift = isEbmsp && allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && Boolean(allocShift);
         const busy = existing.some((assignment) => {
           if (assignment.period !== allocSlot.period) return false;
           if (isCruShift && assignment.baseType === "CENTRAL") {
@@ -599,7 +600,7 @@ export default function LeaderEscala() {
       .sort((left, right) => left.name.localeCompare(right.name));
 
     return { eligibleInterns, blockedCount, busyCount };
-  }, [activeInterns, allocSearch, allocShift, allocSlot, assignmentsByInternDate, cruConflicts]);
+  }, [activeInterns, allocSearch, allocShift, allocSlot, assignmentsByInternDate, cruConflicts, isEbmsp]);
 
   const today = localDateStr();
   const selectedCount = [...lotterySelected].filter((id) => !lotteryExcluded.has(id)).length;
@@ -1329,6 +1330,11 @@ export default function LeaderEscala() {
               <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                 ⚠️ Atenção: o plantão será cancelado e o interno precisará compensar com outro plantão para manter a meta.
               </div>
+              {removeTarget.baseCode === "CRU" && (
+                <div className="rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 text-xs text-violet-800">
+                  ℹ️ Se este plantão veio do CRU fixo semanal, remover aqui afeta somente este dia. Para remover recorrência, use o painel "CRU — Fixos Semanais".
+                </div>
+              )}
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
               <button
@@ -1369,7 +1375,7 @@ export default function LeaderEscala() {
             </div>
             <div className="px-6 py-4 space-y-3">
               <label className="block text-sm font-medium text-slate-700">Buscar e selecionar interno:</label>
-              {allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && (
+              {allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY" && isEbmsp && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Turno CRU:</label>
                   <div className="flex gap-2">
