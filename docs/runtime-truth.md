@@ -78,6 +78,21 @@ Sequencia real:
 5. Execucao de migration/seed via imagem builder
 6. Healthcheck interno da app
 7. Reload do Nginx
+
+## 7. Padrão de Usuários e Papéis (Desde 2026-04-20)
+
+**Internos arquivados**: Campo `user_roles.is_archived = true`
+- NÃO aparecem em listas de pendências
+- NÃO aparecem em sorteio/alocação
+- NÃO recebem notificações
+- Dados preservados em auditoria
+
+**Padrão de papéis em scheduling**:
+- Apenas usuários com papel `INTERN` podem ser alocados
+- Líderes com papel `LEADER` only → NÃO escaláveis (ex: ZARNS)
+- Líderes com papel `LEADER + INTERN` → escaláveis (ex: UNIFACS)
+
+Ver [docs/role-filtering.md](role-filtering.md) e [docs/CHANGES-2026-04-20.md](CHANGES-2026-04-20.md) para detalhes.
 8. Smoke test de roteamento
 
 ## 7. Legado e o que nao deve estar rodando

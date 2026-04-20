@@ -200,3 +200,12 @@ Antes de qualquer mudança, ler nesta ordem:
 3. **AGENTS.md** (este arquivo) — Regras operacionais
 
 Estes documentos são fonte única de verdade. Docs em docs/architecture.md e docs/data-flow.md podem estar desatualizados (marcar como referência, não verdade).
+
+## 11. Changelog Recente (2026-04-20)
+
+Mudanças significativas implementadas nesta data:
+- **Filtro de arquivados**: Interns arquivados não aparecem mais em pendências
+- **Arquivamento automático**: Nova seção "21 dias sem atividade" com arquivamento em lote
+- **Restrição de papéis**: Apenas INTERN pode ser alocado; LEADER-only é excluído de sorteio/escala
+
+Ver [docs/CHANGES-2026-04-20.md](docs/CHANGES-2026-04-20.md) para detalhes técnicos completos e [docs/role-filtering.md](docs/role-filtering.md) para padrão de papéis.
