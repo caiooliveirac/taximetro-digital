@@ -12,6 +12,10 @@ export async function GET(req: NextRequest) {
   const weekStart = weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)
     ? weekStartParam
     : undefined;
+  // TODO(multi-role): migrar no corte B — uso de `user.role` singular para decidir
+  // filtro de faculdade. Hoje está correto para LEADER+INTERN graças à priority
+  // (LEADER > INTERN cai no mesmo branch). EffectiveUser não carrega roles[];
+  // enriquecer em corte futuro para consistência.
   const facultyId = (user.role === "LEADER" || user.role === "INTERN")
     ? (user.facultyId ?? undefined)
     : searchParams.get("facultyId") ?? undefined;

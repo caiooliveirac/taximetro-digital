@@ -5,6 +5,8 @@ import { eq, and, inArray } from "drizzle-orm";
 import { validateCode } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
+import { auth } from "@/lib/auth";
+import { sessionHasAnyRole } from "@/lib/roles";
 import { z } from "zod/v4";
 
 // In-memory rate limiter per validator
@@ -65,8 +67,13 @@ async function resolveUnifiedCheckoutAssignmentIds(assignment: {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!sessionHasAnyRole(session, ["PRECEPTOR", "COORDINATOR"])) {
+    return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+  }
+
   const user = await getEffectiveUser(req);
-  if (!user || !["PRECEPTOR", "COORDINATOR"].includes(user.role)) {
+  if (!user) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 

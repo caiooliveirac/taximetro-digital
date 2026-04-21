@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
+import type { JWT } from "next-auth/jwt";
 import { db } from "@/db";
 import { assignments, bases, checkins, qrSessions, users } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
@@ -8,6 +9,8 @@ import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
 import { validateShiftClockIn } from "@/lib/utils";
+import { auth } from "@/lib/auth";
+import { sessionHasRole, tokenHasRole } from "@/lib/roles";
 import { z } from "zod/v4";
 
 const checkinSchema = z.object({
@@ -17,8 +20,8 @@ const checkinSchema = z.object({
   geoValid: z.boolean().default(true),
 });
 
-function isImpersonating(req: NextRequest, token: { role?: unknown }): boolean {
-  return token.role === "COORDINATOR" &&
+function isImpersonating(req: NextRequest, token: JWT | null): boolean {
+  return tokenHasRole(token, "COORDINATOR") &&
     !!(req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user"));
 }
 
@@ -27,6 +30,17 @@ export async function POST(req: NextRequest) {
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const impersonating = isImpersonating(req, token);
+
+  // Guard: real user must have INTERN role ativa, OU estar impersonando (COORDINATOR já
+  // vetado por impersonate.ts). Isto é o guard novo do Corte A: bloqueia LEADER-puro
+  // (sem INTERN) de iniciar check-in próprio, mantendo o fluxo de impersonation.
+  if (!impersonating) {
+    const session = await auth();
+    if (!sessionHasRole(session, "INTERN")) {
+      return NextResponse.json({ success: false, error: "Apenas internos fazem check-in" }, { status: 403 });
+    }
+  }
+
   const effectiveInternId = impersonating
     ? (req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user"))!
     : token.id as string;
