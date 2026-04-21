@@ -307,10 +307,7 @@ export default function AdminUsuarios() {
         setError("Faculdade obrigatória para os papéis Líder / Interno.");
         return;
       }
-      if (selected.has("PRECEPTOR") && !baseIdStr) {
-        setError("Base obrigatória para o papel Preceptor.");
-        return;
-      }
+      // PRECEPTOR: baseId opcional — preserva preceptores legados "sem base fixa".
 
       const rolesPayload: Array<{ role: string; facultyId?: string | null; baseId?: string | null }> = [];
       for (const r of selected) {
@@ -809,7 +806,7 @@ export default function AdminUsuarios() {
                     )}
                     {needsBase && (
                       <Sel
-                        label="Base (obrigatória p/ Preceptor)"
+                        label="Base (opcional p/ Preceptor)"
                         value={(editing.baseId as string) ?? ""}
                         options={["", ...bases.map((b) => b.id)]}
                         labels={["— selecione —", ...bases.map((b) => `${b.code} · ${b.name}`)]}
