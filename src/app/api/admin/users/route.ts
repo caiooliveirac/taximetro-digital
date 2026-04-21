@@ -5,10 +5,23 @@ import { users, userRoles, faculties, bases, assignments, checkins, requests, ca
 import { eq, and, inArray, ne, sql } from "drizzle-orm";
 import { hash } from "bcryptjs";
 import { logAudit } from "@/lib/audit";
+import { computeRoleDiff, normalizeRolesPayload, type RoleAssignment, type ExistingRoleRow } from "@/lib/roles";
 import { z } from "zod/v4";
 import { alias } from "drizzle-orm/pg-core";
 
 const MERGE_ROLLBACK_WINDOW_DAYS = 7;
+
+/**
+ * Schema da nova forma multi-role (Corte C, Apr 2026). Coexiste com os campos
+ * legacy `role` / `alsoPreceptor`. Quando este campo vem presente, tem
+ * precedencia e segue validacao estrita: LEADER/INTERN exigem facultyId,
+ * PRECEPTOR exige baseId, COORDINATOR sem escopo.
+ */
+const rolesArraySchema = z.array(z.object({
+  role: z.enum(["COORDINATOR", "LEADER", "PRECEPTOR", "INTERN"]),
+  facultyId: z.string().uuid().nullable().optional(),
+  baseId: z.string().uuid().nullable().optional(),
+}));
 
 const createUserSchema = z.object({
   name: z.string().min(2).max(255),
@@ -17,10 +30,16 @@ const createUserSchema = z.object({
   phone: z.string().max(20).optional(),
   password: z.string().min(6),
   registrationCode: z.string().max(20).optional(),
-  role: z.enum(["COORDINATOR", "LEADER", "PRECEPTOR", "INTERN"]),
+  // Caminho legacy (UI atual):
+  role: z.enum(["COORDINATOR", "LEADER", "PRECEPTOR", "INTERN"]).optional(),
   facultyId: z.string().uuid().optional(),
   baseId: z.string().uuid().optional(),
   alsoPreceptor: z.boolean().optional(),
+  // Caminho novo (multi-role):
+  roles: rolesArraySchema.optional(),
+}).refine((data) => Boolean(data.role) || (data.roles && data.roles.length > 0), {
+  message: "Informe `role` (legacy) ou `roles[]` (novo)",
+  path: ["role"],
 });
 
 const updateUserSchema = z.object({
@@ -33,10 +52,13 @@ const updateUserSchema = z.object({
   isActive: z.boolean().optional(),
   password: z.string().min(6).optional(),
   forcePasswordChange: z.boolean().optional(),
+  // Caminho legacy:
   role: z.enum(["COORDINATOR", "LEADER", "PRECEPTOR", "INTERN"]).optional(),
   facultyId: z.string().uuid().nullable().optional(),
   baseId: z.string().uuid().nullable().optional(),
   alsoPreceptor: z.boolean().optional(),
+  // Caminho novo:
+  roles: rolesArraySchema.optional(),
   isArchived: z.boolean().optional(),
 });
 
@@ -64,6 +86,89 @@ function normalizeRoleScope(role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTE
   }
 
   return { facultyId: null, baseId: null };
+}
+
+/**
+ * Converte o payload legacy (`role` singular + `alsoPreceptor`) na lista
+ * desejada de roles para o diff. Mantém a semântica historica:
+ * - COORDINATOR sempre também é PRECEPTOR (facultyId/baseId null).
+ * - alsoPreceptor flag (exceto quando role=PRECEPTOR) adiciona PRECEPTOR
+ *   "sem escopo" — preservado para nao quebrar usuarios criados assim.
+ * Observação: o novo caminho (`roles[]`) aplica validacao estrita com baseId
+ * obrigatorio para PRECEPTOR. A divergencia e intencional durante transicao.
+ */
+function legacyPayloadToDesiredRoles(
+  role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN",
+  facultyId: string | null | undefined,
+  baseId: string | null | undefined,
+  alsoPreceptor: boolean | undefined,
+): { ok: true; roles: RoleAssignment[] } | { ok: false; error: string } {
+  const scope = normalizeRoleScope(role, facultyId, baseId);
+  if ((role === "INTERN" || role === "LEADER") && !scope.facultyId) {
+    return { ok: false, error: "Faculdade obrigatória para este papel" };
+  }
+
+  const desired: RoleAssignment[] = [{
+    role,
+    facultyId: scope.facultyId,
+    baseId: scope.baseId,
+  }];
+
+  const shouldAlsoBePreceptor = role === "COORDINATOR" ? true : Boolean(alsoPreceptor && role !== "PRECEPTOR");
+  if (shouldAlsoBePreceptor) {
+    desired.push({ role: "PRECEPTOR", facultyId: null, baseId: null });
+  }
+
+  return { ok: true, roles: desired };
+}
+
+async function fetchExistingRoles(userId: string): Promise<ExistingRoleRow[]> {
+  const rows = await db
+    .select({
+      id: userRoles.id,
+      role: userRoles.role,
+      facultyId: userRoles.facultyId,
+      baseId: userRoles.baseId,
+      isActive: userRoles.isActive,
+    })
+    .from(userRoles)
+    .where(eq(userRoles.userId, userId));
+  return rows as ExistingRoleRow[];
+}
+
+/**
+ * Aplica o diff de roles sem nunca deletar linhas — preserva historico em
+ * audit_log. Remocoes viram `isActive = false`; reativacoes evitam violar
+ * o unique constraint (userId, role, facultyId).
+ */
+async function applyRoleDiff(userId: string, desired: RoleAssignment[]) {
+  const existing = await fetchExistingRoles(userId);
+  const diff = computeRoleDiff(existing, desired);
+
+  if (diff.toInsert.length > 0) {
+    await db.insert(userRoles).values(diff.toInsert.map((r) => ({
+      userId,
+      role: r.role,
+      facultyId: r.facultyId,
+      baseId: r.baseId,
+    })));
+  }
+
+  if (diff.toReactivate.length > 0) {
+    await db
+      .update(userRoles)
+      .set({ isActive: true })
+      .where(inArray(userRoles.id, diff.toReactivate));
+  }
+
+  if (diff.toDeactivate.length > 0) {
+    await db
+      .update(userRoles)
+      .set({ isActive: false })
+      .where(inArray(userRoles.id, diff.toDeactivate));
+  }
+
+  return diff;
 }
 
 const ROLE_PRIORITY: Record<string, number> = {
@@ -208,36 +313,67 @@ function buildMergedPlaceholderEmail(userId: string) {
 }
 
 function aggregateUsers(rows: UserRoleRow[]) {
-  const grouped = new Map<string, UserRoleRow & { alsoPreceptor: boolean }>();
+  type AggregatedRole = {
+    role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN";
+    facultyId: string | null;
+    facultyAbbr: string | null;
+    baseId: string | null;
+    baseCode: string | null;
+  };
+  type AggregatedRow = UserRoleRow & {
+    alsoPreceptor: boolean;
+    allRoles: AggregatedRole[];
+  };
+  const grouped = new Map<string, AggregatedRow>();
 
   for (const row of rows) {
+    const roleEntry: AggregatedRole | null = row.role
+      ? {
+          role: row.role as AggregatedRole["role"],
+          facultyId: row.facultyId,
+          facultyAbbr: row.facultyAbbr,
+          baseId: row.baseId,
+          baseCode: row.baseCode,
+        }
+      : null;
+
     const current = grouped.get(row.id);
     if (!current) {
       grouped.set(row.id, {
         ...row,
         alsoPreceptor: row.role === "PRECEPTOR",
+        allRoles: roleEntry ? [roleEntry] : [],
       });
       continue;
     }
 
     const currentRank = ROLE_PRIORITY[current.role ?? "INTERN"] ?? 99;
     const nextRank = ROLE_PRIORITY[row.role ?? "INTERN"] ?? 99;
+    const mergedRoles = [...current.allRoles];
+    if (roleEntry) {
+      const seen = mergedRoles.some((r) => r.role === roleEntry.role && r.facultyId === roleEntry.facultyId && r.baseId === roleEntry.baseId);
+      if (!seen) mergedRoles.push(roleEntry);
+    }
+
     if (nextRank < currentRank) {
       grouped.set(row.id, {
         ...row,
         alsoPreceptor: current.alsoPreceptor || row.role === "PRECEPTOR",
         isArchived: current.isArchived && row.isArchived,
+        allRoles: mergedRoles,
       });
       continue;
     }
 
     current.alsoPreceptor = current.alsoPreceptor || row.role === "PRECEPTOR";
     current.isArchived = current.isArchived && row.isArchived;
+    current.allRoles = mergedRoles;
   }
 
   return Array.from(grouped.values()).map((row) => ({
     ...row,
     alsoPreceptor: row.alsoPreceptor && row.role !== "PRECEPTOR",
+    allRoles: row.allRoles.slice().sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99)),
   }));
 }
 
@@ -305,12 +441,24 @@ export async function POST(req: NextRequest) {
   const parsed = createUserSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
-  const { password, role, facultyId, baseId, alsoPreceptor, ...userData } = parsed.data;
-  const shouldAlsoBePreceptor = role === "COORDINATOR" ? true : Boolean(alsoPreceptor && role !== "PRECEPTOR");
-  const normalizedScope = normalizeRoleScope(role, facultyId, baseId);
+  const { password, role, facultyId, baseId, alsoPreceptor, roles: rolesInput, ...userData } = parsed.data;
 
-  if ((role === "INTERN" || role === "LEADER") && !normalizedScope.facultyId) {
-    return NextResponse.json({ success: false, error: "Faculdade obrigatória para este papel" }, { status: 400 });
+  // Resolve lista de roles desejadas: payload novo (`roles[]`) tem precedencia.
+  let desiredRoles: RoleAssignment[];
+  if (rolesInput && rolesInput.length > 0) {
+    const normalized = normalizeRolesPayload(rolesInput);
+    if (!normalized.ok) {
+      return NextResponse.json({ success: false, error: normalized.error }, { status: 400 });
+    }
+    desiredRoles = normalized.roles;
+  } else if (role) {
+    const legacy = legacyPayloadToDesiredRoles(role, facultyId ?? null, baseId ?? null, alsoPreceptor);
+    if (!legacy.ok) {
+      return NextResponse.json({ success: false, error: legacy.error }, { status: 400 });
+    }
+    desiredRoles = legacy.roles;
+  } else {
+    return NextResponse.json({ success: false, error: "Informe `role` ou `roles[]`" }, { status: 400 });
   }
 
   const [existingEmail] = await db.select({ id: users.id }).from(users).where(eq(users.email, userData.email)).limit(1);
@@ -320,24 +468,29 @@ export async function POST(req: NextRequest) {
 
   const [user] = await db.insert(users).values({ ...userData, passwordHash }).returning();
 
-  await db.insert(userRoles).values({
-    userId: user.id,
-    role,
-    facultyId: normalizedScope.facultyId,
-    baseId: normalizedScope.baseId,
+  await applyRoleDiff(user.id, desiredRoles);
+
+  const primaryRole = desiredRoles[0];
+  const alsoPreceptorOut = desiredRoles.some((r) => r.role === "PRECEPTOR") && primaryRole.role !== "PRECEPTOR";
+
+  await logAudit({
+    userId: token.id as string,
+    action: "CREATE_USER",
+    entity: "user",
+    entityId: user.id,
+    payload: { roles: desiredRoles, role: primaryRole.role, facultyId: primaryRole.facultyId, baseId: primaryRole.baseId, alsoPreceptor: alsoPreceptorOut },
   });
-
-  if (shouldAlsoBePreceptor) {
-    await db.insert(userRoles).values({
-      userId: user.id,
-      role: "PRECEPTOR",
-      facultyId: null,
-      baseId: null,
-    });
-  }
-
-  await logAudit({ userId: token.id as string, action: "CREATE_USER", entity: "user", entityId: user.id, payload: { role, facultyId: normalizedScope.facultyId, baseId: normalizedScope.baseId, alsoPreceptor: shouldAlsoBePreceptor } });
-  return NextResponse.json({ success: true, data: { ...user, role, facultyId: normalizedScope.facultyId, baseId: normalizedScope.baseId, alsoPreceptor: shouldAlsoBePreceptor } }, { status: 201 });
+  return NextResponse.json({
+    success: true,
+    data: {
+      ...user,
+      role: primaryRole.role,
+      facultyId: primaryRole.facultyId,
+      baseId: primaryRole.baseId,
+      alsoPreceptor: alsoPreceptorOut,
+      roles: desiredRoles,
+    },
+  }, { status: 201 });
 }
 
 export async function PUT(req: NextRequest) {
@@ -350,7 +503,7 @@ export async function PUT(req: NextRequest) {
     const parsed = updateUserSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
-    const { id, password, forcePasswordChange, role, facultyId, baseId, alsoPreceptor, isArchived, ...userData } = parsed.data;
+    const { id, password, forcePasswordChange, role, facultyId, baseId, alsoPreceptor, roles: rolesInput, isArchived, ...userData } = parsed.data;
 
     if (userData.email) {
       const [existingEmail] = await db
@@ -370,29 +523,29 @@ export async function PUT(req: NextRequest) {
     const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
     if (!updated) return NextResponse.json({ success: false, error: "Usuário não encontrado" }, { status: 404 });
 
-    if (role !== undefined) {
-      const shouldAlsoBePreceptor = role === "COORDINATOR" ? true : Boolean(alsoPreceptor && role !== "PRECEPTOR");
-      const normalizedScope = normalizeRoleScope(role, facultyId, baseId);
-      if ((role === "INTERN" || role === "LEADER") && !normalizedScope.facultyId) {
-        return NextResponse.json({ success: false, error: "Faculdade obrigatória para este papel" }, { status: 400 });
+    // Resolve lista de roles desejadas quando o payload muda roles.
+    // `roles[]` tem precedencia; `role` singular e' o caminho legacy.
+    let desiredRoles: RoleAssignment[] | null = null;
+    if (rolesInput !== undefined) {
+      if (rolesInput.length === 0) {
+        return NextResponse.json({ success: false, error: "Usuário deve ter pelo menos uma role" }, { status: 400 });
       }
-
-      await db.delete(userRoles).where(eq(userRoles.userId, id));
-      await db.insert(userRoles).values({
-        userId: id,
-        role,
-        facultyId: normalizedScope.facultyId,
-        baseId: normalizedScope.baseId,
-      });
-
-      if (shouldAlsoBePreceptor) {
-        await db.insert(userRoles).values({
-          userId: id,
-          role: "PRECEPTOR",
-          facultyId: null,
-          baseId: null,
-        });
+      const normalized = normalizeRolesPayload(rolesInput);
+      if (!normalized.ok) {
+        return NextResponse.json({ success: false, error: normalized.error }, { status: 400 });
       }
+      desiredRoles = normalized.roles;
+    } else if (role !== undefined) {
+      const legacy = legacyPayloadToDesiredRoles(role, facultyId ?? null, baseId ?? null, alsoPreceptor);
+      if (!legacy.ok) {
+        return NextResponse.json({ success: false, error: legacy.error }, { status: 400 });
+      }
+      desiredRoles = legacy.roles;
+    }
+
+    let appliedDiff: { toInsert: RoleAssignment[]; toDeactivate: string[]; toReactivate: string[] } | null = null;
+    if (desiredRoles) {
+      appliedDiff = await applyRoleDiff(id, desiredRoles);
     }
 
     if (isArchived !== undefined) {
@@ -407,7 +560,24 @@ export async function PUT(req: NextRequest) {
     }
 
     const normalizedScope = role !== undefined ? normalizeRoleScope(role, facultyId, baseId) : { facultyId, baseId };
-    await logAudit({ userId: token.id as string, action: "UPDATE_USER", entity: "user", entityId: id, payload: { role, facultyId: normalizedScope.facultyId ?? null, baseId: normalizedScope.baseId ?? null, email: userData.email ?? null, passwordChanged: Boolean(password), forcePasswordChange: forcePasswordChange ?? null, alsoPreceptor: role ? (role === "COORDINATOR" ? true : Boolean(alsoPreceptor && role !== "PRECEPTOR")) : Boolean(alsoPreceptor), isArchived: isArchived ?? null } });
+    await logAudit({
+      userId: token.id as string,
+      action: "UPDATE_USER",
+      entity: "user",
+      entityId: id,
+      payload: {
+        role,
+        facultyId: normalizedScope.facultyId ?? null,
+        baseId: normalizedScope.baseId ?? null,
+        email: userData.email ?? null,
+        passwordChanged: Boolean(password),
+        forcePasswordChange: forcePasswordChange ?? null,
+        alsoPreceptor: role ? (role === "COORDINATOR" ? true : Boolean(alsoPreceptor && role !== "PRECEPTOR")) : Boolean(alsoPreceptor),
+        isArchived: isArchived ?? null,
+        rolesDesired: desiredRoles,
+        rolesDiff: appliedDiff,
+      },
+    });
     return NextResponse.json({ success: true, data: updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro interno";
