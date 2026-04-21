@@ -130,10 +130,14 @@ test("normalize: INTERN sem facultyId => erro", () => {
   assert.equal(result.ok, false);
 });
 
-test("normalize: PRECEPTOR sem baseId => erro", () => {
+test("normalize: PRECEPTOR sem baseId => valido (legacy: preceptor sem base fixa)", () => {
   const result = normalizeRolesPayload([{ role: "PRECEPTOR", facultyId: FACULTY_A }]);
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.match(result.error, /Base obrigat/i);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.roles[0].role, "PRECEPTOR");
+    assert.equal(result.roles[0].baseId, null);
+    assert.equal(result.roles[0].facultyId, null, "facultyId sempre descartado para PRECEPTOR");
+  }
 });
 
 test("normalize: COORDINATOR descarta facultyId/baseId mesmo que vierem", () => {

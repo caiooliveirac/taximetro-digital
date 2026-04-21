@@ -214,10 +214,10 @@ export function normalizeRolesPayload(
     }
 
     if (entry.role === "PRECEPTOR") {
-      if (!entry.baseId) {
-        return { ok: false, error: "Base obrigatória para papel PRECEPTOR" };
-      }
-      const normalized: RoleAssignment = { role: "PRECEPTOR", facultyId: null, baseId: entry.baseId };
+      // Historicamente, PRECEPTOR ativa sem base_id e' valido — significa
+      // "preceptor sem base fixa, pode atuar em qualquer base". Mantemos
+      // baseId opcional para nao bloquear edicao de preceptores legados.
+      const normalized: RoleAssignment = { role: "PRECEPTOR", facultyId: null, baseId: entry.baseId ?? null };
       const key = roleKey(normalized);
       if (seen.has(key)) continue;
       seen.add(key);
