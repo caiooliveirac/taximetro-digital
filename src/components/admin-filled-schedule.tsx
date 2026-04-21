@@ -46,6 +46,13 @@ type UserRow = {
     role: string | null;
     facultyId: string | null;
     facultyAbbr: string | null;
+    allRoles?: Array<{
+        role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN";
+        facultyId: string | null;
+        facultyAbbr: string | null;
+        baseId: string | null;
+        baseCode: string | null;
+    }>;
 };
 
 type AssignmentDetail = {
@@ -493,6 +500,21 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [removingId, setRemovingId] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+    function hasRole(user: UserRow, role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") {
+        if (user.role === role) return true;
+        return (user.allRoles ?? []).some((r) => r.role === role);
+    }
+
+    function getInternFacultyId(user: UserRow) {
+        const internRole = (user.allRoles ?? []).find((r) => r.role === "INTERN");
+        return internRole?.facultyId ?? user.facultyId;
+    }
+
+    function getInternFacultyAbbr(user: UserRow) {
+        const internRole = (user.allRoles ?? []).find((r) => r.role === "INTERN");
+        return internRole?.facultyAbbr ?? user.facultyAbbr;
+    }
+
     const weekDates = useMemo(
         () => Array.from({ length: 7 }, (_, index) => {
             const date = new Date(`${weekStart}T12:00:00`);
@@ -844,8 +866,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         let busyCount = 0;
 
         const eligibleInterns = users
-            .filter((user) => user.role === "INTERN" && user.isActive && !user.isArchived)
-            .filter((user) => !activeCandidateFacultyFilter || user.facultyId === activeCandidateFacultyFilter)
+            .filter((user) => hasRole(user, "INTERN") && user.isActive && !user.isArchived)
+            .filter((user) => !activeCandidateFacultyFilter || getInternFacultyId(user) === activeCandidateFacultyFilter)
             .filter((user) => {
                 if (busyInternIds.has(user.id)) {
                     busyCount += 1;
@@ -864,15 +886,15 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             .filter((user) => !query || user.name.toLowerCase().includes(query))
             .sort((left, right) => {
                 const preferredFacultyId = allocation.facultyId ?? activeCandidateFacultyFilter;
-                const leftSameFaculty = left.facultyId === preferredFacultyId;
-                const rightSameFaculty = right.facultyId === preferredFacultyId;
+                const leftSameFaculty = getInternFacultyId(left) === preferredFacultyId;
+                const rightSameFaculty = getInternFacultyId(right) === preferredFacultyId;
 
                 if (leftSameFaculty !== rightSameFaculty) {
                     return leftSameFaculty ? -1 : 1;
                 }
 
-                const leftFaculty = left.facultyAbbr ?? "";
-                const rightFaculty = right.facultyAbbr ?? "";
+                const leftFaculty = getInternFacultyAbbr(left) ?? "";
+                const rightFaculty = getInternFacultyAbbr(right) ?? "";
                 const byFaculty = leftFaculty.localeCompare(rightFaculty);
                 if (byFaculty !== 0) return byFaculty;
 
@@ -1439,15 +1461,21 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                             type="button"
                                             onClick={() => {
                                                 setAllocInternId(user.id);
-                                                if (!allocation.facultyId && user.facultyId) {
-                                                    setAllocFacultyId(user.facultyId);
+                                                const internFacultyId = getInternFacultyId(user);
+                                                if (!allocation.facultyId && internFacultyId) {
+                                                    setAllocFacultyId(internFacultyId);
                                                 }
                                             }}
                                             className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${allocInternId === user.id ? "bg-accent-50 text-accent-700 ring-1 ring-accent-300" : "bg-white text-slate-700 hover:bg-slate-100"}`}
                                         >
                                             <span className="min-w-0 flex-1 truncate">{user.name}</span>
-                                            <span className={`ml-3 rounded-full px-2 py-0.5 text-[10px] font-semibold ${user.facultyId === allocation.facultyId ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                                                {user.facultyAbbr ?? "Sem faculdade"}
+                                            <span className="ml-3 flex items-center gap-1.5">
+                                                {hasRole(user, "LEADER") && hasRole(user, "INTERN") && (
+                                                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">L+I</span>
+                                                )}
+                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getInternFacultyId(user) === allocation.facultyId ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                                                    {getInternFacultyAbbr(user) ?? "Sem faculdade"}
+                                                </span>
                                             </span>
                                         </button>
                                     ))
