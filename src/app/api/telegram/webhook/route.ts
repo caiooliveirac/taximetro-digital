@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { validateCode } from "@/lib/totp";
-import { bot, TELEGRAM_GROUP_ID } from "@/lib/telegram";
+import { bot, TELEGRAM_GROUP_ID, isTelegramValidationGroup } from "@/lib/telegram";
 import { logAudit } from "@/lib/audit";
 import { formatBrazilTime } from "@/lib/utils";
 import { canTriggerPendingReminderFromTelegram, sendPendingCheckinReminder } from "@/lib/telegram-checkin-pending-reminder";
@@ -163,7 +163,7 @@ async function handleManualPendingReminderCommand(
     return NextResponse.json({ ok: true });
   }
 
-  if (TELEGRAM_GROUP_ID && chatId !== TELEGRAM_GROUP_ID) {
+  if (!isTelegramValidationGroup(chatId)) {
     await sendTelegramMessage(chatId, "Este comando só está habilitado no grupo oficial de validação.", { messageThreadId });
     return NextResponse.json({ ok: true });
   }
