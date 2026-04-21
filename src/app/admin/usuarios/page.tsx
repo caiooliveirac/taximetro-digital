@@ -25,6 +25,13 @@ type User = {
   baseCode: string | null;
   alsoPreceptor?: boolean;
   createdAt?: string;
+  allRoles?: Array<{
+    role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN";
+    facultyId: string | null;
+    facultyAbbr: string | null;
+    baseId: string | null;
+    baseCode: string | null;
+  }>;
 };
 
 type Faculty = { id: string; abbreviation: string };
@@ -100,6 +107,13 @@ const ROLE_LABEL: Record<string, string> = {
   INTERN: "Interno",
 };
 
+const ROLE_BADGE_CLASS: Record<string, string> = {
+  COORDINATOR: "bg-purple-50 text-purple-700",
+  LEADER: "bg-emerald-50 text-emerald-700",
+  PRECEPTOR: "bg-amber-50 text-amber-700",
+  INTERN: "bg-blue-50 text-blue-700",
+};
+
 const OUTCOME_LABEL: Record<string, string> = {
   SCHEDULED: "Agendado",
   CONFIRMED: "Confirmado",
@@ -156,19 +170,48 @@ export default function AdminUsuarios() {
   const [rollbackingMergeId, setRollbackingMergeId] = useState<string | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
 
-  function applyRoleDefaults(nextRole: string) {
+  /**
+   * Deriva o conjunto de roles marcadas no form a partir de `editing`.
+   * Precedencia:
+   *   1. editing.selectedRoles (estado local apos usuario marcar checkboxes)
+   *   2. editing.allRoles (vindo da API — multi-role fonte de verdade)
+   *   3. editing.role + editing.alsoPreceptor (legacy / form novo)
+   */
+  function getSelectedRoles(): Set<"COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN"> {
+    if (!editing) return new Set();
+    const fromState = editing.selectedRoles;
+    if (Array.isArray(fromState)) {
+      return new Set(fromState as Array<"COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN">);
+    }
+    const allRoles = editing.allRoles as User["allRoles"];
+    if (Array.isArray(allRoles) && allRoles.length > 0) {
+      return new Set(allRoles.map((r) => r.role));
+    }
+    const legacyRole = editing.role as "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN" | undefined;
+    const set = new Set<"COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN">();
+    if (legacyRole) set.add(legacyRole);
+    if (editing.alsoPreceptor) set.add("PRECEPTOR");
+    if (legacyRole === "COORDINATOR") set.add("PRECEPTOR"); // regra historica
+    return set;
+  }
+
+  function toggleRole(role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN", checked: boolean) {
     if (!editing) return;
-    if (nextRole === "INTERN" || nextRole === "LEADER") {
-      setEditing({ ...editing, role: nextRole, baseId: null, alsoPreceptor: nextRole === "LEADER" ? Boolean(editing.alsoPreceptor) : false });
-      return;
-    }
+    const current = getSelectedRoles();
+    if (checked) current.add(role);
+    else current.delete(role);
 
-    if (nextRole === "PRECEPTOR") {
-      setEditing({ ...editing, role: nextRole, facultyId: null, baseId: null, alsoPreceptor: false });
-      return;
-    }
+    const next = Array.from(current);
+    // Se PRECEPTOR saiu, limpa baseId. Se LEADER e INTERN sairam, limpa facultyId.
+    const needsFaculty = current.has("LEADER") || current.has("INTERN");
+    const needsBase = current.has("PRECEPTOR");
 
-    setEditing({ ...editing, role: nextRole, facultyId: null, baseId: null, alsoPreceptor: Boolean(editing.alsoPreceptor) });
+    setEditing({
+      ...editing,
+      selectedRoles: next,
+      facultyId: needsFaculty ? (editing.facultyId ?? null) : null,
+      baseId: needsBase ? (editing.baseId ?? null) : null,
+    });
   }
 
   async function load() {
@@ -210,7 +253,21 @@ export default function AdminUsuarios() {
       const res = await fetch(`/taximetro/api/admin/users?id=${user.id}&includeSelfie=1`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data) && json.data[0]) {
-        setEditing({ ...json.data[0], password: undefined });
+        const row = json.data[0] as User;
+        // Normaliza facultyId/baseId do form a partir de allRoles (se existir),
+        // para que usuarios multi-role (ex.: LEADER@F1 + PRECEPTOR@B1) abram
+        // com ambos os escopos populados no form.
+        const allRoles = Array.isArray(row.allRoles) ? row.allRoles : [];
+        const leaderOrInternRole = allRoles.find((r) => r.role === "LEADER" || r.role === "INTERN");
+        const preceptorRole = allRoles.find((r) => r.role === "PRECEPTOR");
+        const facultyFromAll = leaderOrInternRole?.facultyId ?? null;
+        const baseFromAll = preceptorRole?.baseId ?? null;
+        setEditing({
+          ...row,
+          password: undefined,
+          facultyId: facultyFromAll ?? row.facultyId ?? null,
+          baseId: baseFromAll ?? row.baseId ?? null,
+        });
       }
     } catch {
       /* keep lightweight row data */
@@ -235,11 +292,55 @@ export default function AdminUsuarios() {
     if (!editing) return;
     try {
       const isNew = !editing.id;
-      const { selfie, selfieUploadedAt, facultyAbbr, baseCode, createdAt, password, ...payload } = editing as Record<string, unknown>;
+
+      // Constroi roles[] a partir dos checkboxes do form multi-role.
+      const selected = getSelectedRoles();
+      if (selected.size === 0) {
+        setError("Selecione pelo menos um papel.");
+        return;
+      }
+
+      const facultyIdStr = typeof editing.facultyId === "string" && editing.facultyId ? editing.facultyId : null;
+      const baseIdStr = typeof editing.baseId === "string" && editing.baseId ? editing.baseId : null;
+
+      if ((selected.has("LEADER") || selected.has("INTERN")) && !facultyIdStr) {
+        setError("Faculdade obrigatória para os papéis Líder / Interno.");
+        return;
+      }
+      if (selected.has("PRECEPTOR") && !baseIdStr) {
+        setError("Base obrigatória para o papel Preceptor.");
+        return;
+      }
+
+      const rolesPayload: Array<{ role: string; facultyId?: string | null; baseId?: string | null }> = [];
+      for (const r of selected) {
+        if (r === "LEADER" || r === "INTERN") {
+          rolesPayload.push({ role: r, facultyId: facultyIdStr });
+        } else if (r === "PRECEPTOR") {
+          rolesPayload.push({ role: r, baseId: baseIdStr });
+        } else {
+          rolesPayload.push({ role: r });
+        }
+      }
+
+      const {
+        selfie, selfieUploadedAt, facultyAbbr, baseCode, createdAt, password,
+        // removemos os campos legacy e o helper de estado selectedRoles:
+        role: _legacyRole, alsoPreceptor: _legacyAlso, allRoles: _allRoles,
+        selectedRoles: _selectedRoles,
+        facultyId: _legacyFacultyId, baseId: _legacyBaseId,
+        ...rest
+      } = editing as Record<string, unknown>;
+      // Referencias apenas para satisfazer o linter (valores descartados intencionalmente):
+      void _legacyRole; void _legacyAlso; void _allRoles; void _selectedRoles;
+      void _legacyFacultyId; void _legacyBaseId;
+
       const finalPayload = {
-        ...payload,
+        ...rest,
+        roles: rolesPayload,
         ...(typeof password === "string" && password.trim() ? { password: password.trim() } : {}),
       };
+
       const res = await fetch("/taximetro/api/admin/users", {
         method: isNew ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
@@ -542,7 +643,7 @@ export default function AdminUsuarios() {
             </button>
           )}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar..." className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" />
-          <button onClick={() => { setEditing({ name: "", cpf: "", email: "", phone: "", password: "", role: "INTERN", facultyId: "", baseId: null, registrationCode: "", alsoPreceptor: false }); setHistory(null); }} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 whitespace-nowrap">
+          <button onClick={() => { setEditing({ name: "", cpf: "", email: "", phone: "", password: "", selectedRoles: ["INTERN"], facultyId: "", baseId: null, registrationCode: "" }); setHistory(null); }} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 whitespace-nowrap">
             + Novo
           </button>
         </div>
@@ -658,21 +759,6 @@ export default function AdminUsuarios() {
             <Inp label="Telefone" value={editing.phone as string ?? ""} onChange={(v) => setEditing({ ...editing, phone: v })} />
             <Inp label="Cód. Cadastro" value={editing.registrationCode as string ?? ""} onChange={(v) => setEditing({ ...editing, registrationCode: v })} />
             <Inp label={editing.id ? "Nova senha" : "Senha"} value={editing.password as string ?? ""} onChange={(v) => setEditing({ ...editing, password: v })} />
-            <Sel label="Papel" value={editing.role as string ?? "INTERN"} options={[...ROLES]} labels={ROLES.map((r) => ROLE_LABEL[r])} onChange={applyRoleDefaults} />
-            {(editing.role === "INTERN" || editing.role === "LEADER") && (
-              <Sel label="Faculdade" value={editing.facultyId as string ?? ""} options={["", ...faculties.map((f) => f.id)]} labels={["—", ...faculties.map((f) => f.abbreviation)]} onChange={(v) => setEditing({ ...editing, facultyId: v || null })} />
-            )}
-            {(editing.role === "LEADER" || editing.role === "COORDINATOR") && (
-              <label className="flex items-center gap-2 pt-5">
-                <input
-                  type="checkbox"
-                  checked={!!editing.alsoPreceptor}
-                  onChange={(e) => setEditing({ ...editing, alsoPreceptor: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-300 text-accent-600"
-                />
-                <span className="text-sm text-slate-700">Também atua como preceptor</span>
-              </label>
-            )}
             {!!editing.id && (
               <label className="flex items-center gap-2 pt-5">
                 <input
@@ -685,6 +771,60 @@ export default function AdminUsuarios() {
               </label>
             )}
           </div>
+
+          {/* Multi-select de papeis — substituiu dropdown unico + alsoPreceptor */}
+          {(() => {
+            const selected = getSelectedRoles();
+            const needsFaculty = selected.has("LEADER") || selected.has("INTERN");
+            const needsBase = selected.has("PRECEPTOR");
+            return (
+              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Papéis (marque todos que se aplicam)</span>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {ROLES.map((r) => (
+                      <label key={r} className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm cursor-pointer transition-colors ${selected.has(r) ? "border-accent-500 bg-white" : "border-slate-200 bg-white/60"}`}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(r)}
+                          onChange={(e) => toggleRole(r, e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-accent-600"
+                        />
+                        <span className="text-slate-700">{ROLE_LABEL[r]}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {(needsFaculty || needsBase) && (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {needsFaculty && (
+                      <Sel
+                        label="Faculdade (obrigatória p/ Líder e Interno)"
+                        value={(editing.facultyId as string) ?? ""}
+                        options={["", ...faculties.map((f) => f.id)]}
+                        labels={["— selecione —", ...faculties.map((f) => f.abbreviation)]}
+                        onChange={(v) => setEditing({ ...editing, facultyId: v || null })}
+                      />
+                    )}
+                    {needsBase && (
+                      <Sel
+                        label="Base (obrigatória p/ Preceptor)"
+                        value={(editing.baseId as string) ?? ""}
+                        options={["", ...bases.map((b) => b.id)]}
+                        labels={["— selecione —", ...bases.map((b) => `${b.code} · ${b.name}`)]}
+                        onChange={(v) => setEditing({ ...editing, baseId: v || null })}
+                      />
+                    )}
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-500">
+                  Remoções não apagam o histórico — a role fica desativada mas permanece em audit_log.
+                </p>
+              </div>
+            );
+          })()}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button onClick={save} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">Salvar</button>
@@ -839,12 +979,31 @@ export default function AdminUsuarios() {
                   <td className="py-2 pr-4 font-mono text-xs">{u.cpf}</td>
                   <td className="py-2 pr-4">
                     <div className="flex flex-wrap gap-1.5">
-                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${u.role === "COORDINATOR" ? "bg-purple-50 text-purple-700" :
-                        u.role === "LEADER" ? "bg-emerald-50 text-emerald-700" :
-                          u.role === "PRECEPTOR" ? "bg-amber-50 text-amber-700" :
-                            "bg-blue-50 text-blue-700"
-                        }`}>{ROLE_LABEL[u.role ?? ""] ?? u.role ?? "—"}</span>
-                      {u.alsoPreceptor && <span className="rounded px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700">Também preceptor</span>}
+                      {(u.allRoles && u.allRoles.length > 0) ? (
+                        u.allRoles.map((r, idx) => {
+                          const scope = r.role === "LEADER" || r.role === "INTERN"
+                            ? r.facultyAbbr
+                            : r.role === "PRECEPTOR"
+                              ? r.baseCode
+                              : null;
+                          return (
+                            <span
+                              key={`${u.id}-${r.role}-${r.facultyId ?? ""}-${r.baseId ?? ""}-${idx}`}
+                              className={`rounded px-2 py-0.5 text-xs font-medium ${ROLE_BADGE_CLASS[r.role] ?? "bg-slate-50 text-slate-700"}`}
+                              title={scope ? `${ROLE_LABEL[r.role]} · ${scope}` : ROLE_LABEL[r.role]}
+                            >
+                              {ROLE_LABEL[r.role]}{scope ? ` · ${scope}` : ""}
+                            </span>
+                          );
+                        })
+                      ) : (
+                        <span className={`rounded px-2 py-0.5 text-xs font-medium ${ROLE_BADGE_CLASS[u.role ?? ""] ?? "bg-slate-50 text-slate-700"}`}>
+                          {ROLE_LABEL[u.role ?? ""] ?? u.role ?? "—"}
+                        </span>
+                      )}
+                      {u.alsoPreceptor && (!u.allRoles || !u.allRoles.some((r) => r.role === "PRECEPTOR")) && (
+                        <span className="rounded px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700">Também preceptor</span>
+                      )}
                     </div>
                   </td>
                   <td className="py-2 pr-4">
