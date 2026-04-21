@@ -9,6 +9,7 @@ import { sessionHasRole } from "@/lib/roles";
 import { LogOut, Ambulance, Eye, Users, Stethoscope, GraduationCap, Menu, X, KeyRound, Loader2, type LucideIcon } from "lucide-react";
 import { ImpersonateSelector } from "@/components/impersonate/impersonate-selector";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
+import { RoleSwitcher } from "@/components/role-switcher";
 
 export type NavItem = {
   href: string;
@@ -164,6 +165,9 @@ export function AppSidebar({
             </span>
           </div>
         </div>
+
+        {/* Switcher multi-role — so aparece se o usuario tiver >=2 roles */}
+        <RoleSwitcher />
 
         {/* Nav groups */}
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
