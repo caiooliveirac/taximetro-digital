@@ -100,3 +100,140 @@ export function sessionHasAnyRole(
 ): boolean {
   return roles.some((r) => sessionHasRole(session, r));
 }
+
+// ==========================================================================
+// Diff puro de user_roles — usado pela API de admin/users para aplicar
+// mudanças de papel preservando histórico (sem DELETE).
+// ==========================================================================
+
+export type RoleAssignment = {
+  role: Role;
+  facultyId: string | null;
+  baseId: string | null;
+};
+
+export type ExistingRoleRow = RoleAssignment & {
+  id: string;
+  isActive: boolean;
+};
+
+export type RoleDiff = {
+  /** Linhas novas a inserir (não existem no banco, nem ativas nem inativas). */
+  toInsert: RoleAssignment[];
+  /** IDs de linhas ativas que devem ser desativadas (isActive = false). */
+  toDeactivate: string[];
+  /** IDs de linhas inativas que devem ser reativadas (isActive = true). */
+  toReactivate: string[];
+};
+
+function roleKey(r: RoleAssignment): string {
+  return `${r.role}|${r.facultyId ?? ""}|${r.baseId ?? ""}`;
+}
+
+/**
+ * Calcula o diff entre as roles existentes no banco e as roles desejadas
+ * após o update. Regras:
+ *
+ * - Nenhum DELETE. Remoções são expressas como `isActive = false`.
+ * - Se uma role desejada já existe ativa → no-op (não entra em nenhum array).
+ * - Se uma role desejada existe inativa → `toReactivate`.
+ * - Se uma role desejada não existe → `toInsert`.
+ * - Se uma role ativa atual não está no desejado → `toDeactivate`.
+ *
+ * Match é feito pela chave (role, facultyId, baseId) — mesma do uq_user_role_faculty.
+ */
+export function computeRoleDiff(
+  existing: ExistingRoleRow[],
+  desired: RoleAssignment[],
+): RoleDiff {
+  const existingByKey = new Map<string, ExistingRoleRow>();
+  for (const row of existing) {
+    existingByKey.set(roleKey(row), row);
+  }
+
+  const desiredByKey = new Map<string, RoleAssignment>();
+  for (const row of desired) {
+    desiredByKey.set(roleKey(row), row);
+  }
+
+  const toInsert: RoleAssignment[] = [];
+  const toReactivate: string[] = [];
+  for (const [key, row] of desiredByKey) {
+    const current = existingByKey.get(key);
+    if (!current) {
+      toInsert.push(row);
+      continue;
+    }
+    if (!current.isActive) {
+      toReactivate.push(current.id);
+    }
+    // current.isActive === true → no-op
+  }
+
+  const toDeactivate: string[] = [];
+  for (const [key, row] of existingByKey) {
+    if (!row.isActive) continue;
+    if (!desiredByKey.has(key)) {
+      toDeactivate.push(row.id);
+    }
+  }
+
+  return { toInsert, toDeactivate, toReactivate };
+}
+
+/**
+ * Valida e normaliza uma lista de roles vinda do payload. Regras:
+ * - LEADER / INTERN exigem facultyId (baseId null).
+ * - PRECEPTOR exige baseId (facultyId null).
+ * - COORDINATOR não tem facultyId nem baseId.
+ * - Duplicatas exatas (mesma tripla) são deduplicadas.
+ *
+ * Retorna `{ ok: true, roles }` ou `{ ok: false, error }`.
+ */
+export function normalizeRolesPayload(
+  input: Array<{ role: Role; facultyId?: string | null; baseId?: string | null }>,
+): { ok: true; roles: RoleAssignment[] } | { ok: false; error: string } {
+  if (input.length === 0) {
+    return { ok: false, error: "Usuário deve ter pelo menos uma role" };
+  }
+
+  const seen = new Set<string>();
+  const out: RoleAssignment[] = [];
+
+  for (const entry of input) {
+    if (entry.role === "LEADER" || entry.role === "INTERN") {
+      if (!entry.facultyId) {
+        return { ok: false, error: `Faculdade obrigatória para papel ${entry.role}` };
+      }
+      const normalized: RoleAssignment = { role: entry.role, facultyId: entry.facultyId, baseId: null };
+      const key = roleKey(normalized);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(normalized);
+      continue;
+    }
+
+    if (entry.role === "PRECEPTOR") {
+      if (!entry.baseId) {
+        return { ok: false, error: "Base obrigatória para papel PRECEPTOR" };
+      }
+      const normalized: RoleAssignment = { role: "PRECEPTOR", facultyId: null, baseId: entry.baseId };
+      const key = roleKey(normalized);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(normalized);
+      continue;
+    }
+
+    if (entry.role === "COORDINATOR") {
+      const normalized: RoleAssignment = { role: "COORDINATOR", facultyId: null, baseId: null };
+      const key = roleKey(normalized);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(normalized);
+      continue;
+    }
+  }
+
+  return { ok: true, roles: out };
+}
