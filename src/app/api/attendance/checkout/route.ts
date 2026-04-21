@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
+import type { JWT } from "next-auth/jwt";
 import { db } from "@/db";
 import { assignments, bases, checkins, qrSessions, users } from "@/db/schema";
 import { eq, and, isNull, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
+import { auth } from "@/lib/auth";
+import { sessionHasAnyRole, tokenHasRole } from "@/lib/roles";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
 import { isWithinShiftCheckoutWindow, getShiftLabel } from "@/lib/utils";
@@ -28,8 +31,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ success: true, data: { checkinAt: checkin.checkinAt?.toISOString() ?? null } });
 }
 
-function isImpersonating(req: NextRequest, token: { role?: unknown }): boolean {
-  return token.role === "COORDINATOR" &&
+function isImpersonating(req: NextRequest, token: JWT | null): boolean {
+  return tokenHasRole(token, "COORDINATOR") &&
     !!(req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user"));
 }
 
@@ -178,8 +181,13 @@ export async function POST(req: NextRequest) {
 
 // PUT: Preceptor/Coordinator confirms checkout directly (via UI)
 export async function PUT(req: NextRequest) {
+  const session = await auth();
+  if (!sessionHasAnyRole(session, ["COORDINATOR", "PRECEPTOR"])) {
+    return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+  }
+
   const user = await getEffectiveUser(req);
-  if (!user || !["COORDINATOR", "PRECEPTOR"].includes(user.role)) {
+  if (!user) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -196,6 +204,9 @@ export async function PUT(req: NextRequest) {
   }
 
   const { assignmentId, notes, nps } = parsed.data;
+  // TODO(multi-role): migrar no corte B — `user.role` aqui é o role efetivo singular
+  // (priority); para LEADER+PRECEPTOR usando fluxo de preceptor a regra de NPS depende
+  // do x-force-role. Manter comportamento atual até enriquecimento de EffectiveUser.
   if (user.role === "PRECEPTOR" && !nps) {
     return NextResponse.json({ success: false, error: "NPS obrigatório para confirmar checkout." }, { status: 400 });
   }
