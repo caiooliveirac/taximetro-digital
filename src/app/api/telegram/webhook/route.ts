@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { validateCode } from "@/lib/totp";
-import { bot, TELEGRAM_GROUP_ID, isTelegramValidationGroup } from "@/lib/telegram";
+import { bot, TELEGRAM_GROUP_ID } from "@/lib/telegram";
 import { logAudit } from "@/lib/audit";
 import { formatBrazilTime } from "@/lib/utils";
 import { canTriggerPendingReminderFromTelegram, sendPendingCheckinReminder } from "@/lib/telegram-checkin-pending-reminder";
@@ -163,8 +163,6 @@ async function handleManualPendingReminderCommand(
     return NextResponse.json({ ok: true });
   }
 
-  const isOfficialGroup = isTelegramValidationGroup(chatId);
-
   const permission = await canTriggerPendingReminderFromTelegram(telegramUserId);
 
   if (!permission.allowed) {
@@ -175,16 +173,9 @@ async function handleManualPendingReminderCommand(
     return NextResponse.json({ ok: true });
   }
 
-  if (!isOfficialGroup) {
-    await sendTelegramMessage(
-      chatId,
-      "ℹ️ Comando recebido fora do grupo oficial. Vou enviar o alerta no grupo oficial configurado.",
-      { messageThreadId },
-    );
-  }
-
   const result = await sendPendingCheckinReminder({
     notifyWhenEmpty: true,
+    targetChatId: chatId,
     requestedByUserId: permission.userId,
     requestedByTelegramId: telegramUserId,
     requestedByName: telegramName,

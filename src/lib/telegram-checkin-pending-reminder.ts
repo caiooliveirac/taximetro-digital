@@ -17,6 +17,7 @@ export type PendingCheckinRow = {
 type SendReminderOptions = {
     dryRun?: boolean;
     notifyWhenEmpty?: boolean;
+    targetChatId?: string;
     requestedByUserId?: string;
     requestedByTelegramId?: string;
     requestedByName?: string;
@@ -176,7 +177,9 @@ export async function canTriggerPendingReminderFromTelegram(telegramUserId: stri
 }
 
 export async function sendPendingCheckinReminder(options: SendReminderOptions) {
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_GROUP_ID) {
+    const targetChatId = options.targetChatId?.trim() || TELEGRAM_GROUP_ID;
+
+    if (!TELEGRAM_BOT_TOKEN || !targetChatId) {
         throw new Error("Telegram não configurado");
     }
 
@@ -188,7 +191,7 @@ export async function sendPendingCheckinReminder(options: SendReminderOptions) {
         const emptyMessage = `✅ Check-in em dia · ${hourLabel}\n\nNenhum interno está pendente no plantão diurno agora.`;
 
         if (!options.dryRun && options.notifyWhenEmpty) {
-            await bot.api.sendMessage(TELEGRAM_GROUP_ID, emptyMessage);
+            await bot.api.sendMessage(targetChatId, emptyMessage);
         }
 
         await logAudit({
@@ -201,6 +204,7 @@ export async function sendPendingCheckinReminder(options: SendReminderOptions) {
                 pendingCount: 0,
                 dryRun: options.dryRun ?? false,
                 notifyWhenEmpty: options.notifyWhenEmpty ?? false,
+                targetChatId,
                 source: options.source,
                 requestedByTelegramId: options.requestedByTelegramId,
                 requestedByName: options.requestedByName,
@@ -219,7 +223,7 @@ export async function sendPendingCheckinReminder(options: SendReminderOptions) {
     const message = buildPendingCheckinReminderTelegramMessage(rows, hourLabel);
 
     if (!options.dryRun) {
-        await bot.api.sendMessage(TELEGRAM_GROUP_ID, message, {
+        await bot.api.sendMessage(targetChatId, message, {
             parse_mode: "HTML",
             link_preview_options: { is_disabled: true },
         });
@@ -236,6 +240,7 @@ export async function sendPendingCheckinReminder(options: SendReminderOptions) {
             cruCount: rows.filter((row) => row.baseCode === "CRU").length,
             usaCount: rows.filter((row) => row.baseType === "USA").length,
             dryRun: options.dryRun ?? false,
+            targetChatId,
             source: options.source,
             requestedByTelegramId: options.requestedByTelegramId,
             requestedByName: options.requestedByName,
