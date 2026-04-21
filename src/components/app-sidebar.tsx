@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
+import { sessionHasRole } from "@/lib/roles";
 import { LogOut, Ambulance, Eye, Users, Stethoscope, GraduationCap, Menu, X, KeyRound, Loader2, type LucideIcon } from "lucide-react";
 import { ImpersonateSelector } from "@/components/impersonate/impersonate-selector";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
@@ -36,8 +37,8 @@ export function AppSidebar({
   const { data: session, status } = useSession();
   const isCoordinator = session?.user?.role === "COORDINATOR";
   const { target: impersonateTarget, deactivate: stopImpersonate } = useImpersonate();
-  const sessionRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-  const canOpenPreceptorView = sessionRoles.includes("PRECEPTOR") && !impersonateTarget;
+  const hasPreceptorRole = sessionHasRole(session, "PRECEPTOR");
+  const canOpenPreceptorView = hasPreceptorRole && !impersonateTarget;
   const userName = session?.user?.name ?? "";
   const initials = userName
     .split(" ")
@@ -93,7 +94,7 @@ export function AppSidebar({
       return;
     }
 
-    if (!sessionRoles.includes("PRECEPTOR")) {
+    if (!hasPreceptorRole) {
       setPreceptorAccessError("Seu login atual ainda não trouxe a role de preceptoria. Saia e entre novamente.");
       return;
     }

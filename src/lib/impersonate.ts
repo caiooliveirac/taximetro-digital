@@ -26,7 +26,11 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
     const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
     if (!token) return null;
 
-    const tokenRoles = Array.isArray(token.roles) ? token.roles.map(String) : [String(token.role ?? "")].filter(Boolean);
+    const tokenRolesRaw = Array.isArray(token.roles) ? token.roles : [];
+    const tokenRoles = tokenRolesRaw
+        .map((r) => (typeof r === "string" ? r : (r && typeof r === "object" && "role" in r ? String((r as { role: string }).role) : "")))
+        .filter(Boolean);
+    if (tokenRoles.length === 0 && token.role) tokenRoles.push(String(token.role));
     const requestedSelfRole = req.headers.get("x-force-role");
 
     if (requestedSelfRole && IMPERSONATABLE_ROLES.has(requestedSelfRole) && tokenRoles.includes(requestedSelfRole)) {

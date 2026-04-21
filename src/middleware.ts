@@ -38,7 +38,11 @@ export async function middleware(req: NextRequest) {
 
   const role = token.role as string | undefined;
   const allowedPrefix = role ? ROLE_PREFIX[role] : undefined;
-  const roles = Array.isArray(token.roles) ? token.roles.map(String) : role ? [role] : [];
+  const rawRoles = Array.isArray(token.roles) ? token.roles : [];
+  const roles = rawRoles
+    .map((r) => (typeof r === "string" ? r : (r && typeof r === "object" && "role" in r ? String((r as { role: string }).role) : "")))
+    .filter(Boolean);
+  if (roles.length === 0 && role) roles.push(role);
   const allowedPrefixes = new Set(roles.map((item) => ROLE_PREFIX[item]).filter(Boolean));
   const mustChangePassword = Boolean(token.mustChangePassword);
 

@@ -204,9 +204,12 @@ export async function PUT(req: NextRequest) {
   }
 
   const { assignmentId, notes, nps } = parsed.data;
-  // TODO(multi-role): migrar no corte B — `user.role` aqui é o role efetivo singular
-  // (priority); para LEADER+PRECEPTOR usando fluxo de preceptor a regra de NPS depende
-  // do x-force-role. Manter comportamento atual até enriquecimento de EffectiveUser.
+  // Nota multi-role (Corte B, Apr 2026): exige NPS quando o role EFETIVO e
+  // PRECEPTOR. Para um usuario que acumula PRECEPTOR + outra role, o NPS
+  // depende do papel sob o qual esta agindo. Esse contexto vem de
+  // x-force-role / impersonation via getEffectiveUser. Comportamento
+  // intencional: COORDINATOR+PRECEPTOR confirmando "como coord" nao precisa
+  // de NPS; quando age "como preceptor" (force-role/impersonation), precisa.
   if (user.role === "PRECEPTOR" && !nps) {
     return NextResponse.json({ success: false, error: "NPS obrigatório para confirmar checkout." }, { status: 400 });
   }
