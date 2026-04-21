@@ -13,6 +13,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr, weeksBetweenDateStr } from "@/lib/utils";
+import { sessionHasRole } from "@/lib/roles";
 
 type Stats = {
   totalInterns: number;
@@ -183,8 +184,7 @@ export default function LeaderDashboard() {
     }
   }
 
-  const sessionRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-  const canActAsPreceptor = sessionRoles.includes("PRECEPTOR");
+  const canActAsPreceptor = sessionHasRole(session, "PRECEPTOR");
 
   function handleOpenPreceptorView() {
     if (status !== "authenticated") {

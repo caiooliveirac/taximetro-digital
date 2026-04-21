@@ -93,12 +93,20 @@ async function fetchRole(userId: string) {
 
 async function fetchRoles(userId: string) {
   const rows = await db
-    .select({ role: userRoles.role })
+    .select({
+      role: userRoles.role,
+      facultyId: userRoles.facultyId,
+      baseId: userRoles.baseId,
+    })
     .from(userRoles)
     .where(and(eq(userRoles.userId, userId), eq(userRoles.isActive, true)))
     .orderBy(sql`CASE ${userRoles.role} WHEN 'COORDINATOR' THEN 0 WHEN 'LEADER' THEN 1 WHEN 'PRECEPTOR' THEN 2 WHEN 'INTERN' THEN 3 END`);
 
-  return rows.map((row) => row.role);
+  return rows.map((row) => ({
+    role: row.role,
+    facultyId: row.facultyId ?? null,
+    baseId: row.baseId ?? null,
+  }));
 }
 
 const googleProviders: Provider[] =
@@ -233,6 +241,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           name: user.name,
           email: user.email,
           role: role.role,
+          // roles agora carrega { role, facultyId, baseId }[]. Helper roles.ts
+          // aceita tanto Role[] (sessoes antigas) quanto SessionRole[] (novas).
           roles,
           facultyId: role.facultyId ?? null,
           baseId: role.baseId ?? null,
@@ -295,7 +305,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.role = (user as unknown as { role: string }).role as typeof token.role;
         token.facultyId = (user as unknown as { facultyId: string | null }).facultyId;
         token.baseId = (user as unknown as { baseId: string | null }).baseId;
-        token.roles = (user as unknown as { roles?: Array<"COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN"> }).roles ?? [token.role];
+        const incomingRoles = (user as unknown as { roles?: unknown }).roles;
+        token.roles = Array.isArray(incomingRoles) && incomingRoles.length > 0
+          ? (incomingRoles as typeof token.roles)
+          : [{ role: token.role, facultyId: token.facultyId, baseId: token.baseId }];
         token.mustChangePassword = (user as unknown as { mustChangePassword?: boolean }).mustChangePassword ?? false;
       }
       return token;
@@ -305,7 +318,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       (session.user as { role: string }).role = token.role as string;
       (session.user as { facultyId: string | null }).facultyId = token.facultyId as string | null;
       (session.user as { baseId: string | null }).baseId = token.baseId as string | null;
-      (session.user as { roles: string[] }).roles = (token.roles as string[] | undefined) ?? [token.role as string];
+      // Propaga roles diretamente. Helper roles.ts aceita tanto Role[] (JWTs
+      // legados emitidos antes do Corte B) quanto SessionRole[] (novos).
+      (session.user as { roles: unknown }).roles = token.roles
+        ?? [{ role: token.role as string, facultyId: token.facultyId ?? null, baseId: token.baseId ?? null }];
       (session.user as { mustChangePassword: boolean }).mustChangePassword = Boolean(token.mustChangePassword);
       return session;
     },
