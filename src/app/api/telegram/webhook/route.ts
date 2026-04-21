@@ -163,10 +163,7 @@ async function handleManualPendingReminderCommand(
     return NextResponse.json({ ok: true });
   }
 
-  if (!isTelegramValidationGroup(chatId)) {
-    await sendTelegramMessage(chatId, "Este comando só está habilitado no grupo oficial de validação.", { messageThreadId });
-    return NextResponse.json({ ok: true });
-  }
+  const isOfficialGroup = isTelegramValidationGroup(chatId);
 
   const permission = await canTriggerPendingReminderFromTelegram(telegramUserId);
 
@@ -176,6 +173,14 @@ async function handleManualPendingReminderCommand(
       : "Comando disponível apenas para coordenação, liderança ou preceptoria vinculadas.";
     await sendTelegramMessage(chatId, message, { messageThreadId });
     return NextResponse.json({ ok: true });
+  }
+
+  if (!isOfficialGroup) {
+    await sendTelegramMessage(
+      chatId,
+      "ℹ️ Comando recebido fora do grupo oficial. Vou enviar o alerta no grupo oficial configurado.",
+      { messageThreadId },
+    );
   }
 
   const result = await sendPendingCheckinReminder({

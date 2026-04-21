@@ -5,7 +5,9 @@ export const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN?.trim() ||
   "";
 
-if (!TELEGRAM_BOT_TOKEN) {
+const isNextBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+
+if (!TELEGRAM_BOT_TOKEN && !isNextBuildPhase) {
   console.warn("TELEGRAM_BOT_TOKEN not set (TELEGRAM_BOT_TOKEN_NEXT/TELEGRAM_BOT_TOKEN) — bot disabled");
 }
 
