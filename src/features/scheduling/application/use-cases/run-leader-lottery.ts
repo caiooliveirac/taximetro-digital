@@ -90,8 +90,11 @@ export async function executeRunLeaderLottery(params: {
     // Lottery sorteia apenas USA (intervenção). CRU/CRL são alocados
     // manualmente ou via CRU fixo semanal — nunca no sorteio.
     // Exceção: EBMSP usa CENTRAL (CRU) como parte da rotação normal via split MORNING/AFTERNOON.
-    const isEbmspCentralDay = isEbmsp && rule.period === "DAY" && rule.baseType === "CENTRAL";
-    if (rule.baseType !== "USA" && !isEbmspCentralDay) continue;
+    const isCentralDay = rule.period === "DAY" && rule.baseType === "CENTRAL";
+    const shouldSortEbmspCentral = isEbmsp && isCentralDay;
+    const shouldSkipRule = rule.baseType !== "USA" && !shouldSortEbmspCentral;
+
+    if (shouldSkipRule) continue;
 
     const filled = existing.filter(
       (assignment) => assignment.baseId === rule.baseId && assignment.date === dateStr && assignment.period === rule.period,
@@ -99,7 +102,7 @@ export async function executeRunLeaderLottery(params: {
 
     const openCount = rule.capacity - filled;
 
-    if (isEbmspCentralDay) {
+    if (shouldSortEbmspCentral) {
       const morningCount = Math.ceil(openCount / 2);
       const afternoonCount = openCount - morningCount;
       for (let j = 0; j < morningCount; j++) {
