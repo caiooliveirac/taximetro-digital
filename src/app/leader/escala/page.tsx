@@ -31,6 +31,21 @@ type CruFixed = {
   id: string; intern_id: string; intern_name: string;
   day_of_week: string; period: string; valid_until: string;
 };
+type CruConflictItem = {
+  assignmentId: string;
+  baseCode: string;
+  date: string;
+  period: "DAY" | "NIGHT";
+  status: string;
+  internName: string;
+};
+type CruConflictPending = {
+  internId: string;
+  dayOfWeek: string;
+  period: "DAY" | "NIGHT";
+  weeks: number;
+  conflicts: CruConflictItem[];
+};
 
 const PERIODS = ["DAY", "NIGHT"] as const;
 const DAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
@@ -161,6 +176,7 @@ export default function LeaderEscala() {
   const [cruFixedLoading, setCruFixedLoading] = useState(false);
   const [cruFixedMsg, setCruFixedMsg] = useState("");
   const [cruGenMsg, setCruGenMsg] = useState("");
+  const [cruConflictPending, setCruConflictPending] = useState<CruConflictPending | null>(null);
 
   /* ── Intern detail modal ── */
   const [internDetail, setInternDetail] = useState<{ id: string; name: string } | null>(null);
@@ -510,12 +526,65 @@ export default function LeaderEscala() {
       const json = await res.json();
       if (json.success) {
         const sync = json.data;
-        const changed = (sync?.createdCount ?? 0) + (sync?.updatedCount ?? 0) + (sync?.reactivatedCount ?? 0);
-        setCruFixedMsg(`✅ Salvo e sincronizado (${changed}/${sync?.plannedCount ?? 0})`);
+        const forceable: CruConflictItem[] = (sync?.skipped ?? [])
+          .filter((s: { canForce?: boolean }) => s.canForce)
+          .map((s: { assignmentId: string; baseCode: string; date: string; period: "DAY" | "NIGHT"; status: string; internName: string }) => ({
+            assignmentId: s.assignmentId,
+            baseCode: s.baseCode,
+            date: s.date,
+            period: s.period,
+            status: s.status,
+            internName: s.internName,
+          }));
         await load();
-        setTimeout(() => { setCruFixedAdd(null); setCruFixedMsg(""); }, 600);
+        if (forceable.length > 0) {
+          const changed = (sync?.createdCount ?? 0) + (sync?.updatedCount ?? 0) + (sync?.reactivatedCount ?? 0);
+          setCruFixedMsg(`⚠️ ${changed} alocado(s) — ${forceable.length} conflito(s) com intervenção`);
+          setCruConflictPending({
+            internId: cruFixedInternId,
+            dayOfWeek: cruFixedAdd.dayOfWeek,
+            period: cruFixedAdd.period,
+            weeks: cruFixedWeeks,
+            conflicts: forceable,
+          });
+        } else {
+          const changed = (sync?.createdCount ?? 0) + (sync?.updatedCount ?? 0) + (sync?.reactivatedCount ?? 0);
+          setCruFixedMsg(`✅ Salvo e sincronizado (${changed}/${sync?.plannedCount ?? 0})`);
+          setTimeout(() => { setCruFixedAdd(null); setCruFixedMsg(""); }, 600);
+        }
       } else {
         setCruFixedMsg(`❌ ${json.error}`);
+      }
+    } catch {
+      setCruFixedMsg("❌ Erro de conexão.");
+    }
+    setCruFixedLoading(false);
+  }
+
+  async function forceCruFixed() {
+    if (!cruConflictPending) return;
+    setCruFixedLoading(true);
+    try {
+      const res = await fetch("/taximetro/api/leader/cru-fixed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          internId: cruConflictPending.internId,
+          dayOfWeek: cruConflictPending.dayOfWeek,
+          period: cruConflictPending.period,
+          weeks: cruConflictPending.weeks,
+          forceConflictIds: cruConflictPending.conflicts.map((c) => c.assignmentId),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCruConflictPending(null);
+        setCruFixedAdd(null);
+        setCruFixedMsg("");
+        await load();
+      } else {
+        setCruFixedMsg(`❌ ${json.error}`);
+        setCruConflictPending(null);
       }
     } catch {
       setCruFixedMsg("❌ Erro de conexão.");
@@ -1605,6 +1674,57 @@ export default function LeaderEscala() {
                 className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-bold text-white hover:bg-violet-700 transition disabled:opacity-50"
               >
                 {cruFixedLoading ? "Salvando..." : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ CRU Fixed Conflict Modal ═══════════ */}
+      {cruConflictPending && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-4 text-white flex items-center gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <h2 className="text-lg font-bold">Conflito com Intervenção</h2>
+                <p className="text-sm text-amber-100">
+                  O interno já está escalado em USA nas datas abaixo
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <p className="text-sm text-slate-600">
+                Para alocar o CRU fixo nessas semanas, os plantões de intervenção conflitantes precisam ser removidos. Deseja continuar?
+              </p>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 divide-y divide-amber-100 max-h-[220px] overflow-y-auto">
+                {cruConflictPending.conflicts.map((c) => (
+                  <div key={c.assignmentId} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                    <span className="font-medium text-slate-700">
+                      {new Date(c.date + "T12:00:00Z").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                      {" "}· {c.period === "DAY" ? "☀️ Dia" : "🌙 Noite"}
+                    </span>
+                    <span className="rounded-full bg-amber-200 text-amber-800 px-2 py-0.5 text-xs font-bold">{c.baseCode}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-400">
+                Os plantões de USA listados serão <strong>cancelados</strong> e substituídos por CRU fixo.
+              </p>
+            </div>
+            <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
+              <button
+                onClick={() => setCruConflictPending(null)}
+                className="flex-1 rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 transition"
+              >
+                Manter USA
+              </button>
+              <button
+                onClick={forceCruFixed}
+                disabled={cruFixedLoading}
+                className="flex-1 rounded-lg bg-orange-500 py-2 text-sm font-bold text-white hover:bg-orange-600 transition disabled:opacity-50"
+              >
+                {cruFixedLoading ? "Processando..." : "Remover USA e alocar CRU"}
               </button>
             </div>
           </div>

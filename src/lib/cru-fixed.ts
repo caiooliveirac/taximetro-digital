@@ -30,10 +30,25 @@ type ExistingAssignment = {
     internId: string;
     facultyId: string;
     baseId: string;
+    baseCode: string;
     date: string;
     period: "DAY" | "NIGHT";
     status: "SCHEDULED" | "CONFIRMED" | "CHECKED_IN" | "CHECKED_OUT" | "ABSENT" | "CANCELLED";
     notes: string | null;
+};
+
+export type CruFixedSkippedItem = {
+    internId: string;
+    internName: string;
+    date: string;
+    period: "DAY" | "NIGHT";
+    status: string;
+    /** ID do assignment conflitante (USA/CRL). Presente apenas quando pode ser forçado. */
+    assignmentId?: string;
+    /** Código da base conflitante (ex: SM01). Presente apenas quando pode ser forçado. */
+    baseCode?: string;
+    /** true quando é um assignment SCHEDULED/CONFIRMED em base não-CRU — pode ser removido pelo líder */
+    canForce?: boolean;
 };
 
 export type CruFixedMaterializationResult = {
@@ -43,13 +58,7 @@ export type CruFixedMaterializationResult = {
     reactivatedCount: number;
     unchangedCount: number;
     skippedCount: number;
-    skipped: Array<{
-        internId: string;
-        internName: string;
-        date: string;
-        period: "DAY" | "NIGHT";
-        status: string;
-    }>;
+    skipped: CruFixedSkippedItem[];
 };
 
 function normalizeDate(date: string) {
@@ -140,6 +149,8 @@ export async function materializeCruFixedAssignments(params: {
     endDate: string;
     actorUserId: string;
     templateIds?: string[];
+    /** IDs dos assignments conflitantes (USA/CRL) que o líder autorizou remover para liberar a CRU fixo */
+    forceConflictIds?: string[];
 }): Promise<CruFixedMaterializationResult> {
     const normalizedStart = normalizeDate(params.startDate);
     const normalizedEnd = normalizeDate(params.endDate);
@@ -182,12 +193,14 @@ export async function materializeCruFixedAssignments(params: {
             internId: assignments.internId,
             facultyId: assignments.facultyId,
             baseId: assignments.baseId,
+            baseCode: bases.code,
             date: assignments.date,
             period: assignments.period,
             status: assignments.status,
             notes: assignments.notes,
         })
         .from(assignments)
+        .innerJoin(bases, eq(bases.id, assignments.baseId))
         .where(and(
             inArray(assignments.internId, internIds),
             gte(assignments.date, normalizedStart),
@@ -241,7 +254,7 @@ export async function materializeCruFixedAssignments(params: {
                         notes: assignments.notes,
                     });
 
-                assignmentByKey.set(key, created);
+                assignmentByKey.set(key, { ...created, baseCode: "CRU" });
                 result.createdCount += 1;
                 continue;
             }
@@ -274,7 +287,7 @@ export async function materializeCruFixedAssignments(params: {
                             notes: assignments.notes,
                         });
 
-                    assignmentByKey.set(key, reactivated);
+                    assignmentByKey.set(key, { ...reactivated, baseCode: "CRU" });
                     result.reactivatedCount += 1;
                     continue;
                 }
@@ -317,14 +330,52 @@ export async function materializeCruFixedAssignments(params: {
                         notes: assignments.notes,
                     });
 
-                assignmentByKey.set(key, updatedCru);
+                assignmentByKey.set(key, { ...updatedCru, baseCode: "CRU" });
                 result.updatedCount += 1;
                 continue;
             }
 
             // Existe assignment manual em outra base (ex: CRL, USA) no mesmo slot
-            // que o template CRU fixo. Respeitar a alocação manual — NUNCA sobrescrever
-            // base manualmente alocada com CRU. Pular esse dia para esse template.
+            // que o template CRU fixo.
+            // Se o líder autorizou forçar (forceConflictIds inclui este assignment),
+            // cancelar o conflito e criar a CRU. Caso contrário, pular esse dia.
+            const isForced = isMutable && !isCruAssignment && (params.forceConflictIds?.includes(existing.id) ?? false);
+
+            if (isForced) {
+                await db
+                    .update(assignments)
+                    .set({ status: "CANCELLED", notes: `${existing.notes ?? ""} [substituído por CRU fixo]`.trim(), updatedAt: new Date() })
+                    .where(eq(assignments.id, existing.id));
+
+                const [created] = await db
+                    .insert(assignments)
+                    .values({
+                        internId: template.internId,
+                        facultyId: template.facultyId,
+                        baseId: cruBaseId,
+                        date,
+                        period: template.period,
+                        createdBy: params.actorUserId,
+                        notes: CRU_FIXED_NOTE,
+                    })
+                    .returning({
+                        id: assignments.id,
+                        internId: assignments.internId,
+                        facultyId: assignments.facultyId,
+                        baseId: assignments.baseId,
+                        date: assignments.date,
+                        period: assignments.period,
+                        status: assignments.status,
+                        notes: assignments.notes,
+                    });
+
+                assignmentByKey.set(key, { ...created, baseCode: "CRU" });
+                result.createdCount += 1;
+                continue;
+            }
+
+            // Não forçado — registrar como pulado, indicando se pode ser forçado
+            const canForce = isMutable && !isCruAssignment;
             result.skippedCount += 1;
             if (result.skipped.length < 20) {
                 result.skipped.push({
@@ -333,6 +384,7 @@ export async function materializeCruFixedAssignments(params: {
                     date,
                     period: template.period,
                     status: existing.status,
+                    ...(canForce ? { assignmentId: existing.id, baseCode: existing.baseCode, canForce: true } : {}),
                 });
             }
         }
