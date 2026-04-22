@@ -9,7 +9,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ assignmentId: string }> },
 ) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token) return new Response("Unauthorized", { status: 401 });
 
   const { assignmentId } = await params;

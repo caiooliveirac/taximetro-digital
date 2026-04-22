@@ -7,7 +7,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }

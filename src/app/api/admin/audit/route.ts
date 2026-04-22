@@ -3,7 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { executeListAuditLog } from "@/features/audit/application/use-cases/list-audit-log";
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token || token.role !== "COORDINATOR")
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
 

@@ -6,7 +6,7 @@ import {
 } from "@/features/user-management/application/use-cases/create-admin-invite-link";
 
 async function requireCoordinator(req: NextRequest) {
-    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
     if (!token || token.role !== "COORDINATOR") return null;
     return token;
 }

@@ -6,7 +6,7 @@ import { eq, and, isNull, gt } from "drizzle-orm";
 import { getCurrentCode } from "@/lib/totp";
 
 export async function GET(req: NextRequest) {
-    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
     if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
     const checkinId = req.nextUrl.searchParams.get("checkinId");

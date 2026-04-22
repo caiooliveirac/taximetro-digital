@@ -22,7 +22,7 @@ function getEffectiveInternId(req: NextRequest, token: { id?: unknown; role?: un
 }
 
 export async function POST(req: NextRequest) {
-    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
     if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
     const body = await req.json();
