@@ -69,7 +69,7 @@ export async function PUT(req: NextRequest) {
         entityId: checkin.id,
         ...((user.isImpersonating || observations) ? {
             payload: {
-                ...(user.isImpersonating ? { impersonating: user.id } : {}),
+                ...(user.isImpersonating ? { actingAs: user.id } : {}),
                 ...(observations ? { hasObservations: true } : {}),
             },
         } : {}),
