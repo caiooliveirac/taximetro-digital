@@ -1132,7 +1132,11 @@ export default function LeaderEscala() {
                 return (
                   <div key={`day-${dow}`} className="border-b border-violet-50 px-1 py-1 min-h-[44px]">
                     {cell.map((c) => {
-                      const weeksLeft = Math.max(0, Math.ceil((new Date(c.valid_until + "T12:00:00").getTime() - Date.now()) / (7 * 86400000)));
+                      // Calculate weeks remaining using date-only comparison (no timezone issues)
+                      const validUntilDate = new Date(c.valid_until + "T00:00:00Z");
+                      const todayDate = new Date(localDateStr() + "T00:00:00Z");
+                      const daysRemaining = Math.floor((validUntilDate.getTime() - todayDate.getTime()) / (86400000));
+                      const weeksLeft = Math.max(0, Math.ceil((daysRemaining + 1) / 7));
                       return (
                         <div key={c.id} className="group rounded-md bg-amber-50 text-amber-800 px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1">
                           <span className="truncate">{c.intern_name.split(" ").slice(0, 2).join(" ")}</span>
@@ -1166,7 +1170,11 @@ export default function LeaderEscala() {
                 return (
                   <div key={`night-${dow}`} className="border-b border-violet-50 px-1 py-1 min-h-[44px]">
                     {cell.map((c) => {
-                      const weeksLeft = Math.max(0, Math.ceil((new Date(c.valid_until + "T12:00:00").getTime() - Date.now()) / (7 * 86400000)));
+                      // Calculate weeks remaining using date-only comparison (no timezone issues)
+                      const validUntilDate = new Date(c.valid_until + "T00:00:00Z");
+                      const todayDate = new Date(localDateStr() + "T00:00:00Z");
+                      const daysRemaining = Math.floor((validUntilDate.getTime() - todayDate.getTime()) / (86400000));
+                      const weeksLeft = Math.max(0, Math.ceil((daysRemaining + 1) / 7));
                       return (
                         <div key={c.id} className="group rounded-md bg-indigo-50 text-indigo-800 px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1">
                           <span className="truncate">{c.intern_name.split(" ").slice(0, 2).join(" ")}</span>
