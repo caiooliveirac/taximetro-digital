@@ -199,6 +199,9 @@ Antes de qualquer mudança, ler nesta ordem:
 2. **ANÁLISE-ESTRUTURAL-REPOSITÓRIO.md** — Contexto completo de arquitetura e fragilidades
 3. **AGENTS.md** (este arquivo) — Regras operacionais
 
+Para configurar o ambiente local após `git clone` (banco, seed, testes, gotcha de autenticação):
+- **[CLAUDE.md](CLAUDE.md)** — lido automaticamente pelo Claude Code; cobre `.env.local`, Docker Postgres, `secureCookie`, URL structure e test suite
+
 Estes documentos são fonte única de verdade. Docs em docs/architecture.md e docs/data-flow.md podem estar desatualizados (marcar como referência, não verdade).
 
 ## 11. Changelog Recente (2026-04-20)

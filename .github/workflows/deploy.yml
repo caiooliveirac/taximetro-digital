@@ -21,6 +21,23 @@ env:
   DEPLOY_DIR: /home/ubuntu/taximetro-digital
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
   db_changes:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_db_changes }}
     runs-on: ubuntu-latest
@@ -65,8 +82,8 @@ jobs:
           REMOTE_SCRIPT
 
   deploy:
-    needs: db_changes
-    if: ${{ always() && (needs.db_changes.result == 'success' || needs.db_changes.result == 'skipped') }}
+    needs: [test, db_changes]
+    if: ${{ always() && needs.test.result == 'success' && (needs.db_changes.result == 'success' || needs.db_changes.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
