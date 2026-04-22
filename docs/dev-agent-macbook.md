@@ -1,5 +1,9 @@
 # Dev Local no MacBook (Guia para Agentes e Time)
 
+> **Nota:** Este documento cobre o fluxo via Docker Compose (app + db dentro de containers).
+> Para o fluxo nativo (`npm run dev` no host com Postgres local), incluindo o gotcha crítico de
+> `secureCookie` no NextAuth, ver **[CLAUDE.md](../CLAUDE.md)** na raiz do repositório.
+
 Objetivo: permitir desenvolvimento local seguro, sem alterar producao, com dados fake para testar features.
 
 ## Regras de seguranca (obrigatorias)
