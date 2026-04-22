@@ -7,21 +7,9 @@ import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { auth } from "@/lib/auth";
 import { sessionHasAnyRole } from "@/lib/roles";
+import { checkRateLimit } from "@/shared/infra/rate-limit";
+import { isUnifiedShiftCheckout, resolveCheckoutAssignmentIds } from "@/shared/domain/policies/attendance-window-policy";
 import { z } from "zod/v4";
-
-// In-memory rate limiter per validator
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(userId);
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + 60_000 });
-    return true;
-  }
-  entry.count++;
-  return entry.count <= 10;
-}
 
 const validateSchema = z.object({
   checkinId: z.string().uuid().optional(),
@@ -35,36 +23,6 @@ function normalizeObservation(value?: string) {
   return trimmed ? trimmed : null;
 }
 
-function shouldUseUnifiedShiftCheckout(assignment: { period: string; shift: string | null }) {
-  return assignment.period === "DAY" && (assignment.shift === "MORNING" || assignment.shift === "AFTERNOON");
-}
-
-async function resolveUnifiedCheckoutAssignmentIds(assignment: {
-  id: string;
-  internId: string;
-  date: string;
-  period: string;
-  shift: string | null;
-}) {
-  if (!shouldUseUnifiedShiftCheckout(assignment)) return [assignment.id];
-
-  const related = await db
-    .select({ id: assignments.id })
-    .from(assignments)
-    .where(
-      and(
-        eq(assignments.internId, assignment.internId),
-        eq(assignments.date, assignment.date),
-        eq(assignments.period, "DAY"),
-        inArray(assignments.shift, ["MORNING", "AFTERNOON"]),
-        eq(assignments.status, "CHECKED_IN"),
-      ),
-    );
-
-  const ids = related.map((row) => row.id);
-  if (!ids.includes(assignment.id)) ids.push(assignment.id);
-  return ids;
-}
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -145,7 +103,7 @@ export async function POST(req: NextRequest) {
       entityId: checkinId,
       ...((user.isImpersonating || observations) ? {
         payload: {
-          ...(user.isImpersonating ? { impersonating: user.id } : {}),
+          ...(user.isImpersonating ? { actingAs: user.id } : {}),
           ...(observations ? { hasObservations: true } : {}),
         },
       } : {}),
@@ -183,7 +141,7 @@ async function validateByCode(code: string, validatorId: string, impersonatingId
       return NextResponse.json({ success: false, error: "Plantão não está em check-in ativo para checkout" }, { status: 400 });
     }
 
-    const assignmentIdsToCheckout = await resolveUnifiedCheckoutAssignmentIds(assignment);
+    const assignmentIdsToCheckout = await resolveCheckoutAssignmentIds(assignment);
 
     await db.update(checkins).set({
       checkoutAt: now,
@@ -199,14 +157,12 @@ async function validateByCode(code: string, validatorId: string, impersonatingId
       action: "CHECKOUT_CONFIRMED",
       entity: "assignment",
       entityId: assignment.id,
-      ...((impersonatingId || observations || assignmentIdsToCheckout.length > 1) ? {
-        payload: {
-          via: "CODE",
-          ...(impersonatingId ? { impersonating: impersonatingId } : {}),
-          ...(observations ? { hasObservations: true } : {}),
-          ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
-        },
-      } : { payload: { via: "CODE" } }),
+      payload: {
+        via: "CODE",
+        ...(impersonatingId ? { actingAs: impersonatingId } : {}),
+        ...(observations ? { hasObservations: true } : {}),
+        ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
+      },
     });
 
     return NextResponse.json({ success: true, data: { method: "CODE", flow: "CHECKOUT", assignmentIds: assignmentIdsToCheckout } });
@@ -230,7 +186,7 @@ async function validateByCode(code: string, validatorId: string, impersonatingId
     entityId: session.checkinId,
     ...((impersonatingId || observations) ? {
       payload: {
-        ...(impersonatingId ? { impersonating: impersonatingId } : {}),
+        ...(impersonatingId ? { actingAs: impersonatingId } : {}),
         ...(observations ? { hasObservations: true } : {}),
       },
     } : {}),

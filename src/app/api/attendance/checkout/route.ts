@@ -10,12 +10,13 @@ import { auth } from "@/lib/auth";
 import { sessionHasAnyRole, tokenHasRole } from "@/lib/roles";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
-import { isWithinShiftCheckoutWindow, getShiftLabel } from "@/lib/utils";
+import { getShiftLabel } from "@/lib/utils";
+import { isWithinShiftCheckoutWindow, isUnifiedShiftCheckout, resolveCheckoutAssignmentIds } from "@/shared/domain/policies/attendance-window-policy";
 import { z } from "zod/v4";
 
 // GET: return checkin details for a CHECKED_IN assignment
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const assignmentId = req.nextUrl.searchParams.get("assignmentId");
@@ -52,40 +53,10 @@ const checkoutDirectSchema = z.object({
   nps: checkoutNpsSchema.optional(),
 });
 
-function shouldUseUnifiedShiftCheckout(assignment: { period: string; shift: string | null }) {
-  return assignment.period === "DAY" && (assignment.shift === "MORNING" || assignment.shift === "AFTERNOON");
-}
-
-async function resolveUnifiedCheckoutAssignmentIds(assignment: {
-  id: string;
-  internId: string;
-  date: string;
-  period: string;
-  shift: string | null;
-}) {
-  if (!shouldUseUnifiedShiftCheckout(assignment)) return [assignment.id];
-
-  const related = await db
-    .select({ id: assignments.id })
-    .from(assignments)
-    .where(
-      and(
-        eq(assignments.internId, assignment.internId),
-        eq(assignments.date, assignment.date),
-        eq(assignments.period, "DAY"),
-        inArray(assignments.shift, ["MORNING", "AFTERNOON"]),
-        eq(assignments.status, "CHECKED_IN"),
-      ),
-    );
-
-  const ids = related.map((row) => row.id);
-  if (!ids.includes(assignment.id)) ids.push(assignment.id);
-  return ids;
-}
 
 // POST: Intern initiates checkout — generates TOTP for preceptor validation via Telegram
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const impersonating = isImpersonating(req, token);
@@ -161,7 +132,7 @@ export async function POST(req: NextRequest) {
     action: "CHECKOUT_INITIATED",
     entity: "checkin",
     entityId: checkin.id,
-    payload: { impersonatedBy: impersonating ? (token.id as string) : undefined },
+    realUserId: impersonating ? (token.id as string) : undefined,
   });
 
   return NextResponse.json({
@@ -225,7 +196,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Interno não está em check-in" }, { status: 400 });
   }
 
-  const assignmentIdsToCheckout = await resolveUnifiedCheckoutAssignmentIds(assignment);
+  const assignmentIdsToCheckout = await resolveCheckoutAssignmentIds(assignment);
   const now = new Date();
 
   await db.update(assignments)
@@ -252,7 +223,7 @@ export async function PUT(req: NextRequest) {
     ...((user.isImpersonating || assignmentIdsToCheckout.length > 1 || !!nps)
       ? {
         payload: {
-          ...(user.isImpersonating ? { impersonating: user.id } : {}),
+          ...(user.isImpersonating ? { actingAs: user.id } : {}),
           ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
           ...(nps ? { nps } : {}),
         },
