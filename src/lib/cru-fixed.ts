@@ -322,32 +322,9 @@ export async function materializeCruFixedAssignments(params: {
                 continue;
             }
 
-            if (!isCruAssignment && isMutable) {
-                const [updated] = await db
-                    .update(assignments)
-                    .set({
-                        facultyId: template.facultyId,
-                        baseId: cruBaseId,
-                        notes: CRU_FIXED_NOTE,
-                        updatedAt: new Date(),
-                    })
-                    .where(eq(assignments.id, existing.id))
-                    .returning({
-                        id: assignments.id,
-                        internId: assignments.internId,
-                        facultyId: assignments.facultyId,
-                        baseId: assignments.baseId,
-                        date: assignments.date,
-                        period: assignments.period,
-                        status: assignments.status,
-                        notes: assignments.notes,
-                    });
-
-                assignmentByKey.set(key, updated);
-                result.updatedCount += 1;
-                continue;
-            }
-
+            // Existe assignment manual em outra base (ex: CRL, USA) no mesmo slot
+            // que o template CRU fixo. Respeitar a alocação manual — NUNCA sobrescrever
+            // base manualmente alocada com CRU. Pular esse dia para esse template.
             result.skippedCount += 1;
             if (result.skipped.length < 20) {
                 result.skipped.push({
