@@ -9,7 +9,7 @@ const schema = z.object({ checkinId: z.string().uuid() });
 
 // Returns remaining seconds for an active code (used by intern checkin page)
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const body = await req.json();

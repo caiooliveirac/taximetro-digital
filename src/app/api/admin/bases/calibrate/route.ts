@@ -8,7 +8,7 @@ import {
 const ALLOWED_ROLES = ["COORDINATOR"];
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token || !ALLOWED_ROLES.includes(token.role as string)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }

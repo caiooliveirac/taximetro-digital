@@ -23,7 +23,7 @@ const IMPERSONATABLE_ROLES = new Set(["LEADER", "PRECEPTOR", "INTERN"]);
  * Otherwise returns the authenticated user's own identity.
  */
 export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser | null> {
-    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+    const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
     if (!token) return null;
 
     const tokenRolesRaw = Array.isArray(token.roles) ? token.roles : [];

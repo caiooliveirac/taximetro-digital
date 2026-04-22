@@ -71,7 +71,7 @@ const mergeUsersSchema = z.object({
 });
 
 async function requireCoordinator(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token || token.role !== "COORDINATOR") return null;
   return token;
 }
@@ -378,7 +378,7 @@ function aggregateUsers(rows: UserRoleRow[]) {
 }
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
