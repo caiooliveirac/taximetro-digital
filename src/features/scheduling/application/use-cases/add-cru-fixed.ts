@@ -16,6 +16,8 @@ export const addCruFixedSchema = z.object({
   dayOfWeek: z.enum(DOW),
   period: z.enum(["DAY", "NIGHT"]),
   weeks: z.number().int().min(1).max(24).default(6),
+  /** IDs dos assignments conflitantes que o líder autorizou cancelar para liberar a CRU */
+  forceConflictIds: z.array(z.string().uuid()).optional(),
 });
 
 export async function executeAddCruFixed(params: {
@@ -66,6 +68,7 @@ export async function executeAddCruFixed(params: {
       endDate: validUntilStr,
       actorUserId,
       templateIds: templateId ? [templateId] : undefined,
+      forceConflictIds: input.forceConflictIds,
     });
 
     await logAudit({
