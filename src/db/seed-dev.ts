@@ -22,38 +22,32 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { hash } from "bcryptjs";
 import { eq, inArray } from "drizzle-orm";
+import { fakerPT_BR as faker } from "@faker-js/faker";
 import {
   bases, faculties, users, userRoles, slotRules,
   assignments, checkins, requests, caseRecords, auditLog,
   inviteLinks,
 } from "./schema";
 
+// ── Proteção contra execução em produção ─────────────────────────
+if (process.env.NODE_ENV === "production") {
+  console.error("❌ ABORTADO: seed-dev.ts não pode rodar em NODE_ENV=production");
+  process.exit(1);
+}
+
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgresql://localhost:5432/taximetro";
 
-// ── Nomes brasileiros ────────────────────────────────────────────
+const DEV_HOSTS = ["localhost", "127.0.0.1", "::1", "db", "taximetro-dev"];
+const isDevUrl = DEV_HOSTS.some((h) => DATABASE_URL.includes(h));
+if (!isDevUrl && !process.env.SEED_DEV_FORCE) {
+  console.error("❌ ABORTADO: DATABASE_URL não parece ser um banco de desenvolvimento.");
+  console.error("   DATABASE_URL:", DATABASE_URL.replace(/:\/\/[^@]+@/, "://<credenciais>@"));
+  console.error("   Se tem certeza, defina SEED_DEV_FORCE=1 e tente novamente.");
+  process.exit(1);
+}
 
-const FIRST_F = [
-  "Mariana", "Beatriz", "Ana", "Júlia", "Camila", "Fernanda", "Larissa", "Isabela",
-  "Amanda", "Carolina", "Letícia", "Bruna", "Patrícia", "Raquel", "Natália", "Débora",
-  "Renata", "Tatiana", "Vanessa", "Aline", "Clara", "Lívia", "Priscila", "Marina",
-  "Gabriela", "Luísa", "Helena", "Bianca", "Tainá", "Laura",
-];
-
-const FIRST_M = [
-  "Lucas", "Pedro", "Gabriel", "Rafael", "Matheus", "Gustavo", "Felipe", "Bruno",
-  "Thiago", "André", "Vinícius", "Leonardo", "Diego", "Henrique", "Arthur", "Caio",
-  "Daniel", "Rodrigo", "Samuel", "Igor", "Eduardo", "Bernardo", "João", "Marcos",
-  "Luciano", "Nicolas", "Renan", "Wallace", "Elias", "William",
-];
-
-const SURNAMES = [
-  "Silva", "Santos", "Oliveira", "Souza", "Lima", "Ferreira", "Almeida", "Costa",
-  "Ribeiro", "Nascimento", "Carvalho", "Mendes", "Rocha", "Martins", "Freitas",
-  "Barbosa", "Pereira", "Araújo", "Lopes", "Correia", "Duarte", "Nunes", "Vieira",
-  "Campos", "Moreira", "Teixeira", "Monteiro", "Reis", "Melo", "Cardoso", "Barreto",
-  "Cunha", "Nogueira", "Pinto", "Fonseca", "Sampaio", "Gomes", "Brito", "Castro", "Ramos",
-];
+faker.seed(42); // reprodutível
 
 // ── Constantes ────────────────────────────────────────────────────
 
@@ -184,17 +178,11 @@ async function seedDev() {
 
   const usedNames = new Set<string>();
   function genName(idx: number): string {
-    const pool = idx % 2 === 0 ? FIRST_F : FIRST_M;
-    const firstName = pool[Math.floor(idx / 2) % pool.length];
-    let s1 = idx % SURNAMES.length;
-    let s2 = (s1 + 1 + Math.floor(idx / SURNAMES.length)) % SURNAMES.length;
-    if (s2 === s1) s2 = (s2 + 1) % SURNAMES.length;
-    let name = `${firstName} ${SURNAMES[s1]} ${SURNAMES[s2]}`;
-    while (usedNames.has(name)) {
-      s2 = (s2 + 1) % SURNAMES.length;
-      if (s2 === s1) s2 = (s2 + 1) % SURNAMES.length;
-      name = `${firstName} ${SURNAMES[s1]} ${SURNAMES[s2]}`;
-    }
+    const sex = idx % 2 === 0 ? "female" : "male";
+    let name: string;
+    do {
+      name = `${faker.person.firstName(sex)} ${faker.person.lastName()} ${faker.person.lastName()}`;
+    } while (usedNames.has(name));
     usedNames.add(name);
     return name;
   }
