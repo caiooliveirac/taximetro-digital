@@ -1,8 +1,36 @@
-node_modules
-.next
-dist
-*.log
+# dependencies
+node_modules/
+
+# env
 .env
-.env.local
+.env.*
+!.env.example
+
+# build / cache
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+
+# editor / OS
+.vscode/
+.idea/
 .DS_Store
+Thumbs.db
+
+# logs / tmp
+*.log
+npm-debug.log*
+tmp/
 backups/
+*.dump
+*.sql.gz
+
+# agent / scratch
+.agent/
+.claude/
+.codex/
+scratch/
+CLAUDE.local.md
+
