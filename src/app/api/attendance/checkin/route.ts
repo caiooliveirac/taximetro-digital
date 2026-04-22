@@ -26,7 +26,7 @@ function isImpersonating(req: NextRequest, token: JWT | null): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true });
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const impersonating = isImpersonating(req, token);
@@ -165,7 +165,8 @@ export async function POST(req: NextRequest) {
     action: "CHECKIN_INITIATED",
     entity: "checkin",
     entityId: checkinId,
-    payload: { distance: hasGps ? geo.distance : null, geoValid: hasGps ? geo.valid : false, hasGps, reused: !!existingCheckin, impersonatedBy: impersonating ? (token.id as string) : undefined },
+    realUserId: impersonating ? (token.id as string) : undefined,
+    payload: { distance: hasGps ? geo.distance : null, geoValid: hasGps ? geo.valid : false, hasGps, reused: !!existingCheckin },
   });
 
   return NextResponse.json({
