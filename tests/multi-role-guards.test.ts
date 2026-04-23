@@ -17,21 +17,23 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { Session } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import { sessionHasRole, sessionHasAnyRole, tokenHasRole } from "../src/lib/roles";
 
 // ------------ Fakes mínimos de Session ------------
 type Roles = Array<string | { role: string; facultyId?: string | null; baseId?: string | null }>;
 
-function fakeSession(roles: Roles | undefined | null): any {
+function fakeSession(roles: Roles | undefined | null): Session | null | undefined {
   if (roles === undefined) return undefined;
   if (roles === null) return null;
-  return { user: { id: "u1", roles } };
+  return { user: { id: "u1", roles } } as unknown as Session;
 }
 
-function fakeToken(roles: Roles | undefined | null): any {
+function fakeToken(roles: Roles | undefined | null): JWT | null | undefined {
   if (roles === undefined) return undefined;
   if (roles === null) return null;
-  return { id: "u1", roles };
+  return { id: "u1", roles } as unknown as JWT;
 }
 
 // ==================== Medo 1 — Não vazar permissão ====================
@@ -81,7 +83,7 @@ test("Caso 7b: session = undefined → 403", () => {
 });
 
 test("Caso 7c: session.user.roles = undefined → 403", () => {
-  const session: any = { user: { id: "u1" } };
+  const session = { user: { id: "u1" } } as unknown as Session;
   assert.equal(sessionHasRole(session, "INTERN"), false);
   assert.equal(sessionHasAnyRole(session, ["PRECEPTOR", "COORDINATOR"]), false);
 });
@@ -93,14 +95,14 @@ test("Caso 7d: session.user.roles = [] → 403", () => {
 });
 
 test("Caso 7e: roles contém valores inválidos → ignora silenciosamente", () => {
-  const session: any = { user: { roles: ["GARBAGE", null, 42, { role: "FAKE" }, { role: "INTERN" }] } };
+  const session = { user: { roles: ["GARBAGE", null, 42, { role: "FAKE" }, { role: "INTERN" }] } } as unknown as Session;
   assert.equal(sessionHasRole(session, "INTERN"), true);
   assert.equal(sessionHasRole(session, "LEADER"), false);
   assert.equal(sessionHasAnyRole(session, ["PRECEPTOR", "COORDINATOR"]), false);
 });
 
 test("Caso 7f: roles como objeto malformado (sem role) → não vaza", () => {
-  const session: any = { user: { roles: [{ facultyId: "x" }] } };
+  const session = { user: { roles: [{ facultyId: "x" }] } } as unknown as Session;
   assert.equal(sessionHasRole(session, "INTERN"), false);
 });
 

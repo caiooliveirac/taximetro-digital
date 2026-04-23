@@ -10,10 +10,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { Session } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import { sessionHasRole, sessionHasAnyRole, tokenHasRole } from "../src/lib/roles";
 
-function fakeSession(roles: any): any {
-  return { user: { id: "u1", roles } };
+function fakeSession(roles: unknown): Session {
+  return { user: { id: "u1", roles } } as unknown as Session;
 }
 
 // ==================== Transicao: JWTs legados continuam aceitos ====================
@@ -104,13 +106,13 @@ test("Objeto sem facultyId/baseId — scope solicitado retorna false", () => {
 });
 
 test("tokenHasRole espelha com SessionRole[]", () => {
-  const token: any = {
+  const token = {
     id: "u1",
     roles: [
       { role: "LEADER", facultyId: "fac-ufba", baseId: null },
       { role: "PRECEPTOR", facultyId: null, baseId: "base-cb02" },
     ],
-  };
+  } as unknown as JWT;
   assert.equal(tokenHasRole(token, "PRECEPTOR", { baseId: "base-cb02" }), true);
   assert.equal(tokenHasRole(token, "LEADER", { facultyId: "fac-ufba" }), true);
   assert.equal(tokenHasRole(token, "INTERN"), false);

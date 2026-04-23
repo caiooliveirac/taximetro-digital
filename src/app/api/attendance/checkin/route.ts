@@ -9,8 +9,8 @@ import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
 import { validateShiftClockIn } from "@/lib/utils";
-import { auth } from "@/lib/auth";
-import { sessionHasRole, tokenHasRole } from "@/lib/roles";
+import { tokenHasRole } from "@/lib/roles";
+import { canStartCheckin } from "@/lib/attendance-permissions";
 import { z } from "zod/v4";
 
 const checkinSchema = z.object({
@@ -34,11 +34,8 @@ export async function POST(req: NextRequest) {
   // Guard: real user must have INTERN role ativa, OU estar impersonando (COORDINATOR já
   // vetado por impersonate.ts). Isto é o guard novo do Corte A: bloqueia LEADER-puro
   // (sem INTERN) de iniciar check-in próprio, mantendo o fluxo de impersonation.
-  if (!impersonating) {
-    const session = await auth();
-    if (!sessionHasRole(session, "INTERN")) {
-      return NextResponse.json({ success: false, error: "Apenas internos fazem check-in" }, { status: 403 });
-    }
+  if (!canStartCheckin(token, impersonating)) {
+    return NextResponse.json({ success: false, error: "Apenas internos fazem check-in" }, { status: 403 });
   }
 
   const effectiveInternId = impersonating

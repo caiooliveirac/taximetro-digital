@@ -1,15 +1,9 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
+import { ROLE_PREFIX, canAccessPathWithRoles, extractRoleNames } from "@/lib/role-access-policy";
 
 const PUBLIC_PATHS = ["/login", "/esqueci-senha", "/redefinir-senha", "/api/auth", "/api/telegram", "/registro", "/api/registro", "/api/health"];
 const FORCE_PASSWORD_CHANGE_PATH = "/trocar-senha";
-
-const ROLE_PREFIX: Record<string, string> = {
-  COORDINATOR: "/admin",
-  LEADER: "/leader",
-  PRECEPTOR: "/preceptor",
-  INTERN: "/intern",
-};
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -41,13 +35,8 @@ export async function middleware(req: NextRequest) {
   }
 
   const role = token.role as string | undefined;
-  const allowedPrefix = role ? ROLE_PREFIX[role] : undefined;
-  const rawRoles = Array.isArray(token.roles) ? token.roles : [];
-  const roles = rawRoles
-    .map((r) => (typeof r === "string" ? r : (r && typeof r === "object" && "role" in r ? String((r as { role: string }).role) : "")))
-    .filter(Boolean);
-  if (roles.length === 0 && role) roles.push(role);
-  const allowedPrefixes = new Set(roles.map((item) => ROLE_PREFIX[item]).filter(Boolean));
+  const roles = extractRoleNames(token.roles, role);
+  const allowedPrefix = role && role in ROLE_PREFIX ? ROLE_PREFIX[role as keyof typeof ROLE_PREFIX] : undefined;
   const mustChangePassword = Boolean(token.mustChangePassword);
 
   if (mustChangePassword && pathname !== FORCE_PASSWORD_CHANGE_PATH && !pathname.startsWith(`${FORCE_PASSWORD_CHANGE_PATH}/`) && pathname !== "/api/auth/change-password") {
@@ -70,17 +59,10 @@ export async function middleware(req: NextRequest) {
   }
 
   // Check role access
-  if (allowedPrefix && !pathname.startsWith(allowedPrefix) && ![...allowedPrefixes].some((prefix) => pathname.startsWith(prefix))) {
-    if (role === "COORDINATOR") return NextResponse.next();
-
-    // LEADER can also use intern self-service flows to fulfill their own shifts.
-    if (role === "LEADER" && pathname.startsWith("/intern")) {
-      return NextResponse.next();
-    }
-
+  if (!canAccessPathWithRoles(pathname, role, roles)) {
     if (!pathname.startsWith("/api/")) {
       const url = req.nextUrl.clone();
-      url.pathname = allowedPrefix;
+      url.pathname = allowedPrefix ?? "/";
       return NextResponse.redirect(url);
     }
   }

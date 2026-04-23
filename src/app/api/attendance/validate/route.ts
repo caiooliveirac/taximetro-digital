@@ -6,7 +6,7 @@ import { validateCode } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { auth } from "@/lib/auth";
-import { sessionHasAnyRole } from "@/lib/roles";
+import { canValidateCheckin } from "@/lib/attendance-permissions";
 import { checkRateLimit } from "@/shared/infra/rate-limit";
 import { isUnifiedShiftCheckout, resolveCheckoutAssignmentIds } from "@/shared/domain/policies/attendance-window-policy";
 import { z } from "zod/v4";
@@ -26,7 +26,7 @@ function normalizeObservation(value?: string) {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!sessionHasAnyRole(session, ["PRECEPTOR", "COORDINATOR"])) {
+  if (!canValidateCheckin(session)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 

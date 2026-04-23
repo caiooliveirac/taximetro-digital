@@ -7,7 +7,8 @@ import { eq, and, isNull, inArray } from "drizzle-orm";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { auth } from "@/lib/auth";
-import { sessionHasAnyRole, tokenHasRole } from "@/lib/roles";
+import { tokenHasRole } from "@/lib/roles";
+import { canConfirmCheckout } from "@/lib/attendance-permissions";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
 import { getShiftLabel } from "@/lib/utils";
@@ -153,7 +154,7 @@ export async function POST(req: NextRequest) {
 // PUT: Preceptor/Coordinator confirms checkout directly (via UI)
 export async function PUT(req: NextRequest) {
   const session = await auth();
-  if (!sessionHasAnyRole(session, ["COORDINATOR", "PRECEPTOR"])) {
+  if (!canConfirmCheckout(session)) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
