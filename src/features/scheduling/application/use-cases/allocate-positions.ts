@@ -141,6 +141,7 @@ export function allocatePositions(input: AllocationInput): {
   matches: Array<{ internId: string; position: AllocPos }>;
   unallocatedInterns: string[];
   remainingPositions: number;
+  remainingPositionsList: AllocPos[];
 } {
   const {
     positions,
@@ -222,7 +223,8 @@ export function allocatePositions(input: AllocationInput): {
 
   const allocatedInterns = new Set(allMatches.map((m) => m.internId));
   const unallocatedInterns = internIds.filter((id) => !allocatedInterns.has(id));
-  const remainingPositions = positionTaken.filter((t) => !t).length;
+  const remainingPositionsList = positions.filter((_, idx) => !positionTaken[idx]);
+  const remainingPositions = remainingPositionsList.length;
 
-  return { matches: allMatches, unallocatedInterns, remainingPositions };
+  return { matches: allMatches, unallocatedInterns, remainingPositions, remainingPositionsList };
 }
