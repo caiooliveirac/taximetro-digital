@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Ambulance, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2 } from "lucide-react";
+import { Ambulance, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/intern", label: "Hoje", icon: ClipboardList },
+  { href: "/intern/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/intern/checkin", label: "Check-in", icon: MapPin },
   { href: "/intern/bases", label: "Bases", icon: Building2 },
   { href: "/intern/ocorrencias", label: "Ocorrências", icon: Stethoscope },
@@ -34,7 +35,7 @@ export default function InternLayout({ children }: { children: React.ReactNode }
       </header>
       <main className="flex-1 bg-background p-4">{children}</main>
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 shadow-[0_-1px_3px_rgba(0,0,0,0.06)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
-        <div className="mx-auto grid max-w-lg grid-cols-6 px-1 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-2">
+        <div className="mx-auto grid max-w-lg grid-cols-7 px-1 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-2">
           {NAV.map((item) => {
             const active = pathname === item.href || (item.href !== "/intern" && pathname.startsWith(`${item.href}/`));
             return (
