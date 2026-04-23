@@ -18,7 +18,7 @@
     "db:demo": "npx tsx src/db/seed.ts && npx tsx src/db/seed-dev.ts",
     "db:clean": "npx tsx src/db/clean-dev.ts",
     "db:reset": "npx tsx src/db/clean-dev.ts && npx tsx src/db/seed.ts && npx tsx src/db/seed-dev.ts",
-    "test": "npx tsx --test tests/**/*.test.ts"
+    "test": "npx tsx --test tests/**/*.test.ts src/features/scheduling/__tests__/*.test.ts"
   },
   "keywords": [],
   "author": "",

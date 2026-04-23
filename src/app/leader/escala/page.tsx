@@ -409,9 +409,18 @@ export default function LeaderEscala() {
     const json = await res.json();
     if (json.success) {
       const d = json.data;
+      const internNameById = new Map(lotteryInterns.map((intern) => [intern.id, intern.name]));
+      const unallocatedList = (d.unallocatedInterns ?? []) as Array<{ internId: string; reasonLabel: string }>;
+      const unallocatedMsg = unallocatedList.length > 0
+        ? ` · Não alocados: ${unallocatedList
+          .slice(0, 5)
+          .map((item) => `${internNameById.get(item.internId) ?? item.internId} (${item.reasonLabel})`)
+          .join(", ")}${unallocatedList.length > 5 ? " ..." : ""}`
+        : "";
       setLotteryMsg(
         `✅ ${d.total} alocações criadas — ${d.internsAllocated}/${d.internsTotal} internos alocados` +
-        (d.remainingPositions > 0 ? ` · ${d.remainingPositions} vagas remanescentes` : " · Sem vagas remanescentes")
+        (d.remainingPositions > 0 ? ` · ${d.remainingPositions} vagas remanescentes` : " · Sem vagas remanescentes") +
+        unallocatedMsg
       );
       await load();
     } else {

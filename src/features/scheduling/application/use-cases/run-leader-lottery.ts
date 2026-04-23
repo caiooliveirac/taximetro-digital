@@ -9,6 +9,7 @@ import {
   insertLotteryAssignments,
 } from "@/features/scheduling/infra/repositories/lottery-repository";
 import { allocatePositions, type AllocPos } from "./allocate-positions";
+import { buildUnallocatedDiagnostics } from "./lottery-diagnostics";
 
 /**
  * Base priority for the lottery (DAY shifts fill first, then in this order).
@@ -36,6 +37,18 @@ export type LeaderLotteryActor = {
   isImpersonating: boolean;
   realUserId: string | null;
 };
+
+type SlotRuleLite = {
+  baseType: string;
+  period: string;
+};
+
+export function shouldIncludeRuleInLottery(rule: SlotRuleLite, isEbmsp: boolean) {
+  // Lottery sorteia apenas USA (intervenção).
+  // Exceção: EBMSP usa CENTRAL no período DAY por split MORNING/AFTERNOON.
+  const isCentralDay = rule.period === "DAY" && rule.baseType === "CENTRAL";
+  return rule.baseType === "USA" || (isEbmsp && isCentralDay);
+}
 
 export async function executeRunLeaderLottery(params: {
   actor: LeaderLotteryActor;
@@ -87,14 +100,8 @@ export async function executeRunLeaderLottery(params: {
     const dateStr = weekDates[dayIdx];
     if (!dateStr) continue;
 
-    // Lottery sorteia apenas USA (intervenção). CRU/CRL são alocados
-    // manualmente ou via CRU fixo semanal — nunca no sorteio.
-    // Exceção: EBMSP usa CENTRAL (CRU) como parte da rotação normal via split MORNING/AFTERNOON.
-    const isCentralDay = rule.period === "DAY" && rule.baseType === "CENTRAL";
-    const shouldSortEbmspCentral = isEbmsp && isCentralDay;
-    const shouldSkipRule = rule.baseType !== "USA" && !shouldSortEbmspCentral;
-
-    if (shouldSkipRule) continue;
+    const shouldSortRule = shouldIncludeRuleInLottery(rule, isEbmsp);
+    if (!shouldSortRule) continue;
 
     const filled = existing.filter(
       (assignment) => assignment.baseId === rule.baseId && assignment.date === dateStr && assignment.period === rule.period,
@@ -102,7 +109,7 @@ export async function executeRunLeaderLottery(params: {
 
     const openCount = rule.capacity - filled;
 
-    if (shouldSortEbmspCentral) {
+    if (isEbmsp && rule.period === "DAY" && rule.baseType === "CENTRAL") {
       const morningCount = Math.ceil(openCount / 2);
       const afternoonCount = openCount - morningCount;
       for (let j = 0; j < morningCount; j++) {
@@ -172,7 +179,7 @@ export async function executeRunLeaderLottery(params: {
     existingShiftCount.set(assignment.internId, (existingShiftCount.get(assignment.internId) ?? 0) + 1);
   }
 
-  const { matches, remainingPositions: remainingPos } = allocatePositions({
+  const { matches, unallocatedInterns, remainingPositions: remainingPos, remainingPositionsList } = allocatePositions({
     positions,
     internIds: shuffled,
     maxShifts: input.maxShifts,
@@ -211,6 +218,15 @@ export async function executeRunLeaderLottery(params: {
   }
 
   const internsAllocated = new Set(toCreate.map((item) => item.internId)).size;
+  const unallocatedDiagnostics = buildUnallocatedDiagnostics({
+    unallocatedInternIds: unallocatedInterns,
+    remainingPositions: remainingPositionsList,
+    maxShifts: input.maxShifts,
+    isEbmsp,
+    existingUsaShiftCount: existingShiftCount,
+    usedSlots,
+    cruBlocked,
+  });
 
   return {
     status: 200,
@@ -223,6 +239,8 @@ export async function executeRunLeaderLottery(params: {
         internsAllocated,
         internsTotal: safeIds.length,
         remainingPositions: remainingPos,
+        unallocatedInterns: unallocatedDiagnostics.items,
+        unallocatedSummary: unallocatedDiagnostics.summary,
       },
     },
   } as const;
