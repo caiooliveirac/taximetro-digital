@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
-import { addDaysToDateStr, formatBrazilTime, getBrazilNowParts, getShiftShortLabel, isCurrentOperationalAssignment, isWithinAttendanceWindow, localDateStr } from "@/lib/utils";
+import { formatBrazilTime, getBrazilNowParts, getShiftShortLabel, isCurrentOperationalAssignment, isWithinAttendanceWindow, localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -72,6 +72,13 @@ function shiftOrder(shift?: string | null): number {
   return 99;
 }
 
+function formatMonthLabel(dateStr: string): string {
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function isDayShiftVisibleNow(assignment: Assignment, nowDate: string, nowHour: number): boolean {
   return assignment.period === "DAY"
     && (assignment.shift === "MORNING" || assignment.shift === "AFTERNOON")
@@ -90,11 +97,10 @@ export default function InternHoje() {
 
   const today = localDateStr();
   const nowHour = getBrazilNowParts().hour;
-  const futureEnd = addDaysToDateStr(today, 14);
 
   useEffect(() => {
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${today}&to=${futureEnd}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      fetch(`/taximetro/api/assignments?from=${today}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/slots/available?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/attendance/current").then((r) => r.json()).catch(() => ({ success: false, data: null })),
@@ -126,7 +132,15 @@ export default function InternHoje() {
         setUpcoming(
           active
             .filter((a: Assignment) => !actionableIds.has(a.id) && (a.date > today || a.date === today))
-            .slice(0, 5),
+            .sort((a: Assignment, b: Assignment) => {
+              const byDate = a.date.localeCompare(b.date);
+              if (byDate !== 0) return byDate;
+
+              const byShift = shiftOrder(a.shift) - shiftOrder(b.shift);
+              if (byShift !== 0) return byShift;
+
+              return a.baseCode.localeCompare(b.baseCode, "pt-BR");
+            }),
         );
       } else {
         setError("Não foi possível carregar seus plantões.");
@@ -158,6 +172,12 @@ export default function InternHoje() {
   const weeklyOnTrack = weekly ? weeklyEffective >= weekly.targetShiftsPerWeek : false;
   const pendingCheckout = checkoutStatus?.state === "PENDING" || checkoutStatus?.state === "AWAITING" ? checkoutStatus : null;
   const completedCheckout = checkoutStatus?.state === "COMPLETED" ? checkoutStatus : null;
+  const upcomingByMonth = upcoming.reduce<Record<string, Assignment[]>>((acc, assignment) => {
+    const monthLabel = formatMonthLabel(assignment.date);
+    if (!acc[monthLabel]) acc[monthLabel] = [];
+    acc[monthLabel].push(assignment);
+    return acc;
+  }, {});
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
@@ -325,32 +345,45 @@ export default function InternHoje() {
       {/* Upcoming assignments */}
       {upcoming.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
             <h2 className="text-sm font-semibold text-slate-900">Próximos Plantões</h2>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+              {upcoming.length} total
+            </span>
           </div>
-          <div className="space-y-1.5">
-            {upcoming.map((a) => {
-              const bs = getBaseStyle(a.baseType);
-              const ps = getPeriodStyle(a.period);
-              return (
-                <div key={a.id} className={`flex items-center gap-3 rounded-lg border bg-white px-4 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] ${bs.border}`}>
-                  <span className={`inline-block h-2 w-2 rounded-full ${bs.dot}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900">{a.baseCode} — {a.baseName}</p>
-                    <p className="text-xs text-slate-500">
-                      {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                    </p>
-                  </div>
-                  <div className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ${ps.bg} ${ps.text}`}>
-                    {a.period === "DAY"
-                      ? <Sun className="h-3 w-3" strokeWidth={1.5} />
-                      : <Moon className="h-3 w-3" strokeWidth={1.5} />}
-                    {a.shift ? getShiftShortLabel(a.shift) : ps.label}
-                  </div>
+          <div className="space-y-3">
+            {Object.entries(upcomingByMonth).map(([monthLabel, assignments]) => (
+              <div key={monthLabel} className="space-y-1.5">
+                <div className="flex items-center justify-between px-1">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{monthLabel}</h3>
+                  <span className="text-[11px] font-medium text-slate-400">{assignments.length}</span>
                 </div>
-              );
-            })}
+                {assignments.map((a) => {
+                  const bs = getBaseStyle(a.baseType);
+                  const ps = getPeriodStyle(a.period);
+                  return (
+                    <div key={a.id} className={`flex items-center gap-3 rounded-lg border bg-white px-4 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] ${bs.border}`}>
+                      <span className={`inline-block h-2 w-2 rounded-full ${bs.dot}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900">{a.baseCode} — {a.baseName}</p>
+                        <p className="text-xs text-slate-500">
+                          {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                        </p>
+                      </div>
+                      <div className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ${ps.bg} ${ps.text}`}>
+                        {a.period === "DAY"
+                          ? <Sun className="h-3 w-3" strokeWidth={1.5} />
+                          : <Moon className="h-3 w-3" strokeWidth={1.5} />}
+                        {a.shift ? getShiftShortLabel(a.shift) : ps.label}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       )}
