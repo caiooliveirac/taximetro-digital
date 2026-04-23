@@ -42,6 +42,17 @@ function extractRoles(raw: unknown): SessionRole[] {
   return out;
 }
 
+function extractRolesWithFallback(rawRoles: unknown, fallbackRole: unknown): SessionRole[] {
+  const roles = extractRoles(rawRoles);
+  if (roles.length > 0) return roles;
+
+  if (typeof fallbackRole === "string" && VALID_ROLES.has(fallbackRole as Role)) {
+    return [{ role: fallbackRole as Role, facultyId: null, baseId: null }];
+  }
+
+  return [];
+}
+
 function matches(role: Role, target: Role, rawEntry: SessionRole, scope?: { facultyId?: string; baseId?: string }): boolean {
   if (role !== target) return false;
   if (!scope) return true;
@@ -71,7 +82,8 @@ export function sessionHasRole(
   role: Role,
   scope?: { facultyId?: string; baseId?: string },
 ): boolean {
-  const roles = extractRoles((session?.user as { roles?: unknown } | undefined)?.roles);
+  const user = session?.user as { roles?: unknown; role?: unknown } | undefined;
+  const roles = extractRolesWithFallback(user?.roles, user?.role);
   if (roles.length === 0) return false;
   return roles.some((entry) => matches(entry.role, role, entry, scope));
 }
@@ -85,7 +97,8 @@ export function tokenHasRole(
   role: Role,
   scope?: { facultyId?: string; baseId?: string },
 ): boolean {
-  const roles = extractRoles((token as { roles?: unknown } | null | undefined)?.roles);
+  const raw = token as { roles?: unknown; role?: unknown } | null | undefined;
+  const roles = extractRolesWithFallback(raw?.roles, raw?.role);
   if (roles.length === 0) return false;
   return roles.some((entry) => matches(entry.role, role, entry, scope));
 }

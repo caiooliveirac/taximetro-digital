@@ -130,3 +130,16 @@ test("tokenHasRole: mesma semântica de sessionHasRole", () => {
   assert.equal(tokenHasRole(undefined, "INTERN"), false);
   assert.equal(tokenHasRole(fakeToken([]), "INTERN"), false);
 });
+
+test("Legacy fallback: token.role=INTERN sem roles[] ainda autoriza check-in", () => {
+  const legacyToken = { id: "u1", role: "INTERN" } as unknown as JWT;
+  assert.equal(tokenHasRole(legacyToken, "INTERN"), true);
+  assert.equal(tokenHasRole(legacyToken, "PRECEPTOR"), false);
+});
+
+test("Legacy fallback: session.user.role=INTERN sem roles[] ainda autoriza", () => {
+  const legacySession = { user: { id: "u1", role: "INTERN" } } as unknown as Session;
+  assert.equal(sessionHasRole(legacySession, "INTERN"), true);
+  assert.equal(sessionHasAnyRole(legacySession, ["INTERN", "LEADER"]), true);
+  assert.equal(sessionHasAnyRole(legacySession, ["PRECEPTOR", "COORDINATOR"]), false);
+});
