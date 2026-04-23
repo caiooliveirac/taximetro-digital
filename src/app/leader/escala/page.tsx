@@ -172,7 +172,7 @@ export default function LeaderEscala() {
   const [cruFixed, setCruFixed] = useState<CruFixed[]>([]);
   const [cruFixedAdd, setCruFixedAdd] = useState<{ dayOfWeek: string; period: "DAY" | "NIGHT" } | null>(null);
   const [cruFixedInternId, setCruFixedInternId] = useState("");
-  const [cruFixedWeeks, setCruFixedWeeks] = useState(6);
+  const [cruFixedWeeks, setCruFixedWeeks] = useState<number | null>(null);
   const [cruFixedLoading, setCruFixedLoading] = useState(false);
   const [cruFixedMsg, setCruFixedMsg] = useState("");
   const [cruGenMsg, setCruGenMsg] = useState("");
@@ -518,7 +518,8 @@ export default function LeaderEscala() {
 
   /* ── CRU fixed handlers ── */
   async function addCruFixed() {
-    if (!cruFixedAdd || !cruFixedInternId) return;
+    if (!cruFixedAdd || !cruFixedInternId || !cruFixedWeeks) return;
+    const selectedWeeks = cruFixedWeeks;
     setCruFixedLoading(true);
     setCruFixedMsg("");
     try {
@@ -529,7 +530,7 @@ export default function LeaderEscala() {
           internId: cruFixedInternId,
           dayOfWeek: cruFixedAdd.dayOfWeek,
           period: cruFixedAdd.period,
-          weeks: cruFixedWeeks,
+          weeks: selectedWeeks,
         }),
       });
       const json = await res.json();
@@ -553,7 +554,7 @@ export default function LeaderEscala() {
             internId: cruFixedInternId,
             dayOfWeek: cruFixedAdd.dayOfWeek,
             period: cruFixedAdd.period,
-            weeks: cruFixedWeeks,
+            weeks: selectedWeeks,
             conflicts: forceable,
           });
         } else {
@@ -1230,7 +1231,7 @@ export default function LeaderEscala() {
                       );
                     })}
                     <button
-                      onClick={() => { setCruFixedAdd({ dayOfWeek: dow, period: "DAY" }); setCruFixedInternId(""); setCruFixedWeeks(6); setCruFixedMsg(""); }}
+                      onClick={() => { setCruFixedAdd({ dayOfWeek: dow, period: "DAY" }); setCruFixedInternId(""); setCruFixedWeeks(null); setCruFixedMsg(""); }}
                       className="rounded px-1 py-0.5 text-[10px] text-violet-400 hover:bg-violet-50 hover:text-violet-600 transition w-full flex items-center justify-center gap-0.5"
                     >
                       <Plus className="h-3 w-3" /> Adicionar
@@ -1268,7 +1269,7 @@ export default function LeaderEscala() {
                       );
                     })}
                     <button
-                      onClick={() => { setCruFixedAdd({ dayOfWeek: dow, period: "NIGHT" }); setCruFixedInternId(""); setCruFixedWeeks(6); setCruFixedMsg(""); }}
+                      onClick={() => { setCruFixedAdd({ dayOfWeek: dow, period: "NIGHT" }); setCruFixedInternId(""); setCruFixedWeeks(null); setCruFixedMsg(""); }}
                       className="rounded px-1 py-0.5 text-[10px] text-violet-400 hover:bg-violet-50 hover:text-violet-600 transition w-full flex items-center justify-center gap-0.5"
                     >
                       <Plus className="h-3 w-3" /> Adicionar
@@ -1667,6 +1668,9 @@ export default function LeaderEscala() {
                     </button>
                   ))}
                 </div>
+                {!cruFixedWeeks && (
+                  <p className="mt-1 text-xs text-amber-700">Selecione quantas semanas devem ser ocupadas a partir da semana atual.</p>
+                )}
               </div>
               {cruFixedMsg && <p className="text-sm">{cruFixedMsg}</p>}
             </div>
@@ -1679,7 +1683,7 @@ export default function LeaderEscala() {
               </button>
               <button
                 onClick={addCruFixed}
-                disabled={cruFixedLoading || !cruFixedInternId}
+                disabled={cruFixedLoading || !cruFixedInternId || !cruFixedWeeks}
                 className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-bold text-white hover:bg-violet-700 transition disabled:opacity-50"
               >
                 {cruFixedLoading ? "Salvando..." : "Confirmar"}

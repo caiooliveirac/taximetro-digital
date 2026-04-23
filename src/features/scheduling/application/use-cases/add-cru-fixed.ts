@@ -3,6 +3,7 @@ import { cancelCruFixedAssignments, materializeCruFixedAssignments } from "@/lib
 import { localDateStr } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { DOW, canManageCruFixed, type SchedulingActor } from "@/features/scheduling/application/use-cases/cru-fixed-shared";
+import { computeCruFixedWeeksWindow } from "@/features/scheduling/application/use-cases/cru-fixed-weeks-window";
 import {
   deactivateCruFixedTemplateForFaculty,
   findCruFixedTemplate,
@@ -15,7 +16,7 @@ export const addCruFixedSchema = z.object({
   internId: z.string().uuid(),
   dayOfWeek: z.enum(DOW),
   period: z.enum(["DAY", "NIGHT"]),
-  weeks: z.number().int().min(1).max(24).default(6),
+  weeks: z.number().int().min(1).max(24),
   /** IDs dos assignments conflitantes que o líder autorizou cancelar para liberar a CRU */
   forceConflictIds: z.array(z.string().uuid()).optional(),
 });
@@ -39,9 +40,10 @@ export async function executeAddCruFixed(params: {
     return { status: 400, body: { success: false, error: "Interno não pertence à sua faculdade" } } as const;
   }
 
-  const validUntil = new Date();
-  validUntil.setDate(validUntil.getDate() + input.weeks * 7);
-  const validUntilStr = validUntil.toISOString().split("T")[0]!;
+  const { startDate, validUntil } = computeCruFixedWeeksWindow({
+    today: localDateStr(),
+    weeks: input.weeks,
+  });
 
   try {
     const actorUserId = actor.realUserId ?? actor.id;
@@ -59,13 +61,13 @@ export async function executeAddCruFixed(params: {
       dayOfWeek: input.dayOfWeek,
       period: input.period,
       createdBy: actorUserId,
-      validUntil: validUntilStr,
+      validUntil,
     });
 
     const sync = await materializeCruFixedAssignments({
       facultyId: actor.facultyId!,
-      startDate: localDateStr(),
-      endDate: validUntilStr,
+      startDate,
+      endDate: validUntil,
       actorUserId,
       templateIds: templateId ? [templateId] : undefined,
       forceConflictIds: input.forceConflictIds,
