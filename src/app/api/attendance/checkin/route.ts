@@ -10,7 +10,7 @@ import { logAudit } from "@/lib/audit";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
 import { validateShiftClockIn } from "@/lib/utils";
 import { tokenHasRole } from "@/lib/roles";
-import { canStartCheckin } from "@/lib/attendance-permissions";
+import { canStartOwnedAssignmentCheckin } from "@/lib/attendance-permissions";
 import { z } from "zod/v4";
 
 const checkinSchema = z.object({
@@ -30,13 +30,6 @@ export async function POST(req: NextRequest) {
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const impersonating = isImpersonating(req, token);
-
-  // Guard: real user must have INTERN role ativa, OU estar impersonando (COORDINATOR já
-  // vetado por impersonate.ts). Isto é o guard novo do Corte A: bloqueia LEADER-puro
-  // (sem INTERN) de iniciar check-in próprio, mantendo o fluxo de impersonation.
-  if (!canStartCheckin(token, impersonating)) {
-    return NextResponse.json({ success: false, error: "Apenas internos fazem check-in" }, { status: 403 });
-  }
 
   const effectiveInternId = impersonating
     ? (req.cookies.get("x-impersonate-user")?.value || req.headers.get("x-impersonate-user"))!
@@ -59,6 +52,10 @@ export async function POST(req: NextRequest) {
     .from(assignments)
     .where(and(eq(assignments.id, assignmentId), eq(assignments.internId, effectiveInternId)))
     .limit(1);
+
+  if (!canStartOwnedAssignmentCheckin({ token, impersonating, ownsAssignment: Boolean(assignment) })) {
+    return NextResponse.json({ success: false, error: "Apenas internos fazem check-in" }, { status: 403 });
+  }
 
   if (!assignment) return NextResponse.json({ success: false, error: "Plantão não encontrado para este interno." }, { status: 404 });
 

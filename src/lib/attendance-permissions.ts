@@ -7,6 +7,16 @@ export function canStartCheckin(token: JWT | null | undefined, impersonating: bo
   return tokenHasRole(token, "INTERN");
 }
 
+export function canStartOwnedAssignmentCheckin(input: {
+  token: JWT | null | undefined;
+  impersonating: boolean;
+  ownsAssignment: boolean;
+}): boolean {
+  if (input.impersonating) return true;
+  if (input.ownsAssignment) return true;
+  return tokenHasRole(input.token, "INTERN");
+}
+
 export function canValidateCheckin(session: Session | null | undefined): boolean {
   return sessionHasAnyRole(session, ["PRECEPTOR", "COORDINATOR"]);
 }
