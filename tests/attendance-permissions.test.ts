@@ -4,6 +4,7 @@ import type { Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import {
   canConfirmCheckout,
+  canStartOwnedAssignmentCheckin,
   canStartCheckin,
   canValidateCheckin,
 } from "../src/lib/attendance-permissions";
@@ -35,6 +36,16 @@ test("check-in: LEADER puro nao consegue iniciar (sem impersonation)", () => {
 test("check-in: coordinator impersonando sempre consegue", () => {
   const token = fakeToken(["COORDINATOR"]);
   assert.equal(canStartCheckin(token, true), true);
+});
+
+test("check-in owned-assignment: LEADER com claim inconsistente mas dono do plantão consegue", () => {
+  const token = fakeToken(["LEADER"]);
+  assert.equal(canStartOwnedAssignmentCheckin({ token, impersonating: false, ownsAssignment: true }), true);
+});
+
+test("check-in owned-assignment: LEADER sem claim INTERN e sem plantão próprio continua bloqueado", () => {
+  const token = fakeToken(["LEADER"]);
+  assert.equal(canStartOwnedAssignmentCheckin({ token, impersonating: false, ownsAssignment: false }), false);
 });
 
 test("validate: PRECEPTOR+LEADER consegue validar", () => {
