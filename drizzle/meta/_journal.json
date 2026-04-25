@@ -8,6 +8,13 @@
       "when": 1774046947994,
       "tag": "0000_warm_colonel_america",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777126914589,
+      "tag": "0001_rotation_transitions",
+      "breakpoints": true
     }
   ]
 }

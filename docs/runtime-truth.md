@@ -59,6 +59,7 @@ Jobs oficiais:
 - Backup diario de banco
   - Script: [scripts/daily-db-backup.mjs](../scripts/daily-db-backup.mjs)
   - Schedule default: `37 3 * * *`
+  - Destinos suportados: disco local, anexo por e-mail e upload opcional para S3/AWS
 - Lembrete Telegram de check-in pendente
   - Script: [scripts/trigger-telegram-checkin-pending-reminder.mjs](../scripts/trigger-telegram-checkin-pending-reminder.mjs)
   - Schedule default: `0 8,9 * * *`

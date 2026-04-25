@@ -295,3 +295,18 @@ export const cruFixedAssignments = pgTable("cru_fixed_assignments", {
   uniqueIndex("uq_cru_fixed").on(t.internId, t.dayOfWeek, t.period),
   index("idx_cru_fixed_faculty").on(t.facultyId),
 ]);
+
+// Rotation transitions — explicit start/end dates per faculty
+// Fixes: rotation boundary cutoff (e.g., Bruna Bastos missing CRU)
+export const rotationTransitions = pgTable("rotation_transitions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  facultyId: uuid("faculty_id").notNull().references(() => faculties.id),
+  rotationNumber: integer("rotation_number").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  label: varchar("label", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_rotation_per_faculty").on(t.facultyId, t.rotationNumber),
+  index("idx_rotation_faculty").on(t.facultyId),
+]);
