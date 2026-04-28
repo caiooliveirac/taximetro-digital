@@ -2,11 +2,29 @@ import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { ROLE_PREFIX, canAccessPathWithRoles, extractRoleNames } from "@/lib/role-access-policy";
 
+const APP_BASE_PATH = "/taximetro";
 const PUBLIC_PATHS = ["/login", "/esqueci-senha", "/redefinir-senha", "/api/auth", "/api/telegram", "/registro", "/api/registro", "/api/health"];
 const FORCE_PASSWORD_CHANGE_PATH = "/trocar-senha";
 
+function stripBasePath(pathname: string) {
+  if (pathname === APP_BASE_PATH) return "/";
+  if (pathname.startsWith(`${APP_BASE_PATH}/`)) {
+    return pathname.slice(APP_BASE_PATH.length);
+  }
+  return pathname;
+}
+
+function withDetectedBasePath(rawPathname: string, targetPathname: string) {
+  if (rawPathname === APP_BASE_PATH || rawPathname.startsWith(`${APP_BASE_PATH}/`)) {
+    if (targetPathname === "/") return APP_BASE_PATH;
+    return `${APP_BASE_PATH}${targetPathname}`;
+  }
+  return targetPathname;
+}
+
 export async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const rawPathname = req.nextUrl.pathname;
+  const pathname = stripBasePath(rawPathname);
 
   // Allow public paths
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
@@ -30,7 +48,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
     }
     const url = req.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = withDetectedBasePath(rawPathname, "/login");
     return NextResponse.redirect(url);
   }
 
@@ -42,15 +60,19 @@ export async function middleware(req: NextRequest) {
   if (mustChangePassword && pathname !== FORCE_PASSWORD_CHANGE_PATH && !pathname.startsWith(`${FORCE_PASSWORD_CHANGE_PATH}/`) && pathname !== "/api/auth/change-password") {
     if (!pathname.startsWith("/api/")) {
       const url = req.nextUrl.clone();
-      url.pathname = FORCE_PASSWORD_CHANGE_PATH;
+      url.pathname = withDetectedBasePath(rawPathname, FORCE_PASSWORD_CHANGE_PATH);
       return NextResponse.redirect(url);
     }
   }
 
   if (!mustChangePassword && (pathname === FORCE_PASSWORD_CHANGE_PATH || pathname.startsWith(`${FORCE_PASSWORD_CHANGE_PATH}/`))) {
     const url = req.nextUrl.clone();
-    url.pathname = allowedPrefix ?? "/";
+    url.pathname = withDetectedBasePath(rawPathname, allowedPrefix ?? "/");
     return NextResponse.redirect(url);
+  }
+
+  if (mustChangePassword && (pathname === FORCE_PASSWORD_CHANGE_PATH || pathname.startsWith(`${FORCE_PASSWORD_CHANGE_PATH}/`))) {
+    return NextResponse.next();
   }
 
   // Root page → let page.tsx handle
@@ -62,7 +84,7 @@ export async function middleware(req: NextRequest) {
   if (!canAccessPathWithRoles(pathname, role, roles)) {
     if (!pathname.startsWith("/api/")) {
       const url = req.nextUrl.clone();
-      url.pathname = allowedPrefix ?? "/";
+      url.pathname = withDetectedBasePath(rawPathname, allowedPrefix ?? "/");
       return NextResponse.redirect(url);
     }
   }

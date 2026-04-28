@@ -486,6 +486,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [filterFaculty, setFilterFaculty] = useState("");
     const [filterDayKey, setFilterDayKey] = useState<"" | (typeof DAYS)[number]>("");
     const [filterPeriod, setFilterPeriod] = useState<"" | "DAY" | "NIGHT">("");
+    const [filterMissingCheckin, setFilterMissingCheckin] = useState(false);
     const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
     const [allocation, setAllocation] = useState<AllocationState | null>(null);
     const [focusedPeriod, setFocusedPeriod] = useState<PeriodFocusState | null>(null);
@@ -527,6 +528,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const today = localDateStr();
     const isRegulationScope = scope === "cru" || scope === "crl";
     const hasInternSearch = searchIntern.trim().length > 0;
+    const hasStrictContentFilter = hasInternSearch || filterMissingCheckin;
     const hidesNight = scope === "crl";
     const scopePeriods: Array<"DAY" | "NIGHT"> = hidesNight ? ["DAY"] : PERIODS;
     const filteredWeekDates = useMemo(
@@ -625,19 +627,25 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             if (filterBase && assignment.base_id !== filterBase) return false;
             if (filterFaculty && assignment.faculty_id !== filterFaculty) return false;
             if (filterPeriod && assignment.period !== filterPeriod) return false;
+            if (
+                filterMissingCheckin
+                && !(assignment.status === "ABSENT" || (isPendingStatus(assignment.status) && assignment.date <= today))
+            ) return false;
             if (internQuery && !assignment.intern_name.toLowerCase().includes(internQuery)) return false;
             return true;
         });
-    }, [assignments, filterBase, filterFaculty, filterPeriod, searchIntern]);
+    }, [assignments, filterBase, filterFaculty, filterMissingCheckin, filterPeriod, searchIntern, today]);
 
     const filteredRules = useMemo(() => {
+        if (filterMissingCheckin) return [];
+
         return rules.filter((rule) => {
             if (filterBase && rule.baseId !== filterBase) return false;
             if (filterFaculty && rule.facultyId !== filterFaculty) return false;
             if (filterPeriod && rule.period !== filterPeriod) return false;
             return true;
         });
-    }, [filterBase, filterFaculty, filterPeriod, rules]);
+    }, [filterBase, filterFaculty, filterMissingCheckin, filterPeriod, rules]);
 
     const cruConflicts = useMemo(() => {
         const blocked = new Set<string>();
@@ -678,7 +686,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             const dayKey = getDayKey(date);
             const rulesForDay = filteredRules.filter((rule) => rule.baseId === base.id && rule.dayOfWeek === dayKey);
             const assignmentsForDay = assignmentsByBaseDate.get(`${base.id}|${date}`) ?? [];
-            if (isRegulationScope && hasInternSearch) {
+            if (isRegulationScope && hasStrictContentFilter) {
                 return assignmentsForDay.length > 0;
             }
             return rulesForDay.length > 0 || assignmentsForDay.length > 0;
@@ -695,7 +703,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         return bases
             .filter((base) => matchesScope(base))
             .filter((base) => !filterBase || base.id === filterBase)
-            .filter((base) => (hasInternSearch ? hasContent(base) : true))
+            .filter((base) => (hasStrictContentFilter ? hasContent(base) : true))
             .sort((left, right) => {
                 if (left.type !== right.type) {
                     const rank = (type: Base["type"]) => (type === "USA" ? 0 : type === "CENTRAL" ? 1 : 2);
@@ -703,7 +711,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 }
                 return baseViewIndex(left.code) - baseViewIndex(right.code) || left.code.localeCompare(right.code);
             });
-    }, [assignmentsByBaseDate, bases, filterBase, filteredRules, filteredWeekDates, hasInternSearch, isRegulationScope, scope]);
+    }, [assignmentsByBaseDate, bases, filterBase, filteredRules, filteredWeekDates, hasStrictContentFilter, isRegulationScope, scope]);
 
     const usaBases = visibleBases.filter((base) => base.type === "USA");
     const regulationBases = visibleBases.filter((base) => base.type !== "USA");
@@ -798,7 +806,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
         const paddedSlots: VisiblePeriodGridSlot[] = [...visibleSlots];
 
-        while (!hasInternSearch && paddedSlots.length < visibleLimit) {
+        while (!hasStrictContentFilter && paddedSlots.length < visibleLimit) {
             paddedSlots.push({
                 kind: "open",
                 key: `${base.id}|${date}|${period}|open-${paddedSlots.length + 1}`,
@@ -820,7 +828,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             overflowCount: hiddenSlots.length,
             hiddenHasVacancy: hiddenSlots.some((slot) => slot.kind === "vacancy"),
         };
-    }, [getPeriodSlots, hasInternSearch]);
+    }, [getPeriodSlots, hasStrictContentFilter]);
 
     const focusedPeriodBase = useMemo(
         () => (focusedPeriod ? bases.find((base) => base.id === focusedPeriod.baseId) ?? null : null),
@@ -1306,6 +1314,15 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             <Moon className="h-3.5 w-3.5 text-current" strokeWidth={1.5} /> Noturno
                         </button>
                     )}
+                    <span className="mx-1 text-slate-300">|</span>
+                    <button
+                        type="button"
+                        onClick={() => setFilterMissingCheckin((current) => !current)}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 transition-all ${filterMissingCheckin ? "bg-red-700 font-semibold text-white shadow-[0_10px_18px_rgba(127,29,29,0.24)] scale-105" : "border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"}`}
+                        title="Mostrar apenas plantões sem check-in validado ou com falta"
+                    >
+                        <AlertTriangle className="h-3.5 w-3.5" strokeWidth={1.7} /> Ausência / sem check-in
+                    </button>
                 </div>
             </div>
 
