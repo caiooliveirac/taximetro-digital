@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Ambulance, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays } from "lucide-react";
+import { Ambulance, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -14,6 +14,7 @@ const NAV = [
   { href: "/intern/ocorrencias", label: "Ocorrências", icon: Stethoscope },
   { href: "/intern/trocas", label: "Trocas", icon: ArrowLeftRight },
   { href: "/intern/historico", label: "Histórico", icon: BarChart3 },
+  { href: "/intern/extras", label: "Extras", icon: Zap },
 ];
 
 export default function InternLayout({ children }: { children: React.ReactNode }) {
@@ -35,7 +36,7 @@ export default function InternLayout({ children }: { children: React.ReactNode }
       </header>
       <main className="flex-1 bg-background p-4">{children}</main>
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 shadow-[0_-1px_3px_rgba(0,0,0,0.06)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
-        <div className="mx-auto grid max-w-lg grid-cols-7 px-1 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-2">
+        <div className="mx-auto grid max-w-lg grid-cols-8 px-1 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-2">
           {NAV.map((item) => {
             const active = pathname === item.href || (item.href !== "/intern" && pathname.startsWith(`${item.href}/`));
             return (
