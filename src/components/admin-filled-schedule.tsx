@@ -171,11 +171,10 @@ function normalizeDateInput(value: string) {
 
 function resolveApiUrl(path: string) {
     if (typeof window === "undefined") return path;
-    try {
-        return new URL(path, window.location.href).toString();
-    } catch {
-        return path;
-    }
+    const origin = window.location.origin;
+    if (!origin || origin === "null") return path;
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return `${origin}${normalizedPath}`;
 }
 
 function formatPeriod(period: "DAY" | "NIGHT", shift?: string | null) {
