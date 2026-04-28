@@ -159,6 +159,16 @@ function formatDayMonth(date: string) {
     return new Date(`${normalizedDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+function normalizeDateInput(value: string) {
+    const trimmed = value.trim();
+    const ymd = trimmed.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+    if (ymd) return ymd;
+
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return trimmed;
+    return parsed.toISOString().slice(0, 10);
+}
+
 function formatPeriod(period: "DAY" | "NIGHT", shift?: string | null) {
     if (shift === "MORNING") return "Manhã";
     if (shift === "AFTERNOON") return "Tarde";
@@ -951,14 +961,15 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setPublishExtraLoading(true);
         setPublishExtraMessage(null);
         try {
+            const normalizedDate = normalizeDateInput(publishExtraSlot.date);
             const response = await fetch("/taximetro/api/extra-offers", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     baseId: publishExtraSlot.baseId,
-                    date: publishExtraSlot.date,
+                    date: normalizedDate,
                     period: publishExtraSlot.period,
-                    facultyId: publishExtraSlot.facultyId ?? null,
+                    facultyId: publishExtraSlot.facultyId || null,
                     notes: publishExtraNotes || null,
                 }),
             });
@@ -967,7 +978,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             setPublishExtraMessage({ type: "success", text: "Plantão extra publicado no board!" });
             setTimeout(() => setPublishExtraSlot(null), 1200);
         } catch (error) {
-            setPublishExtraMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao publicar extra" });
+            const text = error instanceof Error ? error.message : "Erro ao publicar extra";
+            setPublishExtraMessage({ type: "error", text: /expected pattern/i.test(text) ? "Data inválida para publicação. Tente selecionar novamente." : text });
         } finally {
             setPublishExtraLoading(false);
         }
