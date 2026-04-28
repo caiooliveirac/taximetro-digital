@@ -296,6 +296,29 @@ export const cruFixedAssignments = pgTable("cru_fixed_assignments", {
   index("idx_cru_fixed_faculty").on(t.facultyId),
 ]);
 
+// Extra shift offers — public board for first-come-first-served claiming
+// Published by COORDINATOR/LEADER; claimed by INTERN/LEADER
+export const extraShiftOffers = pgTable("extra_shift_offers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  baseId: uuid("base_id").notNull().references(() => bases.id),
+  date: date("date").notNull(),
+  period: shiftPeriodEnum("period").notNull(),
+  shift: varchar("shift", { length: 15 }),
+  facultyId: uuid("faculty_id").references(() => faculties.id),
+  notes: text("notes"),
+  publishedBy: uuid("published_by").notNull().references(() => users.id),
+  publishedAt: timestamp("published_at").defaultNow().notNull(),
+  claimedBy: uuid("claimed_by").references(() => users.id),
+  claimedAt: timestamp("claimed_at"),
+  assignmentId: uuid("assignment_id").references(() => assignments.id),
+  cancelledAt: timestamp("cancelled_at"),
+  cancelledBy: uuid("cancelled_by").references(() => users.id),
+}, (t) => [
+  index("idx_extra_offer_date").on(t.date),
+  index("idx_extra_offer_base").on(t.baseId),
+  index("idx_extra_offer_claimed_by").on(t.claimedBy),
+]);
+
 // Rotation transitions — explicit start/end dates per faculty
 // Fixes: rotation boundary cutoff (e.g., Bruna Bastos missing CRU)
 export const rotationTransitions = pgTable("rotation_transitions", {

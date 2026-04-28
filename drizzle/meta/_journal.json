@@ -15,6 +15,13 @@
       "when": 1777126914589,
       "tag": "0001_rotation_transitions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777400000000,
+      "tag": "0014_extra_shift_offers",
+      "breakpoints": true
     }
   ]
 }
