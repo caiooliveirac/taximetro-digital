@@ -37,6 +37,15 @@ function normalizeDateInput(value: string) {
   return parsed.toISOString().slice(0, 10);
 }
 
+function resolveApiUrl(path: string) {
+  if (typeof window === "undefined") return path;
+  try {
+    return new URL(path, window.location.href).toString();
+  } catch {
+    return path;
+  }
+}
+
 /* ═══════════ Helpers ═══════════ */
 
 function formatDate(date: string) {
@@ -88,7 +97,7 @@ export default function LeaderExtrasPage() {
   const loadOffers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/taximetro/api/extra-offers?all=true");
+      const res = await fetch(resolveApiUrl("/taximetro/api/extra-offers?all=true"));
       const json = await res.json();
       if (json.success) setOffers(json.data);
     } finally {
@@ -98,7 +107,7 @@ export default function LeaderExtrasPage() {
 
   useEffect(() => {
     void loadOffers();
-    fetch("/taximetro/api/admin/bases")
+    fetch(resolveApiUrl("/taximetro/api/admin/bases"))
       .then((r) => r.json())
       .then((j) => { if (j.success) setBases(j.data); })
       .catch(() => {});
@@ -107,7 +116,7 @@ export default function LeaderExtrasPage() {
   async function claimOffer(id: string) {
     setClaimingId(id);
     try {
-      const res = await fetch(`/taximetro/api/extra-offers/${id}`, { method: "POST" });
+      const res = await fetch(resolveApiUrl(`/taximetro/api/extra-offers/${id}`), { method: "POST" });
       const json = await res.json();
       if (!json.success) throw new Error(json.error ?? "Erro ao pegar plantão");
       setClaimedIds((prev) => new Set([...prev, id]));
@@ -123,7 +132,7 @@ export default function LeaderExtrasPage() {
   async function cancelOffer(id: string) {
     setCancellingId(id);
     try {
-      const res = await fetch(`/taximetro/api/extra-offers/${id}`, { method: "DELETE" });
+      const res = await fetch(resolveApiUrl(`/taximetro/api/extra-offers/${id}`), { method: "DELETE" });
       const json = await res.json();
       if (!json.success) throw new Error(json.error ?? "Erro ao cancelar");
       setMessages((prev) => ({ ...prev, [id]: { type: "success", text: "Oferta cancelada." } }));
@@ -141,7 +150,7 @@ export default function LeaderExtrasPage() {
     setPubMessage(null);
     try {
       const normalizedDate = normalizeDateInput(pubDate);
-      const res = await fetch("/taximetro/api/extra-offers", {
+      const res = await fetch(resolveApiUrl("/taximetro/api/extra-offers"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ baseId: pubBaseId, date: normalizedDate, period: pubPeriod, notes: pubNotes || null }),
@@ -152,7 +161,13 @@ export default function LeaderExtrasPage() {
       setPubBaseId(""); setPubDate(""); setPubPeriod("DAY"); setPubNotes("");
       await loadOffers();
     } catch (e) {
-      setPubMessage({ type: "error", text: e instanceof Error ? e.message : "Erro ao publicar" });
+      const text = e instanceof Error ? e.message : "Erro ao publicar";
+      setPubMessage({
+        type: "error",
+        text: /did not match the expected pattern/i.test(text)
+          ? "Falha ao montar a requisição no navegador. Recarregue a página e tente novamente."
+          : text,
+      });
     } finally {
       setPubLoading(false);
     }

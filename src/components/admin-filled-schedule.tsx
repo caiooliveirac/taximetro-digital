@@ -169,6 +169,15 @@ function normalizeDateInput(value: string) {
     return parsed.toISOString().slice(0, 10);
 }
 
+function resolveApiUrl(path: string) {
+    if (typeof window === "undefined") return path;
+    try {
+        return new URL(path, window.location.href).toString();
+    } catch {
+        return path;
+    }
+}
+
 function formatPeriod(period: "DAY" | "NIGHT", shift?: string | null) {
     if (shift === "MORNING") return "Manhã";
     if (shift === "AFTERNOON") return "Tarde";
@@ -962,7 +971,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setPublishExtraMessage(null);
         try {
             const normalizedDate = normalizeDateInput(publishExtraSlot.date);
-            const response = await fetch("/taximetro/api/extra-offers", {
+            const response = await fetch(resolveApiUrl("/taximetro/api/extra-offers"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -978,7 +987,13 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             setPublishExtraMessage({ type: "success", text: "Plantão extra publicado no board!" });
             setTimeout(() => setPublishExtraSlot(null), 1200);
         } catch (error) {
-            setPublishExtraMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao publicar extra" });
+            const text = error instanceof Error ? error.message : "Erro ao publicar extra";
+            setPublishExtraMessage({
+                type: "error",
+                text: /did not match the expected pattern/i.test(text)
+                    ? "Falha ao montar a requisição no navegador. Recarregue a página e tente novamente."
+                    : text,
+            });
         } finally {
             setPublishExtraLoading(false);
         }
