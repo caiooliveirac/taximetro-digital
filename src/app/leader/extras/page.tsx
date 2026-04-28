@@ -27,6 +27,16 @@ type Offer = {
 
 type Base = { id: string; code: string; name: string; type: string };
 
+function normalizeDateInput(value: string) {
+  const trimmed = value.trim();
+  const ymd = trimmed.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  if (ymd) return ymd;
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return trimmed;
+  return parsed.toISOString().slice(0, 10);
+}
+
 /* ═══════════ Helpers ═══════════ */
 
 function formatDate(date: string) {
@@ -130,10 +140,11 @@ export default function LeaderExtrasPage() {
     setPubLoading(true);
     setPubMessage(null);
     try {
+      const normalizedDate = normalizeDateInput(pubDate);
       const res = await fetch("/taximetro/api/extra-offers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseId: pubBaseId, date: pubDate, period: pubPeriod, notes: pubNotes || null }),
+        body: JSON.stringify({ baseId: pubBaseId, date: normalizedDate, period: pubPeriod, notes: pubNotes || null }),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error ?? "Erro ao publicar");
@@ -141,7 +152,8 @@ export default function LeaderExtrasPage() {
       setPubBaseId(""); setPubDate(""); setPubPeriod("DAY"); setPubNotes("");
       await loadOffers();
     } catch (e) {
-      setPubMessage({ type: "error", text: e instanceof Error ? e.message : "Erro ao publicar" });
+      const text = e instanceof Error ? e.message : "Erro ao publicar";
+      setPubMessage({ type: "error", text: /expected pattern/i.test(text) ? "Data inválida para publicação. Selecione a data novamente." : text });
     } finally {
       setPubLoading(false);
     }
