@@ -45,6 +45,29 @@ function resolveApiUrl(path: string) {
   return `${origin}${normalizedPath}`;
 }
 
+async function postJsonWithFallback(path: string, payload: unknown) {
+  const urls = [resolveApiUrl(path), path];
+  let lastError: unknown;
+
+  for (const url of urls) {
+    try {
+      return await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      lastError = error;
+      const text = error instanceof Error ? error.message : String(error);
+      if (!/did not match the expected pattern/i.test(text)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Erro ao publicar");
+}
+
 /* ═══════════ Helpers ═══════════ */
 
 function formatDate(date: string) {
@@ -149,10 +172,11 @@ export default function LeaderExtrasPage() {
     setPubMessage(null);
     try {
       const normalizedDate = normalizeDateInput(pubDate);
-      const res = await fetch(resolveApiUrl("/taximetro/api/extra-offers"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseId: pubBaseId, date: normalizedDate, period: pubPeriod, notes: pubNotes || null }),
+      const res = await postJsonWithFallback("/taximetro/api/extra-offers", {
+        baseId: pubBaseId,
+        date: normalizedDate,
+        period: pubPeriod,
+        notes: pubNotes || null,
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error ?? "Erro ao publicar");
