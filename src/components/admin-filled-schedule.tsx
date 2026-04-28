@@ -1538,61 +1538,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                             key={user.id}
                                             type="button"
                                             onClick={() => {
-
-                            {/* ─────────── Publish Extra Offer Modal ─────────── */}
-                            {publishExtraSlot && (
-                                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPublishExtraSlot(null)}>
-                                    <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <Zap className="h-4 w-4 text-amber-500" strokeWidth={2.2} />
-                                                <h2 className="text-sm font-bold text-slate-900">Publicar como Plantão Extra</h2>
-                                            </div>
-                                            <button type="button" onClick={() => setPublishExtraSlot(null)} className="rounded-lg p-1 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
-                                        </div>
-                                        <div className="space-y-4 px-5 py-4">
-                                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                                                ⚠️ <strong>Atenção:</strong> Este plantão extra <strong>não contabiliza carga horária obrigatória</strong>. Qualquer interno da base poderá reivindicar por ordem de chegada.
-                                            </div>
-                                            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
-                                                <p><span className="font-semibold">Base:</span> {publishExtraSlot.baseCode}</p>
-                                                <p><span className="font-semibold">Data:</span> {publishExtraSlot.date}</p>
-                                                <p><span className="font-semibold">Turno:</span> {formatPeriod(publishExtraSlot.period)}</p>
-                                                {publishExtraSlot.facultyAbbr && <p><span className="font-semibold">Faculdade:</span> {publishExtraSlot.facultyAbbr}</p>}
-                                            </div>
-                                            <div>
-                                                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Observação (opcional)</label>
-                                                <textarea
-                                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                                                    rows={2}
-                                                    placeholder="Ex.: Cobertura de falta, plantão de reposição…"
-                                                    value={publishExtraNotes}
-                                                    onChange={(e) => setPublishExtraNotes(e.target.value)}
-                                                />
-                                            </div>
-                                            {publishExtraMessage && (
-                                                <p className={`text-xs font-medium ${publishExtraMessage.type === "success" ? "text-emerald-600" : "text-red-600"}`}>
-                                                    {publishExtraMessage.text}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
-                                            <button type="button" onClick={() => setPublishExtraSlot(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
-                                            <button
-                                                type="button"
-                                                disabled={publishExtraLoading}
-                                                onClick={() => void submitPublishExtra()}
-                                                className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
-                                            >
-                                                {publishExtraLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />} Publicar Extra
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    );
-                }
+                                                setAllocInternId(user.id);
+                                                const internFacultyId = getInternFacultyId(user);
+                                                if (!allocation.facultyId && internFacultyId) {
                                                     setAllocFacultyId(internFacultyId);
                                                 }
                                             }}
@@ -1628,6 +1576,58 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
                             <button type="button" disabled={allocLoading || !allocInternId || !assignmentFacultyId} onClick={createAssignment} className="inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50">
                                 {allocLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Alocar na escala
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─────────── Publish Extra Offer Modal ─────────── */}
+            {publishExtraSlot && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPublishExtraSlot(null)}>
+                    <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                            <div className="flex items-center gap-2">
+                                <Zap className="h-4 w-4 text-amber-500" strokeWidth={2.2} />
+                                <h2 className="text-sm font-bold text-slate-900">Publicar como Plantão Extra</h2>
+                            </div>
+                            <button type="button" onClick={() => setPublishExtraSlot(null)} className="rounded-lg p-1 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+                        </div>
+                        <div className="space-y-4 px-5 py-4">
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                                ⚠️ <strong>Atenção:</strong> Este plantão extra <strong>não contabiliza carga horária obrigatória</strong>. Qualquer interno da base poderá reivindicar por ordem de chegada.
+                            </div>
+                            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                                <p><span className="font-semibold">Base:</span> {publishExtraSlot.baseCode}</p>
+                                <p><span className="font-semibold">Data:</span> {publishExtraSlot.date}</p>
+                                <p><span className="font-semibold">Turno:</span> {formatPeriod(publishExtraSlot.period)}</p>
+                                {publishExtraSlot.facultyAbbr && <p><span className="font-semibold">Faculdade:</span> {publishExtraSlot.facultyAbbr}</p>}
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Observação (opcional)</label>
+                                <textarea
+                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                                    rows={2}
+                                    placeholder="Ex.: Cobertura de falta, plantão de reposição..."
+                                    value={publishExtraNotes}
+                                    onChange={(e) => setPublishExtraNotes(e.target.value)}
+                                />
+                            </div>
+                            {publishExtraMessage && (
+                                <p className={`text-xs font-medium ${publishExtraMessage.type === "success" ? "text-emerald-600" : "text-red-600"}`}>
+                                    {publishExtraMessage.text}
+                                </p>
+                            )}
+                        </div>
+                        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                            <button type="button" onClick={() => setPublishExtraSlot(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+                            <button
+                                type="button"
+                                disabled={publishExtraLoading}
+                                onClick={() => void submitPublishExtra()}
+                                className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                            >
+                                {publishExtraLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />} Publicar Extra
                             </button>
                         </div>
                     </div>

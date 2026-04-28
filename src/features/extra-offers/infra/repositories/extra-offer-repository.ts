@@ -129,7 +129,7 @@ export async function getExtraOffersAnalytics(fromDate?: string, toDate?: string
     .innerJoin(users, eq(users.id, extraShiftOffers.claimedBy))
     .where(and(
       dateFilter,
-      sql`${extraShiftOffers.claimed_by} is not null`,
+      sql`${extraShiftOffers.claimedBy} is not null`,
     ))
     .groupBy(extraShiftOffers.claimedBy, users.name)
     .orderBy(sql`count(*) desc`)
@@ -141,13 +141,14 @@ export async function getExtraOffersAnalytics(fromDate?: string, toDate?: string
       baseId: extraShiftOffers.baseId,
       baseCode: bases.code,
       baseName: bases.name,
+      baseType: bases.type,
       total: sql<number>`count(*)::int`,
       claimed: sql<number>`count(${extraShiftOffers.claimedBy})::int`,
     })
     .from(extraShiftOffers)
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .where(dateFilter)
-    .groupBy(extraShiftOffers.baseId, bases.code, bases.name)
+    .groupBy(extraShiftOffers.baseId, bases.code, bases.name, bases.type)
     .orderBy(sql`count(*) desc`);
 
   return { byFaculty, byClaimer, byBase };

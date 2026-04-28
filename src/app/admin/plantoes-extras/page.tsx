@@ -46,6 +46,7 @@ type Analytics = {
     baseId: string;
     baseCode: string;
     baseName: string;
+    baseType: string | null;
     total: number;
     claimed: number;
   }>;
