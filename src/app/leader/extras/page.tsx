@@ -152,8 +152,7 @@ export default function LeaderExtrasPage() {
       setPubBaseId(""); setPubDate(""); setPubPeriod("DAY"); setPubNotes("");
       await loadOffers();
     } catch (e) {
-      const text = e instanceof Error ? e.message : "Erro ao publicar";
-      setPubMessage({ type: "error", text: /expected pattern/i.test(text) ? "Data inválida para publicação. Selecione a data novamente." : text });
+      setPubMessage({ type: "error", text: e instanceof Error ? e.message : "Erro ao publicar" });
     } finally {
       setPubLoading(false);
     }

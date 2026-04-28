@@ -9,6 +9,27 @@ import {
   publishExtraOfferSchema,
 } from "@/features/extra-offers/application/use-cases/publish-extra-offer";
 
+function formatPublishExtraValidationError(error: {
+  issues: Array<{ path: Array<PropertyKey> }>;
+}) {
+  const firstPath = String(error.issues[0]?.path?.[0] ?? "");
+
+  if (firstPath === "baseId") {
+    return "Base inválida. Atualize a página e selecione a base novamente.";
+  }
+  if (firstPath === "date") {
+    return "Data inválida para publicação. Use o seletor de data novamente.";
+  }
+  if (firstPath === "facultyId") {
+    return "Faculdade inválida para esta vaga.";
+  }
+  if (firstPath === "period") {
+    return "Turno inválido para publicação.";
+  }
+
+  return "Dados inválidos para publicação do plantão extra.";
+}
+
 /* ═══════════ GET — list offers ═══════════ */
 
 export async function GET(req: NextRequest) {
@@ -34,7 +55,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = publishExtraOfferSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
+    return NextResponse.json({ success: false, error: formatPublishExtraValidationError(parsed.error) }, { status: 400 });
   }
 
   const result = await executePublishExtraOffer({

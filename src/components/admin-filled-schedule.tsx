@@ -978,8 +978,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             setPublishExtraMessage({ type: "success", text: "Plantão extra publicado no board!" });
             setTimeout(() => setPublishExtraSlot(null), 1200);
         } catch (error) {
-            const text = error instanceof Error ? error.message : "Erro ao publicar extra";
-            setPublishExtraMessage({ type: "error", text: /expected pattern/i.test(text) ? "Data inválida para publicação. Tente selecionar novamente." : text });
+            setPublishExtraMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao publicar extra" });
         } finally {
             setPublishExtraLoading(false);
         }
