@@ -6,7 +6,9 @@ import { NextRequest } from "next/server";
 // Rewrite the URL to include the basePath so NextAuth routing works properly.
 function withBasePath(request: NextRequest): NextRequest {
     const url = request.nextUrl.clone();
-    url.pathname = `/taximetro${url.pathname}`;
+    if (url.pathname !== "/taximetro" && !url.pathname.startsWith("/taximetro/")) {
+        url.pathname = `/taximetro${url.pathname}`;
+    }
     return new NextRequest(url, {
         method: request.method,
         headers: request.headers,
