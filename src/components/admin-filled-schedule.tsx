@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, X, Zap } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
@@ -397,7 +397,7 @@ function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "
     );
 }
 
-function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, facultyBadgeMode = "neutral", showBaseCode = false, isVirtual = false }: { facultyAbbr: string; allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean; isVirtual?: boolean }) {
+function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, onPublishExtra, facultyBadgeMode = "neutral", showBaseCode = false, isVirtual = false }: { facultyAbbr: string; allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; onPublishExtra?: (slot: AllocationState) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean; isVirtual?: boolean }) {
     const tone = getPeriodTone(period);
     const facultyTone = getFacultyBadgeClass(facultyAbbr, facultyBadgeMode, period === "NIGHT" ? "NIGHT" : undefined);
 
@@ -422,37 +422,50 @@ function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, facultyBadge
     }
 
     return (
-        <button
-            type="button"
-            onClick={() => onOpen(allocation)}
-            className={`flex min-h-[56px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-dashed px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.1)] ${tone.ghost} ${getMutedSlotClass(allocation.date, "vacancy")}`}
-            title={`Alocar interno em ${facultyAbbr}`}
-        >
-            <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-75">Vaga</span>
-                <span className="mt-1 flex items-center gap-2">
-                    <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${facultyTone.pill}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
-                        <span className="truncate">{facultyAbbr}</span>
+        <div className={`flex min-h-[56px] w-full min-w-0 items-stretch gap-1.5 ${getMutedSlotClass(allocation.date, "vacancy")}`}>
+            <button
+                type="button"
+                onClick={() => onOpen(allocation)}
+                className={`flex flex-1 min-w-0 items-center gap-2 rounded-xl border border-dashed px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.1)] ${tone.ghost}`}
+                title={`Alocar interno em ${facultyAbbr}`}
+            >
+                <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-75">Vaga</span>
+                    <span className="mt-1 flex items-center gap-2">
+                        <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${facultyTone.pill}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
+                            <span className="truncate">{facultyAbbr}</span>
+                        </span>
+                        {showBaseCode && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${period === "NIGHT" ? "border border-white/10 bg-white/8 text-white/72" : "border border-stone-300 bg-white/70 text-stone-600"}`}>{allocation.baseCode}</span>}
                     </span>
-                    {showBaseCode && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${period === "NIGHT" ? "border border-white/10 bg-white/8 text-white/72" : "border border-stone-300 bg-white/70 text-stone-600"}`}>{allocation.baseCode}</span>}
                 </span>
-            </span>
-            <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${tone.action}`}>
-                <Plus className="h-4 w-4" />
-            </span>
-        </button>
+                <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${tone.action}`}>
+                    <Plus className="h-4 w-4" />
+                </span>
+            </button>
+            {onPublishExtra && (
+                <button
+                    type="button"
+                    onClick={() => onPublishExtra(allocation)}
+                    className="inline-flex h-auto w-7 shrink-0 items-center justify-center rounded-xl border border-dashed border-amber-400/60 bg-amber-50 text-amber-600 transition hover:bg-amber-100 hover:text-amber-700"
+                    title="Publicar como plantão extra"
+                >
+                    <Zap className="h-3.5 w-3.5" strokeWidth={2} />
+                </button>
+            )}
+        </div>
     );
 }
 
-function OpenSlotCard({ allocation, period, onOpen }: { allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void }) {
+function OpenSlotCard({ allocation, period, onOpen, onPublishExtra }: { allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; onPublishExtra?: (slot: AllocationState) => void }) {
     const tone = getPeriodTone(period);
 
     return (
+        <div className={`flex min-h-[56px] w-full min-w-0 items-stretch gap-1.5 ${getMutedSlotClass(allocation.date, "open")}`}>
         <button
             type="button"
             onClick={() => onOpen(allocation)}
-            className={`flex min-h-[56px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-dashed px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.1)] ${tone.ghost} ${getMutedSlotClass(allocation.date, "open")}`}
+            className={`flex flex-1 min-w-0 items-center justify-between gap-2 rounded-xl border border-dashed px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.1)] ${tone.ghost}`}
             title="Alocação manual livre"
         >
             <span className="min-w-0 flex-1">
@@ -465,6 +478,17 @@ function OpenSlotCard({ allocation, period, onOpen }: { allocation: AllocationSt
                 <Plus className="h-4 w-4" />
             </span>
         </button>
+        {onPublishExtra && (
+            <button
+                type="button"
+                onClick={() => onPublishExtra(allocation)}
+                className="inline-flex h-auto w-7 shrink-0 items-center justify-center rounded-xl border border-dashed border-amber-400/60 bg-amber-50 text-amber-600 transition hover:bg-amber-100 hover:text-amber-700"
+                title="Publicar como plantão extra"
+            >
+                <Zap className="h-3.5 w-3.5" strokeWidth={2} />
+            </button>
+        )}
+        </div>
     );
 }
 
@@ -500,6 +524,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [allocExtraShiftNotes, setAllocExtraShiftNotes] = useState("");
     const [removingId, setRemovingId] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [publishExtraSlot, setPublishExtraSlot] = useState<AllocationState | null>(null);
+    const [publishExtraNotes, setPublishExtraNotes] = useState("");
+    const [publishExtraLoading, setPublishExtraLoading] = useState(false);
+    const [publishExtraMessage, setPublishExtraMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
     function hasRole(user: UserRow, role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") {
         if (user.role === role) return true;
@@ -912,6 +940,39 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         return { eligibleInterns, blockedCount, busyCount };
     }, [activeCandidateFacultyFilter, allocSearch, allocShift, allocation, assignments, cruConflicts, isRetroactiveAdminAllocation, users]);
 
+    function openPublishExtra(slot: AllocationState) {
+        setPublishExtraSlot(slot);
+        setPublishExtraNotes("");
+        setPublishExtraMessage(null);
+    }
+
+    async function submitPublishExtra() {
+        if (!publishExtraSlot) return;
+        setPublishExtraLoading(true);
+        setPublishExtraMessage(null);
+        try {
+            const response = await fetch("/taximetro/api/extra-offers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    baseId: publishExtraSlot.baseId,
+                    date: publishExtraSlot.date,
+                    period: publishExtraSlot.period,
+                    facultyId: publishExtraSlot.facultyId ?? null,
+                    notes: publishExtraNotes || null,
+                }),
+            });
+            const json = await response.json();
+            if (!json.success) throw new Error(json.error ?? "Erro ao publicar extra");
+            setPublishExtraMessage({ type: "success", text: "Plantão extra publicado no board!" });
+            setTimeout(() => setPublishExtraSlot(null), 1200);
+        } catch (error) {
+            setPublishExtraMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao publicar extra" });
+        } finally {
+            setPublishExtraLoading(false);
+        }
+    }
+
     async function openAllocation(slot: AllocationState) {
         await loadUsers();
         setAllocation(slot);
@@ -1048,10 +1109,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                                     }
 
                                                                     if (slot.kind === "vacancy") {
-                                                                        return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
+                                                                        return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
                                                                     }
 
-                                                                    return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} />;
+                                                                    return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} />;
                                                                 })}
 
                                                                 {overflowCount > 0 && (
@@ -1157,7 +1218,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                 }
 
                                                 if (slot.kind === "vacancy") {
-                                                    return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} facultyBadgeMode="faculty" showBaseCode={showBaseCode} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
+                                                    return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} facultyBadgeMode="faculty" showBaseCode={showBaseCode} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
                                                 }
                                             })}
                                         </div>
@@ -1477,9 +1538,61 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                             key={user.id}
                                             type="button"
                                             onClick={() => {
-                                                setAllocInternId(user.id);
-                                                const internFacultyId = getInternFacultyId(user);
-                                                if (!allocation.facultyId && internFacultyId) {
+
+                            {/* ─────────── Publish Extra Offer Modal ─────────── */}
+                            {publishExtraSlot && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPublishExtraSlot(null)}>
+                                    <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <Zap className="h-4 w-4 text-amber-500" strokeWidth={2.2} />
+                                                <h2 className="text-sm font-bold text-slate-900">Publicar como Plantão Extra</h2>
+                                            </div>
+                                            <button type="button" onClick={() => setPublishExtraSlot(null)} className="rounded-lg p-1 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+                                        </div>
+                                        <div className="space-y-4 px-5 py-4">
+                                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                                                ⚠️ <strong>Atenção:</strong> Este plantão extra <strong>não contabiliza carga horária obrigatória</strong>. Qualquer interno da base poderá reivindicar por ordem de chegada.
+                                            </div>
+                                            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                                                <p><span className="font-semibold">Base:</span> {publishExtraSlot.baseCode}</p>
+                                                <p><span className="font-semibold">Data:</span> {publishExtraSlot.date}</p>
+                                                <p><span className="font-semibold">Turno:</span> {formatPeriod(publishExtraSlot.period)}</p>
+                                                {publishExtraSlot.facultyAbbr && <p><span className="font-semibold">Faculdade:</span> {publishExtraSlot.facultyAbbr}</p>}
+                                            </div>
+                                            <div>
+                                                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Observação (opcional)</label>
+                                                <textarea
+                                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                                                    rows={2}
+                                                    placeholder="Ex.: Cobertura de falta, plantão de reposição…"
+                                                    value={publishExtraNotes}
+                                                    onChange={(e) => setPublishExtraNotes(e.target.value)}
+                                                />
+                                            </div>
+                                            {publishExtraMessage && (
+                                                <p className={`text-xs font-medium ${publishExtraMessage.type === "success" ? "text-emerald-600" : "text-red-600"}`}>
+                                                    {publishExtraMessage.text}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+                                            <button type="button" onClick={() => setPublishExtraSlot(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>
+                                            <button
+                                                type="button"
+                                                disabled={publishExtraLoading}
+                                                onClick={() => void submitPublishExtra()}
+                                                className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                                            >
+                                                {publishExtraLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />} Publicar Extra
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
                                                     setAllocFacultyId(internFacultyId);
                                                 }
                                             }}
