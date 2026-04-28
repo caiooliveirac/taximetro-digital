@@ -177,6 +177,29 @@ function resolveApiUrl(path: string) {
     return `${origin}${normalizedPath}`;
 }
 
+async function postJsonWithFallback(path: string, payload: unknown) {
+    const urls = [resolveApiUrl(path), path];
+    let lastError: unknown;
+
+    for (const url of urls) {
+        try {
+            return await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+        } catch (error) {
+            lastError = error;
+            const text = error instanceof Error ? error.message : String(error);
+            if (!/did not match the expected pattern/i.test(text)) {
+                throw error;
+            }
+        }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Erro ao publicar extra");
+}
+
 function formatPeriod(period: "DAY" | "NIGHT", shift?: string | null) {
     if (shift === "MORNING") return "Manhã";
     if (shift === "AFTERNOON") return "Tarde";
@@ -970,16 +993,12 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setPublishExtraMessage(null);
         try {
             const normalizedDate = normalizeDateInput(publishExtraSlot.date);
-            const response = await fetch(resolveApiUrl("/taximetro/api/extra-offers"), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    baseId: publishExtraSlot.baseId,
-                    date: normalizedDate,
-                    period: publishExtraSlot.period,
-                    facultyId: publishExtraSlot.facultyId || null,
-                    notes: publishExtraNotes || null,
-                }),
+            const response = await postJsonWithFallback("/taximetro/api/extra-offers", {
+                baseId: publishExtraSlot.baseId,
+                date: normalizedDate,
+                period: publishExtraSlot.period,
+                facultyId: publishExtraSlot.facultyId || null,
+                notes: publishExtraNotes || null,
             });
             const json = await response.json();
             if (!json.success) throw new Error(json.error ?? "Erro ao publicar extra");
