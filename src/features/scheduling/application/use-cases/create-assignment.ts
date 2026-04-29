@@ -41,17 +41,14 @@ export async function executeCreateAssignment(params: {
   const { actor, input } = params;
   const isExtra = input.isExtraShift ?? false;
 
-  // For extras, always use the intern's real faculty so the assignment appears
-  // in the correct leader view and compliance report, regardless of which slot
-  // preset faculty was passed from the schedule grid.
-  const resolvedFacultyId = isExtra
-    ? (await getInternPrimaryFacultyId(input.internId) ?? input.facultyId)
-    : input.facultyId;
+  // input.facultyId = faculdade da vaga na grade (usado para checagem de capacidade e permissão do líder)
+  // resolvedFacultyId = faculdade real do interno (gravada no assignment, determina visibilidade e compliance)
+  const resolvedFacultyId = await getInternPrimaryFacultyId(input.internId) ?? input.facultyId;
 
   if (!isExtra && !canLeaderManageFaculty({
     actorRole: actor.role,
     actorFacultyId: actor.facultyId,
-    targetFacultyId: resolvedFacultyId,
+    targetFacultyId: input.facultyId,
   })) {
     return { status: 403, body: { success: false, error: "Só pode alocar internos da sua faculdade" } } as const;
   }
@@ -87,7 +84,7 @@ export async function executeCreateAssignment(params: {
         input.baseId,
         input.date,
         input.period,
-        resolvedFacultyId,
+        input.facultyId,
         shiftValue,
       );
       if (!slot.available) {
