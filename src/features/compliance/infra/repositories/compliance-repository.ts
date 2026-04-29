@@ -60,5 +60,6 @@ export async function listNonCancelledAssignmentsForInterns(internIds: string[])
     .where(and(
       inArray(assignments.internId, internIds),
       sql`${assignments.status} != 'CANCELLED'`,
+      eq(assignments.isExtraShift, false),
     ));
 }

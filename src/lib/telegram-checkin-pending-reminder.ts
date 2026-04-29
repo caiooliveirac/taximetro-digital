@@ -145,6 +145,7 @@ export async function getPendingCheckinRows(date = localDateStr()) {
                 eq(assignments.period, "DAY"),
                 inArray(assignments.status, ["SCHEDULED", "CONFIRMED"]),
                 ne(bases.type, "CRL"),
+                eq(assignments.isExtraShift, false),
             ),
         )
         .orderBy(asc(bases.code), asc(users.name));

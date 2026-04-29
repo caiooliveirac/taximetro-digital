@@ -91,6 +91,7 @@ type WeekAssignment = {
   date: string;
   period: "DAY" | "NIGHT";
   status: string;
+  isExtraShift?: boolean;
   absenceJustification?: string | null;
   absenceJustificationActor?: string | null;
   absenceJustificationAt?: string | null;
@@ -403,6 +404,7 @@ export default function LeaderDashboard() {
   const pendingAttendance = monitorAssignments
     .filter((assignment) => {
       if (archivedInternIds.has(assignment.internId)) return false;
+      if (assignment.isExtraShift) return false;
       if (CHECKIN_DONE.has(assignment.status)) return false;
       if (assignment.status === "ABSENT" || assignment.status === "CANCELLED") return false;
       if (assignment.date < today) return true;
