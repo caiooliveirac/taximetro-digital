@@ -64,6 +64,7 @@ export async function executeCreateRequest(params: {
 
     if (!ownerAssignment) return { status: 404, body: { success: false, error: "Plantão não encontrado" } } as const;
     if (ownerAssignment.internId !== requesterId) return { status: 403, body: { success: false, error: "Esse plantão não pertence a você" } } as const;
+    if (ownerAssignment.isExtraShift) return { status: 400, body: { success: false, error: "Plantões extras não podem ser trocados ou abertos para drop" } } as const;
     if (ownerAssignment.date < todayStr) return { status: 400, body: { success: false, error: "Não é possível solicitar alteração de plantão passado" } } as const;
     if (!["SCHEDULED", "CONFIRMED"].includes(ownerAssignment.status)) {
       return {

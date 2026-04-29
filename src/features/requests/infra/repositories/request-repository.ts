@@ -111,7 +111,7 @@ export async function findFacultyInternIds(facultyId: string) {
 
 export async function findAssignmentOwnerBasic(assignmentId: string) {
   const [ownerAssignment] = await db
-    .select({ id: assignments.id, internId: assignments.internId, status: assignments.status, date: assignments.date })
+    .select({ id: assignments.id, internId: assignments.internId, status: assignments.status, date: assignments.date, isExtraShift: assignments.isExtraShift })
     .from(assignments)
     .where(eq(assignments.id, assignmentId))
     .limit(1);

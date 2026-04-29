@@ -1,6 +1,6 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, faculties } from "@/shared/db/schema";
+import { assignments, faculties, userRoles } from "@/shared/db/schema";
 
 export type ShiftValue = "MORNING" | "AFTERNOON" | null;
 
@@ -151,4 +151,14 @@ export async function getFacultyAbbreviationById(facultyId: string) {
     .limit(1);
 
   return facultyRow?.abbreviation ?? null;
+}
+
+export async function getInternPrimaryFacultyId(internId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ facultyId: userRoles.facultyId })
+    .from(userRoles)
+    .where(and(eq(userRoles.userId, internId), eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true)))
+    .limit(1);
+
+  return row?.facultyId ?? null;
 }

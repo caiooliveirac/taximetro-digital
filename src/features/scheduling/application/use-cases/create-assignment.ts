@@ -7,6 +7,7 @@ import {
   createAssignment,
   findAssignmentByInternSlot,
   getFacultyAbbreviationById,
+  getInternPrimaryFacultyId,
   reactivateAssignment,
   type ShiftValue,
 } from "@/features/scheduling/infra/repositories/assignment-repository";
@@ -38,18 +39,25 @@ export async function executeCreateAssignment(params: {
   input: z.infer<typeof createAssignmentSchema>;
 }) {
   const { actor, input } = params;
+  const isExtra = input.isExtraShift ?? false;
 
-  if (!canLeaderManageFaculty({
+  // For extras, always use the intern's real faculty so the assignment appears
+  // in the correct leader view and compliance report, regardless of which slot
+  // preset faculty was passed from the schedule grid.
+  const resolvedFacultyId = isExtra
+    ? (await getInternPrimaryFacultyId(input.internId) ?? input.facultyId)
+    : input.facultyId;
+
+  if (!isExtra && !canLeaderManageFaculty({
     actorRole: actor.role,
     actorFacultyId: actor.facultyId,
-    targetFacultyId: input.facultyId,
+    targetFacultyId: resolvedFacultyId,
   })) {
     return { status: 403, body: { success: false, error: "Só pode alocar internos da sua faculdade" } } as const;
   }
 
-  const facultyAbbreviation = await getFacultyAbbreviationById(input.facultyId);
+  const facultyAbbreviation = await getFacultyAbbreviationById(resolvedFacultyId);
   const shiftValue: ShiftValue = facultyAbbreviation === "EBMSP" ? (input.shift ?? null) : null;
-  const isExtra = input.isExtraShift ?? false;
   const allowCoordinatorRetroactiveOverride = actor.role === "COORDINATOR"
     && input.allowRetroactiveOverride === true
     && input.date < localDateStr();
@@ -71,7 +79,7 @@ export async function executeCreateAssignment(params: {
 
   const isCancelledSameSlot = existingAssignment?.status === "CANCELLED"
     && existingAssignment.baseId === input.baseId
-    && existingAssignment.facultyId === input.facultyId;
+    && existingAssignment.facultyId === resolvedFacultyId;
 
   if (!isCancelledSameSlot) {
     if (!isExtra && !allowCoordinatorOpenAllocation) {
@@ -79,7 +87,7 @@ export async function executeCreateAssignment(params: {
         input.baseId,
         input.date,
         input.period,
-        input.facultyId,
+        resolvedFacultyId,
         shiftValue,
       );
       if (!slot.available) {
@@ -90,7 +98,7 @@ export async function executeCreateAssignment(params: {
       }
     }
 
-    if (!allowCoordinatorRetroactiveOverride) {
+    if (!allowCoordinatorRetroactiveOverride && !isExtra) {
       const cruCheck = await checkCruConflict(input.internId, input.date, input.period, undefined, input.baseId);
       if (cruCheck.conflicted) {
         return { status: 409, body: { success: false, error: cruCheck.reason } } as const;
@@ -102,7 +110,7 @@ export async function executeCreateAssignment(params: {
     if (existingAssignment?.status === "CANCELLED") {
       const reactivated = await reactivateAssignment({
         id: existingAssignment.id,
-        facultyId: input.facultyId,
+        facultyId: resolvedFacultyId,
         baseId: input.baseId,
         shift: shiftValue,
         isExtraShift: isExtra,
@@ -117,7 +125,7 @@ export async function executeCreateAssignment(params: {
         entityId: existingAssignment.id,
         payload: {
           internId: input.internId,
-          facultyId: input.facultyId,
+          facultyId: resolvedFacultyId,
           baseId: input.baseId,
           date: input.date,
           period: input.period,

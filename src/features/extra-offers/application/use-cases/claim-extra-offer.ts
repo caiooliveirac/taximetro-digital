@@ -40,8 +40,9 @@ export async function executeClaimExtraOffer(params: {
     return { status: 409, body: { success: false, error: "Você já tem um plantão neste dia e turno" } } as const;
   }
 
-  // Determine faculty: use offer's facultyId if set, else derive from actor's INTERN role
-  const facultyId = offer.facultyId ?? actor.facultyId;
+  // Always use the claiming intern's own faculty so the assignment appears in the
+  // correct leader view and compliance report. offer.facultyId is only a display hint.
+  const facultyId = actor.facultyId;
   if (!facultyId) {
     return { status: 422, body: { success: false, error: "Não foi possível determinar a faculdade. Tente novamente ou contate a coordenação." } } as const;
   }
