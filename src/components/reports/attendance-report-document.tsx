@@ -365,7 +365,7 @@ function AssignmentDetailModal({
   );
 }
 
-function Heatmap({ document }: { document: ReportDocument }) {
+export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin/assignments" }: { document: ReportDocument; assignmentDetailPath?: string }) {
   if (document.cover.heatmapDays.length === 0 || document.cover.heatmapRows.length === 0) return null;
 
   const assignmentsByInternDate = useMemo(() => {
@@ -401,7 +401,7 @@ function Heatmap({ document }: { document: ReportDocument }) {
     setDetailLoading(true);
     setDetailError(null);
     try {
-      const response = await fetch(`/taximetro/api/admin/assignments/${assignmentId}`, { cache: "no-store" });
+      const response = await fetch(`${assignmentDetailPath}/${assignmentId}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || !payload.success) {
         throw new Error(payload.error ?? "Não foi possível carregar os detalhes do plantão.");
