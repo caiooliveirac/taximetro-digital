@@ -38,19 +38,31 @@ type ComplianceRow = {
 };
 
 const SHIFT_HOURS = 12;
+const today = localDateStr();
 
 export default function LeaderRelatorios() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [from, setFrom] = useState(() => {
-    const d = new Date(); d.setDate(1);
-    return localDateStr(d);
-  });
-  const [to, setTo] = useState(() => localDateStr());
+  const [datesReady, setDatesReady] = useState(false);
+  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(1); return localDateStr(d); });
+  const [to, setTo] = useState(() => today);
   const [activeTab, setActiveTab] = useState<"table" | "heatmap">("table");
   const [heatmapDocument, setHeatmapDocument] = useState<ReportDocument | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/taximetro/api/leader/cohort")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data) {
+          setFrom(json.data.startDate);
+          setTo(json.data.endDate < today ? json.data.endDate : today);
+        }
+      })
+      .catch(() => { /* usa fallback */ })
+      .finally(() => setDatesReady(true));
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -76,11 +88,11 @@ export default function LeaderRelatorios() {
     setHeatmapLoading(false);
   }
 
-  useEffect(() => { void load(); }, [from, to]);
+  useEffect(() => { if (datesReady) void load(); }, [from, to, datesReady]);
 
   useEffect(() => {
-    if (activeTab === "heatmap") void loadHeatmap();
-  }, [activeTab, from, to]);
+    if (datesReady && activeTab === "heatmap") void loadHeatmap();
+  }, [activeTab, from, to, datesReady]);
 
   const active = assignments.filter((a) => a.status !== "CANCELLED");
   const total = active.length;
