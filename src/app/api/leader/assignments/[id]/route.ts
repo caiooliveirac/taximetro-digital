@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { executeGetDetailedAssignmentById } from "@/features/admin-assignments/application/use-cases/list-detailed-assignments";
 
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
-  if (!token || token.role !== "LEADER") {
+  const actor = await getEffectiveUser(req);
+  if (!actor || actor.role !== "LEADER") {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -19,7 +19,7 @@ export async function GET(
   }
 
   const assignment = (result.body as { success: true; data: Record<string, unknown> }).data;
-  if (assignment.faculty_id !== token.facultyId) {
+  if (assignment.faculty_id !== actor.facultyId) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
