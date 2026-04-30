@@ -1,6 +1,6 @@
 import { db } from "@/shared/db/client";
-import { cohorts, faculties } from "@/db/schema";
-import { eq, and, or, inArray } from "drizzle-orm";
+import { cohorts, faculties, userRoles, users } from "@/db/schema";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 
 export async function listCohorts(filters?: {
   facultyId?: string;
@@ -84,4 +84,59 @@ export async function updateCohort(
 
 export async function deleteCohort(id: string) {
   await db.delete(cohorts).where(eq(cohorts.id, id));
+}
+
+// F2: intern ↔ cohort assignment
+
+export async function listInternsWithoutCohort(facultyId: string) {
+  return db
+    .select({
+      userRoleId: userRoles.id,
+      userId: users.id,
+      name: users.name,
+      email: users.email,
+      isActive: users.isActive,
+      isArchived: userRoles.isArchived,
+    })
+    .from(userRoles)
+    .innerJoin(users, eq(userRoles.userId, users.id))
+    .where(
+      and(
+        eq(userRoles.facultyId, facultyId),
+        eq(userRoles.role, "INTERN"),
+        eq(userRoles.isArchived, false),
+        isNull(userRoles.cohortId),
+      ),
+    )
+    .orderBy(users.name);
+}
+
+export async function bulkAssignCohort(userRoleIds: string[], cohortId: string) {
+  if (userRoleIds.length === 0) return;
+  await db
+    .update(userRoles)
+    .set({ cohortId })
+    .where(inArray(userRoles.id, userRoleIds));
+}
+
+export async function listInternsByCohort(cohortId: string) {
+  return db
+    .select({
+      userRoleId: userRoles.id,
+      userId: users.id,
+      name: users.name,
+      email: users.email,
+      isArchived: userRoles.isArchived,
+    })
+    .from(userRoles)
+    .innerJoin(users, eq(userRoles.userId, users.id))
+    .where(eq(userRoles.cohortId, cohortId))
+    .orderBy(users.name);
+}
+
+export async function unassignCohort(userRoleId: string) {
+  await db
+    .update(userRoles)
+    .set({ cohortId: null })
+    .where(eq(userRoles.id, userRoleId));
 }

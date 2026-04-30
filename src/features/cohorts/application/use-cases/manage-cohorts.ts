@@ -6,6 +6,10 @@ import {
   createCohort,
   updateCohort,
   deleteCohort,
+  listInternsWithoutCohort,
+  bulkAssignCohort,
+  listInternsByCohort,
+  unassignCohort,
 } from "@/features/cohorts/infra/repositories/cohort-repository";
 
 export const cohortCreateSchema = z.object({
@@ -111,6 +115,72 @@ export async function executeDeleteCohort(params: {
     entity: "cohort",
     entityId: params.cohortId,
     payload: {},
+  });
+
+  return { status: 200, body: { success: true } } as const;
+}
+
+// F2: intern ↔ cohort assignment
+
+export async function executeListInternsWithoutCohort(facultyId: string) {
+  return listInternsWithoutCohort(facultyId);
+}
+
+export async function executeBulkAssignCohort(params: {
+  actorUserId: string;
+  cohortId: string;
+  userRoleIds: string[];
+}) {
+  if (params.userRoleIds.length === 0) {
+    return { status: 400, body: { success: false, error: "Nenhum interno selecionado" } } as const;
+  }
+
+  const cohort = await getCohortById(params.cohortId);
+  if (!cohort) {
+    return { status: 404, body: { success: false, error: "Turma não encontrada" } } as const;
+  }
+  if (cohort.status === "CLOSED") {
+    return { status: 409, body: { success: false, error: "Turma fechada não aceita novos internos" } } as const;
+  }
+
+  await bulkAssignCohort(params.userRoleIds, params.cohortId);
+
+  await logAudit({
+    userId: params.actorUserId,
+    action: "BULK_ASSIGN_COHORT",
+    entity: "cohort",
+    entityId: params.cohortId,
+    payload: { userRoleIds: params.userRoleIds, count: params.userRoleIds.length },
+  });
+
+  return { status: 200, body: { success: true, count: params.userRoleIds.length } } as const;
+}
+
+export async function executeListInternsByCohort(cohortId: string) {
+  return listInternsByCohort(cohortId);
+}
+
+export async function executeUnassignCohort(params: {
+  actorUserId: string;
+  userRoleId: string;
+  cohortId: string;
+}) {
+  const cohort = await getCohortById(params.cohortId);
+  if (!cohort) {
+    return { status: 404, body: { success: false, error: "Turma não encontrada" } } as const;
+  }
+  if (cohort.status === "CLOSED") {
+    return { status: 409, body: { success: false, error: "Não é possível remover interns de turma fechada" } } as const;
+  }
+
+  await unassignCohort(params.userRoleId);
+
+  await logAudit({
+    userId: params.actorUserId,
+    action: "UNASSIGN_COHORT",
+    entity: "cohort",
+    entityId: params.cohortId,
+    payload: { userRoleId: params.userRoleId },
   });
 
   return { status: 200, body: { success: true } } as const;

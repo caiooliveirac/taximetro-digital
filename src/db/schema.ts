@@ -94,12 +94,14 @@ export const userRoles = pgTable("user_roles", {
   role: roleEnum("role").notNull(),
   facultyId: uuid("faculty_id").references(() => faculties.id),
   baseId: uuid("base_id").references(() => bases.id),
+  cohortId: uuid("cohort_id").references(() => cohorts.id),
   isActive: boolean("is_active").notNull().default(true),
   isArchived: boolean("is_archived").notNull().default(false),
   archivedAt: timestamp("archived_at"),
   archivedBy: uuid("archived_by").references(() => users.id),
 }, (t) => [
   uniqueIndex("uq_user_role_faculty").on(t.userId, t.role, t.facultyId),
+  index("idx_user_roles_cohort").on(t.cohortId),
 ]);
 
 export const slotRules = pgTable("slot_rules", {
@@ -264,6 +266,7 @@ export const inviteLinks = pgTable("invite_links", {
   createdBy: uuid("created_by").notNull().references(() => users.id),
   facultyId: uuid("faculty_id").references(() => faculties.id),
   baseId: uuid("base_id").references(() => bases.id),
+  cohortId: uuid("cohort_id").references(() => cohorts.id),
   targetUserId: uuid("target_user_id").references(() => users.id),
   expiresAt: timestamp("expires_at"),
   isActive: boolean("is_active").notNull().default(true),

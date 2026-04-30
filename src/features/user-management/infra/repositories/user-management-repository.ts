@@ -130,6 +130,7 @@ export async function createInviteLink(params: {
   createdBy: string;
   facultyId: string | null;
   baseId?: string | null;
+  cohortId?: string | null;
   expiresAt: Date;
 }) {
   const [link] = await db.insert(inviteLinks).values({
@@ -138,6 +139,7 @@ export async function createInviteLink(params: {
     createdBy: params.createdBy,
     facultyId: params.facultyId,
     baseId: params.baseId ?? null,
+    cohortId: params.cohortId ?? null,
     expiresAt: params.expiresAt,
   }).returning();
 
