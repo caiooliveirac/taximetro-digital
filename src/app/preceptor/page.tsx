@@ -79,6 +79,7 @@ export default function PreceptorValidar() {
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [checkoutQuestionnaireId, setCheckoutQuestionnaireId] = useState<string | null>(null);
   const [checkoutNps, setCheckoutNps] = useState<CheckoutNps>(EMPTY_NPS);
+  const [checkoutObservations, setCheckoutObservations] = useState("");
 
   const today = localDateStr();
   const fromDate = addDaysToDateStr(today, -1);
@@ -159,14 +160,14 @@ export default function PreceptorValidar() {
     setValidatingCode(false);
   }
 
-  async function checkoutDirect(assignmentId: string, nps: CheckoutNps) {
+  async function checkoutDirect(assignmentId: string, nps: CheckoutNps, notes: string) {
     setCheckingOut(assignmentId);
     setMsg(null);
     try {
       const res = await fetch("/taximetro/api/attendance/checkout", {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId, nps }),
+        body: JSON.stringify({ assignmentId, nps, notes }),
       });
       const json = await res.json();
       if (json.success) {
@@ -177,6 +178,7 @@ export default function PreceptorValidar() {
         });
         setCheckoutQuestionnaireId(null);
         setCheckoutNps(EMPTY_NPS);
+        setCheckoutObservations("");
         load();
       } else {
         setMsg({ type: "error", text: json.error || "Não foi possível confirmar checkout." });
@@ -192,10 +194,12 @@ export default function PreceptorValidar() {
     if (checkoutQuestionnaireId === assignmentId) {
       setCheckoutQuestionnaireId(null);
       setCheckoutNps(EMPTY_NPS);
+      setCheckoutObservations("");
       return;
     }
     setCheckoutQuestionnaireId(assignmentId);
     setCheckoutNps(EMPTY_NPS);
+    setCheckoutObservations("");
     setMsg(null);
   }
 
@@ -411,31 +415,45 @@ export default function PreceptorValidar() {
                             </div>
                           </div>
                         </div>
-                        <div className="mt-3 flex items-center justify-end gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setCheckoutQuestionnaireId(null);
-                              setCheckoutNps(EMPTY_NPS);
-                            }}
-                            disabled={checkingOut === a.id}
-                          >
-                            Cancelar
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => checkoutDirect(a.id, checkoutNps)}
-                            disabled={checkingOut === a.id || !canSubmitNps}
-                            className="gap-1"
-                          >
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <p className="text-xs text-slate-600">Observações do preceptor (opcional)</p>
+                            <textarea
+                              value={checkoutObservations}
+                              onChange={(e) => setCheckoutObservations(e.target.value)}
+                              placeholder="Ex.: conduta, intercorrências, pontos de atenção"
+                              maxLength={2000}
+                              rows={3}
+                              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                            />
+                          </div>
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setCheckoutQuestionnaireId(null);
+                                setCheckoutNps(EMPTY_NPS);
+                                setCheckoutObservations("");
+                              }}
+                              disabled={checkingOut === a.id}
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => checkoutDirect(a.id, checkoutNps, checkoutObservations)}
+                              disabled={checkingOut === a.id || !canSubmitNps}
+                              className="gap-1"
+                            >
                             {checkingOut === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> : <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />}
                             Confirmar checkout
                           </Button>
                         </div>
                       </div>
+                    </div>
                     )}
                   </div>
                 ))}

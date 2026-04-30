@@ -27,8 +27,10 @@ type Assignment = {
   checkinAt?: string | null;
   totpValidatedAt?: string | null;
   validatedBy?: string | null;
+  validatedByName?: string | null;
   checkoutAt?: string | null;
   checkoutConfirmedBy?: string | null;
+  checkoutConfirmedByName?: string | null;
   checkoutNotes?: string | null;
   internObservations?: string | null;
   preceptorObservations?: string | null;
@@ -621,9 +623,9 @@ export default function AdminVerComoInterno() {
                               <div className="space-y-2 text-xs text-slate-700">
                                 <p><span className="font-semibold">Check-in:</span> {a.checkinAt ? new Date(a.checkinAt).toLocaleString("pt-BR") : "—"}</p>
                                 <p><span className="font-semibold">Validação check-in:</span> {a.totpValidatedAt ? new Date(a.totpValidatedAt).toLocaleString("pt-BR") : "—"}</p>
-                                <p><span className="font-semibold">Validado por:</span> {a.validatedBy ? (userNameById[a.validatedBy] ?? a.validatedBy) : "—"}</p>
+                                <p><span className="font-semibold">Validado por:</span> {a.validatedBy ? (userNameById[a.validatedBy] ?? a.validatedBy) : (a.validatedByName ? a.validatedByName : (a.totpValidatedAt ? "Telegram" : "—"))}</p>
                                 <p><span className="font-semibold">Checkout:</span> {a.checkoutAt ? new Date(a.checkoutAt).toLocaleString("pt-BR") : "—"}</p>
-                                <p><span className="font-semibold">Checkout confirmado por:</span> {a.checkoutConfirmedBy ? (userNameById[a.checkoutConfirmedBy] ?? a.checkoutConfirmedBy) : "—"}</p>
+                                <p><span className="font-semibold">Checkout confirmado por:</span> {a.checkoutConfirmedBy ? (userNameById[a.checkoutConfirmedBy] ?? a.checkoutConfirmedBy) : (a.checkoutConfirmedByName ? a.checkoutConfirmedByName : (a.checkoutAt ? "Telegram" : "—"))}</p>
                                 <p><span className="font-semibold">Observação do interno:</span> {a.internObservations || "—"}</p>
                                 <p><span className="font-semibold">Observação do preceptor:</span> {a.preceptorObservations || "—"}</p>
                                 <p><span className="font-semibold">Notas de checkout:</span> {a.checkoutNotes || "—"}</p>
