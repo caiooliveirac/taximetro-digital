@@ -5,10 +5,11 @@ import { BarChart3, Download, FileCode2, Filter, Loader2, MailPlus, Printer, Sha
 import { AttendanceReportDocument } from "@/components/reports/attendance-report-document";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_REPORT_FILTERS, type ReportFilterInput } from "@/lib/report-filters";
-import type { ReportCatalogIntern, ReportDocument } from "@/lib/admin-report-builder";
+import type { ReportCatalogCohort, ReportCatalogIntern, ReportDocument } from "@/lib/admin-report-builder";
 
 type CatalogData = {
   faculties: Array<{ id: string; abbr: string; name: string; rotationStartDate: string | null }>;
+  cohorts: ReportCatalogCohort[];
   interns: ReportCatalogIntern[];
 };
 
@@ -21,11 +22,15 @@ const SELECT_CLASS = "mt-1 w-full rounded-lg border border-slate-200 bg-white px
 const INPUT_CLASS = "mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500";
 
 function getInternCohortByGrouping(intern: ReportCatalogIntern, grouping: ReportFilterInput["cohortGrouping"]) {
+  if (grouping === "NAMED_COHORT") {
+    return intern.cohortId
+      ? { key: intern.cohortId, label: intern.cohortName ?? "Turma sem nome" }
+      : { key: "__sem_turma__", label: "Sem turma atribuída" };
+  }
   if (grouping === "ROTATION_7W") {
     return { key: intern.cohortRotationKey, label: intern.cohortRotationLabel };
   }
   if (grouping === "SEMESTER") {
-    // Compatibilidade: SEMESTER antigo aponta para a divisão real por janela de rotação.
     return { key: intern.cohortRotationKey, label: intern.cohortRotationLabel };
   }
   return { key: intern.cohortMonthKey, label: intern.cohortMonthLabel };
@@ -110,6 +115,12 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
   const currentRotationCohort = rotationCohorts[0] ?? null;
   const previousRotationCohort = rotationCohorts[1] ?? null;
   const penultimateRotationCohort = rotationCohorts[2] ?? null;
+
+  const namedCohorts = useMemo(() => {
+    const filtered = catalog.cohorts.filter((c) => !filters.facultyId || c.facultyId === filters.facultyId);
+    const order = { ACTIVE: 0, PLANNED: 1, CLOSED: 2 } as const;
+    return [...filtered].sort((a, b) => order[a.status] - order[b.status] || (a.name ?? a.label).localeCompare(b.name ?? b.label));
+  }, [catalog.cohorts, filters.facultyId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -288,37 +299,51 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
             ))}
           </div>
 
-          {filters.cohortGrouping === "ROTATION_7W" ? (
-            <div className="mt-4 space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
-              <div className="text-xs font-medium text-sky-800">Atalho de turma (rotação)</div>
+          {namedCohorts.length > 0 ? (
+            <div className="mt-4 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+              <div className="text-xs font-medium text-emerald-800">Atalho de turma</div>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => applyRotationShortcut("CURRENT")} disabled={!currentRotationCohort}>
-                  Atual
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => applyRotationShortcut("PREVIOUS")} disabled={!previousRotationCohort}>
-                  Anterior
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => applyRotationShortcut("PENULTIMATE")} disabled={!penultimateRotationCohort}>
-                  Penúltima
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => applyRotationShortcut("CURRENT_AND_PREVIOUS")} disabled={!currentRotationCohort || !previousRotationCohort}>
-                  Atual + anterior
-                </Button>
+                {namedCohorts.map((c) => (
+                  <Button
+                    key={c.id}
+                    type="button"
+                    size="sm"
+                    variant={filters.selectedCohorts.includes(c.id) && filters.cohortGrouping === "NAMED_COHORT" ? "default" : "outline"}
+                    onClick={() => setFilters((prev) => ({
+                      ...prev,
+                      scopeMode: "COHORT",
+                      cohortGrouping: "NAMED_COHORT",
+                      selectedCohorts: [c.id],
+                      display: { ...prev.display, compareCohorts: false },
+                    }))}
+                  >
+                    {c.name ?? c.label}
+                    {c.status === "ACTIVE" && <span className="ml-1 rounded-full bg-emerald-200 px-1 text-[10px] text-emerald-800">ativa</span>}
+                    {c.status === "CLOSED" && <span className="ml-1 rounded-full bg-slate-200 px-1 text-[10px] text-slate-600">fechada</span>}
+                  </Button>
+                ))}
               </div>
-              <div className="text-[11px] text-sky-700">
-                {currentRotationCohort ? `Atual: ${currentRotationCohort.label}` : "Atual: indisponível"}
+            </div>
+          ) : filters.cohortGrouping === "ROTATION_7W" ? (
+            <div className="mt-4 space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
+              <div className="text-xs font-medium text-sky-800">Atalho de turma (rotação heurística)</div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => applyRotationShortcut("CURRENT")} disabled={!currentRotationCohort}>Atual</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => applyRotationShortcut("PREVIOUS")} disabled={!previousRotationCohort}>Anterior</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => applyRotationShortcut("PENULTIMATE")} disabled={!penultimateRotationCohort}>Penúltima</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => applyRotationShortcut("CURRENT_AND_PREVIOUS")} disabled={!currentRotationCohort || !previousRotationCohort}>Atual + anterior</Button>
               </div>
-              <div className="text-[11px] text-sky-700">
-                {previousRotationCohort ? `Anterior: ${previousRotationCohort.label}` : "Anterior: indisponível"}
-              </div>
+              <div className="text-[11px] text-sky-700">{currentRotationCohort ? `Atual: ${currentRotationCohort.label}` : "Atual: indisponível"}</div>
             </div>
           ) : null}
 
           {filters.scopeMode === "COHORT" ? (
             <div className="mt-4 space-y-3">
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Turmas inferidas por janela de execução real de plantões (7 semanas), ancorada em rotationStartDate quando disponível.
-              </div>
+              {filters.cohortGrouping !== "NAMED_COHORT" && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Turmas inferidas por janela de execução real de plantões (7 semanas). Selecione uma faculdade com turmas nomeadas para eliminar a inferência.
+                </div>
+              )}
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={filters.display.compareCohorts} onChange={(event) => setFilters((prev) => ({ ...prev, display: { ...prev.display, compareCohorts: event.target.checked }, selectedCohorts: [] }))} />
                 Comparar turmas
@@ -326,8 +351,9 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
               <label className="block text-sm text-slate-700">
                 <span className="text-xs font-medium text-slate-500">Agrupamento</span>
                 <select className={SELECT_CLASS} value={filters.cohortGrouping} onChange={(event) => setFilters((prev) => ({ ...prev, cohortGrouping: event.target.value as ReportFilterInput["cohortGrouping"], selectedCohorts: [] }))}>
+                  <option value="NAMED_COHORT">Turma nomeada</option>
                   <option value="ROTATION_7W">Ciclo de rotação (7 semanas)</option>
-                  <option value="MONTH">Mês</option>
+                  <option value="MONTH">Mês de cadastro</option>
                 </select>
               </label>
               {!filters.display.compareCohorts ? (
