@@ -5,6 +5,7 @@ import {
   bases,
   caseRecords,
   checkins,
+  cohorts,
   faculties,
   requests,
   rotationTransitions,
@@ -24,6 +25,8 @@ export type ReportCatalogIntern = {
   facultyAbbr: string | null;
   facultyName: string | null;
   createdAt: string;
+  cohortId: string | null;
+  cohortName: string | null;
   cohortMonthKey: string;
   cohortMonthLabel: string;
   cohortSemesterKey: string;
@@ -421,8 +424,19 @@ function sortInterns(interns: ReportInternDocument[], orderBy: ReportOrderBy) {
   return sorted;
 }
 
+export type ReportCatalogCohort = {
+  id: string;
+  name: string | null;
+  label: string;
+  facultyId: string;
+  status: "PLANNED" | "ACTIVE" | "CLOSED";
+  startDate: string;
+  endDate: string;
+};
+
 export async function listReportCatalog(): Promise<{
   faculties: Array<{ id: string; abbr: string; name: string; rotationStartDate: string | null }>;
+  cohorts: ReportCatalogCohort[];
   interns: ReportCatalogIntern[];
 }> {
   const rows = await db
@@ -436,10 +450,13 @@ export async function listReportCatalog(): Promise<{
       rotationStartDate: faculties.rotationStartDate,
       targetHours: faculties.targetHours,
       targetShifts: faculties.targetShifts,
+      cohortId: userRoles.cohortId,
+      cohortName: cohorts.name,
     })
     .from(users)
     .innerJoin(userRoles, eq(userRoles.userId, users.id))
     .leftJoin(faculties, eq(faculties.id, userRoles.facultyId))
+    .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
     .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true), eq(userRoles.isArchived, false), eq(users.isActive, true)))
     .orderBy(faculties.abbreviation, users.name);
 
@@ -498,6 +515,8 @@ export async function listReportCatalog(): Promise<{
         facultyAbbr: row.facultyAbbr,
         facultyName: row.facultyName,
         createdAt: createdAt.toISOString(),
+        cohortId: row.cohortId ?? null,
+        cohortName: row.cohortName ?? null,
         cohortMonthKey: month.key,
         cohortMonthLabel: month.label,
         cohortSemesterKey: semester.key,
@@ -523,32 +542,51 @@ export async function listReportCatalog(): Promise<{
     });
   }
 
+  const knownFacultyIds = [...facultiesMap.keys()];
+  const allCohorts = knownFacultyIds.length > 0
+    ? await db
+        .select({
+          id: cohorts.id,
+          name: cohorts.name,
+          label: cohorts.label,
+          facultyId: cohorts.facultyId,
+          status: cohorts.status,
+          startDate: cohorts.startDate,
+          endDate: cohorts.endDate,
+        })
+        .from(cohorts)
+        .where(inArray(cohorts.facultyId, knownFacultyIds))
+        .orderBy(cohorts.facultyId, cohorts.rotationNumber)
+    : [];
+
   return {
     faculties: [...facultiesMap.values()].sort((left, right) => left.abbr.localeCompare(right.abbr)),
+    cohorts: allCohorts as ReportCatalogCohort[],
     interns,
   };
 }
 
 function getCohortForIntern(intern: ReportCatalogIntern, grouping: CohortGrouping) {
-  // TODO: substituir essa heurística por um campo explícito cohort no schema.
+  if (grouping === "NAMED_COHORT") {
+    return intern.cohortId
+      ? { key: intern.cohortId, label: intern.cohortName ?? "Turma sem nome" }
+      : { key: "__sem_turma__", label: "Sem turma atribuída" };
+  }
   if (grouping === "ROTATION_7W") {
     return { key: intern.cohortRotationKey, label: intern.cohortRotationLabel };
   }
   if (grouping === "SEMESTER") {
-    // Compatibilidade retroativa: SEMESTER antigo agora mapeia para janela real de rotação.
     return { key: intern.cohortRotationKey, label: intern.cohortRotationLabel };
   }
   return { key: intern.cohortMonthKey, label: intern.cohortMonthLabel };
 }
 
 function buildInternWarnings(filters: ReportFilterInput) {
-  // NOTE: existe rotationStartDate por faculdade, mas ainda não há entidade completa de rodízio com data final.
-  const warnings = [
+  if (filters.cohortGrouping === "NAMED_COHORT") return [];
+  return [
     "Turmas inferidas por janela de execução de plantões (7 semanas), ancorada em rotationStartDate quando disponível.",
     "Rodízio ainda não tem entidade completa com data final; a inferência pode divergir em casos de ajustes manuais.",
   ];
-  if (!filters.display.showHeatmap) return warnings;
-  return warnings;
 }
 
 export async function generateAdminReport(filters: ReportFilterInput): Promise<{
