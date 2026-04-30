@@ -11,6 +11,7 @@ import {
   type ReportTypeSection,
 } from "@/lib/admin-report-builder";
 import { DEFAULT_REPORT_FILTERS } from "@/lib/report-filters";
+import { sumAssignmentHours } from "@/lib/utils";
 
 function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument {
   const { todayStr, hourNow } = getBahiaContext();
@@ -81,6 +82,7 @@ function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument 
 
       const completed = Object.values(typeSections).reduce((sum, section) => sum + section.done.length, 0);
       const scheduled = Object.values(typeSections).reduce((sum, section) => sum + section.scheduled.length, 0);
+      const completedHours = Object.values(typeSections).reduce((sum, section) => sum + sumAssignmentHours(section.done), 0);
 
       return {
         internId: intern.internId,
@@ -99,7 +101,7 @@ function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument 
         absences,
         progress: {
           targetHours: 0,
-          completedHours: completed * 12,
+          completedHours,
           targetShifts: 0,
           completedShifts: completed,
           percentHours: null,
@@ -122,6 +124,7 @@ function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument 
   const totalCompleted = interns.reduce((sum, intern) => sum + intern.metrics.completed, 0);
   const totalScheduled = interns.reduce((sum, intern) => sum + intern.metrics.scheduled, 0);
   const totalAbsences = interns.reduce((sum, intern) => sum + intern.metrics.absences, 0);
+  const totalHours = interns.reduce((sum, intern) => sum + intern.progress.completedHours, 0);
 
   return {
     generatedAt: faculty.generatedAt,
@@ -141,7 +144,7 @@ function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument 
       assignmentCount: totalCompleted + totalScheduled + totalAbsences,
     },
     cover: {
-      totalHours: totalCompleted * 12,
+      totalHours,
       totalCompleted,
       totalScheduled,
       totalAbsences,
