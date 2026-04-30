@@ -5,8 +5,19 @@ type Actor = {
   role: string;
 };
 
-export async function executeListCaseRecords(actor: Actor) {
-  const rows = await listCaseRecords();
+export async function executeListCaseRecords(params: {
+  actor: Actor;
+  filters?: {
+    internId?: string | null;
+    assignmentId?: string | null;
+  };
+}) {
+  const { actor, filters } = params;
+
+  const rows = await listCaseRecords({
+    internId: filters?.internId ?? undefined,
+    assignmentId: filters?.assignmentId ?? undefined,
+  });
 
   if (actor.role === "INTERN") {
     return rows.filter((record) => record.internId === actor.id);

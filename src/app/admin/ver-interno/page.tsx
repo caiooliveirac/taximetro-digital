@@ -22,6 +22,17 @@ type Assignment = {
   id: string; internName: string; baseCode: string; baseName: string;
   baseType?: string; date: string; period: string; status: string;
   facultyAbbr: string;
+  checkinStatus?: string | null;
+  checkinMethod?: string | null;
+  checkinAt?: string | null;
+  totpValidatedAt?: string | null;
+  validatedBy?: string | null;
+  checkoutAt?: string | null;
+  checkoutConfirmedBy?: string | null;
+  checkoutNotes?: string | null;
+  internObservations?: string | null;
+  preceptorObservations?: string | null;
+  absenceJustification?: string | null;
 };
 type ComplianceRow = {
   userId: string; name: string; facultyAbbr: string;
@@ -48,6 +59,16 @@ type SwapHistoryEntry = {
   target: { id: string | null; name: string | null; gave: SwapSlot | null; received: SwapSlot | null };
 };
 
+type CaseRecord = {
+  id: string;
+  assignmentId: string;
+  internId: string;
+  caseNumber: string;
+  nickname: string;
+  description: string | null;
+  createdAt: string;
+};
+
 const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra", DROP_SHIFT: "Descarte" };
 const STATUS_LABEL: Record<string, string> = { PENDING: "Pendente", APPROVED: "Aprovado", REJECTED: "Rejeitado" };
 
@@ -65,6 +86,9 @@ export default function AdminVerComoInterno() {
   const [bases, setBases] = useState<Base[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
+  const [caseRecords, setCaseRecords] = useState<CaseRecord[]>([]);
+  const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
+  const [userNameById, setUserNameById] = useState<Record<string, string>>({});
 
   /* ── action panel ── */
   const [actionTab, setActionTab] = useState<"DROP" | "EXTRA" | null>(null);
@@ -81,6 +105,8 @@ export default function AdminVerComoInterno() {
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
+          const usersMap = Object.fromEntries((json.data as Array<{ id: string; name: string }>).map((u) => [u.id, u.name]));
+          setUserNameById(usersMap);
           setInterns(
             json.data
               .filter((u: { role: string; isActive: boolean; isArchived?: boolean }) => u.role === "INTERN" && u.isActive && !u.isArchived)
@@ -103,13 +129,15 @@ export default function AdminVerComoInterno() {
     setLoadingData(true);
     setActionTab(null);
     setActionMsg(null);
+    setExpandedAssignmentId(null);
 
     Promise.all([
       fetch(`/taximetro/api/assignments?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/compliance?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/requests?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/requests/swap-history?internId=${selected.id}`).then((r) => r.json()),
-    ]).then(([aJson, cJson, rJson, shJson]) => {
+      fetch(`/taximetro/api/case-records?internId=${selected.id}`).then((r) => r.json()),
+    ]).then(([aJson, cJson, rJson, shJson, crJson]) => {
       if (aJson.success) {
         setAssignments(
           aJson.data
@@ -125,6 +153,8 @@ export default function AdminVerComoInterno() {
       if (rJson.success) setRequests(rJson.data);
       if (shJson.success) setSwapHistory(shJson.data);
       else setSwapHistory([]);
+      if (crJson.success) setCaseRecords(crJson.data);
+      else setCaseRecords([]);
     })
       .catch(() => { })
       .finally(() => setLoadingData(false));
@@ -183,6 +213,15 @@ export default function AdminVerComoInterno() {
 
   const weeklyEffective = compliance ? compliance.thisWeekScheduled - (compliance.thisWeekAbsent ?? 0) : 0;
   const weeklyGoal = compliance?.targetShiftsPerWeek ?? 0;
+  const caseRecordsByAssignment = useMemo(() => {
+    const grouped = new Map<string, CaseRecord[]>();
+    for (const record of caseRecords) {
+      const list = grouped.get(record.assignmentId) ?? [];
+      list.push(record);
+      grouped.set(record.assignmentId, list);
+    }
+    return grouped;
+  }, [caseRecords]);
 
   const selectClass = "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500";
 
@@ -561,19 +600,54 @@ export default function AdminVerComoInterno() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[...pastAssignments].reverse().map((a) => (
-                      <TableRow key={a.id}>
-                        <TableCell className="text-xs">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}</TableCell>
-                        <TableCell className="font-medium">{a.baseCode}</TableCell>
-                        <TableCell>
-                          <span className={`flex items-center gap-1 text-xs ${getPeriodStyle(a.period).text}`}>
-                            {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
-                            {getPeriodStyle(a.period).label}
-                          </span>
-                        </TableCell>
-                        <TableCell><StatusBadge status={a.status} /></TableCell>
-                      </TableRow>
-                    ))}
+                    {[...pastAssignments].reverse().map((a) => {
+                      const isExpanded = expandedAssignmentId === a.id;
+                      const records = caseRecordsByAssignment.get(a.id) ?? [];
+                      return [
+                        <TableRow key={a.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setExpandedAssignmentId(isExpanded ? null : a.id)}>
+                          <TableCell className="text-xs">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}</TableCell>
+                          <TableCell className="font-medium">{a.baseCode}</TableCell>
+                          <TableCell>
+                            <span className={`flex items-center gap-1 text-xs ${getPeriodStyle(a.period).text}`}>
+                              {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
+                              {getPeriodStyle(a.period).label}
+                            </span>
+                          </TableCell>
+                          <TableCell><StatusBadge status={a.status} /></TableCell>
+                        </TableRow>,
+                        isExpanded ? (
+                          <TableRow key={`${a.id}-detail`} className="bg-slate-50/70">
+                            <TableCell colSpan={4}>
+                              <div className="space-y-2 text-xs text-slate-700">
+                                <p><span className="font-semibold">Check-in:</span> {a.checkinAt ? new Date(a.checkinAt).toLocaleString("pt-BR") : "—"}</p>
+                                <p><span className="font-semibold">Validação check-in:</span> {a.totpValidatedAt ? new Date(a.totpValidatedAt).toLocaleString("pt-BR") : "—"}</p>
+                                <p><span className="font-semibold">Validado por:</span> {a.validatedBy ? (userNameById[a.validatedBy] ?? a.validatedBy) : "—"}</p>
+                                <p><span className="font-semibold">Checkout:</span> {a.checkoutAt ? new Date(a.checkoutAt).toLocaleString("pt-BR") : "—"}</p>
+                                <p><span className="font-semibold">Checkout confirmado por:</span> {a.checkoutConfirmedBy ? (userNameById[a.checkoutConfirmedBy] ?? a.checkoutConfirmedBy) : "—"}</p>
+                                <p><span className="font-semibold">Observação do interno:</span> {a.internObservations || "—"}</p>
+                                <p><span className="font-semibold">Observação do preceptor:</span> {a.preceptorObservations || "—"}</p>
+                                <p><span className="font-semibold">Notas de checkout:</span> {a.checkoutNotes || "—"}</p>
+                                <div>
+                                  <p className="font-semibold">Ocorrências clínicas:</p>
+                                  {records.length > 0 ? (
+                                    <ul className="mt-1 space-y-1">
+                                      {records.map((record) => (
+                                        <li key={record.id} className="rounded border border-slate-200 bg-white px-2 py-1">
+                                          <span className="font-medium">#{record.caseNumber} · {record.nickname}</span>
+                                          {record.description ? <span className="text-slate-600"> — {record.description}</span> : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <p>—</p>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : null,
+                      ];
+                    })}
                   </TableBody>
                 </Table>
               </div>
