@@ -17,7 +17,8 @@ import { getFacultyStyle, getBaseStyle, getPeriodStyle, baseViewIndex } from "@/
 import { operationalDateStr } from "@/lib/utils";
 
 /* ── types ── */
-type Intern = { id: string; name: string; facultyAbbr: string; isActive: boolean };
+type Intern = { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId: string | null; cohortName: string | null };
+type CohortOption = { id: string; name: string | null; label: string; status: string };
 type Assignment = {
   id: string; internName: string; baseCode: string; baseName: string;
   baseType?: string; date: string; period: string; status: string;
@@ -81,6 +82,12 @@ export default function AdminVerComoInterno() {
   const [selected, setSelected] = useState<Intern | null>(null);
   const [loadingList, setLoadingList] = useState(true);
 
+  /* ── cohort change ── */
+  const [cohortOptions, setCohortOptions] = useState<CohortOption[]>([]);
+  const [changingCohort, setChangingCohort] = useState(false);
+  const [cohortSelectValue, setCohortSelectValue] = useState<string>("");
+  const [cohortSaving, setCohortSaving] = useState(false);
+
   /* ── scoped data for selected intern ── */
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow | null>(null);
@@ -109,11 +116,14 @@ export default function AdminVerComoInterno() {
         if (json.success) {
           const usersMap = Object.fromEntries((json.data as Array<{ id: string; name: string }>).map((u) => [u.id, u.name]));
           setUserNameById(usersMap);
-          setInterns(
-            json.data
-              .filter((u: { role: string; isActive: boolean; isArchived?: boolean }) => u.role === "INTERN" && u.isActive && !u.isArchived)
-              .sort((a: Intern, b: Intern) => a.name.localeCompare(b.name))
-          );
+          const internList = json.data
+            .filter((u: { role: string; isActive: boolean; isArchived?: boolean }) => u.role === "INTERN" && u.isActive && !u.isArchived)
+            .map((u: { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId?: string | null; cohortName?: string | null }) => ({
+              id: u.id, name: u.name, facultyAbbr: u.facultyAbbr, facultyId: u.facultyId ?? null,
+              isActive: u.isActive, cohortId: u.cohortId ?? null, cohortName: u.cohortName ?? null,
+            }))
+            .sort((a: Intern, b: Intern) => a.name.localeCompare(b.name));
+          setInterns(internList);
         }
       })
       .catch(() => { })
@@ -161,6 +171,43 @@ export default function AdminVerComoInterno() {
       .catch(() => { })
       .finally(() => setLoadingData(false));
   }, [selected]);
+
+  /* ── load cohort options when intern selected ── */
+  useEffect(() => {
+    if (!selected?.facultyId) { setCohortOptions([]); return; }
+    fetch(`/taximetro/api/admin/cohorts?facultyId=${selected.facultyId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          setCohortOptions(json.data.filter((c: CohortOption) => c.status !== "CLOSED"));
+          setCohortSelectValue(selected.cohortId ?? "");
+        }
+      })
+      .catch(() => {});
+    setChangingCohort(false);
+  }, [selected]);
+
+  async function saveCohort() {
+    if (!selected) return;
+    setCohortSaving(true);
+    const res = await fetch(`/taximetro/api/admin/users?id=${selected.id}`);
+    const json = await res.json();
+    const internRole = json.data?.[0]?.allRoles?.find((r: { id: string | null; role: string; facultyId: string | null }) => r.role === "INTERN" && r.facultyId === selected.facultyId);
+    if (!internRole?.id) { setCohortSaving(false); return; }
+    const patchRes = await fetch("/taximetro/api/admin/interns/cohort", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userRoleId: internRole.id as string, cohortId: cohortSelectValue || null }),
+    });
+    const patchJson = await patchRes.json();
+    if (patchJson.success) {
+      const newCohort = cohortOptions.find((c) => c.id === cohortSelectValue);
+      setSelected((prev) => prev ? { ...prev, cohortId: cohortSelectValue || null, cohortName: newCohort?.name ?? newCohort?.label ?? null } : prev);
+      setInterns((prev) => prev.map((i) => i.id === selected.id ? { ...i, cohortId: cohortSelectValue || null, cohortName: newCohort?.name ?? newCohort?.label ?? null } : i));
+      setChangingCohort(false);
+    }
+    setCohortSaving(false);
+  }
 
   /* ── actions ── */
   async function submitAction() {
@@ -294,9 +341,48 @@ export default function AdminVerComoInterno() {
           </button>
           <div>
             <h1 className="text-xl font-semibold text-slate-900">{selected.name}</h1>
-            <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${fs.pill}`}>
-              {selected.facultyAbbr}
-            </span>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${fs.pill}`}>
+                {selected.facultyAbbr}
+              </span>
+              {!changingCohort ? (
+                <button
+                  onClick={() => setChangingCohort(true)}
+                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] text-slate-500 hover:border-accent-400 hover:text-accent-600 transition-colors"
+                  title="Clique para mudar turma"
+                >
+                  {selected.cohortName ? (
+                    <span className="font-medium text-emerald-700">{selected.cohortName}</span>
+                  ) : (
+                    <span className="italic text-slate-400">Sem turma</span>
+                  )}
+                  <span className="text-[10px]">✎</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <select
+                    value={cohortSelectValue}
+                    onChange={(e) => setCohortSelectValue(e.target.value)}
+                    className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-900"
+                  >
+                    <option value="">Sem turma</option>
+                    {cohortOptions.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name ?? c.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={saveCohort}
+                    disabled={cohortSaving}
+                    className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] text-white disabled:opacity-50 hover:bg-emerald-700"
+                  >
+                    {cohortSaving ? "…" : "Salvar"}
+                  </button>
+                  <button onClick={() => setChangingCohort(false)} className="rounded px-2 py-0.5 text-[11px] text-slate-500 hover:text-slate-700">
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-400">

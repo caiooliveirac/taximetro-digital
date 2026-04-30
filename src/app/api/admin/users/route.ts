@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
-import { users, userRoles, faculties, bases, assignments, checkins, requests, caseRecords, qrSessions, telegramBindings, auditLog, inviteLinks, passwordResetTokens, cruFixedAssignments, userMergeEvents } from "@/db/schema";
+import { users, userRoles, faculties, bases, cohorts, assignments, checkins, requests, caseRecords, qrSessions, telegramBindings, auditLog, inviteLinks, passwordResetTokens, cruFixedAssignments, userMergeEvents } from "@/db/schema";
 import { eq, and, inArray, ne, sql } from "drizzle-orm";
 import { hash } from "bcryptjs";
 import { logAudit } from "@/lib/audit";
@@ -189,10 +189,13 @@ type UserRoleRow = {
   selfie: string | null;
   createdAt: Date;
   role: string | null;
+  userRoleId: string | null;
   facultyId: string | null;
   facultyAbbr: string | null;
   baseId: string | null;
   baseCode: string | null;
+  cohortId: string | null;
+  cohortName: string | null;
   mergedIntoUserId: string | null;
   isArchived: boolean;
 };
@@ -314,11 +317,14 @@ function buildMergedPlaceholderEmail(userId: string) {
 
 function aggregateUsers(rows: UserRoleRow[]) {
   type AggregatedRole = {
+    id: string | null;
     role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN";
     facultyId: string | null;
     facultyAbbr: string | null;
     baseId: string | null;
     baseCode: string | null;
+    cohortId: string | null;
+    cohortName: string | null;
   };
   type AggregatedRow = UserRoleRow & {
     alsoPreceptor: boolean;
@@ -329,11 +335,14 @@ function aggregateUsers(rows: UserRoleRow[]) {
   for (const row of rows) {
     const roleEntry: AggregatedRole | null = row.role
       ? {
+          id: row.userRoleId ?? null,
           role: row.role as AggregatedRole["role"],
           facultyId: row.facultyId,
           facultyAbbr: row.facultyAbbr,
           baseId: row.baseId,
           baseCode: row.baseCode,
+          cohortId: row.cohortId ?? null,
+          cohortName: row.cohortName ?? null,
         }
       : null;
 
@@ -399,10 +408,13 @@ export async function GET(req: NextRequest) {
       selfie: includeSelfie ? users.selfie : sql<string | null>`null`,
       createdAt: users.createdAt,
       role: userRoles.role,
+      userRoleId: userRoles.id,
       facultyId: userRoles.facultyId,
       facultyAbbr: faculties.abbreviation,
       baseId: userRoles.baseId,
       baseCode: bases.code,
+      cohortId: userRoles.cohortId,
+      cohortName: cohorts.name,
       mergedIntoUserId: users.mergedIntoUserId,
       isArchived: sql<boolean>`COALESCE(${userRoles.isArchived}, false)`,
     })
@@ -410,6 +422,7 @@ export async function GET(req: NextRequest) {
     .leftJoin(userRoles, and(eq(userRoles.userId, users.id), eq(userRoles.isActive, true)))
     .leftJoin(faculties, eq(faculties.id, userRoles.facultyId))
     .leftJoin(bases, eq(bases.id, userRoles.baseId))
+    .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
     .orderBy(users.name);
 
   if (impersonateRole && ["LEADER", "PRECEPTOR", "INTERN"].includes(impersonateRole)) {
