@@ -7,6 +7,12 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Unreleased]
 
+### Adicionado
+- **Heatmap de presença para líderes** — a visão heatmap (antes exclusiva do admin/relatórios) agora está disponível na página `/leader/relatorios` para o líder autenticado. Exibe somente os internos da turma do líder (`cohortId` do token), é totalmente clicável (abre modal com detalhes do plantão) e respeita o mesmo período configurado pelos filtros de data. Novas rotas:
+  - `GET /api/leader/heatmap?from=&to=` — gera o `ReportDocument` escopado à faculdade + turma do líder.
+  - `GET /api/leader/assignments/[id]` — retorna detalhes do plantão; rejeita IDs fora da faculdade do líder (403).
+  - Componente `Heatmap` exportado de `attendance-report-document.tsx` com prop `assignmentDetailPath` configurável (default: rota admin).
+
 ---
 
 ## [0.9.0] — 2026-04-22
