@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   UserPlus, Link2, Copy, Check, Clock, UserCheck, UserX, Trash2, Target,
   ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight, Plus, X, Repeat,
@@ -14,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
-import { localDateStr } from "@/lib/utils";
 
 type UserRow = {
   id: string;
@@ -91,13 +91,16 @@ const DAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
 export default function LeaderInternos() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const focusInternId = searchParams.get("internId");
   const { target: impersonateTarget } = useImpersonate();
   const effectiveFacultyId = impersonateTarget?.facultyId ?? session?.user?.facultyId;
   const [tab, setTab] = useState<Tab>("ativos");
   const [users, setUsers] = useState<UserRow[]>([]);
   const [archivedUsers, setArchivedUsers] = useState<UserRow[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
-  const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+  const [internAssignmentsById, setInternAssignmentsById] = useState<Record<string, AssignmentRow[]>>({});
+  const [loadingHistoryById, setLoadingHistoryById] = useState<Record<string, boolean>>({});
   const [pending, setPending] = useState<UserRow[]>([]);
   const [links, setLinks] = useState<InviteLink[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,15 +124,11 @@ export default function LeaderInternos() {
 
   const loadData = useCallback(async () => {
     try {
-      const to = localDateStr();
-      const from = localDateStr(new Date(Date.now() - 30 * 86400000));
-
-      const [usersRes, pendingRes, linksRes, complianceRes, assignRes, swapRes] = await Promise.all([
+      const [usersRes, pendingRes, linksRes, complianceRes, swapRes] = await Promise.all([
         fetch("/taximetro/api/admin/users").then((r) => r.json()),
         fetch("/taximetro/api/leader/pendentes").then((r) => r.json()),
         fetch("/taximetro/api/leader/convites").then((r) => r.json()),
         fetch("/taximetro/api/compliance").then((r) => r.json()),
-        fetch(`/taximetro/api/assignments?from=${from}&to=${to}`).then((r) => r.json()),
         fetch("/taximetro/api/requests/swap-history").then((r) => r.json()),
       ]);
       if (usersRes.success) {
@@ -140,7 +139,6 @@ export default function LeaderInternos() {
       if (pendingRes.success) setPending(pendingRes.data);
       if (linksRes.success) setLinks(linksRes.data.filter((l: InviteLink) => l.isActive));
       if (complianceRes.success) setCompliance(complianceRes.data);
-      if (assignRes.success) setAssignments(assignRes.data);
       if (swapRes.success) setSwapHistory(swapRes.data);
       setError("");
     } catch {
@@ -150,6 +148,36 @@ export default function LeaderInternos() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  async function loadInternAssignments(internId: string) {
+    if (internAssignmentsById[internId] || loadingHistoryById[internId]) return;
+
+    setLoadingHistoryById((current) => ({ ...current, [internId]: true }));
+    try {
+      const response = await fetch(`/taximetro/api/assignments?internId=${internId}`);
+      const json = await response.json();
+      if (json.success) {
+        const rows: AssignmentRow[] = (json.data as AssignmentRow[])
+          .filter((assignment) => assignment.status !== "CANCELLED")
+          .sort((left, right) => right.date.localeCompare(left.date));
+        setInternAssignmentsById((current) => ({ ...current, [internId]: rows }));
+      } else {
+        setInternAssignmentsById((current) => ({ ...current, [internId]: [] }));
+      }
+    } catch {
+      setInternAssignmentsById((current) => ({ ...current, [internId]: [] }));
+    } finally {
+      setLoadingHistoryById((current) => ({ ...current, [internId]: false }));
+    }
+  }
+
+  useEffect(() => {
+    if (!focusInternId || tab !== "ativos") return;
+    if (!users.some((user) => user.id === focusInternId)) return;
+
+    setExpandedId(focusInternId);
+    void loadInternAssignments(focusInternId);
+  }, [focusInternId, tab, users]);
 
   async function generateLink() {
     try {
@@ -266,7 +294,13 @@ export default function LeaderInternos() {
     absenceJustificationActor: string | null;
     absenceJustificationAt: string | null;
   }) {
-    setAssignments((current) => current.map((assignment) => assignment.id === assignmentId ? { ...assignment, ...data } : assignment));
+    setInternAssignmentsById((current) => {
+      const next: Record<string, AssignmentRow[]> = {};
+      for (const [internId, assignments] of Object.entries(current)) {
+        next[internId] = assignments.map((assignment) => assignment.id === assignmentId ? { ...assignment, ...data } : assignment);
+      }
+      return next;
+    });
   }
 
   /* ── Derive available dates from selected base ── */
@@ -359,11 +393,13 @@ export default function LeaderInternos() {
                 {filtered.map((u) => {
                   const c = compliance.find((cr) => cr.userId === u.id);
                   const isExpanded = expandedId === u.id;
+                  const allAssignmentsForIntern = internAssignmentsById[u.id] ?? [];
+                  const loadingHistory = loadingHistoryById[u.id] ?? false;
                   const internAssignments = isExpanded
-                    ? assignments.filter((a) => a.internId === u.id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10)
+                    ? allAssignmentsForIntern
                     : [];
                   const internCompleted = isExpanded
-                    ? assignments.filter((a) => a.internId === u.id && ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status))
+                    ? allAssignmentsForIntern.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status))
                     : [];
                   const cruCount = internCompleted.filter((a) => a.baseType === "CENTRAL").length;
                   const usaCount = internCompleted.filter((a) => a.baseType === "USA").length;
@@ -376,7 +412,13 @@ export default function LeaderInternos() {
                     <tr
                       key={u.id}
                       className={`border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${isExpanded ? "bg-slate-50" : "hover:bg-slate-50/50"}`}
-                      onClick={() => setExpandedId(isExpanded ? null : u.id)}
+                      onClick={() => {
+                        const nextExpanded = isExpanded ? null : u.id;
+                        setExpandedId(nextExpanded);
+                        if (nextExpanded) {
+                          void loadInternAssignments(nextExpanded);
+                        }
+                      }}
                     >
                       <td colSpan={6} className="p-0">
                         {/* Main row content */}
@@ -537,8 +579,10 @@ export default function LeaderInternos() {
 
                             {/* Recent assignments */}
                             <div>
-                              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Últimos plantões</h3>
-                              {internAssignments.length > 0 ? (
+                              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Histórico de plantões</h3>
+                              {loadingHistory ? (
+                                <p className="text-xs text-slate-400">Carregando histórico...</p>
+                              ) : internAssignments.length > 0 ? (
                                 <div className="space-y-1">
                                   {internAssignments.map((a) => {
                                     const bs = getBaseStyle(a.baseType);
@@ -578,7 +622,7 @@ export default function LeaderInternos() {
                                   })}
                                 </div>
                               ) : (
-                                <p className="text-xs text-slate-400">Nenhum plantão nos últimos 30 dias.</p>
+                                <p className="text-xs text-slate-400">Nenhum plantão registrado.</p>
                               )}
                             </div>
 
