@@ -86,7 +86,7 @@ jobs:
               --add-host=host.docker.internal:host-gateway \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -v "$(pwd)/scripts/materialized-view-available-slots.sql:/tmp/mv.sql:ro" \
-              ${{ env.APP }}-builder \
+              postgres:16-alpine \
               sh -c 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/mv.sql'
 
             echo "=== Schema changes complete ==="
