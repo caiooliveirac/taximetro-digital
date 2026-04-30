@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
   const isAdmin = user.role === "COORDINATOR";
-  const includeUnavailable = new URL(req.url).searchParams.get("all") === "true";
+  const includeUnavailable = req.nextUrl.searchParams.get("all") === "true";
 
   const rows = isAdmin
     ? await listExtraOffersForAdmin()

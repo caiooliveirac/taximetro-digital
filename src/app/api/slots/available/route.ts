@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   const user = await getEffectiveUser(req);
   if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = req.nextUrl;
   const selfOnly = searchParams.get("selfOnly") === "true";
   const weekStartParam = searchParams.get("weekStart");
   const weekStart = weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)

@@ -53,7 +53,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = req.nextUrl;
   const linkId = searchParams.get("id");
   if (!linkId) return NextResponse.json({ success: false, error: "id obrigatório" }, { status: 400 });
 
