@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle, getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
-import { addDaysToDateStr, operationalDateStr } from "@/lib/utils";
+import { operationalDateStr } from "@/lib/utils";
 
 /* ── types ── */
 type Intern = { id: string; name: string; facultyAbbr: string; isActive: boolean };
@@ -104,12 +104,8 @@ export default function AdminVerComoInterno() {
     setActionTab(null);
     setActionMsg(null);
 
-    const today = operationalDateStr();
-    const futureEnd = addDaysToDateStr(today, 30);
-    const past90 = addDaysToDateStr(today, -90);
-
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${past90}&to=${futureEnd}&internId=${selected.id}`).then((r) => r.json()),
+      fetch(`/taximetro/api/assignments?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/compliance?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/requests?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/requests/swap-history?internId=${selected.id}`).then((r) => r.json()),
@@ -333,7 +329,7 @@ export default function AdminVerComoInterno() {
             <div>
               <h2 className="text-sm font-semibold text-slate-900 mb-2">Próximos Plantões</h2>
               <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] divide-y divide-slate-100">
-                {upcoming.slice(0, 10).map((a) => (
+                  {upcoming.map((a) => (
                   <div key={a.id} className="flex items-center gap-3 px-4 py-2.5">
                     <span className={`inline-block h-2 w-2 rounded-full ${getBaseStyle(a.baseType).dot}`} />
                     <span className="text-sm font-medium text-slate-900 w-12">{a.baseCode}</span>
@@ -565,7 +561,7 @@ export default function AdminVerComoInterno() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[...pastAssignments].reverse().slice(0, 15).map((a) => (
+                    {[...pastAssignments].reverse().map((a) => (
                       <TableRow key={a.id}>
                         <TableCell className="text-xs">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}</TableCell>
                         <TableCell className="font-medium">{a.baseCode}</TableCell>

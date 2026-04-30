@@ -640,6 +640,12 @@ export default function LeaderDashboard() {
                     >
                       {row.name}
                     </button>
+                    <Link
+                      href={`/leader/internos?internId=${row.internId}`}
+                      className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700 hover:bg-red-100"
+                    >
+                      Ver no histórico
+                    </Link>
                     {row.facultyAbbr && (
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${fs.pill}`}>
                         {row.facultyAbbr}
