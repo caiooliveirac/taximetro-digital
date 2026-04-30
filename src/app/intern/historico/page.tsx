@@ -6,7 +6,7 @@ import { AbsenceJustificationDialog } from "@/components/absence-justification-d
 import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
-import { localDateStr } from "@/lib/utils";
+import { localDateStr, sumAssignmentHours } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -15,6 +15,7 @@ type Assignment = {
   baseType?: string;
   date: string;
   period: string;
+  shift?: string | null;
   status: string;
   isExtraShift?: boolean;
   absenceJustification?: string | null;
@@ -59,7 +60,7 @@ export default function InternHistorico() {
   }, []);
 
   const completed = assignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status) && !a.isExtraShift);
-  const totalHours = completed.length * 12;
+  const totalHours = sumAssignmentHours(completed);
 
   function handleJustificationSaved(assignmentId: string, data: {
     absenceJustification: string | null;

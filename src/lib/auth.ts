@@ -5,7 +5,7 @@ import Google from "next-auth/providers/google";
 import { compare } from "bcryptjs";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { users, userRoles } from "@/db/schema";
+import { users, userRoles, cohorts } from "@/db/schema";
 import { logAudit } from "@/lib/audit";
 
 type LoginIdentifierType = "EMAIL" | "CPF";
@@ -83,8 +83,19 @@ async function logCredentialLoginEvent(input: {
 
 async function fetchRole(userId: string) {
   const [role] = await db
-    .select()
+    .select({
+      id: userRoles.id,
+      userId: userRoles.userId,
+      role: userRoles.role,
+      facultyId: userRoles.facultyId,
+      baseId: userRoles.baseId,
+      cohortId: userRoles.cohortId,
+      cohortName: cohorts.name,
+      isActive: userRoles.isActive,
+      isArchived: userRoles.isArchived,
+    })
     .from(userRoles)
+    .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
     .where(and(eq(userRoles.userId, userId), eq(userRoles.isActive, true)))
     .orderBy(sql`CASE ${userRoles.role} WHEN 'COORDINATOR' THEN 0 WHEN 'LEADER' THEN 1 WHEN 'PRECEPTOR' THEN 2 WHEN 'INTERN' THEN 3 END`)
     .limit(1);
@@ -97,8 +108,11 @@ async function fetchRoles(userId: string) {
       role: userRoles.role,
       facultyId: userRoles.facultyId,
       baseId: userRoles.baseId,
+      cohortId: userRoles.cohortId,
+      cohortName: cohorts.name,
     })
     .from(userRoles)
+    .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
     .where(and(eq(userRoles.userId, userId), eq(userRoles.isActive, true)))
     .orderBy(sql`CASE ${userRoles.role} WHEN 'COORDINATOR' THEN 0 WHEN 'LEADER' THEN 1 WHEN 'PRECEPTOR' THEN 2 WHEN 'INTERN' THEN 3 END`);
 
@@ -106,6 +120,8 @@ async function fetchRoles(userId: string) {
     role: row.role,
     facultyId: row.facultyId ?? null,
     baseId: row.baseId ?? null,
+    cohortId: row.cohortId ?? null,
+    cohortName: row.cohortName ?? null,
   }));
 }
 
@@ -241,11 +257,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           name: user.name,
           email: user.email,
           role: role.role,
-          // roles agora carrega { role, facultyId, baseId }[]. Helper roles.ts
-          // aceita tanto Role[] (sessoes antigas) quanto SessionRole[] (novas).
           roles,
           facultyId: role.facultyId ?? null,
           baseId: role.baseId ?? null,
+          cohortId: role.cohortId ?? null,
+          cohortName: role.cohortName ?? null,
           mustChangePassword: user.forcePasswordChange,
         };
       },
@@ -297,19 +313,28 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           token.role = role?.role ?? "INTERN";
           token.facultyId = role?.facultyId ?? null;
           token.baseId = role?.baseId ?? null;
+          token.cohortId = role?.cohortId ?? null;
+          token.cohortName = role?.cohortName ?? null;
           token.roles = roles;
           token.mustChangePassword = dbUser.forcePasswordChange;
         }
       } else if (user) {
+        const u = user as unknown as {
+          role: string; facultyId: string | null; baseId: string | null;
+          cohortId?: string | null; cohortName?: string | null;
+          roles?: unknown; mustChangePassword?: boolean;
+        };
         token.id = user.id as string;
-        token.role = (user as unknown as { role: string }).role as typeof token.role;
-        token.facultyId = (user as unknown as { facultyId: string | null }).facultyId;
-        token.baseId = (user as unknown as { baseId: string | null }).baseId;
-        const incomingRoles = (user as unknown as { roles?: unknown }).roles;
+        token.role = u.role as typeof token.role;
+        token.facultyId = u.facultyId;
+        token.baseId = u.baseId;
+        token.cohortId = u.cohortId ?? null;
+        token.cohortName = u.cohortName ?? null;
+        const incomingRoles = u.roles;
         token.roles = Array.isArray(incomingRoles) && incomingRoles.length > 0
           ? (incomingRoles as typeof token.roles)
           : [{ role: token.role, facultyId: token.facultyId, baseId: token.baseId }];
-        token.mustChangePassword = (user as unknown as { mustChangePassword?: boolean }).mustChangePassword ?? false;
+        token.mustChangePassword = u.mustChangePassword ?? false;
       }
       return token;
     },
@@ -318,8 +343,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       (session.user as { role: string }).role = token.role as string;
       (session.user as { facultyId: string | null }).facultyId = token.facultyId as string | null;
       (session.user as { baseId: string | null }).baseId = token.baseId as string | null;
-      // Propaga roles diretamente. Helper roles.ts aceita tanto Role[] (JWTs
-      // legados emitidos antes do Corte B) quanto SessionRole[] (novos).
+      (session.user as unknown as { cohortId: string | null }).cohortId = (token.cohortId as string | null) ?? null;
+      (session.user as unknown as { cohortName: string | null }).cohortName = (token.cohortName as string | null) ?? null;
       (session.user as { roles: unknown }).roles = token.roles
         ?? [{ role: token.role as string, facultyId: token.facultyId ?? null, baseId: token.baseId ?? null }];
       (session.user as { mustChangePassword: boolean }).mustChangePassword = Boolean(token.mustChangePassword);

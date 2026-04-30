@@ -53,6 +53,7 @@ export async function listNonCancelledAssignmentsForInterns(internIds: string[])
       internId: assignments.internId,
       date: assignments.date,
       status: assignments.status,
+      shift: assignments.shift,
       baseType: bases.type,
     })
     .from(assignments)

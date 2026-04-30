@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = req.nextUrl;
   const result = await executeListDetailedAssignments({
     from: searchParams.get("from"),
     to: searchParams.get("to"),

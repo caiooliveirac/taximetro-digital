@@ -1,9 +1,20 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import { caseRecords } from "@/shared/db/schema";
 
-export async function listCaseRecords() {
-  return db.select().from(caseRecords).orderBy(caseRecords.createdAt);
+export async function listCaseRecords(params?: {
+  internId?: string;
+  assignmentId?: string;
+}) {
+  const conditions = [];
+  if (params?.internId) conditions.push(eq(caseRecords.internId, params.internId));
+  if (params?.assignmentId) conditions.push(eq(caseRecords.assignmentId, params.assignmentId));
+
+  let query = db.select().from(caseRecords).orderBy(caseRecords.createdAt).$dynamic();
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions));
+  }
+  return query;
 }
 
 export async function countCaseRecordsForAssignment(assignmentId: string) {

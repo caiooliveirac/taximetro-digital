@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
-  const data = await executeListFacultyInterns(user.facultyId);
+  const data = await executeListFacultyInterns(user.facultyId, user.cohortId ?? null);
   return NextResponse.json({ success: true, data });
 }
 

@@ -47,6 +47,7 @@ export default function PreceptorPlantao() {
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [selectedCheckout, setSelectedCheckout] = useState<Assignment | null>(null);
   const [checkoutNps, setCheckoutNps] = useState<CheckoutNps>(EMPTY_NPS);
+  const [checkoutObservations, setCheckoutObservations] = useState("");
 
   const today = localDateStr();
 
@@ -67,13 +68,13 @@ export default function PreceptorPlantao() {
       .finally(() => setLoading(false));
   }, [base, shift]);
 
-  async function handleCheckout(assignmentId: string, nps: CheckoutNps) {
+  async function handleCheckout(assignmentId: string, nps: CheckoutNps, notes: string) {
     setCheckingOut(assignmentId);
     try {
       const res = await fetch("/taximetro/api/attendance/checkout", {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId, nps }),
+        body: JSON.stringify({ assignmentId, nps, notes }),
       });
       const data = await res.json();
       if (data.success) {
@@ -85,6 +86,7 @@ export default function PreceptorPlantao() {
         );
         setSelectedCheckout(null);
         setCheckoutNps(EMPTY_NPS);
+        setCheckoutObservations("");
       }
     } catch { /* ignore */ }
     setCheckingOut(null);
@@ -94,10 +96,12 @@ export default function PreceptorPlantao() {
     if (selectedCheckout?.id === assignment.id) {
       setSelectedCheckout(null);
       setCheckoutNps(EMPTY_NPS);
+      setCheckoutObservations("");
       return;
     }
     setSelectedCheckout(assignment);
     setCheckoutNps(EMPTY_NPS);
+    setCheckoutObservations("");
   }
 
   function setNpsAnswer(question: keyof CheckoutNps, value: NpsAnswer) {
@@ -224,31 +228,45 @@ export default function PreceptorPlantao() {
                   </div>
                 </div>
               </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setSelectedCheckout(null);
-                    setCheckoutNps(EMPTY_NPS);
-                  }}
-                  disabled={checkingOut === selectedCheckout.id}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => handleCheckout(selectedCheckout.id, checkoutNps)}
-                  disabled={checkingOut === selectedCheckout.id || !canSubmitNps}
-                  className="gap-1"
-                >
+              <div className="mt-4 space-y-3">
+                <div>
+                  <p className="text-xs text-slate-600">Observações do preceptor (opcional)</p>
+                  <textarea
+                    value={checkoutObservations}
+                    onChange={(e) => setCheckoutObservations(e.target.value)}
+                    placeholder="Ex.: conduta, intercorrências, pontos de atenção"
+                    maxLength={2000}
+                    rows={3}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSelectedCheckout(null);
+                      setCheckoutNps(EMPTY_NPS);
+                      setCheckoutObservations("");
+                    }}
+                    disabled={checkingOut === selectedCheckout.id}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handleCheckout(selectedCheckout.id, checkoutNps, checkoutObservations)}
+                    disabled={checkingOut === selectedCheckout.id || !canSubmitNps}
+                    className="gap-1"
+                  >
                   {checkingOut === selectedCheckout.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
                   Confirmar checkout
                 </Button>
               </div>
             </div>
+          </div>
           )}
           <div className="border-t border-slate-100 px-4 py-2">
             <span className="text-xs text-slate-400">{assignments.length} interno(s)</span>

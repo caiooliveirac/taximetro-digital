@@ -94,12 +94,14 @@ export const userRoles = pgTable("user_roles", {
   role: roleEnum("role").notNull(),
   facultyId: uuid("faculty_id").references(() => faculties.id),
   baseId: uuid("base_id").references(() => bases.id),
+  cohortId: uuid("cohort_id").references(() => cohorts.id),
   isActive: boolean("is_active").notNull().default(true),
   isArchived: boolean("is_archived").notNull().default(false),
   archivedAt: timestamp("archived_at"),
   archivedBy: uuid("archived_by").references(() => users.id),
 }, (t) => [
   uniqueIndex("uq_user_role_faculty").on(t.userId, t.role, t.facultyId),
+  index("idx_user_roles_cohort").on(t.cohortId),
 ]);
 
 export const slotRules = pgTable("slot_rules", {
@@ -156,12 +158,14 @@ export const checkins = pgTable("checkins", {
   totpSecret: varchar("totp_secret", { length: 64 }),
   totpValidatedAt: timestamp("totp_validated_at"),
   validatedBy: uuid("validated_by").references(() => users.id),
+  validatedByName: varchar("validated_by_name", { length: 255 }),
   method: checkinMethodEnum("method"),
   internObservations: text("intern_observations"),
   preceptorObservations: text("preceptor_observations"),
   status: checkinStatusEnum("status").notNull().default("PENDING"),
   checkoutAt: timestamp("checkout_at"),
   checkoutConfirmedBy: uuid("checkout_confirmed_by").references(() => users.id),
+  checkoutConfirmedByName: varchar("checkout_confirmed_by_name", { length: 255 }),
   checkoutNotes: text("checkout_notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -262,6 +266,7 @@ export const inviteLinks = pgTable("invite_links", {
   createdBy: uuid("created_by").notNull().references(() => users.id),
   facultyId: uuid("faculty_id").references(() => faculties.id),
   baseId: uuid("base_id").references(() => bases.id),
+  cohortId: uuid("cohort_id").references(() => cohorts.id),
   targetUserId: uuid("target_user_id").references(() => users.id),
   expiresAt: timestamp("expires_at"),
   isActive: boolean("is_active").notNull().default(true),
@@ -317,6 +322,38 @@ export const extraShiftOffers = pgTable("extra_shift_offers", {
   index("idx_extra_offer_date").on(t.date),
   index("idx_extra_offer_base").on(t.baseId),
   index("idx_extra_offer_claimed_by").on(t.claimedBy),
+]);
+
+// ==================== COHORTS ====================
+
+export const cohortStatusEnum = pgEnum("cohort_status", [
+  "PLANNED",
+  "ACTIVE",
+  "CLOSED",
+]);
+
+export const cohorts = pgTable("cohorts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  facultyId: uuid("faculty_id").notNull().references(() => faculties.id),
+  rotationNumber: integer("rotation_number").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  name: varchar("name", { length: 100 }),  // apelido curto definido pelo coordenador, único por faculty
+  label: varchar("label", { length: 255 }).notNull(),
+  status: cohortStatusEnum("status").notNull().default("PLANNED"),
+  closedAt: timestamp("closed_at"),
+  closedBy: uuid("closed_by").references(() => users.id),
+  closingReportSnapshot: jsonb("closing_report_snapshot"),
+  closingReportHtml: text("closing_report_html"),
+  notes: text("notes"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_cohort_faculty_rotation").on(t.facultyId, t.rotationNumber),
+  uniqueIndex("uq_cohort_faculty_name").on(t.facultyId, t.name),
+  index("idx_cohort_faculty_status").on(t.facultyId, t.status),
+  index("idx_cohort_dates").on(t.startDate, t.endDate),
 ]);
 
 // Rotation transitions — explicit start/end dates per faculty

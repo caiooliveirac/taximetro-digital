@@ -14,14 +14,28 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle, getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
-import { addDaysToDateStr, operationalDateStr } from "@/lib/utils";
+import { operationalDateStr } from "@/lib/utils";
 
 /* ── types ── */
-type Intern = { id: string; name: string; facultyAbbr: string; isActive: boolean };
+type Intern = { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId: string | null; cohortName: string | null };
+type CohortOption = { id: string; name: string | null; label: string; status: string };
 type Assignment = {
   id: string; internName: string; baseCode: string; baseName: string;
   baseType?: string; date: string; period: string; status: string;
   facultyAbbr: string;
+  checkinStatus?: string | null;
+  checkinMethod?: string | null;
+  checkinAt?: string | null;
+  totpValidatedAt?: string | null;
+  validatedBy?: string | null;
+  validatedByName?: string | null;
+  checkoutAt?: string | null;
+  checkoutConfirmedBy?: string | null;
+  checkoutConfirmedByName?: string | null;
+  checkoutNotes?: string | null;
+  internObservations?: string | null;
+  preceptorObservations?: string | null;
+  absenceJustification?: string | null;
 };
 type ComplianceRow = {
   userId: string; name: string; facultyAbbr: string;
@@ -48,6 +62,16 @@ type SwapHistoryEntry = {
   target: { id: string | null; name: string | null; gave: SwapSlot | null; received: SwapSlot | null };
 };
 
+type CaseRecord = {
+  id: string;
+  assignmentId: string;
+  internId: string;
+  caseNumber: string;
+  nickname: string;
+  description: string | null;
+  createdAt: string;
+};
+
 const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra", DROP_SHIFT: "Descarte" };
 const STATUS_LABEL: Record<string, string> = { PENDING: "Pendente", APPROVED: "Aprovado", REJECTED: "Rejeitado" };
 
@@ -58,6 +82,12 @@ export default function AdminVerComoInterno() {
   const [selected, setSelected] = useState<Intern | null>(null);
   const [loadingList, setLoadingList] = useState(true);
 
+  /* ── cohort change ── */
+  const [cohortOptions, setCohortOptions] = useState<CohortOption[]>([]);
+  const [changingCohort, setChangingCohort] = useState(false);
+  const [cohortSelectValue, setCohortSelectValue] = useState<string>("");
+  const [cohortSaving, setCohortSaving] = useState(false);
+
   /* ── scoped data for selected intern ── */
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow | null>(null);
@@ -65,6 +95,9 @@ export default function AdminVerComoInterno() {
   const [bases, setBases] = useState<Base[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
+  const [caseRecords, setCaseRecords] = useState<CaseRecord[]>([]);
+  const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
+  const [userNameById, setUserNameById] = useState<Record<string, string>>({});
 
   /* ── action panel ── */
   const [actionTab, setActionTab] = useState<"DROP" | "EXTRA" | null>(null);
@@ -81,11 +114,16 @@ export default function AdminVerComoInterno() {
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
-          setInterns(
-            json.data
-              .filter((u: { role: string; isActive: boolean; isArchived?: boolean }) => u.role === "INTERN" && u.isActive && !u.isArchived)
-              .sort((a: Intern, b: Intern) => a.name.localeCompare(b.name))
-          );
+          const usersMap = Object.fromEntries((json.data as Array<{ id: string; name: string }>).map((u) => [u.id, u.name]));
+          setUserNameById(usersMap);
+          const internList = json.data
+            .filter((u: { role: string; isActive: boolean; isArchived?: boolean }) => u.role === "INTERN" && u.isActive && !u.isArchived)
+            .map((u: { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId?: string | null; cohortName?: string | null }) => ({
+              id: u.id, name: u.name, facultyAbbr: u.facultyAbbr, facultyId: u.facultyId ?? null,
+              isActive: u.isActive, cohortId: u.cohortId ?? null, cohortName: u.cohortName ?? null,
+            }))
+            .sort((a: Intern, b: Intern) => a.name.localeCompare(b.name));
+          setInterns(internList);
         }
       })
       .catch(() => { })
@@ -103,17 +141,15 @@ export default function AdminVerComoInterno() {
     setLoadingData(true);
     setActionTab(null);
     setActionMsg(null);
-
-    const today = operationalDateStr();
-    const futureEnd = addDaysToDateStr(today, 30);
-    const past90 = addDaysToDateStr(today, -90);
+    setExpandedAssignmentId(null);
 
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${past90}&to=${futureEnd}&internId=${selected.id}`).then((r) => r.json()),
+      fetch(`/taximetro/api/assignments?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/compliance?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/requests?internId=${selected.id}`).then((r) => r.json()),
       fetch(`/taximetro/api/requests/swap-history?internId=${selected.id}`).then((r) => r.json()),
-    ]).then(([aJson, cJson, rJson, shJson]) => {
+      fetch(`/taximetro/api/case-records?internId=${selected.id}`).then((r) => r.json()),
+    ]).then(([aJson, cJson, rJson, shJson, crJson]) => {
       if (aJson.success) {
         setAssignments(
           aJson.data
@@ -129,10 +165,49 @@ export default function AdminVerComoInterno() {
       if (rJson.success) setRequests(rJson.data);
       if (shJson.success) setSwapHistory(shJson.data);
       else setSwapHistory([]);
+      if (crJson.success) setCaseRecords(crJson.data);
+      else setCaseRecords([]);
     })
       .catch(() => { })
       .finally(() => setLoadingData(false));
   }, [selected]);
+
+  /* ── load cohort options when intern selected ── */
+  useEffect(() => {
+    if (!selected?.facultyId) { setCohortOptions([]); return; }
+    fetch(`/taximetro/api/admin/cohorts?facultyId=${selected.facultyId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          setCohortOptions(json.data.filter((c: CohortOption) => c.status !== "CLOSED"));
+          setCohortSelectValue(selected.cohortId ?? "");
+        }
+      })
+      .catch(() => {});
+    setChangingCohort(false);
+  }, [selected]);
+
+  async function saveCohort() {
+    if (!selected) return;
+    setCohortSaving(true);
+    const res = await fetch(`/taximetro/api/admin/users?id=${selected.id}`);
+    const json = await res.json();
+    const internRole = json.data?.[0]?.allRoles?.find((r: { id: string | null; role: string; facultyId: string | null }) => r.role === "INTERN" && r.facultyId === selected.facultyId);
+    if (!internRole?.id) { setCohortSaving(false); return; }
+    const patchRes = await fetch("/taximetro/api/admin/interns/cohort", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userRoleId: internRole.id as string, cohortId: cohortSelectValue || null }),
+    });
+    const patchJson = await patchRes.json();
+    if (patchJson.success) {
+      const newCohort = cohortOptions.find((c) => c.id === cohortSelectValue);
+      setSelected((prev) => prev ? { ...prev, cohortId: cohortSelectValue || null, cohortName: newCohort?.name ?? newCohort?.label ?? null } : prev);
+      setInterns((prev) => prev.map((i) => i.id === selected.id ? { ...i, cohortId: cohortSelectValue || null, cohortName: newCohort?.name ?? newCohort?.label ?? null } : i));
+      setChangingCohort(false);
+    }
+    setCohortSaving(false);
+  }
 
   /* ── actions ── */
   async function submitAction() {
@@ -187,6 +262,15 @@ export default function AdminVerComoInterno() {
 
   const weeklyEffective = compliance ? compliance.thisWeekScheduled - (compliance.thisWeekAbsent ?? 0) : 0;
   const weeklyGoal = compliance?.targetShiftsPerWeek ?? 0;
+  const caseRecordsByAssignment = useMemo(() => {
+    const grouped = new Map<string, CaseRecord[]>();
+    for (const record of caseRecords) {
+      const list = grouped.get(record.assignmentId) ?? [];
+      list.push(record);
+      grouped.set(record.assignmentId, list);
+    }
+    return grouped;
+  }, [caseRecords]);
 
   const selectClass = "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500";
 
@@ -257,9 +341,48 @@ export default function AdminVerComoInterno() {
           </button>
           <div>
             <h1 className="text-xl font-semibold text-slate-900">{selected.name}</h1>
-            <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${fs.pill}`}>
-              {selected.facultyAbbr}
-            </span>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${fs.pill}`}>
+                {selected.facultyAbbr}
+              </span>
+              {!changingCohort ? (
+                <button
+                  onClick={() => setChangingCohort(true)}
+                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] text-slate-500 hover:border-accent-400 hover:text-accent-600 transition-colors"
+                  title="Clique para mudar turma"
+                >
+                  {selected.cohortName ? (
+                    <span className="font-medium text-emerald-700">{selected.cohortName}</span>
+                  ) : (
+                    <span className="italic text-slate-400">Sem turma</span>
+                  )}
+                  <span className="text-[10px]">✎</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <select
+                    value={cohortSelectValue}
+                    onChange={(e) => setCohortSelectValue(e.target.value)}
+                    className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-900"
+                  >
+                    <option value="">Sem turma</option>
+                    {cohortOptions.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name ?? c.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={saveCohort}
+                    disabled={cohortSaving}
+                    className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] text-white disabled:opacity-50 hover:bg-emerald-700"
+                  >
+                    {cohortSaving ? "…" : "Salvar"}
+                  </button>
+                  <button onClick={() => setChangingCohort(false)} className="rounded px-2 py-0.5 text-[11px] text-slate-500 hover:text-slate-700">
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -333,7 +456,7 @@ export default function AdminVerComoInterno() {
             <div>
               <h2 className="text-sm font-semibold text-slate-900 mb-2">Próximos Plantões</h2>
               <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] divide-y divide-slate-100">
-                {upcoming.slice(0, 10).map((a) => (
+                  {upcoming.map((a) => (
                   <div key={a.id} className="flex items-center gap-3 px-4 py-2.5">
                     <span className={`inline-block h-2 w-2 rounded-full ${getBaseStyle(a.baseType).dot}`} />
                     <span className="text-sm font-medium text-slate-900 w-12">{a.baseCode}</span>
@@ -565,19 +688,54 @@ export default function AdminVerComoInterno() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[...pastAssignments].reverse().slice(0, 15).map((a) => (
-                      <TableRow key={a.id}>
-                        <TableCell className="text-xs">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}</TableCell>
-                        <TableCell className="font-medium">{a.baseCode}</TableCell>
-                        <TableCell>
-                          <span className={`flex items-center gap-1 text-xs ${getPeriodStyle(a.period).text}`}>
-                            {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
-                            {getPeriodStyle(a.period).label}
-                          </span>
-                        </TableCell>
-                        <TableCell><StatusBadge status={a.status} /></TableCell>
-                      </TableRow>
-                    ))}
+                    {[...pastAssignments].reverse().map((a) => {
+                      const isExpanded = expandedAssignmentId === a.id;
+                      const records = caseRecordsByAssignment.get(a.id) ?? [];
+                      return [
+                        <TableRow key={a.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setExpandedAssignmentId(isExpanded ? null : a.id)}>
+                          <TableCell className="text-xs">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}</TableCell>
+                          <TableCell className="font-medium">{a.baseCode}</TableCell>
+                          <TableCell>
+                            <span className={`flex items-center gap-1 text-xs ${getPeriodStyle(a.period).text}`}>
+                              {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
+                              {getPeriodStyle(a.period).label}
+                            </span>
+                          </TableCell>
+                          <TableCell><StatusBadge status={a.status} /></TableCell>
+                        </TableRow>,
+                        isExpanded ? (
+                          <TableRow key={`${a.id}-detail`} className="bg-slate-50/70">
+                            <TableCell colSpan={4}>
+                              <div className="space-y-2 text-xs text-slate-700">
+                                <p><span className="font-semibold">Check-in:</span> {a.checkinAt ? new Date(a.checkinAt).toLocaleString("pt-BR") : "—"}</p>
+                                <p><span className="font-semibold">Validação check-in:</span> {a.totpValidatedAt ? new Date(a.totpValidatedAt).toLocaleString("pt-BR") : "—"}</p>
+                                <p><span className="font-semibold">Validado por:</span> {a.validatedBy ? (userNameById[a.validatedBy] ?? a.validatedBy) : (a.validatedByName ? a.validatedByName : (a.totpValidatedAt ? "Telegram" : "—"))}</p>
+                                <p><span className="font-semibold">Checkout:</span> {a.checkoutAt ? new Date(a.checkoutAt).toLocaleString("pt-BR") : "—"}</p>
+                                <p><span className="font-semibold">Checkout confirmado por:</span> {a.checkoutConfirmedBy ? (userNameById[a.checkoutConfirmedBy] ?? a.checkoutConfirmedBy) : (a.checkoutConfirmedByName ? a.checkoutConfirmedByName : (a.checkoutAt ? "Telegram" : "—"))}</p>
+                                <p><span className="font-semibold">Observação do interno:</span> {a.internObservations || "—"}</p>
+                                <p><span className="font-semibold">Observação do preceptor:</span> {a.preceptorObservations || "—"}</p>
+                                <p><span className="font-semibold">Notas de checkout:</span> {a.checkoutNotes || "—"}</p>
+                                <div>
+                                  <p className="font-semibold">Ocorrências clínicas:</p>
+                                  {records.length > 0 ? (
+                                    <ul className="mt-1 space-y-1">
+                                      {records.map((record) => (
+                                        <li key={record.id} className="rounded border border-slate-200 bg-white px-2 py-1">
+                                          <span className="font-medium">#{record.caseNumber} · {record.nickname}</span>
+                                          {record.description ? <span className="text-slate-600"> — {record.description}</span> : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <p>—</p>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : null,
+                      ];
+                    })}
                   </TableBody>
                 </Table>
               </div>

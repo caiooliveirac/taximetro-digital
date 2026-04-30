@@ -2,6 +2,7 @@ import {
   addDaysToDateStr,
   operationalDateStr,
   startOfWeekDateStr,
+  sumAssignmentHours,
   weeksBetweenDateStr,
 } from "@/lib/utils";
 import {
@@ -99,7 +100,9 @@ export async function executeGetComplianceOverview(params: {
     const relevantRows = rows.filter((r) => r.date >= rotationStart);
     
     const pastRows = relevantRows.filter((r) => r.date <= todayStr);
-    const totalCompleted = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number])).length;
+    const completedPastRows = pastRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]));
+    const totalCompleted = completedPastRows.length;
+    const totalCompletedHours = sumAssignmentHours(completedPastRows);
     const totalAbsent = pastRows.filter((r) => r.status === "ABSENT").length;
 
     const futureRows = relevantRows.filter((r) => r.date > todayStr);
@@ -189,7 +192,7 @@ export async function executeGetComplianceOverview(params: {
       totalUSACompleted,
       totalCRUCompleted,
       totalCRLCompleted,
-      totalHours: totalCompleted * 12,
+      totalHours: totalCompletedHours,
       totalDeficit,
       totalPct,
       expectedToNow,

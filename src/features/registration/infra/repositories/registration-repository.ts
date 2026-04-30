@@ -13,6 +13,7 @@ export async function findValidInviteByToken(token: string) {
       baseId: inviteLinks.baseId,
       baseCode: bases.code,
       baseName: bases.name,
+      cohortId: inviteLinks.cohortId,
       isActive: inviteLinks.isActive,
       expiresAt: inviteLinks.expiresAt,
     })
@@ -63,11 +64,13 @@ export async function createUserRole(params: {
   role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN";
   facultyId: string | null;
   baseId: string | null;
+  cohortId?: string | null;
 }) {
   await db.insert(userRoles).values({
     userId: params.userId,
     role: params.role,
     facultyId: params.facultyId,
     baseId: params.baseId,
+    cohortId: params.cohortId ?? null,
   });
 }

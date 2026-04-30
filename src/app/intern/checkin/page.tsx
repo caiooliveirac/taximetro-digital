@@ -554,6 +554,13 @@ function InternCheckinContent() {
             )}
           </div>
 
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Registro de ocorrências clínicas é obrigatório durante o plantão.
+            <Link href="/taximetro/intern/ocorrencias" className="ml-1 font-semibold underline underline-offset-2">
+              Registrar ocorrências agora
+            </Link>
+          </div>
+
           {canRequestCheckout ? (
             <>
               <Button

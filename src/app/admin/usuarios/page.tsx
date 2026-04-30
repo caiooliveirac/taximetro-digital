@@ -31,6 +31,8 @@ type User = {
     facultyAbbr: string | null;
     baseId: string | null;
     baseCode: string | null;
+    cohortId: string | null;
+    cohortName: string | null;
   }>;
 };
 
@@ -983,13 +985,15 @@ export default function AdminUsuarios() {
                             : r.role === "PRECEPTOR"
                               ? r.baseCode
                               : null;
+                          const cohortTag = r.role === "INTERN" && r.cohortName ? ` (${r.cohortName})` : "";
+                          const label = `${ROLE_LABEL[r.role]}${scope ? ` · ${scope}` : ""}${cohortTag}`;
                           return (
                             <span
                               key={`${u.id}-${r.role}-${r.facultyId ?? ""}-${r.baseId ?? ""}-${idx}`}
                               className={`rounded px-2 py-0.5 text-xs font-medium ${ROLE_BADGE_CLASS[r.role] ?? "bg-slate-50 text-slate-700"}`}
-                              title={scope ? `${ROLE_LABEL[r.role]} · ${scope}` : ROLE_LABEL[r.role]}
+                              title={label}
                             >
-                              {ROLE_LABEL[r.role]}{scope ? ` · ${scope}` : ""}
+                              {label}
                             </span>
                           );
                         })
