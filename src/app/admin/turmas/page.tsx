@@ -10,6 +10,7 @@ type Cohort = {
   rotationNumber: number;
   startDate: string;
   endDate: string;
+  name: string | null;
   label: string;
   status: "PLANNED" | "ACTIVE" | "CLOSED";
   closedAt: string | null;
@@ -70,6 +71,7 @@ export default function AdminTurmas() {
       rotationNumber: 1,
       startDate: new Date().toISOString().split("T")[0],
       endDate: new Date().toISOString().split("T")[0],
+      name: "",
       label: "",
       status: "PLANNED",
     });
@@ -169,6 +171,7 @@ export default function AdminTurmas() {
               </select>
             </label>
             <Input label="Nº do Rodízio" type="number" value={String(editing.rotationNumber ?? 1)} onChange={(v) => setEditing({ ...editing, rotationNumber: +v })} disabled={!isNew} />
+            <Input label="Nome da Turma" value={editing.name ?? ""} onChange={(v) => setEditing({ ...editing, name: v })} />
             <Input label="Label" value={editing.label ?? ""} onChange={(v) => setEditing({ ...editing, label: v })} />
             <Input label="Início" type="date" value={editing.startDate ?? ""} onChange={(v) => setEditing({ ...editing, startDate: v })} />
             <Input label="Fim" type="date" value={editing.endDate ?? ""} onChange={(v) => setEditing({ ...editing, endDate: v })} />
@@ -211,6 +214,7 @@ export default function AdminTurmas() {
             <tr className="border-b border-slate-200 text-left text-slate-500">
               <th className="pb-2 pr-4">Faculdade</th>
               <th className="pb-2 pr-4">Rodízio</th>
+              <th className="pb-2 pr-4">Nome</th>
               <th className="pb-2 pr-4">Label</th>
               <th className="pb-2 pr-4">Início</th>
               <th className="pb-2 pr-4">Fim</th>
@@ -220,12 +224,13 @@ export default function AdminTurmas() {
           </thead>
           <tbody>
             {cohorts.length === 0 && (
-              <tr><td colSpan={7} className="py-6 text-center text-slate-400">Nenhuma turma encontrada.</td></tr>
+              <tr><td colSpan={8} className="py-6 text-center text-slate-400">Nenhuma turma encontrada.</td></tr>
             )}
             {cohorts.map((c) => (
               <tr key={c.id} className="border-b border-slate-100">
                 <td className="py-2 pr-4 font-mono font-semibold">{c.facultyAbbreviation ?? "—"}</td>
                 <td className="py-2 pr-4">{c.rotationNumber}</td>
+                <td className="py-2 pr-4 font-medium">{c.name ?? <span className="text-slate-400 italic">—</span>}</td>
                 <td className="py-2 pr-4">{c.label}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{fmtDate(c.startDate)}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{fmtDate(c.endDate)}</td>

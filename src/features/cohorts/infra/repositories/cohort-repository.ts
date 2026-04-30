@@ -19,6 +19,7 @@ export async function listCohorts(filters?: {
       rotationNumber: cohorts.rotationNumber,
       startDate: cohorts.startDate,
       endDate: cohorts.endDate,
+      name: cohorts.name,
       label: cohorts.label,
       status: cohorts.status,
       closedAt: cohorts.closedAt,
@@ -45,6 +46,7 @@ export async function createCohort(input: {
   rotationNumber: number;
   startDate: string;
   endDate: string;
+  name?: string;
   label: string;
   notes?: string;
   createdBy: string;
@@ -56,6 +58,7 @@ export async function createCohort(input: {
       rotationNumber: input.rotationNumber,
       startDate: input.startDate,
       endDate: input.endDate,
+      name: input.name,
       label: input.label,
       notes: input.notes,
       createdBy: input.createdBy,
@@ -69,6 +72,7 @@ export async function updateCohort(
   input: Partial<{
     startDate: string;
     endDate: string;
+    name: string;
     label: string;
     status: "PLANNED" | "ACTIVE" | "CLOSED";
     notes: string;
@@ -109,6 +113,14 @@ export async function listInternsWithoutCohort(facultyId: string) {
       ),
     )
     .orderBy(users.name);
+}
+
+export async function getUserRoleFacultyIds(userRoleIds: string[]): Promise<{ id: string; facultyId: string | null }[]> {
+  if (userRoleIds.length === 0) return [];
+  return db
+    .select({ id: userRoles.id, facultyId: userRoles.facultyId })
+    .from(userRoles)
+    .where(inArray(userRoles.id, userRoleIds));
 }
 
 export async function bulkAssignCohort(userRoleIds: string[], cohortId: string) {
