@@ -26,6 +26,7 @@ type User = {
   alsoPreceptor?: boolean;
   createdAt?: string;
   allRoles?: Array<{
+    id: string | null;
     role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN";
     facultyId: string | null;
     facultyAbbr: string | null;
@@ -38,6 +39,7 @@ type User = {
 
 type Faculty = { id: string; abbreviation: string };
 type Base = { id: string; code: string; name: string };
+type Cohort = { id: string; facultyId: string; name: string | null; label: string; status: string };
 
 type HistoryAssignment = {
   id: string;
@@ -153,6 +155,8 @@ export default function AdminUsuarios() {
   const [users, setUsers] = useState<User[]>([]);
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [bases, setBases] = useState<Base[]>([]);
+  const [allCohorts, setAllCohorts] = useState<Cohort[]>([]);
+  const [cohortSaving, setCohortSaving] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -218,20 +222,40 @@ export default function AdminUsuarios() {
 
   async function load() {
     try {
-      const [uRes, fRes, bRes, mergeRes] = await Promise.all([
+      const [uRes, fRes, bRes, mergeRes, cRes] = await Promise.all([
         fetch("/taximetro/api/admin/users").then((r) => r.json()),
         fetch("/taximetro/api/admin/faculties").then((r) => r.json()),
         fetch("/taximetro/api/admin/bases").then((r) => r.json()),
         fetch("/taximetro/api/admin/users/merge-events").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+        fetch("/taximetro/api/admin/cohorts?status=PLANNED&status=ACTIVE").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       ]);
       if (uRes.success) setUsers(uRes.data);
       if (fRes.success) setFaculties(fRes.data);
       if (bRes.success) setBases(bRes.data);
       if (mergeRes.success) setRecentMergeEvents(mergeRes.data);
+      if (cRes.success) setAllCohorts(cRes.data);
     } catch {
       setError("Erro ao carregar usuários.");
     }
     setLoading(false);
+  }
+
+  async function assignCohort(userRoleId: string, cohortId: string | null) {
+    setCohortSaving((s) => ({ ...s, [userRoleId]: true }));
+    try {
+      const res = await fetch("/taximetro/api/admin/interns/cohort", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userRoleId, cohortId }),
+      });
+      const json = await res.json();
+      if (!json.success) alert(json.error || "Erro ao atribuir turma.");
+      else load();
+    } catch {
+      alert("Erro de conexão.");
+    } finally {
+      setCohortSaving((s) => ({ ...s, [userRoleId]: false }));
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -961,6 +985,7 @@ export default function AdminUsuarios() {
               <th className="pb-2 pr-4">CPF</th>
               <th className="pb-2 pr-4">Papel</th>
               <th className="pb-2 pr-4">Faculdade</th>
+              <th className="pb-2 pr-4">Turma</th>
               <th className="pb-2 pr-4">Ativo</th>
               <th className="pb-2">Ações</th>
             </tr>
@@ -1019,6 +1044,27 @@ export default function AdminUsuarios() {
                     })() : "—"}
                   </td>
                   <td className="py-2 pr-4">
+                    {(() => {
+                      const internRole = u.allRoles?.find((r) => r.role === "INTERN");
+                      if (!internRole?.id) return <span className="text-xs text-slate-400">—</span>;
+                      const facultyCohorts = allCohorts.filter((c) => c.facultyId === internRole.facultyId);
+                      const saving = cohortSaving[internRole.id] ?? false;
+                      return (
+                        <select
+                          disabled={saving}
+                          value={internRole.cohortId ?? ""}
+                          onChange={(e) => assignCohort(internRole.id!, e.target.value || null)}
+                          className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 disabled:opacity-60"
+                        >
+                          <option value="">— sem turma —</option>
+                          {facultyCohorts.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name ?? c.label}</option>
+                          ))}
+                        </select>
+                      );
+                    })()}
+                  </td>
+                  <td className="py-2 pr-4">
                     {u.isActive ? (
                       u.isArchived ? (
                         <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600">Arquivado</span>
@@ -1053,7 +1099,7 @@ export default function AdminUsuarios() {
                 </tr>
                 {accessRowUserId === u.id && (
                   <tr className="border-b border-slate-100 bg-sky-50/50">
-                    <td colSpan={7} className="px-4 py-4">
+                    <td colSpan={8} className="px-4 py-4">
                       <div className="rounded-xl border border-sky-200 bg-white p-4 shadow-sm space-y-3">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                           <div>
