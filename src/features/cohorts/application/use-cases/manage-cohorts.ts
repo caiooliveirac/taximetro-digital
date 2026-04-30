@@ -51,7 +51,16 @@ export async function executeCreateCohort(params: {
     return { status: 400, body: { success: false, error: "endDate deve ser >= startDate" } } as const;
   }
 
-  const created = await createCohort({ ...params.input, createdBy: params.actorUserId });
+  let created;
+  try {
+    created = await createCohort({ ...params.input, createdBy: params.actorUserId });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("23505") || msg.includes("unique") || msg.includes("uq_cohort")) {
+      return { status: 409, body: { success: false, error: "Já existe uma turma com esse nome nesta faculdade" } } as const;
+    }
+    throw err;
+  }
 
   await logAudit({
     userId: params.actorUserId,
@@ -84,7 +93,16 @@ export async function executeUpdateCohort(params: {
     return { status: 400, body: { success: false, error: "endDate deve ser >= startDate" } } as const;
   }
 
-  const updated = await updateCohort(params.cohortId, params.input);
+  let updated;
+  try {
+    updated = await updateCohort(params.cohortId, params.input);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("23505") || msg.includes("unique") || msg.includes("uq_cohort")) {
+      return { status: 409, body: { success: false, error: "Já existe uma turma com esse nome nesta faculdade" } } as const;
+    }
+    throw err;
+  }
 
   await logAudit({
     userId: params.actorUserId,

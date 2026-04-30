@@ -603,8 +603,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     return true;
   });
 
-  const initialInternIds = selectedInternCatalog.map((intern) => intern.internId);
-  const scopedInternIds = initialInternIds.length > 0 ? initialInternIds : facultyFilteredInterns.map((intern) => intern.internId);
+  const scopedInternIds = selectedInternCatalog.map((intern) => intern.internId);
 
   if (scopedInternIds.length === 0) {
     const emptyDocument: ReportDocument = {
