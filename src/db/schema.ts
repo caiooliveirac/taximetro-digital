@@ -321,6 +321,36 @@ export const extraShiftOffers = pgTable("extra_shift_offers", {
   index("idx_extra_offer_claimed_by").on(t.claimedBy),
 ]);
 
+// ==================== COHORTS ====================
+
+export const cohortStatusEnum = pgEnum("cohort_status", [
+  "PLANNED",
+  "ACTIVE",
+  "CLOSED",
+]);
+
+export const cohorts = pgTable("cohorts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  facultyId: uuid("faculty_id").notNull().references(() => faculties.id),
+  rotationNumber: integer("rotation_number").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  label: varchar("label", { length: 255 }).notNull(),
+  status: cohortStatusEnum("status").notNull().default("PLANNED"),
+  closedAt: timestamp("closed_at"),
+  closedBy: uuid("closed_by").references(() => users.id),
+  closingReportSnapshot: jsonb("closing_report_snapshot"),
+  closingReportHtml: text("closing_report_html"),
+  notes: text("notes"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_cohort_faculty_rotation").on(t.facultyId, t.rotationNumber),
+  index("idx_cohort_faculty_status").on(t.facultyId, t.status),
+  index("idx_cohort_dates").on(t.startDate, t.endDate),
+]);
+
 // Rotation transitions — explicit start/end dates per faculty
 // Fixes: rotation boundary cutoff (e.g., Bruna Bastos missing CRU)
 export const rotationTransitions = pgTable("rotation_transitions", {
