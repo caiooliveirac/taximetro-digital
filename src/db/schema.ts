@@ -338,6 +338,7 @@ export const cohorts = pgTable("cohorts", {
   rotationNumber: integer("rotation_number").notNull(),
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
+  name: varchar("name", { length: 100 }),  // apelido curto definido pelo coordenador, único por faculty
   label: varchar("label", { length: 255 }).notNull(),
   status: cohortStatusEnum("status").notNull().default("PLANNED"),
   closedAt: timestamp("closed_at"),
@@ -350,6 +351,7 @@ export const cohorts = pgTable("cohorts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("uq_cohort_faculty_rotation").on(t.facultyId, t.rotationNumber),
+  uniqueIndex("uq_cohort_faculty_name").on(t.facultyId, t.name),
   index("idx_cohort_faculty_status").on(t.facultyId, t.status),
   index("idx_cohort_dates").on(t.startDate, t.endDate),
 ]);

@@ -8,6 +8,7 @@ import {
   deleteCohort,
   listInternsWithoutCohort,
   bulkAssignCohort,
+  getUserRoleFacultyIds,
   listInternsByCohort,
   unassignCohort,
 } from "@/features/cohorts/infra/repositories/cohort-repository";
@@ -17,6 +18,7 @@ export const cohortCreateSchema = z.object({
   rotationNumber: z.number().int().min(1),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  name: z.string().min(1).max(100).optional(),
   label: z.string().min(1).max(255),
   notes: z.string().optional(),
 });
@@ -24,6 +26,7 @@ export const cohortCreateSchema = z.object({
 export const cohortUpdateSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  name: z.string().min(1).max(100).optional(),
   label: z.string().min(1).max(255).optional(),
   status: z.enum(["PLANNED", "ACTIVE", "CLOSED"]).optional(),
   notes: z.string().optional(),
@@ -141,6 +144,12 @@ export async function executeBulkAssignCohort(params: {
   }
   if (cohort.status === "CLOSED") {
     return { status: 409, body: { success: false, error: "Turma fechada não aceita novos internos" } } as const;
+  }
+
+  const roleRows = await getUserRoleFacultyIds(params.userRoleIds);
+  const wrongFaculty = roleRows.some((r) => r.facultyId !== cohort.facultyId);
+  if (wrongFaculty) {
+    return { status: 422, body: { success: false, error: "Todos os internos devem pertencer à mesma faculdade da turma" } } as const;
   }
 
   await bulkAssignCohort(params.userRoleIds, params.cohortId);
