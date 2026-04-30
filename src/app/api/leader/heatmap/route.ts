@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { getEffectiveUser } from "@/lib/impersonate";
 import { generateAdminReport } from "@/lib/admin-report-builder";
 import { z } from "zod";
 
@@ -11,8 +11,8 @@ const querySchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
-  if (!token || token.role !== "LEADER") {
+  const actor = await getEffectiveUser(req);
+  if (!actor || actor.role !== "LEADER") {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
@@ -22,21 +22,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Parâmetros inválidos" }, { status: 400 });
   }
 
-  const facultyId = token.facultyId as string | null;
-  if (!facultyId) {
+  if (!actor.facultyId) {
     return NextResponse.json({ success: false, error: "Líder sem faculdade configurada" }, { status: 400 });
   }
 
-  const cohortId = (token as Record<string, unknown>).cohortId as string | null;
   const { from, to } = parsed.data;
 
   const { document } = await generateAdminReport({
     from,
     to,
-    facultyId,
-    scopeMode: cohortId ? "COHORT" : "ALL_FACULTY",
+    facultyId: actor.facultyId,
+    scopeMode: actor.cohortId ? "COHORT" : "ALL_FACULTY",
     cohortGrouping: "NAMED_COHORT",
-    selectedCohorts: cohortId ? [cohortId] : [],
+    selectedCohorts: actor.cohortId ? [actor.cohortId] : [],
     selectedInternIds: [],
     performance: {
       belowHoursTarget: false,
