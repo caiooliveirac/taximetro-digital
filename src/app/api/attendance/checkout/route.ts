@@ -213,6 +213,7 @@ export async function PUT(req: NextRequest) {
   await db.update(checkins).set({
     checkoutAt: now,
     checkoutConfirmedBy: user.realUserId ?? user.id,
+    preceptorObservations: normalizedNotes,
     checkoutNotes,
   }).where(inArray(checkins.assignmentId, assignmentIdsToCheckout));
 
