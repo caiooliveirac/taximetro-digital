@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import {
   UserPlus, Link2, Copy, Check, Clock, UserCheck, UserX, Trash2, Target,
   ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight, Plus, X, Repeat,
@@ -111,8 +110,7 @@ const DAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
 export default function LeaderInternos() {
   const { data: session } = useSession();
-  const searchParams = useSearchParams();
-  const focusInternId = searchParams.get("internId");
+  const [focusInternId, setFocusInternId] = useState<string | null>(null);
   const { target: impersonateTarget } = useImpersonate();
   const effectiveFacultyId = impersonateTarget?.facultyId ?? session?.user?.facultyId;
   const [tab, setTab] = useState<Tab>("ativos");
@@ -173,6 +171,12 @@ export default function LeaderInternos() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const internId = new URLSearchParams(window.location.search).get("internId");
+    setFocusInternId(internId);
+  }, []);
 
   async function loadInternAssignments(internId: string) {
     if (internAssignmentsById[internId] || loadingHistoryById[internId]) return;
