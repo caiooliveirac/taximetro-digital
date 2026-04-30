@@ -22,17 +22,21 @@ export const registerWithInviteSchema = z.object({
 });
 
 function normalizeInviteScope(invite: Awaited<ReturnType<typeof findValidInviteByToken>>) {
-  if (!invite) return { facultyId: null, baseId: null };
+  if (!invite) return { facultyId: null, baseId: null, cohortId: null };
 
-  if (invite.targetRole === "INTERN" || invite.targetRole === "LEADER") {
-    return { facultyId: invite.facultyId ?? null, baseId: null };
+  if (invite.targetRole === "INTERN") {
+    return {
+      facultyId: invite.facultyId ?? null,
+      baseId: null,
+      cohortId: invite.cohortId ?? null,
+    };
   }
 
-  if (invite.targetRole === "PRECEPTOR") {
-    return { facultyId: null, baseId: null };
+  if (invite.targetRole === "LEADER") {
+    return { facultyId: invite.facultyId ?? null, baseId: null, cohortId: null };
   }
 
-  return { facultyId: null, baseId: null };
+  return { facultyId: null, baseId: null, cohortId: null };
 }
 
 export async function executeRegisterWithInvite(params: {
@@ -84,6 +88,7 @@ export async function executeRegisterWithInvite(params: {
     role: assignedRole,
     facultyId: normalizedScope.facultyId,
     baseId: normalizedScope.baseId,
+    cohortId: normalizedScope.cohortId,
   });
 
   await logAudit({
@@ -95,6 +100,7 @@ export async function executeRegisterWithInvite(params: {
       role: assignedRole,
       facultyId: normalizedScope.facultyId,
       baseId: normalizedScope.baseId,
+      cohortId: normalizedScope.cohortId,
     },
   });
 

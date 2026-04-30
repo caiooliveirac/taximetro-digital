@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Link2, X, Copy, Check, Loader2 } from "lucide-react";
 
 type Faculty = { id: string; abbreviation: string };
+type Cohort = { id: string; label: string; status: string };
 
 const ROLES = [
     { value: "INTERN", label: "Interno" },
@@ -16,7 +17,9 @@ export function InviteButton() {
     const [open, setOpen] = useState(false);
     const [role, setRole] = useState("INTERN");
     const [facultyId, setFacultyId] = useState("");
+    const [cohortId, setCohortId] = useState("");
     const [faculties, setFaculties] = useState<Faculty[]>([]);
+    const [cohorts, setCohorts] = useState<Cohort[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [generatedUrl, setGeneratedUrl] = useState("");
@@ -29,9 +32,18 @@ export function InviteButton() {
         });
     }, [open]);
 
+    useEffect(() => {
+        if (!facultyId || role !== "INTERN") { setCohorts([]); setCohortId(""); return; }
+        fetch(`/taximetro/api/admin/cohorts?facultyId=${facultyId}&status=ACTIVE&status=PLANNED`)
+            .then((r) => r.json())
+            .then((cRes) => { if (cRes.success) setCohorts(cRes.data); });
+    }, [facultyId, role]);
+
     function reset() {
         setRole("INTERN");
         setFacultyId("");
+        setCohortId("");
+        setCohorts([]);
         setError("");
         setGeneratedUrl("");
         setCopied(false);
@@ -51,6 +63,7 @@ export function InviteButton() {
         try {
             const body: Record<string, string> = { targetRole: role };
             if (needsFaculty) body.facultyId = facultyId;
+            if (role === "INTERN" && cohortId) body.cohortId = cohortId;
 
             const res = await fetch("/taximetro/api/admin/invites", {
                 method: "POST",
@@ -84,6 +97,7 @@ export function InviteButton() {
 
     const roleName = ROLES.find((r) => r.value === role)?.label ?? role;
     const facultyName = faculties.find((f) => f.id === facultyId)?.abbreviation;
+    const cohortLabel = cohorts.find((c) => c.id === cohortId)?.label;
 
     return (
         <>
@@ -137,12 +151,31 @@ export function InviteButton() {
                                         </label>
                                         <select
                                             value={facultyId}
-                                            onChange={(e) => setFacultyId(e.target.value)}
+                                            onChange={(e) => { setFacultyId(e.target.value); setCohortId(""); }}
                                             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                                         >
                                             <option value="">Selecione a faculdade...</option>
                                             {faculties.map((f) => (
                                                 <option key={f.id} value={f.id}>{f.abbreviation}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {/* Cohort selector for INTERN (optional) */}
+                                {role === "INTERN" && facultyId && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                            Turma <span className="text-xs font-normal text-slate-400">(opcional)</span>
+                                        </label>
+                                        <select
+                                            value={cohortId}
+                                            onChange={(e) => setCohortId(e.target.value)}
+                                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+                                        >
+                                            <option value="">Sem turma definida</option>
+                                            {cohorts.map((c) => (
+                                                <option key={c.id} value={c.id}>{c.label}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -154,6 +187,9 @@ export function InviteButton() {
                                     <span className="font-semibold text-slate-900">{roleName}</span>
                                     {needsFaculty && facultyName && (
                                         <> — Faculdade <span className="font-semibold text-slate-900">{facultyName}</span></>
+                                    )}
+                                    {cohortLabel && (
+                                        <> — Turma <span className="font-semibold text-slate-900">{cohortLabel}</span></>
                                     )}
                                     <br />
                                     <span className="text-xs text-slate-400">Válido por 7 dias</span>

@@ -117,9 +117,14 @@ export default function AdminTurmas() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Turmas</h1>
-        <button onClick={openNew} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600">
-          + Nova Turma
-        </button>
+        <div className="flex gap-2">
+          <a href="/taximetro/admin/turmas/atribuir" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Atribuir interns
+          </a>
+          <button onClick={openNew} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600">
+            + Nova Turma
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3">
