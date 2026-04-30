@@ -9,6 +9,22 @@ const SHIFT_CHECKOUT_GRACE_HOURS = 6;
 
 export type ShiftPeriod = "DAY" | "NIGHT";
 
+/**
+ * Duração em horas de um assignment, considerando o shift (turno).
+ * - MORNING ou AFTERNOON  → 6h (meio plantão, EBMSP)
+ * - qualquer outro valor  → 12h (plantão diurno/noturno completo)
+ */
+export function assignmentHours(shift: string | null | undefined): number {
+  return shift === "MORNING" || shift === "AFTERNOON" ? 6 : 12;
+}
+
+/** Soma horas de uma lista de assignments respeitando o shift de cada um. */
+export function sumAssignmentHours<T extends { shift?: string | null }>(rows: T[]): number {
+  let total = 0;
+  for (const row of rows) total += assignmentHours(row.shift ?? null);
+  return total;
+}
+
 type TimeZoneParts = {
   year: number;
   month: number;

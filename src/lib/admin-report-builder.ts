@@ -12,6 +12,7 @@ import {
   users,
 } from "@/db/schema";
 import type { CohortGrouping, ReportFilterInput, ReportOrderBy } from "@/lib/report-filters";
+import { sumAssignmentHours } from "@/lib/utils";
 
 export type ReportAssignmentGroup = "done" | "scheduled" | "absent";
 export type ReportTypeKey = "CENTRAL" | "CRL" | "USA";
@@ -762,7 +763,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     const scheduledCount = Object.values(typeSections).reduce((total, section) => total + section.scheduled.length, 0);
     const pendingRequestCount = (requestsByIntern.get(intern.internId) ?? []).filter((row) => row.status === "PENDING" || row.status === "ESCALATED").length;
     const rejectedRequestCount = (requestsByIntern.get(intern.internId) ?? []).filter((row) => row.status === "REJECTED").length;
-    const completedHours = completedCount * 12;
+    const completedHours = Object.values(typeSections).reduce((total, section) => total + sumAssignmentHours(section.done), 0);
     const percentHours = intern.targetHours > 0 ? Math.round((completedHours / intern.targetHours) * 100) : null;
     const percentShifts = intern.targetShifts > 0 ? Math.round((completedCount / intern.targetShifts) * 100) : null;
     const noCheckinInPeriod = completedCount === 0;
