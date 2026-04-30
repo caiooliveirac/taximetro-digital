@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const cohort = await executeGetCohort(id);
   if (!cohort) return NextResponse.json({ success: false, error: "Turma não encontrada" }, { status: 404 });
 
-  const mode = new URL(req.url).searchParams.get("mode") ?? "assigned";
+  const mode = req.nextUrl.searchParams.get("mode") ?? "assigned";
 
   const data = mode === "unassigned"
     ? await executeListInternsWithoutCohort(cohort.facultyId)

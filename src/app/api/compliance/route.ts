@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = req.nextUrl;
   const result = await executeGetComplianceOverview({
     actor: {
       id: user.id,

@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const token = await requireCoordinator(req);
   if (!token) return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
 
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = req.nextUrl;
   const facultyId = searchParams.get("facultyId") ?? undefined;
   const statusParam = searchParams.getAll("status") as ("PLANNED" | "ACTIVE" | "CLOSED")[];
 

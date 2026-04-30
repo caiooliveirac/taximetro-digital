@@ -60,7 +60,7 @@ export async function DELETE(req: NextRequest) {
   const token = await requireCoordinator(req);
   if (!token) return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
 
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = req.nextUrl;
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ success: false, error: "ID obrigatório" }, { status: 400 });
 

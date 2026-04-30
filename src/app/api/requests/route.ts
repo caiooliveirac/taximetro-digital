@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const user = await getEffectiveUser(req);
   if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
+  const { searchParams } = req.nextUrl;
   const filtered = await executeListRequests({
     actor: {
       id: user.id,
