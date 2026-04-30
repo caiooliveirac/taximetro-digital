@@ -1,7 +1,7 @@
 import { listFacultyInternRows } from "@/features/user-management/infra/repositories/user-management-repository";
 
-export async function executeListFacultyInterns(facultyId: string) {
-  const rows = await listFacultyInternRows(facultyId);
+export async function executeListFacultyInterns(facultyId: string, cohortId?: string | null) {
+  const rows = await listFacultyInternRows(facultyId, cohortId);
 
   const deduped = new Map<string, { id: string; name: string; userActive: boolean; roleActive: boolean; isArchived: boolean }>();
   for (const row of rows) {

@@ -17,6 +17,7 @@ import {
   Eye,
   BarChart3,
   Zap,
+  BookOpen,
 } from "lucide-react";
 
 const NAV: NavItem[] = [
@@ -32,6 +33,7 @@ const NAV: NavItem[] = [
   { href: "/admin/relatorios", label: "Relatórios", icon: BarChart3 },
   { href: "/admin/bases", label: "Bases", icon: Building2 },
   { href: "/admin/faculdades", label: "Faculdades", icon: GraduationCap },
+  { href: "/admin/turmas", label: "Turmas", icon: BookOpen },
   { href: "/admin/usuarios", label: "Usuários", icon: Users },
   { href: "/admin/solicitacoes", label: "Solicitações", icon: ClipboardList },
   { href: "/admin/audit", label: "Atividades", icon: FileSearch },
@@ -46,8 +48,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         role="Coordenação"
         navGroups={[
           { label: "Operação", items: NAV.slice(0, 11) },
-          { label: "Estrutura", items: NAV.slice(11, 14) },
-          { label: "Governança", items: NAV.slice(14) },
+          { label: "Estrutura", items: NAV.slice(11, 15) },
+          { label: "Governança", items: NAV.slice(15) },
         ]}
       />
       <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">{children}</main>

@@ -38,6 +38,16 @@ export async function listAssignmentsWithRelations(params: {
       checkinGeoValid: checkins.geoValid,
       checkinStatus: checkins.status,
       checkinMethod: checkins.method,
+      checkinAt: checkins.checkinAt,
+      totpValidatedAt: checkins.totpValidatedAt,
+      validatedBy: checkins.validatedBy,
+      validatedByName: checkins.validatedByName,
+      checkoutAt: checkins.checkoutAt,
+      checkoutConfirmedBy: checkins.checkoutConfirmedBy,
+      checkoutConfirmedByName: checkins.checkoutConfirmedByName,
+      checkoutNotes: checkins.checkoutNotes,
+      internObservations: checkins.internObservations,
+      preceptorObservations: checkins.preceptorObservations,
     })
     .from(assignments)
     .innerJoin(users, eq(users.id, assignments.internId))

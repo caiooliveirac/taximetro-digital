@@ -10,9 +10,19 @@ export async function GET(req: NextRequest) {
   const user = await getEffectiveUser(req);
   if (!user) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
 
+  const { searchParams } = req.nextUrl;
+  const internId = searchParams.get("internId");
+  const assignmentId = searchParams.get("assignmentId");
+
   const filtered = await executeListCaseRecords({
-    id: user.id,
-    role: user.role,
+    actor: {
+      id: user.id,
+      role: user.role,
+    },
+    filters: {
+      internId,
+      assignmentId,
+    },
   });
 
   return NextResponse.json({ success: true, data: filtered });

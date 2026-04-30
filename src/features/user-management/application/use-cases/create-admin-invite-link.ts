@@ -13,6 +13,7 @@ export const createAdminInviteSchema = z.object({
   targetRole: z.enum(VALID_ROLES),
   facultyId: z.string().uuid().optional(),
   baseId: z.string().uuid().optional(),
+  cohortId: z.string().uuid().optional(),
 }).refine(
   (data) => {
     if (data.targetRole === "INTERN" || data.targetRole === "LEADER") return Boolean(data.facultyId);
@@ -26,9 +27,10 @@ export async function executeCreateAdminInviteLink(params: {
   input: z.infer<typeof createAdminInviteSchema>;
   authUrl?: string;
 }) {
-  const { targetRole, facultyId, baseId } = params.input;
+  const { targetRole, facultyId, baseId, cohortId } = params.input;
   const normalizedFacultyId = targetRole === "INTERN" || targetRole === "LEADER" ? (facultyId ?? null) : null;
   const normalizedBaseId = targetRole === "PRECEPTOR" ? null : (baseId ?? null);
+  const normalizedCohortId = targetRole === "INTERN" ? (cohortId ?? null) : null;
 
   if (normalizedFacultyId) {
     const faculty = await findFacultyById(normalizedFacultyId);
@@ -50,6 +52,7 @@ export async function executeCreateAdminInviteLink(params: {
     createdBy: params.actorUserId,
     facultyId: normalizedFacultyId,
     baseId: normalizedBaseId,
+    cohortId: normalizedCohortId,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 
@@ -58,7 +61,7 @@ export async function executeCreateAdminInviteLink(params: {
     action: "CREATE_INVITE",
     entity: "invite_link",
     entityId: link.id,
-    payload: { targetRole, facultyId: normalizedFacultyId, baseId: normalizedBaseId },
+    payload: { targetRole, facultyId: normalizedFacultyId, baseId: normalizedBaseId, cohortId: normalizedCohortId },
   });
 
   const baseUrl = (params.authUrl ?? "https://mnrs.com.br").replace(/\/$/, "");

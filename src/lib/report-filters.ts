@@ -15,7 +15,7 @@ export const reportOrderBySchema = z.enum([
   "HOURS_DESC",
 ]);
 
-export const cohortGroupingSchema = z.enum(["ROTATION_7W", "MONTH", "SEMESTER"]);
+export const cohortGroupingSchema = z.enum(["NAMED_COHORT", "ROTATION_7W", "MONTH", "SEMESTER"]);
 
 export const reportContentSchema = z.object({
   summary: z.boolean(),
@@ -82,7 +82,7 @@ export const DEFAULT_REPORT_FILTERS: ReportFilterInput = {
   to: new Date().toISOString().slice(0, 10),
   facultyId: null,
   scopeMode: "ALL_FACULTY",
-  cohortGrouping: "ROTATION_7W",
+  cohortGrouping: "NAMED_COHORT",
   selectedCohorts: [],
   selectedInternIds: [],
   performance: {

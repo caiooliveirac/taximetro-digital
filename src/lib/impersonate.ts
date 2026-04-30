@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
-import { userRoles } from "@/db/schema";
+import { userRoles, cohorts } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 
 export interface EffectiveUser {
@@ -9,6 +9,8 @@ export interface EffectiveUser {
     role: string;
     facultyId: string | null;
     baseId: string | null;
+    cohortId: string | null;
+    cohortName: string | null;
     isImpersonating: boolean;
     realUserId: string | null;
 }
@@ -40,8 +42,11 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
                 role: userRoles.role,
                 facultyId: userRoles.facultyId,
                 baseId: userRoles.baseId,
+                cohortId: userRoles.cohortId,
+                cohortName: cohorts.name,
             })
             .from(userRoles)
+            .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
             .where(and(
                 eq(userRoles.userId, token.id as string),
                 eq(userRoles.isActive, true),
@@ -55,6 +60,8 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
                 role: selfAsRequestedRole.role,
                 facultyId: selfAsRequestedRole.facultyId,
                 baseId: selfAsRequestedRole.baseId,
+                cohortId: selfAsRequestedRole.cohortId ?? null,
+                cohortName: selfAsRequestedRole.cohortName ?? null,
                 isImpersonating: false,
                 realUserId: null,
             };
@@ -66,6 +73,8 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
         role: token.role as string,
         facultyId: token.facultyId as string | null,
         baseId: token.baseId as string | null,
+        cohortId: (token.cohortId as string | null) ?? null,
+        cohortName: (token.cohortName as string | null) ?? null,
         isImpersonating: false,
         realUserId: null,
     };
@@ -94,8 +103,11 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
                 role: userRoles.role,
                 facultyId: userRoles.facultyId,
                 baseId: userRoles.baseId,
+                cohortId: userRoles.cohortId,
+                cohortName: cohorts.name,
             })
             .from(userRoles)
+            .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
             .where(and(
                 eq(userRoles.userId, impersonateId),
                 eq(userRoles.isActive, true),
@@ -109,6 +121,8 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
                 role: requestedTargetRole.role,
                 facultyId: requestedTargetRole.facultyId,
                 baseId: requestedTargetRole.baseId,
+                cohortId: requestedTargetRole.cohortId ?? null,
+                cohortName: requestedTargetRole.cohortName ?? null,
                 isImpersonating: true,
                 realUserId: token.id as string,
             };
@@ -121,8 +135,11 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
             role: userRoles.role,
             facultyId: userRoles.facultyId,
             baseId: userRoles.baseId,
+            cohortId: userRoles.cohortId,
+            cohortName: cohorts.name,
         })
         .from(userRoles)
+        .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
         .where(and(eq(userRoles.userId, impersonateId), eq(userRoles.isActive, true)))
         .orderBy(
             sql`CASE ${userRoles.role} WHEN 'COORDINATOR' THEN 0 WHEN 'LEADER' THEN 1 WHEN 'PRECEPTOR' THEN 2 WHEN 'INTERN' THEN 3 END`,
@@ -137,6 +154,8 @@ export async function getEffectiveUser(req: NextRequest): Promise<EffectiveUser 
         role: targetRole.role,
         facultyId: targetRole.facultyId,
         baseId: targetRole.baseId,
+        cohortId: targetRole.cohortId ?? null,
+        cohortName: targetRole.cohortName ?? null,
         isImpersonating: true,
         realUserId: token.id as string,
     };

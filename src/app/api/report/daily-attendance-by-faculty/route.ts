@@ -62,7 +62,7 @@ export type DailyAttendanceByFaculty = {
 };
 
 export async function GET(req: NextRequest) {
-  const params = new URL(req.url).searchParams;
+  const params = req.nextUrl.searchParams;
   const dateStr = params.get("date") ?? new Date().toISOString().split("T")[0];
   
   // Get start and end of given date for querying last 30 days up to date

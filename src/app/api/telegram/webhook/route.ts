@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties } from "@/db/schema";
+import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties, userRoles } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { validateCode } from "@/lib/totp";
 import { bot, TELEGRAM_GROUP_ID } from "@/lib/telegram";
@@ -196,6 +196,52 @@ async function resolveBindingOptional(telegramUserId: string): Promise<string | 
   return binding?.userId ?? null;
 }
 
+function normalizePersonName(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+async function resolveValidatorActor(telegramUserId: string, telegramName: string) {
+  const bindingId = await resolveBindingOptional(telegramUserId);
+  if (bindingId) {
+    return { userId: bindingId, source: "BINDING" as const };
+  }
+
+  const normalizedTelegramName = normalizePersonName(telegramName);
+  if (!normalizedTelegramName) {
+    return { userId: null, source: "UNRESOLVED" as const };
+  }
+
+  const candidates = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .innerJoin(
+      userRoles,
+      and(
+        eq(userRoles.userId, users.id),
+        eq(userRoles.isActive, true),
+        inArray(userRoles.role, ["PRECEPTOR", "LEADER", "COORDINATOR"]),
+      ),
+    )
+    .where(eq(users.isActive, true));
+
+  const uniqueById = new Map<string, { id: string; name: string }>();
+  for (const row of candidates) {
+    if (!uniqueById.has(row.id)) uniqueById.set(row.id, row);
+  }
+
+  const exactMatches = [...uniqueById.values()].filter((row) => normalizePersonName(row.name) === normalizedTelegramName);
+  if (exactMatches.length === 1) {
+    return { userId: exactMatches[0].id, source: "NAME" as const };
+  }
+
+  return { userId: null, source: "UNRESOLVED" as const };
+}
+
 /** Group validation — any group member can validate by typing the 6-digit code */
 async function handleGroupCodeValidation(
   code: string,
@@ -221,13 +267,15 @@ async function handleGroupCodeValidation(
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, checkin.assignmentId)).limit(1);
   if (!assignment) return NextResponse.json({ ok: true });
 
-  // Try to resolve binding for audit — nullable
-  const validatorId = await resolveBindingOptional(telegramUserId);
+  // Try to resolve validator by binding first, then by exact Telegram name.
+  const validator = await resolveValidatorActor(telegramUserId, telegramName);
+  const validatorId = validator.userId;
 
   // Update checkin
   await db.update(checkins).set({
     status: "VALIDATED",
     validatedBy: validatorId,
+    validatedByName: validatorId ? null : `${telegramName} - Telegram`,
     totpValidatedAt: new Date(),
     method: "TELEGRAM_CODE",
   }).where(eq(checkins.id, session.checkinId));
@@ -264,7 +312,12 @@ async function handleGroupCodeValidation(
     action: "CHECKIN_VALIDATED_TELEGRAM_GROUP",
     entity: "checkin",
     entityId: session.checkinId,
-    payload: { telegramUserId, telegramName, bound: !!validatorId },
+    payload: {
+      telegramUserId,
+      telegramName,
+      bound: validator.source === "BINDING",
+      resolvedByName: validator.source === "NAME",
+    },
   });
 
   return NextResponse.json({ ok: true });
@@ -278,7 +331,8 @@ async function handleCheckoutViaCode(
   isPrivate: boolean,
   messageThreadId?: number,
 ) {
-  const validatorId = await resolveBindingOptional(telegramUserId);
+  const validator = await resolveValidatorActor(telegramUserId, telegramName);
+  const validatorId = validator.userId;
 
   const [assignment] = await db.select().from(assignments).where(eq(assignments.id, checkin.assignmentId)).limit(1);
   if (!assignment) return NextResponse.json({ ok: true });
@@ -288,7 +342,11 @@ async function handleCheckoutViaCode(
 
   // Transition: CHECKED_IN → CHECKED_OUT
   await db.update(assignments).set({ status: "CHECKED_OUT", updatedAt: now }).where(inArray(assignments.id, assignmentIdsToCheckout));
-  await db.update(checkins).set({ checkoutAt: now, checkoutConfirmedBy: validatorId }).where(inArray(checkins.assignmentId, assignmentIdsToCheckout));
+  await db.update(checkins).set({
+    checkoutAt: now,
+    checkoutConfirmedBy: validatorId,
+    checkoutConfirmedByName: validatorId ? null : `${telegramName} - Telegram`,
+  }).where(inArray(checkins.assignmentId, assignmentIdsToCheckout));
   await db.update(qrSessions).set({ consumedAt: now, consumedBy: validatorId }).where(eq(qrSessions.id, session.id));
 
   const [intern] = await db.select().from(users).where(eq(users.id, assignment.internId)).limit(1);
@@ -355,7 +413,8 @@ async function handleCheckoutViaCode(
     payload: {
       telegramUserId,
       telegramName,
-      bound: !!validatorId,
+      bound: validator.source === "BINDING",
+      resolvedByName: validator.source === "NAME",
       ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
     },
   });
@@ -365,7 +424,8 @@ async function handleCheckoutViaCode(
 
 /** Private chat validation via /start CODE — no role check, security via group */
 async function handlePrivateCodeValidation(code: string, telegramUserId: string, telegramName: string, chatId: string) {
-  const validatorId = await resolveBindingOptional(telegramUserId);
+  const validator = await resolveValidatorActor(telegramUserId, telegramName);
+  const validatorId = validator.userId;
 
   const session = await validateCode(code);
   if (!session) {
@@ -388,6 +448,7 @@ async function handlePrivateCodeValidation(code: string, telegramUserId: string,
   await db.update(checkins).set({
     status: "VALIDATED",
     validatedBy: validatorId,
+    validatedByName: validatorId ? null : `${telegramName} - Telegram`,
     totpValidatedAt: new Date(),
     method: "TELEGRAM_QR",
   }).where(eq(checkins.id, session.checkinId));
@@ -444,7 +505,12 @@ async function handlePrivateCodeValidation(code: string, telegramUserId: string,
     action: "CHECKIN_VALIDATED_TELEGRAM_QR",
     entity: "checkin",
     entityId: session.checkinId,
-    payload: { telegramUserId, telegramName, bound: !!validatorId },
+    payload: {
+      telegramUserId,
+      telegramName,
+      bound: validator.source === "BINDING",
+      resolvedByName: validator.source === "NAME",
+    },
   });
 
   return NextResponse.json({ ok: true });

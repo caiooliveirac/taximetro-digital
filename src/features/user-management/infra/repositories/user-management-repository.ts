@@ -2,7 +2,12 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import { bases, faculties, inviteLinks, userRoles, users } from "@/shared/db/schema";
 
-export async function listFacultyInternRows(facultyId: string) {
+export async function listFacultyInternRows(facultyId: string, cohortId?: string | null) {
+  const conditions = [
+    eq(userRoles.facultyId, facultyId),
+    ...(cohortId ? [eq(userRoles.cohortId, cohortId)] : []),
+  ];
+
   const rows = await db
     .select({
       id: users.id,
@@ -16,7 +21,7 @@ export async function listFacultyInternRows(facultyId: string) {
       userRoles,
       and(eq(userRoles.userId, users.id), eq(userRoles.role, "INTERN")),
     )
-    .where(eq(userRoles.facultyId, facultyId))
+    .where(and(...conditions))
     .orderBy(users.name);
 
   return rows;
@@ -130,6 +135,7 @@ export async function createInviteLink(params: {
   createdBy: string;
   facultyId: string | null;
   baseId?: string | null;
+  cohortId?: string | null;
   expiresAt: Date;
 }) {
   const [link] = await db.insert(inviteLinks).values({
@@ -138,6 +144,7 @@ export async function createInviteLink(params: {
     createdBy: params.createdBy,
     facultyId: params.facultyId,
     baseId: params.baseId ?? null,
+    cohortId: params.cohortId ?? null,
     expiresAt: params.expiresAt,
   }).returning();
 

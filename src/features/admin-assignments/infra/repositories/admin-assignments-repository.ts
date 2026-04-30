@@ -25,9 +25,9 @@ export async function listDetailedAssignmentsByDateRange(params: { from: string;
       c.method AS checkin_method,
       c.checkin_at,
       c.totp_validated_at,
-      vu.name AS validated_by_name,
+      COALESCE(vu.name, c.validated_by_name) AS validated_by_name,
       c.checkout_at,
-      cu.name AS checkout_confirmed_by_name,
+      COALESCE(cu.name, c.checkout_confirmed_by_name) AS checkout_confirmed_by_name,
       c.intern_observations,
       c.preceptor_observations,
       c.checkout_notes
@@ -69,9 +69,9 @@ export async function getDetailedAssignmentById(params: { id: string }) {
       c.method AS checkin_method,
       c.checkin_at,
       c.totp_validated_at,
-      vu.name AS validated_by_name,
+      COALESCE(vu.name, c.validated_by_name) AS validated_by_name,
       c.checkout_at,
-      cu.name AS checkout_confirmed_by_name,
+      COALESCE(cu.name, c.checkout_confirmed_by_name) AS checkout_confirmed_by_name,
       c.intern_observations,
       c.preceptor_observations,
       c.checkout_notes
