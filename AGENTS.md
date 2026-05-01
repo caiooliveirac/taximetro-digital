@@ -204,7 +204,52 @@ Para configurar o ambiente local após `git clone` (banco, seed, testes, gotcha 
 
 Estes documentos são fonte única de verdade. Docs em docs/architecture.md e docs/data-flow.md podem estar desatualizados (marcar como referência, não verdade).
 
-## 11. Changelog Recente (2026-04-20)
+## 11. Secrets em produção — fonte única de verdade
+
+**GitHub Secrets é a única fonte. `.env` / `.env.local` no servidor é IGNORADO pelo container. Editá-lo NÃO TEM EFEITO.**
+
+O workflow de deploy injeta cada variável como `-e VAR="${{ secrets.X }}"` no `docker run` — ver `.github/workflows/deploy.yml:131-148` (canary) e `:170-189` (produção). O passo de `rsync` exclui `.env*` (`:65, :114`). O `.env` físico no servidor existe só por convenção, e não chega no container.
+
+Como o cron lê env: `scripts/container-entrypoint.sh:10-17` faz `env > /app/.cron-env.sh` no boot, e cada cron job sourceia esse arquivo. Logo, qualquer var nova só vale após **container ser recriado** (i.e., após um deploy).
+
+### Procedimento de rotação
+
+**Para qualquer secret crítico:**
+1. Settings → Secrets and variables → Actions → atualizar o secret
+2. Disparar deploy (`workflow_dispatch` ou push trivial em `master`)
+3. Conferir log do workflow até o "Smoke test via nginx ✅"
+4. Verificar com check específico do secret (abaixo)
+
+**SMTP_PASS (Gmail App Password):**
+- Aguardar próximo cron de backup às 3:37 (timezone Bahia) ou disparar manualmente: `docker exec taximetro-digital sh -c '. /app/.cron-env.sh; node /app/scripts/daily-db-backup.mjs'`
+- Conferir email recebido em `DB_BACKUP_EMAIL_TO`
+- Ler último metadata: `cat /var/backups/taximetro/$(ls -t /var/backups/taximetro/*.dump.json | head -1)` — campo `email.status` deve ser `"sent"`
+- Em caso de falha, mensagem chega no Telegram (`scripts/daily-db-backup.mjs` envia alerta no `.catch` final)
+
+**GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET:**
+- Verificação: tentar logar com Google na app
+- Não invalida sessões existentes (JWT vive no cookie). Só impede novos logins enquanto o deploy não termina
+- Em caso de falha: filtrar `/admin/audit` por `action = LOGIN_GOOGLE_FAILED` para ver o motivo
+
+**AUTH_SECRET:**
+- ⚠️ **Aviso**: rotacionar invalida TODAS as sessões JWT (`src/middleware.ts:41` e +28 rotas via `getToken`). Todos os usuários logados voltam para `/login` e precisam relogar
+- Só rotacionar em suspeita de vazamento
+- Pós-rotação: usuários Google relogam pelo OAuth normalmente; usuários de credentials precisam digitar senha de novo
+
+**TELEGRAM_BOT_TOKEN_NEXT / TELEGRAM_BOT_TOKEN / TELEGRAM_GROUP_ID:**
+- Verificação: aguardar cron de lembrete de check-in (`8,9 * * *` Bahia) ou disparar manualmente: `docker exec taximetro-digital sh -c '. /app/.cron-env.sh; node /app/scripts/trigger-telegram-checkin-pending-reminder.mjs'`
+
+### Fail-fast no deploy
+
+`/api/health` valida via `src/lib/env-check.ts` que todas as vars obrigatórias estão presentes. Se faltar alguma, o canary recebe 503 e o deploy é rejeitado antes do swap. Ver `src/features/system/application/use-cases/get-health-status.ts`.
+
+### Diagnóstico de "perdi acesso via Google"
+
+Filtrar `/admin/audit` por `action ∈ {LOGIN_GOOGLE_SUCCESS, LOGIN_GOOGLE_FAILED, LOGIN_GOOGLE_REDIRECT_REGISTER}`. Cada falha tem `payload.reason` com motivo específico (`MISSING_EMAIL`, `USER_INACTIVE`, `DB_ERROR`).
+
+---
+
+## 12. Changelog Recente (2026-04-20)
 
 Mudanças significativas implementadas nesta data:
 - **Filtro de arquivados**: Interns arquivados não aparecem mais em pendências

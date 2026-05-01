@@ -126,6 +126,10 @@ jobs:
             echo "=== Building Docker image (native ARM64) ==="
             docker build -t "$IMAGE_CANDIDATE" .
 
+            echo "=== Ensuring backup volume exists ==="
+            sudo mkdir -p /var/backups/taximetro
+            sudo chmod 777 /var/backups/taximetro
+
             echo "=== Starting canary for pre-swap validation ==="
             docker rm -f "$CANARY_NAME" 2>/dev/null || true
             docker run --rm \
@@ -146,6 +150,7 @@ jobs:
               -e SMTP_USER="${{ secrets.SMTP_USER }}" \
               -e SMTP_PASS="${{ secrets.SMTP_PASS }}" \
               -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
+              -e DB_BACKUP_EMAIL_TO="${{ secrets.DB_BACKUP_EMAIL_TO }}" \
               "$IMAGE_CANDIDATE"
 
             echo "=== Validating canary health ==="
@@ -172,6 +177,7 @@ jobs:
               --restart unless-stopped \
               --network repo_default \
               -p 127.0.0.1:3010:3000 \
+              -v /var/backups/taximetro:/var/backups/taximetro \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e AUTH_SECRET="${{ secrets.AUTH_SECRET }}" \
               -e AUTH_URL="https://mnrs.com.br" \
@@ -185,6 +191,7 @@ jobs:
               -e SMTP_USER="${{ secrets.SMTP_USER }}" \
               -e SMTP_PASS="${{ secrets.SMTP_PASS }}" \
               -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
+              -e DB_BACKUP_EMAIL_TO="${{ secrets.DB_BACKUP_EMAIL_TO }}" \
               --add-host=host.docker.internal:host-gateway \
               "$IMAGE_CANDIDATE"
 
