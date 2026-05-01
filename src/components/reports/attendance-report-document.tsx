@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type {
   ReportAssignmentCard,
   ReportDocument,
+  ReportHeatmapCellState,
   ReportInternDocument,
   ReportTypeSection,
 } from "@/lib/admin-report-builder";
@@ -364,6 +365,38 @@ function AssignmentDetailModal({
   );
 }
 
+const HEATMAP_COLORS: Record<ReportHeatmapCellState, string> = {
+  done: "#34d399",            // emerald-400 — cumprido
+  scheduled: "#cbd5e1",       // slate-300 — agendado futuro
+  absentConfirmed: "#dc2626", // red-600 — falta lançada
+  noCheckin: "#fb923c",       // orange-400 — sem check-in
+  extra: "#8b5cf6",           // violet-500 — plantão extra
+};
+
+const HEATMAP_LEGEND: Array<{ state: ReportHeatmapCellState; label: string }> = [
+  { state: "done", label: "Cumprido" },
+  { state: "scheduled", label: "Agendado" },
+  { state: "absentConfirmed", label: "Falta lançada" },
+  { state: "noCheckin", label: "Sem check-in" },
+  { state: "extra", label: "Plantão extra" },
+];
+
+function heatmapCellBackground(states: ReportHeatmapCellState[]): string {
+  if (states.length === 0) return "#f1f5f9"; // slate-100
+  if (states.length === 1) return HEATMAP_COLORS[states[0]];
+  const c1 = HEATMAP_COLORS[states[0]];
+  const c2 = HEATMAP_COLORS[states[1]];
+  return `linear-gradient(135deg, ${c1} 0%, ${c1} 50%, ${c2} 50%, ${c2} 100%)`;
+}
+
+const STATE_LABELS: Record<ReportHeatmapCellState, string> = {
+  done: "cumprido",
+  scheduled: "agendado",
+  absentConfirmed: "falta lançada",
+  noCheckin: "sem check-in",
+  extra: "plantão extra",
+};
+
 export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin/assignments" }: { document: ReportDocument; assignmentDetailPath?: string }) {
   if (document.cover.heatmapDays.length === 0 || document.cover.heatmapRows.length === 0) return null;
 
@@ -442,10 +475,20 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
             {document.cover.heatmapRows.length} internos · {document.cover.heatmapDays.length} dias
           </div>
         </div>
-        <div className="mb-3 flex flex-wrap gap-2 text-[11px] text-slate-600">
-          <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">Cumprido</span>
-          <span className="rounded bg-slate-200 px-2 py-0.5 text-slate-700">Agendado</span>
-          <span className="rounded bg-rose-100 px-2 py-0.5 text-rose-800">Ausência</span>
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+          {HEATMAP_LEGEND.map((entry) => (
+            <span key={entry.state} className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2 py-0.5">
+              <span className="h-3 w-3 rounded" style={{ background: HEATMAP_COLORS[entry.state] }} />
+              {entry.label}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2 py-0.5">
+            <span
+              className="h-3 w-3 rounded"
+              style={{ background: `linear-gradient(135deg, ${HEATMAP_COLORS.done} 0%, ${HEATMAP_COLORS.done} 50%, ${HEATMAP_COLORS.absentConfirmed} 50%, ${HEATMAP_COLORS.absentConfirmed} 100%)` }}
+            />
+            Dois plantões no dia
+          </span>
           <span className="rounded bg-sky-100 px-2 py-0.5 text-sky-800">Clique para ver detalhes</span>
         </div>
         <div className="max-h-[72vh] overflow-auto rounded-lg border border-slate-200">
@@ -472,21 +515,20 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
                     const assignmentIds = (assignmentsByInternDate.get(`${row.internId}::${day.date}`) ?? []).map((item) => item.assignmentId);
                     const isClickable = assignmentIds.length > 0;
                     const isSelected = Boolean(selectedCell && selectedCell.internName === row.internName && selectedCell.dateLabel === formatBrazilLongDate(day.date));
+                    const stateLabel = cell.length > 0 ? cell.map((s) => STATE_LABELS[s]).join(" + ") : null;
+                    const tooltip = isClickable
+                      ? `${row.internName} · ${formatBrazilLongDate(day.date)}${stateLabel ? ` — ${stateLabel}` : ""}`
+                      : "Sem plantão";
                     return (
                       <td key={`${row.internId}-${index}`} className="px-0.5 py-0.5">
                         <button
                           type="button"
                           disabled={!isClickable}
                           onClick={() => openCellDetails(row.internName, day.date, assignmentIds)}
-                          className={cell === "done"
-                            ? `h-5 w-5 rounded bg-emerald-400 ${isClickable ? "cursor-pointer hover:brightness-90" : ""} ${isSelected ? "ring-2 ring-sky-500 ring-offset-1" : ""}`
-                            : cell === "scheduled"
-                              ? `h-5 w-5 rounded bg-slate-300 ${isClickable ? "cursor-pointer hover:brightness-90" : ""} ${isSelected ? "ring-2 ring-sky-500 ring-offset-1" : ""}`
-                              : cell === "absent"
-                                ? `h-5 w-5 rounded bg-rose-400 ${isClickable ? "cursor-pointer hover:brightness-90" : ""} ${isSelected ? "ring-2 ring-sky-500 ring-offset-1" : ""}`
-                                : "h-5 w-5 rounded bg-slate-100"}
-                          aria-label={isClickable ? `Ver detalhes de ${row.internName} em ${day.label}` : `Sem plantão para ${row.internName} em ${day.label}`}
-                          title={isClickable ? `Ver detalhes de ${row.internName} em ${formatBrazilLongDate(day.date)}` : "Sem plantão"}
+                          style={{ background: heatmapCellBackground(cell) }}
+                          className={`h-5 w-5 rounded ${isClickable ? "cursor-pointer hover:brightness-90" : ""} ${isSelected ? "ring-2 ring-sky-500 ring-offset-1" : ""}`}
+                          aria-label={isClickable ? `Ver detalhes de ${row.internName} em ${day.label}${stateLabel ? ` — ${stateLabel}` : ""}` : `Sem plantão para ${row.internName} em ${day.label}`}
+                          title={tooltip}
                         />
                       </td>
                     );
