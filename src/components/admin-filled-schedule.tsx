@@ -7,7 +7,7 @@ import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
-import { addDaysToDateStr, formatBrazilTime, localDateStr } from "@/lib/utils";
+import { addDaysToDateStr, checkinMethodLabel, checkinStatusLabel, formatBrazilTime, formatValidatorName, localDateStr } from "@/lib/utils";
 
 type Rule = {
     id: string;
@@ -1758,17 +1758,31 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                                         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Check-in</p>
-                                        <p className="mt-1 text-sm font-medium text-slate-900">{selectedAssignment.checkin_at ? formatBrazilTime(selectedAssignment.checkin_at) : "Sem check-in"}</p>
-                                        <p className="mt-1 text-xs text-slate-500">Status: {selectedAssignment.checkin_status ?? "—"}</p>
-                                        <p className="mt-1 text-xs text-slate-500">Validado por: {selectedAssignment.validated_by_name ?? "—"}</p>
-                                        <p className="mt-1 text-xs text-slate-500">Método: {selectedAssignment.checkin_method ?? "—"}</p>
+                                        {selectedAssignment.checkin_at ? (
+                                            <>
+                                                <p className="mt-1 text-sm font-medium text-slate-900">{formatBrazilTime(selectedAssignment.checkin_at)}</p>
+                                                <p className="mt-1 text-xs text-slate-500">Status: {checkinStatusLabel(selectedAssignment.checkin_status)}</p>
+                                                <p className="mt-1 text-xs text-slate-500">Validado por: {formatValidatorName(selectedAssignment.validated_by_name)}</p>
+                                                <p className="mt-1 text-xs text-slate-500">Método: {checkinMethodLabel(selectedAssignment.checkin_method)}</p>
+                                                {selectedAssignment.geo_valid !== null && (
+                                                    <p className="mt-1 text-xs text-slate-500">Geo: {selectedAssignment.geo_valid ? "Dentro do raio" : "Fora do raio"}</p>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <p className="mt-1 text-sm font-medium text-slate-500">Sem check-in</p>
+                                        )}
                                     </div>
 
                                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                                         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Checkout</p>
-                                        <p className="mt-1 text-sm font-medium text-slate-900">{selectedAssignment.checkout_at ? formatBrazilTime(selectedAssignment.checkout_at) : "Sem checkout"}</p>
-                                        <p className="mt-1 text-xs text-slate-500">Confirmado por: {selectedAssignment.checkout_confirmed_by_name ?? "—"}</p>
-                                        <p className="mt-1 text-xs text-slate-500">Geo: {selectedAssignment.geo_valid === null ? "—" : selectedAssignment.geo_valid ? "Dentro do raio" : "Fora do raio"}</p>
+                                        {selectedAssignment.checkout_at ? (
+                                            <>
+                                                <p className="mt-1 text-sm font-medium text-slate-900">{formatBrazilTime(selectedAssignment.checkout_at)}</p>
+                                                <p className="mt-1 text-xs text-slate-500">Confirmado por: {formatValidatorName(selectedAssignment.checkout_confirmed_by_name)}</p>
+                                            </>
+                                        ) : (
+                                            <p className="mt-1 text-sm font-medium text-slate-500">Sem checkout</p>
+                                        )}
                                     </div>
                                 </div>
 
