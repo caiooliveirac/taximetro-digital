@@ -52,6 +52,7 @@ type AssignmentRow = {
   checkinAt: string | null;
   checkoutAt: string | null;
   absenceJustification: string | null;
+  isExtraShift: boolean;
 };
 
 type RequestRow = {
@@ -85,6 +86,7 @@ export type ReportAssignmentCard = {
   checkoutAt: string | null;
   isJustified: boolean;
   absenceJustification: string | null;
+  isExtraShift: boolean;
 };
 
 export type ReportTypeSection = {
@@ -162,11 +164,18 @@ export type ReportHeatmapDay = {
   label: string;
 };
 
+export type ReportHeatmapCellState =
+  | "done"
+  | "scheduled"
+  | "absentConfirmed"
+  | "noCheckin"
+  | "extra";
+
 export type ReportHeatmapRow = {
   internId: string;
   internName: string;
   cohortLabel: string;
-  cells: Array<"done" | "scheduled" | "absent" | "empty">;
+  cells: Array<ReportHeatmapCellState[]>;
 };
 
 export type ReportDocument = {
@@ -259,6 +268,32 @@ export function classifyReportAssignment(
       isPast = assignment.date < todayStr;
     }
     return isPast ? "absent" : "scheduled";
+  }
+
+  return "scheduled";
+}
+
+export function classifyHeatmapCell(
+  assignment: { status: string; date: string; period: string; isExtraShift: boolean },
+  todayStr: string,
+  hourNow: number
+): ReportHeatmapCellState {
+  if (assignment.isExtraShift) return "extra";
+  if (assignment.status === "CHECKED_IN" || assignment.status === "CHECKED_OUT") return "done";
+  if (assignment.status === "ABSENT") return "absentConfirmed";
+
+  if (assignment.status === "SCHEDULED" || assignment.status === "CONFIRMED") {
+    let isPast = false;
+    if (assignment.period === "NIGHT") {
+      const nextDay = new Date(`${assignment.date}T12:00:00`);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayStr = nextDay.toISOString().slice(0, 10);
+      if (nextDayStr < todayStr) isPast = true;
+      else if (nextDayStr === todayStr) isPast = hourNow >= 7;
+    } else {
+      isPast = assignment.date < todayStr;
+    }
+    return isPast ? "noCheckin" : "scheduled";
   }
 
   return "scheduled";
@@ -649,6 +684,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       checkinAt: checkins.checkinAt,
       checkoutAt: checkins.checkoutAt,
       absenceJustification: assignments.absenceJustification,
+      isExtraShift: assignments.isExtraShift,
     })
     .from(assignments)
     .innerJoin(bases, eq(bases.id, assignments.baseId))
@@ -676,6 +712,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     checkinAt: row.checkinAt ? row.checkinAt.toISOString() : null,
     checkoutAt: row.checkoutAt ? row.checkoutAt.toISOString() : null,
     absenceJustification: row.absenceJustification,
+    isExtraShift: row.isExtraShift,
   }));
 
   const requestRowsRaw = await db
@@ -771,6 +808,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       checkoutAt: assignment.checkoutAt,
       isJustified: Boolean(assignment.absenceJustification),
       absenceJustification: assignment.absenceJustification,
+      isExtraShift: assignment.isExtraShift,
     } satisfies ReportAssignmentCard));
 
     const typeSections: Record<ReportTypeKey, ReportTypeSection> = {
@@ -932,17 +970,22 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
   });
 
   const heatmapRows: ReportHeatmapRow[] = heatmapRowsSource.map((intern) => {
-    const byDate = new Map<string, "done" | "scheduled" | "absent">();
-    for (const section of intern.typeSections) {
-      for (const item of section.done) byDate.set(item.date, "done");
-      for (const item of section.scheduled) if (!byDate.has(item.date)) byDate.set(item.date, "scheduled");
+    const byDate = new Map<string, ReportHeatmapCellState[]>();
+    const allCards: ReportAssignmentCard[] = [
+      ...intern.absences,
+      ...intern.typeSections.flatMap((section) => [...section.done, ...section.scheduled]),
+    ];
+    for (const card of allCards) {
+      const state = classifyHeatmapCell(card, todayStr, hourNow);
+      const list = byDate.get(card.date) ?? [];
+      if (!list.includes(state)) list.push(state);
+      byDate.set(card.date, list);
     }
-    for (const item of intern.absences) byDate.set(item.date, "absent");
     return {
       internId: intern.internId,
       internName: intern.internName,
       cohortLabel: intern.cohortLabel,
-      cells: heatmapDays.map((day) => byDate.get(day.date) ?? "empty"),
+      cells: heatmapDays.map((day) => byDate.get(day.date) ?? []),
     };
   });
 
