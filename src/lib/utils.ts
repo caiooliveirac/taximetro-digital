@@ -239,12 +239,82 @@ function normalizeDateValue(value: Date | string): Date {
   return new Date(normalizedValue);
 }
 
+/**
+ * Helpers de formatação em horário de Brasília (America/Sao_Paulo).
+ *
+ * Por que `normalizeDateValue` força UTC quando recebe string sem fuso:
+ * as colunas `timestamp` (sem timezone) do schema (ex.: checkins.checkin_at)
+ * recebem `new Date()` no servidor — Drizzle/pg gravam em UTC e devolvem a
+ * string sem o sufixo "Z". Se passarmos direto para `new Date(...)`, o
+ * construtor interpreta no fuso do navegador, gerando deslocamento (sintoma:
+ * "horários em Greenwich" no cliente). Por isso forçamos UTC antes de formatar.
+ */
 export function formatBrazilTime(value: Date | string) {
   return normalizeDateValue(value).toLocaleTimeString("pt-BR", {
     timeZone: BRAZIL_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+export function formatBrazilDateTime(value: Date | string) {
+  return normalizeDateValue(value).toLocaleString("pt-BR", {
+    timeZone: BRAZIL_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Formata uma data ISO "YYYY-MM-DD" como "qua, 30/04" no fuso de Brasília. */
+export function formatBrazilLongDate(dateStr: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: BRAZIL_TIME_ZONE,
+  }).format(new Date(`${dateStr}T12:00:00Z`));
+}
+
+/**
+ * Rótulos amigáveis para `checkins.method`.
+ *
+ * TELEGRAM_QR e TELEGRAM_CODE permanecem distintos de propósito: representam
+ * caminhos operacionais diferentes (QR escaneado vs. código digitado no grupo).
+ * Manter visíveis ajuda diagnóstico de ops; unificar como "Telegram" perde sinal.
+ */
+export function checkinMethodLabel(method: string | null | undefined): string {
+  if (method === "TELEGRAM_QR") return "Telegram (QR)";
+  if (method === "TELEGRAM_CODE") return "Telegram (código)";
+  if (method === "APP_DIRECT") return "App";
+  return "—";
+}
+
+export function checkinStatusLabel(status: string | null | undefined): string {
+  if (status === "VALIDATED") return "Validado";
+  if (status === "PENDING") return "Pendente";
+  if (status === "REJECTED") return "Rejeitado";
+  return "—";
+}
+
+/**
+ * Normaliza o nome do validador para exibição.
+ *
+ * Quando o webhook do Telegram não consegue resolver `validatedBy` (binding
+ * ausente e nome não bate com nenhum cadastro), persiste em `validated_by_name`
+ * o formato `"{TelegramName} - Telegram"`. Esta função detecta esse sufixo e
+ * formata como `"{TelegramName} (via Telegram)"` — mais legível e desambigua
+ * casos onde o próprio nome contém hífen. Transformação só de renderização:
+ * mantém compatibilidade com dados históricos sem migração de schema.
+ */
+export function formatValidatorName(name: string | null | undefined): string {
+  if (!name) return "Não identificado";
+  const telegramSuffix = " - Telegram";
+  if (name.endsWith(telegramSuffix)) {
+    return `${name.slice(0, -telegramSuffix.length)} (via Telegram)`;
+  }
+  return name;
 }
 
 /* ────────── EBMSP Shift helpers ────────── */

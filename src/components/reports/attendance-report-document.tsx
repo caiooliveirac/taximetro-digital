@@ -8,33 +8,18 @@ import type {
   ReportInternDocument,
   ReportTypeSection,
 } from "@/lib/admin-report-builder";
+import {
+  checkinMethodLabel,
+  checkinStatusLabel,
+  formatBrazilDateTime,
+  formatBrazilLongDate,
+  formatBrazilTime,
+  formatValidatorName,
+} from "@/lib/utils";
 
-function formatLongDate(dateStr: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    weekday: "short",
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "America/Bahia",
-  }).format(new Date(`${dateStr}T12:00:00`));
-}
-
-function formatDateTime(dateStr: string) {
-  return new Date(dateStr).toLocaleString("pt-BR", {
-    timeZone: "America/Bahia",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatTime(dateStr: string | null) {
+function formatTimeOrDash(dateStr: string | null) {
   if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleTimeString("pt-BR", {
-    timeZone: "America/Bahia",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatBrazilTime(dateStr);
 }
 
 function periodLabel(period: string) {
@@ -80,10 +65,10 @@ function AssignmentCard({
   if (compactCompleted && group === "done") {
     return (
       <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-slate-700">
-        <span className="font-medium text-slate-900">{formatLongDate(assignment.date)}</span>
+        <span className="font-medium text-slate-900">{formatBrazilLongDate(assignment.date)}</span>
         <span className="rounded bg-white px-2 py-0.5 text-xs text-slate-600">{assignment.baseCode}</span>
         <span className="rounded bg-white px-2 py-0.5 text-xs text-slate-600">{periodLabel(assignment.period)}</span>
-        <span className="text-xs text-slate-500">{formatTime(assignment.checkinAt)} → {formatTime(assignment.checkoutAt)}</span>
+        <span className="text-xs text-slate-500">{formatTimeOrDash(assignment.checkinAt)} → {formatTimeOrDash(assignment.checkoutAt)}</span>
       </div>
     );
   }
@@ -91,7 +76,7 @@ function AssignmentCard({
   return (
     <div className="mb-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-slate-900">{formatLongDate(assignment.date)}</span>
+        <span className="font-semibold text-slate-900">{formatBrazilLongDate(assignment.date)}</span>
         <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">{periodLabel(assignment.period)}</span>
         <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{assignment.baseCode}</span>
         <span className={`rounded px-2 py-0.5 text-xs font-semibold ${badge.className}`}>{badge.label}</span>
@@ -99,8 +84,8 @@ function AssignmentCard({
       <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
         <span>{assignment.baseName}</span>
         {assignment.shift ? <span>{assignment.shift === "MORNING" ? "Manhã" : "Tarde"}</span> : null}
-        {assignment.checkinAt ? <span>Check-in: {formatTime(assignment.checkinAt)}</span> : null}
-        {assignment.checkoutAt ? <span>Check-out: {formatTime(assignment.checkoutAt)}</span> : null}
+        {assignment.checkinAt ? <span>Check-in: {formatTimeOrDash(assignment.checkinAt)}</span> : null}
+        {assignment.checkoutAt ? <span>Check-out: {formatTimeOrDash(assignment.checkoutAt)}</span> : null}
       </div>
       {group === "absent" && assignment.isJustified ? (
         <div className="mt-2 rounded border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -320,17 +305,31 @@ function AssignmentDetailModal({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Check-in</p>
-                    <p className="mt-1 text-sm font-medium text-slate-900">{assignment.checkin_at ? formatDateTime(assignment.checkin_at) : "Sem check-in"}</p>
-                    <p className="mt-1 text-xs text-slate-500">Status: {assignment.checkin_status ?? "—"}</p>
-                    <p className="mt-1 text-xs text-slate-500">Validado por: {assignment.validated_by_name ?? "—"}</p>
-                    <p className="mt-1 text-xs text-slate-500">Método: {assignment.checkin_method ?? "—"}</p>
+                    {assignment.checkin_at ? (
+                      <>
+                        <p className="mt-1 text-sm font-medium text-slate-900">{formatBrazilDateTime(assignment.checkin_at)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Status: {checkinStatusLabel(assignment.checkin_status)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Validado por: {formatValidatorName(assignment.validated_by_name)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Método: {checkinMethodLabel(assignment.checkin_method)}</p>
+                        {assignment.geo_valid !== null && (
+                          <p className="mt-1 text-xs text-slate-500">Geo: {assignment.geo_valid ? "Dentro do raio" : "Fora do raio"}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="mt-1 text-sm font-medium text-slate-500">Sem check-in</p>
+                    )}
                   </div>
 
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Checkout</p>
-                    <p className="mt-1 text-sm font-medium text-slate-900">{assignment.checkout_at ? formatDateTime(assignment.checkout_at) : "Sem checkout"}</p>
-                    <p className="mt-1 text-xs text-slate-500">Confirmado por: {assignment.checkout_confirmed_by_name ?? "—"}</p>
-                    <p className="mt-1 text-xs text-slate-500">Geo: {assignment.geo_valid === null ? "—" : assignment.geo_valid ? "Dentro do raio" : "Fora do raio"}</p>
+                    {assignment.checkout_at ? (
+                      <>
+                        <p className="mt-1 text-sm font-medium text-slate-900">{formatBrazilDateTime(assignment.checkout_at)}</p>
+                        <p className="mt-1 text-xs text-slate-500">Confirmado por: {formatValidatorName(assignment.checkout_confirmed_by_name)}</p>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-sm font-medium text-slate-500">Sem checkout</p>
+                    )}
                   </div>
                 </div>
 
@@ -353,7 +352,7 @@ function AssignmentDetailModal({
                   <p>Interno: <span className="font-medium text-slate-700">{assignment.intern_name}</span></p>
                   <p className="mt-1">Faculdade: <span className="font-medium text-slate-700">{assignment.faculty_abbr}</span></p>
                   <p className="mt-1">Base: <span className="font-medium text-slate-700">{assignment.base_code} — {assignment.base_name}</span></p>
-                  <p className="mt-1">Data: <span className="font-medium text-slate-700">{formatLongDate(assignment.date)}</span></p>
+                  <p className="mt-1">Data: <span className="font-medium text-slate-700">{formatBrazilLongDate(assignment.date)}</span></p>
                   <p className="mt-1">Turno: <span className="font-medium text-slate-700">{periodDetailedLabel(assignment.period, assignment.shift)}</span></p>
                 </div>
               </div>
@@ -420,7 +419,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
     if (assignmentIds.length === 0) return;
     setSelectedCell({
       internName,
-      dateLabel: formatLongDate(date),
+      dateLabel: formatBrazilLongDate(date),
       assignmentIds,
     });
     void loadAssignmentDetailById(assignmentIds[0]);
@@ -472,7 +471,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
                     const day = document.cover.heatmapDays[index];
                     const assignmentIds = (assignmentsByInternDate.get(`${row.internId}::${day.date}`) ?? []).map((item) => item.assignmentId);
                     const isClickable = assignmentIds.length > 0;
-                    const isSelected = Boolean(selectedCell && selectedCell.internName === row.internName && selectedCell.dateLabel === formatLongDate(day.date));
+                    const isSelected = Boolean(selectedCell && selectedCell.internName === row.internName && selectedCell.dateLabel === formatBrazilLongDate(day.date));
                     return (
                       <td key={`${row.internId}-${index}`} className="px-0.5 py-0.5">
                         <button
@@ -487,7 +486,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
                                 ? `h-5 w-5 rounded bg-rose-400 ${isClickable ? "cursor-pointer hover:brightness-90" : ""} ${isSelected ? "ring-2 ring-sky-500 ring-offset-1" : ""}`
                                 : "h-5 w-5 rounded bg-slate-100"}
                           aria-label={isClickable ? `Ver detalhes de ${row.internName} em ${day.label}` : `Sem plantão para ${row.internName} em ${day.label}`}
-                          title={isClickable ? `Ver detalhes de ${row.internName} em ${formatLongDate(day.date)}` : "Sem plantão"}
+                          title={isClickable ? `Ver detalhes de ${row.internName} em ${formatBrazilLongDate(day.date)}` : "Sem plantão"}
                         />
                       </td>
                     );
@@ -529,7 +528,7 @@ function Cover({ document }: { document: ReportDocument }) {
           </p>
         </div>
         <div className="text-right text-xs text-slate-500">
-          <div>Gerado em {formatDateTime(document.generatedAt)}</div>
+          <div>Gerado em {formatBrazilDateTime(document.generatedAt)}</div>
           <div>{document.previewSummary.internCount} internos · {document.previewSummary.assignmentCount} plantões</div>
         </div>
       </div>
@@ -687,7 +686,7 @@ function InternCard({ document, intern }: { document: ReportDocument; intern: Re
                   <div key={request.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                     <span className="rounded bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">{request.type}</span>
                     <span className="rounded bg-white px-2 py-0.5 text-xs text-slate-500">{request.status}</span>
-                    <span className="text-xs text-slate-500">{formatDateTime(request.createdAt)}</span>
+                    <span className="text-xs text-slate-500">{formatBrazilDateTime(request.createdAt)}</span>
                   </div>
                 ))}
               </div>
