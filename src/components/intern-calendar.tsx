@@ -5,7 +5,7 @@ import { ptBR } from "date-fns/locale";
 import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
 import { useCallback, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Moon, Sun } from "lucide-react";
-import { getBaseStyle } from "@/lib/base-colors";
+import { getBaseStyleByCode } from "@/lib/base-colors";
 import { cn, localDateStr } from "@/lib/utils";
 
 export type CalendarAssignment = {
@@ -156,7 +156,7 @@ export function InternCalendar({ assignments, onDayPick }: Props) {
           {hasAny && (
             <div className="mt-auto space-y-0.5">
               {visible.map((a) => {
-                const bs = getBaseStyle(a.baseType ?? undefined);
+                const bs = getBaseStyleByCode(a.baseCode);
                 const Icon = a.period === "DAY" ? Sun : Moon;
                 return (
                   <div
