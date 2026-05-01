@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: taximetro_dev
       TZ: America/Bahia
     ports:
-      - "5434:5432"
+      - "5436:5432"
     volumes:
       - taximetro_dev_db_data:/var/lib/postgresql/data
     healthcheck:
