@@ -47,7 +47,7 @@ export function InternDaySheet({ open, dateStr, assignments, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center"
+      className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none"
       role="dialog"
       aria-modal="true"
       aria-label={`Plantões em ${humanDate}`}
@@ -56,10 +56,10 @@ export function InternDaySheet({ open, dateStr, assignments, onClose }: Props) {
         type="button"
         aria-label="Fechar"
         onClick={onClose}
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm pointer-events-auto"
       />
-      <div className="relative z-10 w-full max-w-lg animate-in slide-in-from-bottom rounded-t-2xl bg-white shadow-xl duration-200">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
+      <div className="relative z-10 w-full max-w-lg animate-in slide-in-from-bottom rounded-t-2xl bg-white shadow-xl duration-200 pointer-events-auto flex flex-col">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3 shrink-0">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold capitalize text-slate-900">{humanDate}</p>
             <p className="text-xs text-slate-500">
@@ -75,7 +75,7 @@ export function InternDaySheet({ open, dateStr, assignments, onClose }: Props) {
             <X className="h-5 w-5" strokeWidth={1.8} />
           </button>
         </div>
-        <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           {assignments.map((a) => (
             <AssignmentCard key={a.id} assignment={a} />
           ))}
