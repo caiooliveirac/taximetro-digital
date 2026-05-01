@@ -989,9 +989,26 @@ async function main() {
     });
 }
 
-main().catch((error) => {
-    console.error("[db-backup] Falha no backup diario.", {
-        error: error instanceof Error ? error.message : String(error),
-    });
+async function notifyTelegramFailure(errorMessage) {
+    const token = process.env.TELEGRAM_BOT_TOKEN_NEXT || process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_GROUP_ID;
+    if (!token || !chatId) return;
+
+    const text = `🚨 [taximetro] Backup diario falhou\n\n${errorMessage}`;
+    try {
+        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ chat_id: chatId, text }),
+        });
+    } catch {
+        // Falhar silenciosamente — nao queremos cron quebrando duas vezes
+    }
+}
+
+main().catch(async (error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[db-backup] Falha no backup diario.", { error: message });
+    await notifyTelegramFailure(message);
     process.exit(1);
 });

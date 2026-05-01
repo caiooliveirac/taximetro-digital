@@ -17,6 +17,15 @@ type CredentialLoginFailureReason =
   | "INVALID_PASSWORD"
   | "NO_ACTIVE_ROLE";
 
+type GoogleLoginAction =
+  | "LOGIN_GOOGLE_SUCCESS"
+  | "LOGIN_GOOGLE_FAILED"
+  | "LOGIN_GOOGLE_REDIRECT_REGISTER";
+type GoogleLoginFailureReason =
+  | "MISSING_EMAIL"
+  | "USER_INACTIVE"
+  | "DB_ERROR";
+
 function normalizeCpf(identifier: string) {
   const digits = identifier.replace(/\D/g, "");
   if (digits.length !== 11) return identifier;
@@ -41,6 +50,37 @@ function getRequestIp(request?: Request) {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
     || request.headers.get("x-real-ip")
     || null;
+}
+
+async function logGoogleLoginEvent(input: {
+  action: GoogleLoginAction;
+  email?: string | null;
+  reason?: GoogleLoginFailureReason;
+  userId?: string;
+  userName?: string | null;
+  googleId?: string | null;
+}) {
+  try {
+    await logAudit({
+      userId: input.userId,
+      action: input.action,
+      entity: "user",
+      entityId: input.userId,
+      payload: {
+        provider: "google",
+        maskedEmail: input.email ? maskIdentifier(input.email, "EMAIL") : null,
+        reason: input.reason ?? null,
+        userName: input.userName ?? null,
+        googleId: input.googleId ?? null,
+      },
+    });
+  } catch (error) {
+    console.error("[auth] failed to write google login audit event", {
+      action: input.action,
+      reason: input.reason,
+      error,
+    });
+  }
 }
 
 async function logCredentialLoginEvent(input: {
@@ -125,10 +165,15 @@ async function fetchRoles(userId: string) {
   }));
 }
 
-const googleProviders: Provider[] =
-  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-    ? [Google({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET })]
-    : [];
+function buildGoogleProviders(): Provider[] {
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    return [Google({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET })];
+  }
+  console.error("[auth] GoogleProvider NOT registered — GOOGLE_CLIENT_ID and/or GOOGLE_CLIENT_SECRET missing in environment");
+  return [];
+}
+
+const googleProviders = buildGoogleProviders();
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   basePath: "/taximetro/api/auth",
@@ -276,28 +321,67 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider === "google") {
-        if (!user.email) return false;
-        const [existing] = await db.select().from(users)
-          .where(eq(users.email, user.email))
-          .limit(1);
-        if (!existing) {
-          // New user → redirect to OAuth registration
-          const params = new URLSearchParams({
+        try {
+          if (!user.email) {
+            await logGoogleLoginEvent({
+              action: "LOGIN_GOOGLE_FAILED",
+              reason: "MISSING_EMAIL",
+              googleId: account.providerAccountId,
+            });
+            return false;
+          }
+          const [existing] = await db.select().from(users)
+            .where(eq(users.email, user.email))
+            .limit(1);
+          if (!existing) {
+            // New user → redirect to OAuth registration
+            await logGoogleLoginEvent({
+              action: "LOGIN_GOOGLE_REDIRECT_REGISTER",
+              email: user.email,
+              userName: user.name ?? null,
+              googleId: account.providerAccountId,
+            });
+            const params = new URLSearchParams({
+              email: user.email,
+              name: user.name ?? "",
+            });
+            return `/taximetro/registro/google?${params.toString()}`;
+          }
+          if (!existing.isActive) {
+            await logGoogleLoginEvent({
+              action: "LOGIN_GOOGLE_FAILED",
+              reason: "USER_INACTIVE",
+              email: user.email,
+              userId: existing.id,
+              userName: existing.name,
+              googleId: account.providerAccountId,
+            });
+            return "/taximetro/login?error=PendingApproval";
+          }
+          // Link Google ID if not yet linked
+          if (!existing.googleId && account.providerAccountId) {
+            await db.update(users)
+              .set({ googleId: account.providerAccountId, updatedAt: new Date() })
+              .where(eq(users.id, existing.id));
+          }
+          await logGoogleLoginEvent({
+            action: "LOGIN_GOOGLE_SUCCESS",
             email: user.email,
-            name: user.name ?? "",
+            userId: existing.id,
+            userName: existing.name,
+            googleId: account.providerAccountId,
           });
-          return `/taximetro/registro/google?${params.toString()}`;
+          return true;
+        } catch (error) {
+          console.error("[auth] google signIn callback error", error);
+          await logGoogleLoginEvent({
+            action: "LOGIN_GOOGLE_FAILED",
+            reason: "DB_ERROR",
+            email: user.email ?? null,
+            googleId: account.providerAccountId,
+          });
+          return false;
         }
-        if (!existing.isActive) {
-          return "/taximetro/login?error=PendingApproval";
-        }
-        // Link Google ID if not yet linked
-        if (!existing.googleId && account.providerAccountId) {
-          await db.update(users)
-            .set({ googleId: account.providerAccountId, updatedAt: new Date() })
-            .where(eq(users.id, existing.id));
-        }
-        return true;
       }
       return true;
     },

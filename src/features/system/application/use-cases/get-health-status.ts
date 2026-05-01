@@ -1,6 +1,20 @@
 import { pingDatabase } from "@/features/system/infra/repositories/health-repository";
+import { validateCriticalEnv } from "@/lib/env-check";
 
 export async function executeGetHealthStatus() {
+  const env = validateCriticalEnv();
+  if (!env.ok) {
+    return {
+      statusCode: 503,
+      body: {
+        status: "unhealthy",
+        timestamp: new Date().toISOString(),
+        reason: "missing_env",
+        missing: env.missing,
+      },
+    } as const;
+  }
+
   try {
     const start = Date.now();
     await pingDatabase();
