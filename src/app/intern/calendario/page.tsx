@@ -6,7 +6,7 @@ import { ptBR } from "date-fns/locale";
 import { CalendarDays, Moon, Sun } from "lucide-react";
 import { InternCalendar, type CalendarAssignment } from "@/components/intern-calendar";
 import { InternDaySheet } from "@/components/intern-day-sheet";
-import { getBaseStyle } from "@/lib/base-colors";
+import { getBaseStyleByCode } from "@/lib/base-colors";
 import { cn } from "@/lib/utils";
 
 type ApiAssignment = CalendarAssignment & { internId?: string };
@@ -172,16 +172,35 @@ export default function InternCalendarPage() {
             {basesInUse.length > 0 && (
               <div className="border-b border-slate-100 px-4 pt-3 pb-3">
                 <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Bases</p>
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   {basesInUse.map((b) => {
-                    const bs = getBaseStyle(b.type ?? undefined);
+                    const bs = getBaseStyleByCode(b.code);
                     return (
-                      <div key={b.code} className="flex items-center gap-2">
-                        <span className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-full", bs.dot)} />
-                        <span className="min-w-[40px] text-xs font-bold text-slate-800">{b.code}</span>
-                        <span className="flex-1 text-xs text-slate-500">{b.name}</span>
-                        <span className="text-[10px] font-semibold tabular-nums text-slate-400">
-                          {b.count}×
+                      <div
+                        key={b.code}
+                        className={cn(
+                          "flex items-center gap-2.5 rounded-lg px-2 py-1.5 ring-1 ring-inset",
+                          bs.bg,
+                          bs.ring,
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-white/80 shadow-sm",
+                            bs.dot,
+                          )}
+                        />
+                        <span className={cn("min-w-[42px] text-xs font-bold tracking-tight", bs.text)}>
+                          {b.code}
+                        </span>
+                        <span className="flex-1 truncate text-xs text-slate-600">{b.name}</span>
+                        <span
+                          className={cn(
+                            "inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums",
+                            bs.badge,
+                          )}
+                        >
+                          {b.count}
                         </span>
                       </div>
                     );
