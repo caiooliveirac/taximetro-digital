@@ -16,6 +16,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle, getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
 import { operationalDateStr } from "@/lib/utils";
+import { VelocimeterCard } from "@/components/admin/velocimeter-card";
 
 /* ── types ── */
 type Intern = { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId: string | null; cohortName: string | null };
@@ -45,6 +46,7 @@ type ComplianceRow = {
   totalPct: number | null; thisWeekCompleted: number; thisWeekScheduled: number;
   thisWeekAbsent: number; rawDeficit: number; netDeficit: number;
   futureScheduled: number; status: "ok" | "compensating" | "partial" | "deficit";
+  rotationStartDate: string | null; rotationEndDate: string | null;
 };
 type Request = {
   id: string; type: string; status: string; createdAt: string;
@@ -120,7 +122,8 @@ function AdminVerComoInterno() {
   const [actionMsg, setActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  /* ── load intern list ── */
+  /* ── load intern list + compliance overview (para velocímetro compact na lista) ── */
+  const [complianceByIntern, setComplianceByIntern] = useState<Record<string, ComplianceRow>>({});
   useEffect(() => {
     fetch("/taximetro/api/admin/users")
       .then((r) => r.json())
@@ -140,6 +143,17 @@ function AdminVerComoInterno() {
       })
       .catch(() => { })
       .finally(() => setLoadingList(false));
+
+    fetch("/taximetro/api/compliance")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          const map: Record<string, ComplianceRow> = {};
+          for (const row of json.data as ComplianceRow[]) map[row.userId] = row;
+          setComplianceByIntern(map);
+        }
+      })
+      .catch(() => { });
 
     fetch("/taximetro/api/admin/bases")
       .then((r) => r.json())
@@ -317,6 +331,7 @@ function AdminVerComoInterno() {
           <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
             {filteredInterns.map((intern) => {
               const fs = getFacultyStyle(intern.facultyAbbr);
+              const cmp = complianceByIntern[intern.id];
               return (
                 <button
                   key={intern.id}
@@ -328,6 +343,20 @@ function AdminVerComoInterno() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900 truncate">{intern.name}</p>
+                    {cmp && cmp.targetShifts > 0 && (
+                      <div className="mt-0.5">
+                        <VelocimeterCard
+                          variant="compact"
+                          data={{
+                            completed: cmp.totalCompleted,
+                            target: cmp.targetShifts,
+                            rotationStartDate: cmp.rotationStartDate,
+                            rotationEndDate: cmp.rotationEndDate,
+                            weeklyTarget: cmp.targetShiftsPerWeek,
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${fs.pill}`}>
                     {intern.facultyAbbr}
@@ -425,34 +454,18 @@ function AdminVerComoInterno() {
             />
           </div>
 
-          {/* Compliance progress */}
+          {/* Velocímetro da rotação */}
           {compliance && compliance.targetShifts > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-slate-900">Progresso Total</p>
-                <span className="text-xs text-slate-500">{compliance.totalCompleted}/{compliance.targetShifts} plantões</span>
-              </div>
-              <div className="h-2.5 rounded-full bg-slate-100">
-                <div
-                  className={`h-2.5 rounded-full transition-all ${(compliance.totalPct ?? 0) >= 100 ? "bg-emerald-500" : (compliance.totalPct ?? 0) >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                  style={{ width: `${Math.min(100, compliance.totalPct ?? 0)}%` }}
-                />
-              </div>
-              <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
-                <span>{compliance.totalPct ?? 0}% concluído</span>
-                <span>•</span>
-                <span>{compliance.totalHours}h acumuladas</span>
-                {compliance.rawDeficit > 0 && (
-                  <>
-                    <span>•</span>
-                    <span className="text-amber-600">Déficit: {compliance.rawDeficit}</span>
-                    {compliance.futureScheduled > 0 && (
-                      <span className="text-blue-600">(+{compliance.futureScheduled} agendados)</span>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+            <VelocimeterCard
+              variant="card"
+              data={{
+                completed: compliance.totalCompleted,
+                target: compliance.targetShifts,
+                rotationStartDate: compliance.rotationStartDate,
+                rotationEndDate: compliance.rotationEndDate,
+                weeklyTarget: compliance.targetShiftsPerWeek,
+              }}
+            />
           )}
 
           {/* Today */}
