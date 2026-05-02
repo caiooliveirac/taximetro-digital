@@ -1,12 +1,18 @@
 import { AdminDashboardClient } from "@/components/admin-dashboard";
 import { localDateStr, operationalDateStr, operationalPeriod } from "@/lib/utils";
 import { fetchDashboardData } from "@/features/reporting/infra/repositories/dashboard-query";
+import { buildCockpitData, fetchNoCheckinNow } from "@/features/reporting/application/build-cockpit";
+import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
+import { listFaculties } from "@/features/faculties/infra/repositories/faculty-repository";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminDashboard() {
+type SearchParamsShape = Promise<{ faculty?: string }>;
+
+export default async function AdminDashboard({ searchParams }: { searchParams: SearchParamsShape }) {
   try {
-    return await AdminDashboardContent();
+    return await AdminDashboardContent({ searchParams });
   } catch (err) {
     console.error("[Admin] Dashboard error:", err);
     return <AdminDashboardError message={err instanceof Error ? err.message : "Erro desconhecido"} />;
@@ -34,11 +40,47 @@ function AdminDashboardError({ message }: { message: string }) {
   );
 }
 
-async function AdminDashboardContent() {
+async function AdminDashboardContent({ searchParams }: { searchParams: SearchParamsShape }) {
   const today = operationalDateStr();
   const calendarToday = localDateStr();
   const currentPeriod = operationalPeriod();
 
-  const data = await fetchDashboardData(today, calendarToday, currentPeriod);
-  return <AdminDashboardClient data={data} />;
+  const session = await auth();
+  const sessionUser = session?.user as
+    | { id?: string; role?: string; facultyId?: string | null }
+    | undefined;
+
+  const resolvedParams = await searchParams;
+  const facultyFilter = resolvedParams.faculty ?? null;
+
+  const [dashboardData, compliance, faculties] = await Promise.all([
+    fetchDashboardData(today, calendarToday, currentPeriod),
+    executeGetComplianceOverview({
+      actor: {
+        id: sessionUser?.id ?? "",
+        role: sessionUser?.role ?? "COORDINATOR",
+        facultyId: sessionUser?.facultyId ?? null,
+      },
+    }),
+    listFaculties(),
+  ]);
+
+  const noCheckinRows = await fetchNoCheckinNow();
+  const cockpit = buildCockpitData({
+    complianceInterns: compliance.data,
+    noCheckinRows,
+  });
+
+  const facultyOptions = faculties
+    .filter((f) => !f.isVirtual)
+    .map((f) => ({ id: f.id, abbreviation: f.abbreviation, name: f.name }));
+
+  return (
+    <AdminDashboardClient
+      data={dashboardData}
+      cockpit={cockpit}
+      facultyOptions={facultyOptions}
+      facultyFilter={facultyFilter}
+    />
+  );
 }
