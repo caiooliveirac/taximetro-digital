@@ -15,6 +15,13 @@ type ComplianceIntern = {
   targetShiftsPerWeek: number;
   lastWeekCompleted: number;
   belowWeeklyTarget: boolean;
+  // per-type weekly metas (already exposed by executeGetComplianceOverview)
+  targetUSAPerWeek: number;
+  targetCRUPerWeek: number;
+  targetCRLPerWeek: number;
+  lastWeekUSACompleted: number;
+  lastWeekCRUCompleted: number;
+  lastWeekCRLCompleted: number;
 };
 
 type NoCheckinRow = {
@@ -71,12 +78,46 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
     });
 }
 
+function byFacultyThenName(a: { facultyAbbr: string; internName: string }, b: { facultyAbbr: string; internName: string }) {
+  const fac = a.facultyAbbr.localeCompare(b.facultyAbbr);
+  if (fac !== 0) return fac;
+  return a.internName.localeCompare(b.internName);
+}
+
+function buildWeeklyBreakdown(intern: ComplianceIntern) {
+  const types: Array<{ type: "USA" | "CRU" | "CRL"; completed: number; target: number; below: boolean }> = [];
+  if (intern.targetUSAPerWeek > 0) {
+    const completed = intern.lastWeekUSACompleted;
+    const target = intern.targetUSAPerWeek;
+    types.push({ type: "USA", completed, target, below: completed < target });
+  }
+  if (intern.targetCRUPerWeek > 0) {
+    const completed = intern.lastWeekCRUCompleted;
+    const target = intern.targetCRUPerWeek;
+    types.push({ type: "CRU", completed, target, below: completed < target });
+  }
+  if (intern.targetCRLPerWeek > 0) {
+    const completed = intern.lastWeekCRLCompleted;
+    const target = intern.targetCRLPerWeek;
+    types.push({ type: "CRL", completed, target, below: completed < target });
+  }
+  return types;
+}
+
+function isBelowAnyTypeWeekly(intern: ComplianceIntern): boolean {
+  if (intern.targetUSAPerWeek > 0 && intern.lastWeekUSACompleted < intern.targetUSAPerWeek) return true;
+  if (intern.targetCRUPerWeek > 0 && intern.lastWeekCRUCompleted < intern.targetCRUPerWeek) return true;
+  if (intern.targetCRLPerWeek > 0 && intern.lastWeekCRLCompleted < intern.targetCRLPerWeek) return true;
+  return false;
+}
+
 export function buildCockpitData(params: {
   complianceInterns: ComplianceIntern[];
   noCheckinRows: NoCheckinRow[];
 }): CockpitData {
   const { complianceInterns, noCheckinRows } = params;
 
+  // Sem check-in agora: ordem por base já aplicada em fetchNoCheckinNow.
   const noCheckinItems: AlarmItem[] = noCheckinRows.map((r) => ({
     internId: r.intern_id,
     internName: r.intern_name,
@@ -84,6 +125,8 @@ export function buildCockpitData(params: {
     detail: `${r.base_code} · ${PERIOD_LABEL[r.period] ?? r.period.toLowerCase()}`,
   }));
 
+  // Faltou sem reposição: agregado por design (saldo da rotação).
+  // Ordenação por (faculdade, nome) pra permitir agrupamento no UI.
   const unreplacedItems: AlarmItem[] = complianceInterns
     .filter((i) => i.totalAbsent > 0 && i.totalCompleted + i.futureScheduled < i.targetShifts)
     .map((i) => {
@@ -94,16 +137,26 @@ export function buildCockpitData(params: {
         facultyAbbr: i.facultyAbbr ?? "",
         detail: `${i.totalAbsent} falta${i.totalAbsent > 1 ? "s" : ""} · faltam ${gap}`,
       };
-    });
+    })
+    .sort(byFacultyThenName);
 
+  // Abaixo da meta semanal: trigger per-type — captura "compensou um tipo,
+  // perdeu outro". Cada item carrega breakdown estruturado pra UI renderizar
+  // badges per-type com cor por estado.
   const belowWeeklyItems: AlarmItem[] = complianceInterns
-    .filter((i) => i.belowWeeklyTarget)
-    .map((i) => ({
-      internId: i.userId,
-      internName: i.name,
-      facultyAbbr: i.facultyAbbr ?? "",
-      detail: `${i.lastWeekCompleted}/${i.targetShiftsPerWeek} sem. passada`,
-    }));
+    .filter(isBelowAnyTypeWeekly)
+    .map((i) => {
+      const breakdown = buildWeeklyBreakdown(i);
+      const fallbackParts = breakdown.map((b) => `${b.type} ${b.completed}/${b.target}`);
+      return {
+        internId: i.userId,
+        internName: i.name,
+        facultyAbbr: i.facultyAbbr ?? "",
+        detail: fallbackParts.join(" · "),
+        breakdown,
+      };
+    })
+    .sort(byFacultyThenName);
 
   return {
     noCheckin: { count: noCheckinItems.length, items: noCheckinItems },
