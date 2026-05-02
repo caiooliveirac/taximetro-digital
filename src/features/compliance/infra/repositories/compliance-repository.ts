@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, bases, faculties, userRoles, users } from "@/shared/db/schema";
+import { assignments, bases, cohorts, faculties, userRoles, users } from "@/shared/db/schema";
 
 export async function listActiveComplianceSubjects(params: {
   roleFilter: Array<"INTERN" | "LEADER">;
@@ -31,6 +31,7 @@ export async function listActiveComplianceSubjects(params: {
       facultyId: userRoles.facultyId,
       facultyAbbr: faculties.abbreviation,
       rotationStartDate: faculties.rotationStartDate,
+      rotationEndDate: cohorts.endDate,
       targetShifts: faculties.targetShifts,
       targetHours: faculties.targetHours,
       targetShiftsPerWeek: faculties.targetShiftsPerWeek,
@@ -43,6 +44,7 @@ export async function listActiveComplianceSubjects(params: {
     .from(userRoles)
     .innerJoin(users, and(eq(users.id, userRoles.userId), eq(users.isActive, true)))
     .innerJoin(faculties, eq(faculties.id, userRoles.facultyId))
+    .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
     .where(and(...conditions))
     .orderBy(roleRank, users.name);
 }
