@@ -22,7 +22,37 @@ type Compliance = {
   belowWeeklyTarget: boolean;
   targetShiftsPerWeek: number;
   lastWeekCompleted: number;
+  // per-type
+  targetUSAPerWeek: number;
+  targetCRUPerWeek: number;
+  targetCRLPerWeek: number;
+  thisWeekUSAPlanned?: number;
+  thisWeekCRUPlanned?: number;
+  thisWeekCRLPlanned?: number;
+  lastWeekUSACompleted: number;
+  lastWeekCRUCompleted: number;
+  lastWeekCRLCompleted: number;
 };
+
+type BreakdownRow = { type: "USA" | "CRU" | "CRL"; completed: number; target: number; below: boolean };
+
+function buildWeekBreakdown(c: Compliance, when: "thisWeek" | "lastWeek"): BreakdownRow[] {
+  const out: BreakdownRow[] = [];
+  const pickThis = when === "thisWeek";
+  if (c.targetUSAPerWeek > 0) {
+    const completed = pickThis ? (c.thisWeekUSAPlanned ?? 0) : c.lastWeekUSACompleted;
+    out.push({ type: "USA", completed, target: c.targetUSAPerWeek, below: completed < c.targetUSAPerWeek });
+  }
+  if (c.targetCRUPerWeek > 0) {
+    const completed = pickThis ? (c.thisWeekCRUPlanned ?? 0) : c.lastWeekCRUCompleted;
+    out.push({ type: "CRU", completed, target: c.targetCRUPerWeek, below: completed < c.targetCRUPerWeek });
+  }
+  if (c.targetCRLPerWeek > 0) {
+    const completed = pickThis ? (c.thisWeekCRLPlanned ?? 0) : c.lastWeekCRLCompleted;
+    out.push({ type: "CRL", completed, target: c.targetCRLPerWeek, below: completed < c.targetCRLPerWeek });
+  }
+  return out;
+}
 
 type Assignment = {
   id: string;
@@ -203,19 +233,9 @@ export function InternQuickModal({
                       tone={compliance.totalPct !== null && compliance.totalPct >= 80 ? "success" : compliance.totalPct !== null && compliance.totalPct >= 50 ? "default" : "warning"}
                     />
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-lg bg-slate-50 px-3 py-2">
-                      <p className="text-slate-500">Esta semana</p>
-                      <p className="mt-0.5 font-medium text-slate-800 tabular-nums">
-                        {compliance.thisWeekCompleted}/{compliance.thisWeekScheduled} cumpridos
-                      </p>
-                    </div>
-                    <div className={`rounded-lg px-3 py-2 ${compliance.belowWeeklyTarget ? "bg-amber-50" : "bg-slate-50"}`}>
-                      <p className={compliance.belowWeeklyTarget ? "text-amber-700" : "text-slate-500"}>Semana passada</p>
-                      <p className={`mt-0.5 font-medium tabular-nums ${compliance.belowWeeklyTarget ? "text-amber-900" : "text-slate-800"}`}>
-                        {compliance.lastWeekCompleted}/{compliance.targetShiftsPerWeek} {compliance.belowWeeklyTarget && "· abaixo"}
-                      </p>
-                    </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                    <WeekBreakdownCard label="Esta semana" rows={buildWeekBreakdown(compliance, "thisWeek")} />
+                    <WeekBreakdownCard label="Semana passada" rows={buildWeekBreakdown(compliance, "lastWeek")} />
                   </div>
                 </section>
               )}
@@ -312,6 +332,31 @@ export function InternQuickModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function WeekBreakdownCard({ label, rows }: { label: string; rows: BreakdownRow[] }) {
+  const anyBelow = rows.some((r) => r.below);
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg bg-slate-50 px-3 py-2">
+        <p className="text-slate-500">{label}</p>
+        <p className="mt-0.5 text-xs text-slate-400 italic">Sem meta semanal configurada</p>
+      </div>
+    );
+  }
+  return (
+    <div className={`rounded-lg px-3 py-2 ${anyBelow ? "bg-amber-50" : "bg-slate-50"}`}>
+      <p className={anyBelow ? "text-amber-700" : "text-slate-500"}>{label}</p>
+      <p className="mt-0.5 inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-medium tabular-nums">
+        {rows.map((r, idx) => (
+          <span key={r.type} className={r.below ? "text-red-700 font-semibold" : "text-slate-800"}>
+            {idx > 0 && <span className="mx-0.5 text-slate-300">·</span>}
+            {r.type} {r.completed}/{r.target}
+          </span>
+        ))}
+      </p>
     </div>
   );
 }
