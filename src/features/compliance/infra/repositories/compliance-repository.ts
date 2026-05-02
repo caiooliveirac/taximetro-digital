@@ -30,7 +30,10 @@ export async function listActiveComplianceSubjects(params: {
       role: userRoles.role,
       facultyId: userRoles.facultyId,
       facultyAbbr: faculties.abbreviation,
-      rotationStartDate: faculties.rotationStartDate,
+      // Cohort.startDate é a verdade per-intern; faculties.rotationStartDate
+      // é um ponteiro global que pode defasar do cohort atual e provoca
+      // filtro errado em relevantRows (plantões reais ficam fora).
+      rotationStartDate: sql<string>`COALESCE(${cohorts.startDate}, ${faculties.rotationStartDate})`,
       rotationEndDate: cohorts.endDate,
       targetShifts: faculties.targetShifts,
       targetHours: faculties.targetHours,
