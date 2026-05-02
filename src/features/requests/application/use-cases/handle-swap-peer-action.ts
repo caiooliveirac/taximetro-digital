@@ -7,8 +7,8 @@ import {
   completeSwapRequest,
   createSwapAssignment,
   findAssignmentById,
-  findAssignmentFaculty,
   findAssignmentWithOwnership,
+  findInternFacultiesByUserId,
   findPendingRequestByAssignment,
   findRequestById,
   hasCheckinRecord,
@@ -62,11 +62,11 @@ export async function executeSwapPeerAction(params: {
       return { status: 400, body: { success: false, error: "Plantão já passou" } } as const;
     }
 
-    if (request.assignmentId) {
-      const origAssignment = await findAssignmentFaculty(request.assignmentId);
-      if (origAssignment && origAssignment.facultyId !== proposerAssignment.facultyId) {
-        return { status: 400, body: { success: false, error: "Troca só é permitida dentro da mesma faculdade" } } as const;
-      }
+    const requesterFaculties = await findInternFacultiesByUserId(request.requesterId);
+    const proposerFaculties = await findInternFacultiesByUserId(userId);
+    const sharesFaculty = [...proposerFaculties].some((id) => requesterFaculties.has(id));
+    if (!sharesFaculty) {
+      return { status: 400, body: { success: false, error: "Troca só é permitida dentro da mesma faculdade" } } as const;
     }
 
     const existingReq = await findPendingRequestByAssignment(input.assignmentId);
