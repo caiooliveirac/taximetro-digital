@@ -15,16 +15,12 @@ type ComplianceIntern = {
   targetShiftsPerWeek: number;
   lastWeekCompleted: number;
   belowWeeklyTarget: boolean;
-  // per-type weekly metas (already exposed by executeGetComplianceOverview)
+  // per-type weekly metas (já expostos por executeGetComplianceOverview).
+  // CRL fora do trigger por decisão do produto — meta não-semanal estável.
   targetUSAPerWeek: number;
   targetCRUPerWeek: number;
-  targetCRLPerWeek: number;
-  lastWeekUSACompleted: number;
-  lastWeekCRUCompleted: number;
-  lastWeekCRLCompleted: number;
-  lastWeekUSAPlanned: number;
-  lastWeekCRUPlanned: number;
-  lastWeekCRLPlanned: number;
+  thisWeekUSAPlanned: number;
+  thisWeekCRUPlanned: number;
 };
 
 type NoCheckinRow = {
@@ -99,46 +95,41 @@ function byFacultyThenName(a: { facultyAbbr: string; internName: string }, b: { 
   return a.internName.localeCompare(b.internName);
 }
 
-// Tipo só conta como "abaixo da meta" se tinha sido escalado no nível da meta
-// nominal (planned >= target) E não cumpriu (completed < target). Sem isso, o
-// alarme dispara falso positivo quando a faculdade configura target nominal
-// (ex: 1 CRL/semana) mas operacionalmente aloca menos (ex: CRL mensal) — seria
-// punir o intern por algo fora do controle dele.
-function isBelowType(intern: ComplianceIntern, type: "USA" | "CRU" | "CRL"): boolean {
+// Tipo conta como "abaixo da meta" quando o intern não tem o número-alvo
+// de plantões DESTA SEMANA garantidos (cumpridos OU escalados). Captura
+// dois cenários úteis pro coordenador:
+//   - Leader não escalou: planned=0, target=1 → erro de leader, dispara
+//   - Intern faltou e ninguém repôs: planned=0 (absent excluído) → dispara
+// Não captura quando o intern já cumpriu OU já está escalado pra cumprir
+// na própria semana.
+//
+// CRL deliberadamente fora — meta não-semanal por decisão do produto.
+function isBelowType(intern: ComplianceIntern, type: "USA" | "CRU"): boolean {
   switch (type) {
     case "USA":
       return intern.targetUSAPerWeek > 0
-        && intern.lastWeekUSAPlanned >= intern.targetUSAPerWeek
-        && intern.lastWeekUSACompleted < intern.targetUSAPerWeek;
+        && intern.thisWeekUSAPlanned < intern.targetUSAPerWeek;
     case "CRU":
       return intern.targetCRUPerWeek > 0
-        && intern.lastWeekCRUPlanned >= intern.targetCRUPerWeek
-        && intern.lastWeekCRUCompleted < intern.targetCRUPerWeek;
-    case "CRL":
-      return intern.targetCRLPerWeek > 0
-        && intern.lastWeekCRLPlanned >= intern.targetCRLPerWeek
-        && intern.lastWeekCRLCompleted < intern.targetCRLPerWeek;
+        && intern.thisWeekCRUPlanned < intern.targetCRUPerWeek;
   }
 }
 
 function buildWeeklyBreakdown(intern: ComplianceIntern) {
-  // Mostra somente os tipos que dispararam o alarme — coordenador vê
-  // exatamente o que está abaixo, sem ruído de tipos que não falharam.
-  const types: Array<{ type: "USA" | "CRU" | "CRL"; completed: number; target: number; below: boolean }> = [];
+  // Mostra somente os tipos que dispararam o alarme.
+  // Valores são thisWeek-planned (cumpridos + escalados não-absent).
+  const types: Array<{ type: "USA" | "CRU"; completed: number; target: number; below: boolean }> = [];
   if (isBelowType(intern, "USA")) {
-    types.push({ type: "USA", completed: intern.lastWeekUSACompleted, target: intern.targetUSAPerWeek, below: true });
+    types.push({ type: "USA", completed: intern.thisWeekUSAPlanned, target: intern.targetUSAPerWeek, below: true });
   }
   if (isBelowType(intern, "CRU")) {
-    types.push({ type: "CRU", completed: intern.lastWeekCRUCompleted, target: intern.targetCRUPerWeek, below: true });
-  }
-  if (isBelowType(intern, "CRL")) {
-    types.push({ type: "CRL", completed: intern.lastWeekCRLCompleted, target: intern.targetCRLPerWeek, below: true });
+    types.push({ type: "CRU", completed: intern.thisWeekCRUPlanned, target: intern.targetCRUPerWeek, below: true });
   }
   return types;
 }
 
 function isBelowAnyTypeWeekly(intern: ComplianceIntern): boolean {
-  return isBelowType(intern, "USA") || isBelowType(intern, "CRU") || isBelowType(intern, "CRL");
+  return isBelowType(intern, "USA") || isBelowType(intern, "CRU");
 }
 
 export function buildCockpitData(params: {
