@@ -131,12 +131,25 @@ function AdminVerComoInterno() {
         if (json.success) {
           const usersMap = Object.fromEntries((json.data as Array<{ id: string; name: string }>).map((u) => [u.id, u.name]));
           setUserNameById(usersMap);
-          const internList = json.data
-            .filter((u: { role: string; isActive: boolean; isArchived?: boolean }) => u.role === "INTERN" && u.isActive && !u.isArchived)
-            .map((u: { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId?: string | null; cohortName?: string | null }) => ({
-              id: u.id, name: u.name, facultyAbbr: u.facultyAbbr, facultyId: u.facultyId ?? null,
-              isActive: u.isActive, cohortId: u.cohortId ?? null, cohortName: u.cohortName ?? null,
-            }))
+          // Aceita usuários cuja role primária é INTERN OU que têm role INTERN
+          // como secundária (ex: LEADER+INTERN). Para esses, usar a faculty/cohort
+          // do registro INTERN específico, não da role primária (que pode ser LEADER).
+          type RoleEntry = { role: string; facultyId: string | null; facultyAbbr: string | null; cohortId: string | null; cohortName: string | null };
+          type RawUser = { id: string; name: string; role: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; isArchived?: boolean; cohortId?: string | null; cohortName?: string | null; allRoles?: RoleEntry[] };
+          const internList = (json.data as RawUser[])
+            .filter((u) => u.isActive && !u.isArchived && (u.role === "INTERN" || (u.allRoles?.some((r) => r.role === "INTERN") ?? false)))
+            .map((u) => {
+              const internRole = u.allRoles?.find((r) => r.role === "INTERN");
+              return {
+                id: u.id,
+                name: u.name,
+                facultyAbbr: internRole?.facultyAbbr ?? u.facultyAbbr,
+                facultyId: internRole?.facultyId ?? u.facultyId ?? null,
+                isActive: u.isActive,
+                cohortId: internRole?.cohortId ?? u.cohortId ?? null,
+                cohortName: internRole?.cohortName ?? u.cohortName ?? null,
+              };
+            })
             .sort((a: Intern, b: Intern) => a.name.localeCompare(b.name));
           setInterns(internList);
         }
