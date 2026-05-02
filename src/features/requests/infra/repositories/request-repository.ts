@@ -220,14 +220,13 @@ export async function findAssignmentWithOwnership(assignmentId: string) {
   return assignment;
 }
 
-export async function findAssignmentFaculty(assignmentId: string) {
-  const [assignment] = await db
-    .select({ facultyId: assignments.facultyId })
-    .from(assignments)
-    .where(eq(assignments.id, assignmentId))
-    .limit(1);
+export async function findInternFacultiesByUserId(userId: string) {
+  const rows = await db
+    .select({ facultyId: userRoles.facultyId })
+    .from(userRoles)
+    .where(and(eq(userRoles.userId, userId), eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true)));
 
-  return assignment;
+  return new Set(rows.map((r) => r.facultyId).filter((id): id is string => Boolean(id)));
 }
 
 export async function updateRequestProposal(params: {
