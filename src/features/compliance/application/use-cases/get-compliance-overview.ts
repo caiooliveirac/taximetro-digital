@@ -131,6 +131,14 @@ export async function executeGetComplianceOverview(params: {
     const lastWeekCRUCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
     const lastWeekCRLCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CRL").length;
 
+    // Quantos plantões cada tipo TINHA escalado na semana passada (todos os
+    // não-cancelados, incluindo absences — o intern foi exposto à meta).
+    // Usado pelo cockpit pra evitar falso-positivo de "abaixo da meta" quando
+    // o tipo nem foi alocado pra meta nominal naquela semana.
+    const lastWeekUSAPlanned = lastWeekRows.filter((r) => r.baseType === "USA").length;
+    const lastWeekCRUPlanned = lastWeekRows.filter((r) => r.baseType === "CENTRAL").length;
+    const lastWeekCRLPlanned = lastWeekRows.filter((r) => r.baseType === "CRL").length;
+
     const weeklyTarget = intern.targetShiftsPerWeek ?? 0;
     const targetUSAPerWeek = intern.targetUSAsPerWeek ?? 0;
     const targetUSATotal = intern.targetUSAsTotal ?? 0;
@@ -208,6 +216,9 @@ export async function executeGetComplianceOverview(params: {
       lastWeekUSACompleted,
       lastWeekCRUCompleted,
       lastWeekCRLCompleted,
+      lastWeekUSAPlanned,
+      lastWeekCRUPlanned,
+      lastWeekCRLPlanned,
       weeklyUSADeficit,
       weeklyCRUDeficit,
       weeklyCRLDeficit,

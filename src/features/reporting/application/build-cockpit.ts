@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
-import { isWithinAdminAttendanceWindow } from "@/lib/utils";
+import { addDaysToDateStr, operationalDateStr, operationalPeriod } from "@/lib/utils";
 import { baseViewIndex } from "@/lib/base-colors";
 import type { CockpitData, AlarmItem } from "@/components/admin/cockpit-alarms";
 
@@ -22,6 +22,9 @@ type ComplianceIntern = {
   lastWeekUSACompleted: number;
   lastWeekCRUCompleted: number;
   lastWeekCRLCompleted: number;
+  lastWeekUSAPlanned: number;
+  lastWeekCRUPlanned: number;
+  lastWeekCRLPlanned: number;
 };
 
 type NoCheckinRow = {
@@ -57,8 +60,20 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
     ORDER BY a.date, u.name
   `);
 
-  // JS-side filter por isWithinAdminAttendanceWindow pra ficar consistente
-  // com o resto do dashboard que aplica essa policy (ver dashboard-query.ts).
+  // Filtra apenas o turno operacional ATUAL e o ANTERIOR. Antes de 19h, não
+  // faz sentido aparecer interno do noturno como "sem checkin" — ele nem foi
+  // escalado pra começar ainda. Após 19h, o diurno do mesmo dia já fechou e
+  // vira "anterior".
+  const currDate = operationalDateStr();
+  const currPeriod = operationalPeriod();
+  const prevDate = currPeriod === "DAY" ? addDaysToDateStr(currDate, -1) : currDate;
+  const prevPeriod: "DAY" | "NIGHT" = currPeriod === "DAY" ? "NIGHT" : "DAY";
+
+  function matchesShift(date: string, period: string): boolean {
+    return (date === currDate && period === currPeriod)
+        || (date === prevDate && period === prevPeriod);
+  }
+
   // Ordenação final: data → base por sufixo numérico (BASE_VIEW_ORDER) → nome.
   return (rows as Record<string, unknown>[])
     .map((r) => ({
@@ -69,7 +84,7 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
       period: String(r.period ?? ""),
       date: String(r.date ?? ""),
     }))
-    .filter((r) => isWithinAdminAttendanceWindow(r.date))
+    .filter((r) => matchesShift(r.date, r.period))
     .sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       const baseDiff = baseViewIndex(a.base_code) - baseViewIndex(b.base_code);
@@ -84,31 +99,46 @@ function byFacultyThenName(a: { facultyAbbr: string; internName: string }, b: { 
   return a.internName.localeCompare(b.internName);
 }
 
+// Tipo só conta como "abaixo da meta" se tinha sido escalado no nível da meta
+// nominal (planned >= target) E não cumpriu (completed < target). Sem isso, o
+// alarme dispara falso positivo quando a faculdade configura target nominal
+// (ex: 1 CRL/semana) mas operacionalmente aloca menos (ex: CRL mensal) — seria
+// punir o intern por algo fora do controle dele.
+function isBelowType(intern: ComplianceIntern, type: "USA" | "CRU" | "CRL"): boolean {
+  switch (type) {
+    case "USA":
+      return intern.targetUSAPerWeek > 0
+        && intern.lastWeekUSAPlanned >= intern.targetUSAPerWeek
+        && intern.lastWeekUSACompleted < intern.targetUSAPerWeek;
+    case "CRU":
+      return intern.targetCRUPerWeek > 0
+        && intern.lastWeekCRUPlanned >= intern.targetCRUPerWeek
+        && intern.lastWeekCRUCompleted < intern.targetCRUPerWeek;
+    case "CRL":
+      return intern.targetCRLPerWeek > 0
+        && intern.lastWeekCRLPlanned >= intern.targetCRLPerWeek
+        && intern.lastWeekCRLCompleted < intern.targetCRLPerWeek;
+  }
+}
+
 function buildWeeklyBreakdown(intern: ComplianceIntern) {
+  // Mostra somente os tipos que dispararam o alarme — coordenador vê
+  // exatamente o que está abaixo, sem ruído de tipos que não falharam.
   const types: Array<{ type: "USA" | "CRU" | "CRL"; completed: number; target: number; below: boolean }> = [];
-  if (intern.targetUSAPerWeek > 0) {
-    const completed = intern.lastWeekUSACompleted;
-    const target = intern.targetUSAPerWeek;
-    types.push({ type: "USA", completed, target, below: completed < target });
+  if (isBelowType(intern, "USA")) {
+    types.push({ type: "USA", completed: intern.lastWeekUSACompleted, target: intern.targetUSAPerWeek, below: true });
   }
-  if (intern.targetCRUPerWeek > 0) {
-    const completed = intern.lastWeekCRUCompleted;
-    const target = intern.targetCRUPerWeek;
-    types.push({ type: "CRU", completed, target, below: completed < target });
+  if (isBelowType(intern, "CRU")) {
+    types.push({ type: "CRU", completed: intern.lastWeekCRUCompleted, target: intern.targetCRUPerWeek, below: true });
   }
-  if (intern.targetCRLPerWeek > 0) {
-    const completed = intern.lastWeekCRLCompleted;
-    const target = intern.targetCRLPerWeek;
-    types.push({ type: "CRL", completed, target, below: completed < target });
+  if (isBelowType(intern, "CRL")) {
+    types.push({ type: "CRL", completed: intern.lastWeekCRLCompleted, target: intern.targetCRLPerWeek, below: true });
   }
   return types;
 }
 
 function isBelowAnyTypeWeekly(intern: ComplianceIntern): boolean {
-  if (intern.targetUSAPerWeek > 0 && intern.lastWeekUSACompleted < intern.targetUSAPerWeek) return true;
-  if (intern.targetCRUPerWeek > 0 && intern.lastWeekCRUCompleted < intern.targetCRUPerWeek) return true;
-  if (intern.targetCRLPerWeek > 0 && intern.lastWeekCRLCompleted < intern.targetCRLPerWeek) return true;
-  return false;
+  return isBelowType(intern, "USA") || isBelowType(intern, "CRU") || isBelowType(intern, "CRL");
 }
 
 export function buildCockpitData(params: {
