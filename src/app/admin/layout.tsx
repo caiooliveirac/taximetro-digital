@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 
 const NAV: NavItem[] = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin", label: "Cockpit", icon: LayoutDashboard },
   { href: "/admin/presencas", label: "Presenças", icon: CheckCircle },
   { href: "/admin/faltas", label: "Faltas", icon: XCircle },
   { href: "/admin/escalas/grade", label: "Grade", icon: LayoutGrid },
@@ -47,8 +47,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         nav={NAV}
         role="Coordenação"
         navGroups={[
-          { label: "Operação", items: NAV.slice(0, 11) },
-          { label: "Estrutura", items: NAV.slice(11, 15) },
+          { label: "Operação", items: NAV.slice(0, 10) },
+          { label: "Estrutura", items: NAV.slice(10, 15) },
           { label: "Governança", items: NAV.slice(15) },
         ]}
       />
