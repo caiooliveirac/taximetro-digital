@@ -1,13 +1,18 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { Users, Calendar, CalendarDays, CheckCircle, Activity, XCircle, AlertTriangle, Building2, GraduationCap, X, Search, Sun, Moon, UserPlus, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { Users, Calendar, CalendarDays, CheckCircle, Activity, XCircle, AlertTriangle, Building2, GraduationCap, X, Search, Sun, Moon, UserPlus, TrendingUp, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { MetricCard } from "@/components/metric-card";
 import { InviteButton } from "@/components/invite-button";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
+import { CockpitAlarms, type CockpitData } from "@/components/admin/cockpit-alarms";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 import { formatBrazilTime, localDateStr } from "@/lib/utils";
+
+const REFRESH_INTERVAL_MS = 60_000;
+
+type FacultyOption = { id: string; abbreviation: string; name: string };
 
 type DetailRow = {
   name: string;
@@ -77,9 +82,51 @@ export type DashboardData = {
 
 const PERIOD_LABEL: Record<string, string> = { DAY: "Diurno", NIGHT: "Noturno" };
 
-export function AdminDashboardClient({ data }: { data: DashboardData }) {
+export function AdminDashboardClient({
+  data,
+  cockpit,
+  facultyOptions,
+  facultyFilter,
+}: {
+  data: DashboardData;
+  cockpit: CockpitData;
+  facultyOptions: FacultyOption[];
+  facultyFilter: string | null;
+}) {
   const router = useRouter();
+  const pathname = usePathname();
   const [modal, setModal] = useState<ModalData>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date>(() => new Date());
+
+  // facultyFilter vem do server (?faculty=ID). Resolvemos abbreviation aqui pra
+  // o componente CockpitAlarms filtrar items que carregam apenas o abbr.
+  const selectedFacultyAbbr = facultyFilter
+    ? facultyOptions.find((f) => f.id === facultyFilter)?.abbreviation ?? null
+    : null;
+
+  function triggerRefresh() {
+    setRefreshing(true);
+    router.refresh();
+    setLastRefresh(new Date());
+    setTimeout(() => setRefreshing(false), 600);
+  }
+
+  function changeFacultyFilter(facultyId: string | null) {
+    const url = new URL(window.location.href);
+    if (facultyId) url.searchParams.set("faculty", facultyId);
+    else url.searchParams.delete("faculty");
+    router.push(`${pathname}${url.search}`);
+  }
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      router.refresh();
+      setLastRefresh(new Date());
+    }, REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [router]);
+
   const [baseModal, setBaseModal] = useState<BaseModalData>(null);
   const [weekModal, setWeekModal] = useState(false);
   const [completedModal, setCompletedModal] = useState(false);
@@ -146,17 +193,45 @@ export function AdminDashboardClient({ data }: { data: DashboardData }) {
   return (
     <div className="space-y-6 animate-[fadeInUp_200ms_ease-out]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-          <p className="mt-1 flex items-center gap-3 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-slate-900">Cockpit</h1>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
             <span className="capitalize">{dateLabel}</span>
             <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" strokeWidth={1.5} />{s["base_count"] ?? 0} bases</span>
             <span className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5" strokeWidth={1.5} />{s["faculty_count"] ?? 0} faculdades</span>
+            <span className="text-[11px] text-slate-400">
+              · atualizado {formatBrazilTime(lastRefresh)}
+            </span>
           </p>
         </div>
-        <InviteButton />
+        <div className="flex items-center gap-2">
+          <select
+            value={facultyFilter ?? ""}
+            onChange={(e) => changeFacultyFilter(e.target.value || null)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
+            aria-label="Filtrar por faculdade"
+          >
+            <option value="">Todas as faculdades</option>
+            {facultyOptions.map((f) => (
+              <option key={f.id} value={f.id}>{f.abbreviation} — {f.name}</option>
+            ))}
+          </select>
+          <button
+            onClick={triggerRefresh}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98]"
+            aria-label="Atualizar agora"
+            title="Atualizar agora (auto a cada 60s)"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} strokeWidth={1.75} />
+            <span className="hidden sm:inline">Atualizar</span>
+          </button>
+          <InviteButton />
+        </div>
       </div>
+
+      {/* Cockpit — alarmes ativos */}
+      <CockpitAlarms data={cockpit} facultyFilter={selectedFacultyAbbr} />
 
       {/* KPI — Operação */}
       <div>
