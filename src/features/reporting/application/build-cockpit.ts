@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { isWithinAdminAttendanceWindow } from "@/lib/utils";
+import { baseViewIndex } from "@/lib/base-colors";
 import type { CockpitData, AlarmItem } from "@/components/admin/cockpit-alarms";
 
 type ComplianceIntern = {
@@ -46,11 +47,12 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
       AND a.status NOT IN ('CHECKED_IN','CHECKED_OUT','ABSENT','CANCELLED')
       AND a.date >= CURRENT_DATE - INTERVAL '1 day'
       AND a.date <= CURRENT_DATE
-    ORDER BY a.date, b.code, u.name
+    ORDER BY a.date, u.name
   `);
 
   // JS-side filter por isWithinAdminAttendanceWindow pra ficar consistente
   // com o resto do dashboard que aplica essa policy (ver dashboard-query.ts).
+  // Ordenação final: data → base por sufixo numérico (BASE_VIEW_ORDER) → nome.
   return (rows as Record<string, unknown>[])
     .map((r) => ({
       intern_id: String(r.intern_id ?? ""),
@@ -60,7 +62,13 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
       period: String(r.period ?? ""),
       date: String(r.date ?? ""),
     }))
-    .filter((r) => isWithinAdminAttendanceWindow(r.date));
+    .filter((r) => isWithinAdminAttendanceWindow(r.date))
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const baseDiff = baseViewIndex(a.base_code) - baseViewIndex(b.base_code);
+      if (baseDiff !== 0) return baseDiff;
+      return a.intern_name.localeCompare(b.intern_name);
+    });
 }
 
 export function buildCockpitData(params: {
