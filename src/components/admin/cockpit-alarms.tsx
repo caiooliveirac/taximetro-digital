@@ -5,11 +5,19 @@ import { ChevronDown, ChevronUp, Info, AlertCircle, AlertTriangle, Clock, CheckC
 import { getFacultyStyle } from "@/lib/base-colors";
 import { InternQuickModal } from "@/components/admin/intern-quick-modal";
 
+export type WeekBreakdown = {
+  type: "USA" | "CRU" | "CRL";
+  completed: number;
+  target: number;
+  below: boolean;
+};
+
 export type AlarmItem = {
   internId: string;
   internName: string;
   facultyAbbr: string;
   detail: string;
+  breakdown?: WeekBreakdown[];
 };
 
 export type CockpitData = {
@@ -29,6 +37,8 @@ type AlarmCardProps = {
   onToggle: () => void;
   onItemClick: (item: AlarmItem) => void;
   facultyFilter: string | null;
+  // Quando true e sem facultyFilter e há ≥2 faculdades, agrupa visualmente.
+  groupByFaculty?: boolean;
 };
 
 const SEVERITY_STYLES: Record<"danger" | "warning", { ring: string; bg: string; iconBg: string; iconColor: string; numColor: string; chev: string }> = {
@@ -52,7 +62,49 @@ const SEVERITY_STYLES: Record<"danger" | "warning", { ring: string; bg: string; 
 
 const PEEK_SIZE = 5;
 
-function AlarmCard({ id, title, items, severity, Icon, caveat, expanded, onToggle, onItemClick, facultyFilter }: AlarmCardProps) {
+function renderItemRow(it: AlarmItem, id: string, onItemClick: (item: AlarmItem) => void) {
+  const fst = getFacultyStyle(it.facultyAbbr);
+  return (
+    <li key={`${id}-${it.internId}`}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onItemClick(it);
+        }}
+        className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-left transition-colors hover:bg-white/70"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium text-slate-800 group-hover:text-slate-900">{it.internName}</span>
+          {it.facultyAbbr && (
+            <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
+              {it.facultyAbbr}
+            </span>
+          )}
+        </div>
+        <span className="shrink-0 text-xs">
+          {it.breakdown && it.breakdown.length > 0 ? (
+            <span className="inline-flex items-center gap-1.5 tabular-nums">
+              {it.breakdown.map((b, idx) => (
+                <span
+                  key={`${id}-${it.internId}-${b.type}`}
+                  className={b.below ? "font-semibold text-red-700" : "text-slate-500"}
+                >
+                  {idx > 0 && <span className="mx-1 text-slate-300">·</span>}
+                  {b.type} {b.completed}/{b.target}
+                </span>
+              ))}
+            </span>
+          ) : (
+            <span className="text-slate-500">{it.detail}</span>
+          )}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function AlarmCard({ id, title, items, severity, Icon, caveat, expanded, onToggle, onItemClick, facultyFilter, groupByFaculty }: AlarmCardProps) {
   const s = SEVERITY_STYLES[severity];
   const filtered = facultyFilter ? items.filter((it) => it.facultyAbbr === facultyFilter) : items;
   const visibleCount = filtered.length;
@@ -61,6 +113,20 @@ function AlarmCard({ id, title, items, severity, Icon, caveat, expanded, onToggl
 
   const visibleItems = showAll ? filtered : filtered.slice(0, PEEK_SIZE);
   const hasMore = visibleCount > PEEK_SIZE;
+
+  // Agrupa por faculdade quando: groupByFaculty=true, sem filtro ativo, e ≥2 faculdades distintas.
+  const distinctFaculties = new Set(visibleItems.map((it) => it.facultyAbbr || "?"));
+  const renderGrouped = !!groupByFaculty && !facultyFilter && distinctFaculties.size >= 2;
+
+  const grouped = renderGrouped
+    ? visibleItems.reduce<Map<string, AlarmItem[]>>((acc, it) => {
+        const key = it.facultyAbbr || "?";
+        const list = acc.get(key) ?? [];
+        list.push(it);
+        acc.set(key, list);
+        return acc;
+      }, new Map())
+    : null;
 
   return (
     <div
@@ -106,33 +172,33 @@ function AlarmCard({ id, title, items, severity, Icon, caveat, expanded, onToggl
 
       {expanded && hasItems && (
         <div className="border-t border-slate-200/60">
-          <ul className="divide-y divide-slate-100/80">
-            {visibleItems.map((it) => {
-              const fst = getFacultyStyle(it.facultyAbbr);
-              return (
-                <li key={`${id}-${it.internId}`}>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onItemClick(it);
-                    }}
-                    className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-left transition-colors hover:bg-white/70"
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-sm font-medium text-slate-800 group-hover:text-slate-900">{it.internName}</span>
-                      {it.facultyAbbr && (
-                        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
+          {grouped ? (
+            <div className="divide-y divide-slate-200/60">
+              {[...grouped.entries()]
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([abbr, list]) => {
+                  const fst = getFacultyStyle(abbr);
+                  return (
+                    <div key={`${id}-grp-${abbr}`}>
+                      <div className="flex items-center justify-between px-4 py-1.5 bg-slate-50/60">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${fst.pill}`}>
                           <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
-                          {it.facultyAbbr}
+                          {abbr || "Sem faculdade"}
                         </span>
-                      )}
+                        <span className="text-[10px] tabular-nums text-slate-500">{list.length}</span>
+                      </div>
+                      <ul className="divide-y divide-slate-100/80">
+                        {list.map((it) => renderItemRow(it, id, onItemClick))}
+                      </ul>
                     </div>
-                    <span className="shrink-0 text-xs text-slate-500">{it.detail}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                  );
+                })}
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100/80">
+              {visibleItems.map((it) => renderItemRow(it, id, onItemClick))}
+            </ul>
+          )}
           {hasMore && (
             <div className="border-t border-slate-200/60 px-4 py-2">
               <button
@@ -239,6 +305,7 @@ export function CockpitAlarms({
             onToggle={toggleAll}
             onItemClick={setModalIntern}
             facultyFilter={facultyFilter}
+            groupByFaculty
           />
           <AlarmCard
             id="belowWeeklyTarget"
@@ -251,6 +318,7 @@ export function CockpitAlarms({
             onToggle={toggleAll}
             onItemClick={setModalIntern}
             facultyFilter={facultyFilter}
+            groupByFaculty
           />
         </div>
       </div>
