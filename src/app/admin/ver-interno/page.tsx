@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Search, User, Sun, Moon, Calendar, CheckCircle, XCircle,
@@ -76,7 +76,15 @@ type CaseRecord = {
 const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra", DROP_SHIFT: "Descarte" };
 const STATUS_LABEL: Record<string, string> = { PENDING: "Pendente", APPROVED: "Aprovado", REJECTED: "Rejeitado" };
 
-export default function AdminVerComoInterno() {
+export default function AdminVerComoInternoPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-slate-500">Carregando...</div>}>
+      <AdminVerComoInterno />
+    </Suspense>
+  );
+}
+
+function AdminVerComoInterno() {
   const searchParams = useSearchParams();
   const internIdFromUrl = searchParams.get("internId");
 
