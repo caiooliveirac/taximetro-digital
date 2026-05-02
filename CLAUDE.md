@@ -3,10 +3,16 @@
 Este arquivo é lido automaticamente pelo Claude Code ao abrir o projeto.
 Objetivo: configurar o ambiente local corretamente após `git clone`, sem precisar debugar.
 
-Leia também, nesta ordem:
+## 📚 Leia na Seguinte Ordem
+
+### Setup Inicial
 1. **[AGENTS.md](AGENTS.md)** — regras operacionais, riscos críticos, postura de mudança
 2. **[docs/runtime-truth.md](docs/runtime-truth.md)** — verdade de produção (Docker, Nginx, basePath)
-3. **[docs/dev-agent-macbook.md](docs/dev-agent-macbook.md)** — fluxo alternativo via Docker Compose para o app
+3. **[docs/dev-agent-macbook.md](docs/dev-agent-macbook.md)** — fluxo alternativo via Docker Compose
+
+### Troubleshooting & Debugging
+4. **[docs/FEATURE_STRUCTURE.md](docs/FEATURE_STRUCTURE.md)** — como encontrar features e debugar rápido
+5. **[docs/TROUBLESHOOTING_SKILLS.md](docs/TROUBLESHOOTING_SKILLS.md)** — como usar Claude Code skills para troubleshooting
 
 ---
 
