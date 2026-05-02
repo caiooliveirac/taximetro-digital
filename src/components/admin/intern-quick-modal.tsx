@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { X, ArrowRight, Calendar, CheckCircle2, XCircle, Clock, Target, Activity, FileText, AlertCircle } from "lucide-react";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { operationalDateStr } from "@/lib/utils";
+import { VelocimeterCard } from "@/components/admin/velocimeter-card";
 
 type Compliance = {
   userId: string;
@@ -22,6 +23,8 @@ type Compliance = {
   belowWeeklyTarget: boolean;
   targetShiftsPerWeek: number;
   lastWeekCompleted: number;
+  rotationStartDate: string | null;
+  rotationEndDate: string | null;
   // per-type
   targetUSAPerWeek: number;
   targetCRUPerWeek: number;
@@ -202,6 +205,20 @@ export function InternQuickModal({
             </div>
           ) : (
             <div className="space-y-5">
+              {/* Velocímetro */}
+              {compliance && compliance.targetShifts > 0 && (
+                <VelocimeterCard
+                  variant="card"
+                  data={{
+                    completed: compliance.totalCompleted,
+                    target: compliance.targetShifts,
+                    rotationStartDate: compliance.rotationStartDate,
+                    rotationEndDate: compliance.rotationEndDate,
+                    weeklyTarget: compliance.targetShiftsPerWeek,
+                  }}
+                />
+              )}
+
               {/* Compliance KPIs */}
               {compliance && (
                 <section>

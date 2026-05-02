@@ -186,6 +186,7 @@ export async function executeGetComplianceOverview(params: {
       facultyId: intern.facultyId,
       facultyAbbr: intern.facultyAbbr,
       rotationStartDate: intern.rotationStartDate,
+      rotationEndDate: intern.rotationEndDate,
       targetShifts: intern.targetShifts ?? 0,
       targetHours: intern.targetHours ?? 0,
       targetShiftsPerWeek: intern.targetShiftsPerWeek ?? 0,

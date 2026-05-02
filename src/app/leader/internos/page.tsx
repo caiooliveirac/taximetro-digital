@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { VelocimeterCard } from "@/components/admin/velocimeter-card";
 
 type UserRow = {
   id: string;
@@ -45,6 +46,8 @@ type ComplianceRow = {
   rawDeficit: number;
   netDeficit: number;
   status: "ok" | "compensating" | "partial" | "deficit";
+  rotationStartDate: string | null;
+  rotationEndDate: string | null;
 };
 
 type AssignmentRow = {
@@ -488,17 +491,18 @@ export default function LeaderInternos() {
                               <span className="text-slate-300">0</span>
                             )}
                           </div>
-                          <div className="px-4 py-3 hidden sm:block w-28">
-                            {c && c.totalPct !== null ? (
-                              <div className="mx-auto flex w-24 items-center gap-1.5">
-                                <div className="h-2 flex-1 rounded-full bg-slate-100">
-                                  <div
-                                    className={`h-2 rounded-full transition-all ${c.totalPct >= 100 ? "bg-emerald-500" : c.totalPct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                                    style={{ width: `${c.totalPct}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs text-slate-500 tabular-nums">{c.totalPct}%</span>
-                              </div>
+                          <div className="px-4 py-3 hidden sm:block w-44">
+                            {c && c.targetShifts > 0 ? (
+                              <VelocimeterCard
+                                variant="compact"
+                                data={{
+                                  completed: c.totalCompleted,
+                                  target: c.targetShifts,
+                                  rotationStartDate: c.rotationStartDate,
+                                  rotationEndDate: c.rotationEndDate,
+                                  weeklyTarget: c.targetShiftsPerWeek,
+                                }}
+                              />
                             ) : (
                               <span className="text-xs text-slate-300 text-center block">—</span>
                             )}
@@ -536,6 +540,18 @@ export default function LeaderInternos() {
                         {/* Expanded detail panel */}
                         {isExpanded && (
                           <div className="border-t border-slate-100 px-4 py-4 space-y-4 bg-slate-50/50" onClick={(e) => e.stopPropagation()}>
+                            {c && c.targetShifts > 0 && (
+                              <VelocimeterCard
+                                variant="card"
+                                data={{
+                                  completed: c.totalCompleted,
+                                  target: c.targetShifts,
+                                  rotationStartDate: c.rotationStartDate,
+                                  rotationEndDate: c.rotationEndDate,
+                                  weeklyTarget: c.targetShiftsPerWeek,
+                                }}
+                              />
+                            )}
                             {/* Compliance summary */}
                             {c && (
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
