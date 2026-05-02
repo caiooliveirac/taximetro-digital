@@ -127,6 +127,13 @@ export async function executeGetComplianceOverview(params: {
     const thisWeekCRUPlanned = thisWeekRows.filter((r) => r.baseType === "CENTRAL" && r.status !== "ABSENT").length;
     const thisWeekCRLPlanned = thisWeekRows.filter((r) => r.baseType === "CRL" && r.status !== "ABSENT").length;
 
+    // Cumulativo da rotação inteira (passado + futuro escalado, exceto ausências).
+    // Usado pelo cockpit para suprimir o alarme semanal quando a rotação como
+    // um todo já tem o tipo coberto — evita falso-positivo por troca de turno.
+    const totalUSAPlanned = relevantRows.filter((r) => r.baseType === "USA" && r.status !== "ABSENT").length;
+    const totalCRUPlanned = relevantRows.filter((r) => r.baseType === "CENTRAL" && r.status !== "ABSENT").length;
+    const totalCRLPlanned = relevantRows.filter((r) => r.baseType === "CRL" && r.status !== "ABSENT").length;
+
     const lastWeekUSACompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "USA").length;
     const lastWeekCRUCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CENTRAL").length;
     const lastWeekCRLCompleted = lastWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number]) && r.baseType === "CRL").length;
@@ -201,6 +208,9 @@ export async function executeGetComplianceOverview(params: {
       totalUSACompleted,
       totalCRUCompleted,
       totalCRLCompleted,
+      totalUSAPlanned,
+      totalCRUPlanned,
+      totalCRLPlanned,
       totalHours: totalCompletedHours,
       totalDeficit,
       totalPct,

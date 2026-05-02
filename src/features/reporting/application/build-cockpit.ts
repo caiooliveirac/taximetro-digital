@@ -19,8 +19,17 @@ type ComplianceIntern = {
   // CRL fora do trigger por decisão do produto — meta não-semanal estável.
   targetUSAPerWeek: number;
   targetCRUPerWeek: number;
+  targetUSATotal: number;
+  targetCRUTotal: number;
   thisWeekUSAPlanned: number;
   thisWeekCRUPlanned: number;
+  // Cumulativo da rotação inteira (cumpridos + escalados não-absent).
+  // Usado para suprimir alarme quando a meta semanal está coberta no calendário
+  // total da rotação (variação por troca não é problema do coordenador).
+  totalUSAPlanned: number;
+  totalCRUPlanned: number;
+  rotationStartDate: string | null;
+  rotationEndDate: string | null;
 };
 
 type NoCheckinRow = {
@@ -95,24 +104,48 @@ function byFacultyThenName(a: { facultyAbbr: string; internName: string }, b: { 
   return a.internName.localeCompare(b.internName);
 }
 
+// Quantas semanas a rotação tem (do início ao fim da cohort).
+// Usado pra derivar o target total por tipo quando faculties.target_*_total
+// não está populado. Fallback conservador: 0 desabilita o suppressor.
+function rotationDurationWeeks(intern: ComplianceIntern): number {
+  if (!intern.rotationStartDate || !intern.rotationEndDate) return 0;
+  const ms = new Date(`${intern.rotationEndDate}T12:00:00Z`).getTime()
+           - new Date(`${intern.rotationStartDate}T12:00:00Z`).getTime();
+  if (ms <= 0) return 0;
+  return Math.max(1, Math.ceil(ms / (7 * 86_400_000)));
+}
+
+function expectedTotalForType(intern: ComplianceIntern, type: "USA" | "CRU"): number {
+  const declared = type === "USA" ? intern.targetUSATotal : intern.targetCRUTotal;
+  if (declared > 0) return declared;
+  const perWeek = type === "USA" ? intern.targetUSAPerWeek : intern.targetCRUPerWeek;
+  const weeks = rotationDurationWeeks(intern);
+  return perWeek * weeks;
+}
+
 // Tipo conta como "abaixo da meta" quando o intern não tem o número-alvo
-// de plantões DESTA SEMANA garantidos (cumpridos OU escalados). Captura
-// dois cenários úteis pro coordenador:
-//   - Leader não escalou: planned=0, target=1 → erro de leader, dispara
-//   - Intern faltou e ninguém repôs: planned=0 (absent excluído) → dispara
-// Não captura quando o intern já cumpriu OU já está escalado pra cumprir
-// na própria semana.
+// de plantões DESTA SEMANA garantidos (cumpridos OU escalados) E a rotação
+// como um todo NÃO tem o tipo coberto pelo calendário. Suprime quando:
+//   - Coordenador já tem tudo escalado: troca/variação semanal não é alarme
+//
+// Captura ainda os cenários úteis pro coordenador:
+//   - Leader não escalou e meta total descoberta: planned=0 → erro de leader
+//   - Intern faltou, ninguém repôs e meta total descoberta: planned=0 → dispara
 //
 // CRL deliberadamente fora — meta não-semanal por decisão do produto.
 function isBelowType(intern: ComplianceIntern, type: "USA" | "CRU"): boolean {
-  switch (type) {
-    case "USA":
-      return intern.targetUSAPerWeek > 0
-        && intern.thisWeekUSAPlanned < intern.targetUSAPerWeek;
-    case "CRU":
-      return intern.targetCRUPerWeek > 0
-        && intern.thisWeekCRUPlanned < intern.targetCRUPerWeek;
-  }
+  const target = type === "USA" ? intern.targetUSAPerWeek : intern.targetCRUPerWeek;
+  if (target === 0) return false;
+
+  const thisWeekPlanned = type === "USA" ? intern.thisWeekUSAPlanned : intern.thisWeekCRUPlanned;
+  if (thisWeekPlanned >= target) return false;
+
+  // Suppressor: total da rotação já tem o tipo coberto (passado + futuro escalado).
+  const totalPlanned = type === "USA" ? intern.totalUSAPlanned : intern.totalCRUPlanned;
+  const expectedTotal = expectedTotalForType(intern, type);
+  if (expectedTotal > 0 && totalPlanned >= expectedTotal) return false;
+
+  return true;
 }
 
 function buildWeeklyBreakdown(intern: ComplianceIntern) {
