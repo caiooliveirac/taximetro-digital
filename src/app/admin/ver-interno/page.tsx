@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Search, User, Sun, Moon, Calendar, CheckCircle, XCircle,
   Target, Clock, Send, ArrowLeftRight, Trash2, Plus, Eye,
@@ -76,6 +77,9 @@ const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra"
 const STATUS_LABEL: Record<string, string> = { PENDING: "Pendente", APPROVED: "Aprovado", REJECTED: "Rejeitado" };
 
 export default function AdminVerComoInterno() {
+  const searchParams = useSearchParams();
+  const internIdFromUrl = searchParams.get("internId");
+
   /* ── intern list ── */
   const [interns, setInterns] = useState<Intern[]>([]);
   const [search, setSearch] = useState("");
@@ -134,6 +138,14 @@ export default function AdminVerComoInterno() {
       .then((json) => { if (json.success) setBases(json.data.filter((b: { isActive: boolean }) => b.isActive)); })
       .catch(() => { });
   }, []);
+
+  /* ── auto-select via ?internId= ── */
+  useEffect(() => {
+    if (!internIdFromUrl || interns.length === 0) return;
+    if (selected?.id === internIdFromUrl) return;
+    const match = interns.find((i) => i.id === internIdFromUrl);
+    if (match) setSelected(match);
+  }, [internIdFromUrl, interns, selected?.id]);
 
   /* ── load data when intern selected ── */
   useEffect(() => {
@@ -277,7 +289,7 @@ export default function AdminVerComoInterno() {
   /* ── no intern selected: show picker ── */
   if (!selected) {
     return (
-      <div className="space-y-5 max-w-2xl">
+      <div className="mx-auto max-w-3xl space-y-5">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Ver Como Interno</h1>
           <p className="mt-1 text-sm text-slate-500">Selecione um interno para visualizar sua perspectiva, auditar dados e agir em seu nome.</p>
@@ -329,7 +341,7 @@ export default function AdminVerComoInterno() {
   const fs = getFacultyStyle(selected.facultyAbbr);
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

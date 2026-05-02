@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Info, AlertCircle, AlertTriangle, Clock, CheckCircle2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { getFacultyStyle } from "@/lib/base-colors";
+import { InternQuickModal } from "@/components/admin/intern-quick-modal";
 
 export type AlarmItem = {
   internId: string;
@@ -21,24 +21,24 @@ export type CockpitData = {
 type AlarmCardProps = {
   id: "noCheckin" | "unreplacedAbsence" | "belowWeeklyTarget";
   title: string;
-  count: number;
   items: AlarmItem[];
   severity: "danger" | "warning";
   Icon: typeof AlertCircle;
   caveat?: string;
   expanded: boolean;
   onToggle: () => void;
-  onItemClick: (internId: string) => void;
+  onItemClick: (item: AlarmItem) => void;
   facultyFilter: string | null;
 };
 
-const SEVERITY_STYLES: Record<"danger" | "warning", { ring: string; bg: string; iconBg: string; iconColor: string; numColor: string }> = {
+const SEVERITY_STYLES: Record<"danger" | "warning", { ring: string; bg: string; iconBg: string; iconColor: string; numColor: string; chev: string }> = {
   danger: {
     ring: "ring-red-200 hover:ring-red-300",
     bg: "bg-red-50/40",
     iconBg: "bg-red-100",
     iconColor: "text-red-600",
     numColor: "text-red-700",
+    chev: "text-red-400",
   },
   warning: {
     ring: "ring-amber-200 hover:ring-amber-300",
@@ -46,20 +46,27 @@ const SEVERITY_STYLES: Record<"danger" | "warning", { ring: string; bg: string; 
     iconBg: "bg-amber-100",
     iconColor: "text-amber-600",
     numColor: "text-amber-700",
+    chev: "text-amber-400",
   },
 };
 
-const MAX_VISIBLE_ITEMS = 5;
+const PEEK_SIZE = 5;
 
-function AlarmCard({ id, title, count, items, severity, Icon, caveat, expanded, onToggle, onItemClick, facultyFilter }: AlarmCardProps) {
+function AlarmCard({ id, title, items, severity, Icon, caveat, expanded, onToggle, onItemClick, facultyFilter }: AlarmCardProps) {
   const s = SEVERITY_STYLES[severity];
-  const filteredItems = facultyFilter ? items.filter((it) => it.facultyAbbr === facultyFilter) : items;
-  const visibleCount = filteredItems.length;
+  const filtered = facultyFilter ? items.filter((it) => it.facultyAbbr === facultyFilter) : items;
+  const visibleCount = filtered.length;
   const hasItems = visibleCount > 0;
+  const [showAll, setShowAll] = useState(false);
+
+  const visibleItems = showAll ? filtered : filtered.slice(0, PEEK_SIZE);
+  const hasMore = visibleCount > PEEK_SIZE;
 
   return (
     <div
-      className={`rounded-xl bg-white ring-1 ${s.ring} ${hasItems ? s.bg : "ring-slate-200"} transition-all duration-200 ${hasItems ? "shadow-[0_1px_3px_rgba(0,0,0,0.04)]" : ""}`}
+      className={`rounded-xl bg-white ring-1 transition-all duration-200 ${
+        hasItems ? `${s.ring} ${s.bg} shadow-[0_1px_3px_rgba(0,0,0,0.04)]` : "ring-slate-200"
+      }`}
       data-alarm-id={id}
     >
       <button
@@ -90,7 +97,7 @@ function AlarmCard({ id, title, count, items, severity, Icon, caveat, expanded, 
             </p>
           </div>
           {hasItems && (
-            <div className="shrink-0 self-end text-slate-400">
+            <div className={`shrink-0 self-end ${s.chev}`}>
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </div>
           )}
@@ -98,15 +105,22 @@ function AlarmCard({ id, title, count, items, severity, Icon, caveat, expanded, 
       </button>
 
       {expanded && hasItems && (
-        <div className="border-t border-slate-200/60 px-4 py-3">
-          <ul className="space-y-2">
-            {filteredItems.slice(0, MAX_VISIBLE_ITEMS).map((it) => {
+        <div className="border-t border-slate-200/60">
+          <ul
+            className={`divide-y divide-slate-100/80 ${
+              showAll && visibleCount > PEEK_SIZE ? "max-h-[60vh] overflow-y-auto" : ""
+            }`}
+          >
+            {visibleItems.map((it) => {
               const fst = getFacultyStyle(it.facultyAbbr);
               return (
                 <li key={`${id}-${it.internId}`}>
                   <button
-                    onClick={() => onItemClick(it.internId)}
-                    className="group flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-slate-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onItemClick(it);
+                    }}
+                    className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-left transition-colors hover:bg-white/70"
                   >
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="truncate text-sm font-medium text-slate-800 group-hover:text-slate-900">{it.internName}</span>
@@ -123,10 +137,28 @@ function AlarmCard({ id, title, count, items, severity, Icon, caveat, expanded, 
               );
             })}
           </ul>
-          {visibleCount > MAX_VISIBLE_ITEMS && (
-            <p className="mt-2 px-2 text-xs text-slate-500">
-              +{visibleCount - MAX_VISIBLE_ITEMS} mais — clique em um para ver detalhes
-            </p>
+          {hasMore && (
+            <div className="border-t border-slate-200/60 px-4 py-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowAll((v) => !v);
+                }}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white/70 hover:text-slate-900"
+              >
+                {showAll ? (
+                  <>
+                    <ChevronUp className="h-3 w-3" />
+                    Mostrar só {PEEK_SIZE}
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3 w-3" />
+                    Mostrar todos ({visibleCount})
+                  </>
+                )}
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -144,8 +176,8 @@ export function CockpitAlarms({
   data: CockpitData;
   facultyFilter: string | null;
 }) {
-  const router = useRouter();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [modalIntern, setModalIntern] = useState<AlarmItem | null>(null);
 
   function applyFilter(items: AlarmItem[]): AlarmItem[] {
     return facultyFilter ? items.filter((it) => it.facultyAbbr === facultyFilter) : items;
@@ -154,15 +186,10 @@ export function CockpitAlarms({
   const noCheckinFiltered = applyFilter(data.noCheckin.items);
   const unreplacedFiltered = applyFilter(data.unreplacedAbsence.items);
   const belowWeeklyFiltered = applyFilter(data.belowWeeklyTarget.items);
-
   const totalActive = noCheckinFiltered.length + unreplacedFiltered.length + belowWeeklyFiltered.length;
 
   function toggle(id: string) {
     setExpanded((curr) => (curr === id ? null : id));
-  }
-
-  function goToIntern(internId: string) {
-    router.push(`/admin/ver-interno?internId=${internId}`);
   }
 
   if (totalActive === 0) {
@@ -184,52 +211,60 @@ export function CockpitAlarms({
   }
 
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Alarmes ativos</p>
-        <p className="text-[10px] text-slate-400">
-          {totalActive} {totalActive === 1 ? "alarme" : "alarmes"}
-        </p>
+    <>
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Alarmes ativos</p>
+          <p className="text-[10px] text-slate-400">
+            {totalActive} {totalActive === 1 ? "alarme" : "alarmes"}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <AlarmCard
+            id="noCheckin"
+            title="Sem check-in agora"
+            items={data.noCheckin.items}
+            severity="danger"
+            Icon={Clock}
+            expanded={expanded === "noCheckin"}
+            onToggle={() => toggle("noCheckin")}
+            onItemClick={setModalIntern}
+            facultyFilter={facultyFilter}
+          />
+          <AlarmCard
+            id="unreplacedAbsence"
+            title="Faltou sem reposição"
+            items={data.unreplacedAbsence.items}
+            severity="danger"
+            Icon={AlertCircle}
+            expanded={expanded === "unreplacedAbsence"}
+            onToggle={() => toggle("unreplacedAbsence")}
+            onItemClick={setModalIntern}
+            facultyFilter={facultyFilter}
+          />
+          <AlarmCard
+            id="belowWeeklyTarget"
+            title="Abaixo da meta semanal"
+            items={data.belowWeeklyTarget.items}
+            severity="warning"
+            Icon={AlertTriangle}
+            caveat={ALARM_CAVEAT_WEEKLY}
+            expanded={expanded === "belowWeeklyTarget"}
+            onToggle={() => toggle("belowWeeklyTarget")}
+            onItemClick={setModalIntern}
+            facultyFilter={facultyFilter}
+          />
+        </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <AlarmCard
-          id="noCheckin"
-          title="Sem check-in agora"
-          count={data.noCheckin.count}
-          items={data.noCheckin.items}
-          severity="danger"
-          Icon={Clock}
-          expanded={expanded === "noCheckin"}
-          onToggle={() => toggle("noCheckin")}
-          onItemClick={goToIntern}
-          facultyFilter={facultyFilter}
+
+      {modalIntern && (
+        <InternQuickModal
+          internId={modalIntern.internId}
+          internName={modalIntern.internName}
+          facultyAbbr={modalIntern.facultyAbbr}
+          onClose={() => setModalIntern(null)}
         />
-        <AlarmCard
-          id="unreplacedAbsence"
-          title="Faltou sem reposição"
-          count={data.unreplacedAbsence.count}
-          items={data.unreplacedAbsence.items}
-          severity="danger"
-          Icon={AlertCircle}
-          expanded={expanded === "unreplacedAbsence"}
-          onToggle={() => toggle("unreplacedAbsence")}
-          onItemClick={goToIntern}
-          facultyFilter={facultyFilter}
-        />
-        <AlarmCard
-          id="belowWeeklyTarget"
-          title="Abaixo da meta semanal"
-          count={data.belowWeeklyTarget.count}
-          items={data.belowWeeklyTarget.items}
-          severity="warning"
-          Icon={AlertTriangle}
-          caveat={ALARM_CAVEAT_WEEKLY}
-          expanded={expanded === "belowWeeklyTarget"}
-          onToggle={() => toggle("belowWeeklyTarget")}
-          onItemClick={goToIntern}
-          facultyFilter={facultyFilter}
-        />
-      </div>
-    </div>
+      )}
+    </>
   );
 }
