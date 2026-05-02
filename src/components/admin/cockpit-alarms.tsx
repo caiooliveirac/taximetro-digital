@@ -106,11 +106,7 @@ function AlarmCard({ id, title, items, severity, Icon, caveat, expanded, onToggl
 
       {expanded && hasItems && (
         <div className="border-t border-slate-200/60">
-          <ul
-            className={`divide-y divide-slate-100/80 ${
-              showAll && visibleCount > PEEK_SIZE ? "max-h-[60vh] overflow-y-auto" : ""
-            }`}
-          >
+          <ul className="divide-y divide-slate-100/80">
             {visibleItems.map((it) => {
               const fst = getFacultyStyle(it.facultyAbbr);
               return (
@@ -176,7 +172,9 @@ export function CockpitAlarms({
   data: CockpitData;
   facultyFilter: string | null;
 }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
+  // Expansão é global: clicar em qualquer card expande/recolhe todos os 3
+  // (facilita varredura visual e printscreen para repassar ao líder).
+  const [allExpanded, setAllExpanded] = useState(false);
   const [modalIntern, setModalIntern] = useState<AlarmItem | null>(null);
 
   function applyFilter(items: AlarmItem[]): AlarmItem[] {
@@ -188,8 +186,8 @@ export function CockpitAlarms({
   const belowWeeklyFiltered = applyFilter(data.belowWeeklyTarget.items);
   const totalActive = noCheckinFiltered.length + unreplacedFiltered.length + belowWeeklyFiltered.length;
 
-  function toggle(id: string) {
-    setExpanded((curr) => (curr === id ? null : id));
+  function toggleAll() {
+    setAllExpanded((v) => !v);
   }
 
   if (totalActive === 0) {
@@ -226,8 +224,8 @@ export function CockpitAlarms({
             items={data.noCheckin.items}
             severity="danger"
             Icon={Clock}
-            expanded={expanded === "noCheckin"}
-            onToggle={() => toggle("noCheckin")}
+            expanded={allExpanded}
+            onToggle={toggleAll}
             onItemClick={setModalIntern}
             facultyFilter={facultyFilter}
           />
@@ -237,8 +235,8 @@ export function CockpitAlarms({
             items={data.unreplacedAbsence.items}
             severity="danger"
             Icon={AlertCircle}
-            expanded={expanded === "unreplacedAbsence"}
-            onToggle={() => toggle("unreplacedAbsence")}
+            expanded={allExpanded}
+            onToggle={toggleAll}
             onItemClick={setModalIntern}
             facultyFilter={facultyFilter}
           />
@@ -249,8 +247,8 @@ export function CockpitAlarms({
             severity="warning"
             Icon={AlertTriangle}
             caveat={ALARM_CAVEAT_WEEKLY}
-            expanded={expanded === "belowWeeklyTarget"}
-            onToggle={() => toggle("belowWeeklyTarget")}
+            expanded={allExpanded}
+            onToggle={toggleAll}
             onItemClick={setModalIntern}
             facultyFilter={facultyFilter}
           />
