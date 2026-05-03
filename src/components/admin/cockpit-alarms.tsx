@@ -30,7 +30,7 @@ type AlarmCardProps = {
   id: "noCheckin" | "unreplacedAbsence" | "belowWeeklyTarget";
   title: string;
   items: AlarmItem[];
-  severity: "danger" | "warning";
+  severity: "danger" | "warning" | "info";
   Icon: typeof AlertCircle;
   caveat?: string;
   expanded: boolean;
@@ -41,7 +41,7 @@ type AlarmCardProps = {
   groupByFaculty?: boolean;
 };
 
-const SEVERITY_STYLES: Record<"danger" | "warning", { ring: string; bg: string; iconBg: string; iconColor: string; numColor: string; chev: string }> = {
+const SEVERITY_STYLES: Record<"danger" | "warning" | "info", { ring: string; bg: string; iconBg: string; iconColor: string; numColor: string; chev: string }> = {
   danger: {
     ring: "ring-red-200 hover:ring-red-300",
     bg: "bg-red-50/40",
@@ -57,6 +57,16 @@ const SEVERITY_STYLES: Record<"danger" | "warning", { ring: string; bg: string; 
     iconColor: "text-amber-600",
     numColor: "text-amber-700",
     chev: "text-amber-400",
+  },
+  // Informativo (não acionável por si só). Uso: meta semanal sob a ótica de
+  // ritmo, em complemento ao alarme principal de saldo da rotação.
+  info: {
+    ring: "ring-slate-200 hover:ring-slate-300",
+    bg: "bg-slate-50/40",
+    iconBg: "bg-slate-100",
+    iconColor: "text-slate-500",
+    numColor: "text-slate-700",
+    chev: "text-slate-400",
   },
 };
 
@@ -229,7 +239,7 @@ function AlarmCard({ id, title, items, severity, Icon, caveat, expanded, onToggl
 }
 
 const ALARM_CAVEAT_WEEKLY =
-  "Considera meta fixa por faculdade. Em faculdades de alocação incremental (ex: UNIFACS), pode incluir interno ainda não alocado pra semana — verificar individualmente.";
+  "Sinal informativo de ritmo da semana corrente. Não é acionável por si só — interno com saldo de rotação OK pode aparecer aqui (ex: troca pra outra semana). O alarme acionável é 'Atraso sem cobertura'.";
 
 export function CockpitAlarms({
   data,
@@ -250,13 +260,18 @@ export function CockpitAlarms({
   const noCheckinFiltered = applyFilter(data.noCheckin.items);
   const unreplacedFiltered = applyFilter(data.unreplacedAbsence.items);
   const belowWeeklyFiltered = applyFilter(data.belowWeeklyTarget.items);
-  const totalActive = noCheckinFiltered.length + unreplacedFiltered.length + belowWeeklyFiltered.length;
+  // "Acionáveis" = vermelhos (sem check-in agora + atraso sem cobertura).
+  // "Ritmo da semana" é informativo: aparece no card mas não conta como
+  // alarme para o estado vazio nem para o badge de contagem.
+  const actionableCount = noCheckinFiltered.length + unreplacedFiltered.length;
+  const infoCount = belowWeeklyFiltered.length;
+  const totalShown = actionableCount + infoCount;
 
   function toggleAll() {
     setAllExpanded((v) => !v);
   }
 
-  if (totalActive === 0) {
+  if (totalShown === 0) {
     return (
       <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100">
@@ -280,7 +295,12 @@ export function CockpitAlarms({
         <div className="mb-2 flex items-center justify-between">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Alarmes ativos</p>
           <p className="text-[10px] text-slate-400">
-            {totalActive} {totalActive === 1 ? "alarme" : "alarmes"}
+            {actionableCount === 0
+              ? "Nenhum acionável"
+              : `${actionableCount} ${actionableCount === 1 ? "acionável" : "acionáveis"}`}
+            {infoCount > 0 && (
+              <span className="ml-1 text-slate-300">· {infoCount} info</span>
+            )}
           </p>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -297,7 +317,7 @@ export function CockpitAlarms({
           />
           <AlarmCard
             id="unreplacedAbsence"
-            title="Faltou sem reposição"
+            title="Atraso sem cobertura"
             items={data.unreplacedAbsence.items}
             severity="danger"
             Icon={AlertCircle}
@@ -309,9 +329,9 @@ export function CockpitAlarms({
           />
           <AlarmCard
             id="belowWeeklyTarget"
-            title="Abaixo da meta semanal"
+            title="Ritmo da semana"
             items={data.belowWeeklyTarget.items}
-            severity="warning"
+            severity="info"
             Icon={AlertTriangle}
             caveat={ALARM_CAVEAT_WEEKLY}
             expanded={allExpanded}
