@@ -325,6 +325,7 @@ function aggregateUsers(rows: UserRoleRow[]) {
     baseCode: string | null;
     cohortId: string | null;
     cohortName: string | null;
+    isArchived: boolean;
   };
   type AggregatedRow = UserRoleRow & {
     alsoPreceptor: boolean;
@@ -343,6 +344,7 @@ function aggregateUsers(rows: UserRoleRow[]) {
           baseCode: row.baseCode,
           cohortId: row.cohortId ?? null,
           cohortName: row.cohortName ?? null,
+          isArchived: Boolean(row.isArchived),
         }
       : null;
 
