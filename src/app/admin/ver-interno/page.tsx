@@ -19,7 +19,7 @@ import { operationalDateStr } from "@/lib/utils";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
 
 /* ── types ── */
-type Intern = { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId: string | null; cohortName: string | null };
+type Intern = { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId: string | null; cohortName: string | null; isArchived: boolean };
 type CohortOption = { id: string; name: string | null; label: string; status: string };
 type Assignment = {
   id: string; internName: string; baseCode: string; baseName: string;
@@ -93,6 +93,8 @@ function AdminVerComoInterno() {
   /* ── intern list ── */
   const [interns, setInterns] = useState<Intern[]>([]);
   const [search, setSearch] = useState("");
+  const [facultyFilter, setFacultyFilter] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [selected, setSelected] = useState<Intern | null>(null);
   const [loadingList, setLoadingList] = useState(true);
 
@@ -131,13 +133,28 @@ function AdminVerComoInterno() {
         if (json.success) {
           const usersMap = Object.fromEntries((json.data as Array<{ id: string; name: string }>).map((u) => [u.id, u.name]));
           setUserNameById(usersMap);
-          const internList = json.data
-            .filter((u: { role: string; isActive: boolean; isArchived?: boolean }) => u.role === "INTERN" && u.isActive && !u.isArchived)
-            .map((u: { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId?: string | null; cohortName?: string | null }) => ({
-              id: u.id, name: u.name, facultyAbbr: u.facultyAbbr, facultyId: u.facultyId ?? null,
-              isActive: u.isActive, cohortId: u.cohortId ?? null, cohortName: u.cohortName ?? null,
-            }))
-            .sort((a: Intern, b: Intern) => a.name.localeCompare(b.name));
+          // Filtra pelo registro INTERN específico (não a role primária do user).
+          // - Multi-role LEADER+INTERN: pega faculty/cohort/isArchived do registro INTERN
+          // - User com role INTERN arquivada não aparece (a menos que showArchived=true)
+          type RoleEntry = { role: string; facultyId: string | null; facultyAbbr: string | null; cohortId: string | null; cohortName: string | null; isArchived?: boolean };
+          type RawUser = { id: string; name: string; role: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId?: string | null; cohortName?: string | null; allRoles?: RoleEntry[] };
+          const internList = (json.data as RawUser[])
+            .map((u) => {
+              const internRole = u.allRoles?.find((r) => r.role === "INTERN");
+              if (!u.isActive || !internRole) return null;
+              return {
+                id: u.id,
+                name: u.name,
+                facultyAbbr: internRole.facultyAbbr ?? "",
+                facultyId: internRole.facultyId ?? null,
+                isActive: u.isActive,
+                cohortId: internRole.cohortId ?? null,
+                cohortName: internRole.cohortName ?? null,
+                isArchived: Boolean(internRole.isArchived),
+              } as Intern;
+            })
+            .filter((i): i is Intern => i !== null)
+            .sort((a, b) => a.name.localeCompare(b.name));
           setInterns(internList);
         }
       })
@@ -279,11 +296,20 @@ function AdminVerComoInterno() {
   }
 
   /* ── filtered intern list ── */
+  const facultyOptions = useMemo(() => {
+    const set = new Set<string>();
+    interns.forEach((i) => { if (i.facultyAbbr) set.add(i.facultyAbbr); });
+    return Array.from(set).sort();
+  }, [interns]);
   const filteredInterns = useMemo(() => {
-    if (!search) return interns;
-    const q = search.toLowerCase();
-    return interns.filter((i) => i.name.toLowerCase().includes(q) || i.facultyAbbr?.toLowerCase().includes(q));
-  }, [interns, search]);
+    const q = search.trim().toLowerCase();
+    return interns.filter((i) => {
+      if (!showArchived && i.isArchived) return false;
+      if (facultyFilter && i.facultyAbbr !== facultyFilter) return false;
+      if (q && !(i.name.toLowerCase().includes(q) || i.facultyAbbr?.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [interns, search, facultyFilter, showArchived]);
 
   /* ── derived ── */
   const today = operationalDateStr();
@@ -317,6 +343,44 @@ function AdminVerComoInterno() {
           <p className="mt-1 text-sm text-slate-500">Selecione um interno para visualizar sua perspectiva, auditar dados e agir em seu nome.</p>
         </div>
 
+        {/* Filtro de faculdade por botão */}
+        {facultyOptions.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setFacultyFilter(null)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${facultyFilter === null ? "bg-slate-900 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}
+            >
+              Todas
+            </button>
+            {facultyOptions.map((abbr) => {
+              const fs = getFacultyStyle(abbr);
+              const active = facultyFilter === abbr;
+              return (
+                <button
+                  key={abbr}
+                  type="button"
+                  onClick={() => setFacultyFilter(active ? null : abbr)}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${active ? `${fs.pill} ring-1 ring-slate-900` : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${fs.dot}`} />
+                  {abbr}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <label className="inline-flex items-center gap-2 text-xs text-slate-600 select-none">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-slate-300 text-accent-600 focus:ring-accent-500"
+          />
+          Incluir internos arquivados
+        </label>
+
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" strokeWidth={1.5} />
           <Input
@@ -342,7 +406,14 @@ function AdminVerComoInterno() {
                     <User className="h-4 w-4" strokeWidth={1.5} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">{intern.name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-slate-900 truncate">{intern.name}</p>
+                      {intern.isArchived && (
+                        <span className="inline-flex items-center rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                          arquivado
+                        </span>
+                      )}
+                    </div>
                     {cmp && cmp.targetShifts > 0 && (
                       <div className="mt-0.5">
                         <VelocimeterCard
