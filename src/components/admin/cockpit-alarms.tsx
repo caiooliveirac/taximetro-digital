@@ -95,6 +95,12 @@ function renderItemRow(it: AlarmItem, id: string, onItemClick: (item: AlarmItem)
         <span className="shrink-0 text-xs">
           {it.breakdown && it.breakdown.length > 0 ? (
             <span className="inline-flex items-center gap-1.5 tabular-nums">
+              {it.detail && (
+                <>
+                  <span className="font-medium text-slate-600">{it.detail}</span>
+                  <span className="text-slate-300">·</span>
+                </>
+              )}
               {it.breakdown.map((b, idx) => (
                 <span
                   key={`${id}-${it.internId}-${b.type}`}
