@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { addDaysToDateStr, operationalDateStr, operationalPeriod } from "@/lib/utils";
 import { baseViewIndex } from "@/lib/base-colors";
-import type { CockpitData, AlarmItem, WeekBreakdown } from "@/components/admin/cockpit-alarms";
+import type { CockpitData, AlarmItem, AbsenceAlertItem, WeekBreakdown } from "@/components/admin/cockpit-alarms";
 
 type ComplianceIntern = {
   userId: string;
@@ -312,8 +312,9 @@ function coverageGap(intern: ComplianceIntern): { detail: string; breakdown: Wee
 export function buildCockpitData(params: {
   complianceInterns: ComplianceIntern[];
   noCheckinRows: NoCheckinRow[];
+  absenceAlertRows: AbsenceAlertRow[];
 }): CockpitData {
-  const { complianceInterns, noCheckinRows } = params;
+  const { complianceInterns, noCheckinRows, absenceAlertRows } = params;
 
   // Sem check-in agora: ordem por base já aplicada em fetchNoCheckinNow.
   const noCheckinItems: AlarmItem[] = noCheckinRows.map((r) => ({
@@ -342,27 +343,26 @@ export function buildCockpitData(params: {
     .filter((it): it is AlarmItem => it !== null)
     .sort(byFacultyThenName);
 
-  // Abaixo da meta semanal: trigger per-type — captura "compensou um tipo,
-  // perdeu outro". Cada item carrega breakdown estruturado pra UI renderizar
-  // badges per-type com cor por estado.
-  const belowWeeklyItems: AlarmItem[] = complianceInterns
-    .filter(isBelowAnyTypeWeekly)
-    .map((i) => {
-      const breakdown = buildWeeklyBreakdown(i);
-      const fallbackParts = breakdown.map((b) => `${b.type} ${b.completed}/${b.target}`);
-      return {
-        internId: i.userId,
-        internName: i.name,
-        facultyAbbr: i.facultyAbbr ?? "",
-        detail: fallbackParts.join(" · "),
-        breakdown,
-      };
-    })
-    .sort(byFacultyThenName);
+  // Faltas pendentes: passa-direto da query (UI agrupa por sub-bloco
+  // sem-justificativa/justificada → faculdade → ordem alfabética).
+  const absenceItems: AbsenceAlertItem[] = absenceAlertRows.map((r) => ({
+    assignmentId: r.assignmentId,
+    internId: r.internId,
+    internName: r.internName,
+    facultyAbbr: r.facultyAbbr,
+    baseCode: r.baseCode,
+    baseName: r.baseName,
+    period: r.period,
+    date: r.date,
+    hasJustification: r.hasJustification,
+    justification: r.justification,
+    justifiedBy: r.justifiedBy,
+    justifiedAt: r.justifiedAt,
+  }));
 
   return {
     noCheckin: { count: noCheckinItems.length, items: noCheckinItems },
     unreplacedAbsence: { count: unreplacedItems.length, items: unreplacedItems },
-    belowWeeklyTarget: { count: belowWeeklyItems.length, items: belowWeeklyItems },
+    absenceAlerts: { count: absenceItems.length, items: absenceItems },
   };
 }
