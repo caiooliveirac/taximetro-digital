@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { addDaysToDateStr, operationalDateStr, operationalPeriod } from "@/lib/utils";
 import { baseViewIndex } from "@/lib/base-colors";
-import type { CockpitData, AlarmItem } from "@/components/admin/cockpit-alarms";
+import type { CockpitData, AlarmItem, WeekBreakdown } from "@/components/admin/cockpit-alarms";
 
 type ComplianceIntern = {
   userId: string;
@@ -16,25 +16,26 @@ type ComplianceIntern = {
   lastWeekCompleted: number;
   belowWeeklyTarget: boolean;
   // per-type weekly metas (já expostos por executeGetComplianceOverview).
-  // CRL fora do trigger por decisão do produto — meta não-semanal estável.
   targetUSAPerWeek: number;
   targetCRUPerWeek: number;
   targetUSATotal: number;
   targetCRUTotal: number;
+  // CRL: meta cumulativa, não semanal (ex: 1 plantão na rotação inteira).
+  targetCRLPerWeek: number;
   thisWeekUSAPlanned: number;
   thisWeekCRUPlanned: number;
   // Cumulativo da rotação inteira (cumpridos + escalados não-absent).
-  // Usado para suprimir alarme quando a meta semanal está coberta no calendário
-  // total da rotação (variação por troca não é problema do coordenador).
+  // Usado pelo detector "esperado-até-agora = semanaCorrente × meta/sem".
   totalUSAPlanned: number;
   totalCRUPlanned: number;
+  totalCRLPlanned: number;
   rotationStartDate: string | null;
   rotationEndDate: string | null;
-  // Tempo decorrido/restante da rotação (em semanas). Usado pelo detector
-  // de "atraso sem cobertura" para calibrar quando o saldo negativo
-  // realmente vira alarme.
-  weeksElapsed: number;
-  weeksRemaining: number;
+  // Numeração rígida seg-dom da rotação. semanaCorrente cresce 1 a cada
+  // segunda-feira a partir de Sem 1; trava em semanaTotal após cohort.endDate.
+  // 0 quando rotação ainda não começou ou intern sem rotationStartDate.
+  semanaCorrente: number;
+  semanaTotal: number | null;
 };
 
 type NoCheckinRow = {
@@ -170,50 +171,66 @@ function isBelowAnyTypeWeekly(intern: ComplianceIntern): boolean {
   return isBelowType(intern, "USA") || isBelowType(intern, "CRU");
 }
 
-// Detector de "atraso sem cobertura" — substituiu "faltou sem reposição".
+// Detector de "atraso sem cobertura" — limiar semanal linear por tipo.
 //
-// Invariante central: o sinal é o saldo agregado da rotação:
-//   deficit = target − (completed + futureScheduled)
+// Invariante central: para USA e CRU, o esperado-até-agora cresce 1 a cada
+// segunda-feira da rotação (Sem 1 = 1×meta/sem, Sem 3 = 3×meta/sem, etc).
+// O realizado é cumpridos + escalados em qualquer ponto da rotação (passado
+// ou futuro), o que faz excess de uma semana cobrir gap de outra
+// automaticamente — saldo da rotação preserva.
 //
-// Por construção, swap e remanejamento NÃO disparam (cancela 1 + cria 1
-// preserva saldo). Absences COM reposição já agendada NÃO disparam
-// (futureScheduled cobre). Disparam: ABSENT sem reposição, DROP_SHIFT
-// aprovado sem reposição, remoção pelo líder sem reposição, e
-// sub-alocação que vai estourar o calendário.
+//   debt[T] = max(0, semanaCorrente × meta[T]/sem − totalPlanned[T])
 //
-// Heurística B (UNIFACS-tolerant): no início da rotação tolera
-// sub-alocação que ainda não foi corrigida — alocação incremental é
-// legítima até a semana 2. A partir daí, deficit puro vira alarme.
-// Se houver QUALQUER absence concreta (totalAbsent > 0), dispara
-// independente da semana — perda factual já merece atenção.
+// CRL é especial: meta é cumulativa (ex: 1 plantão na rotação inteira),
+// não semanal. Compara direto com o realizado.
 //
-// Distinção "cabe vs não cabe" mora no detail per-item, não na cor do
-// card. Card mantém severity "danger" — qualquer atraso sem cobertura
-// é acionável pelo coordenador.
-function coverageGap(intern: ComplianceIntern): { deficit: number; detail: string } | null {
-  if (intern.targetShifts <= 0) return null;
+//   debt[CRL] = max(0, targetCRLTotal − totalCRLPlanned)
+//
+// Comportamentos garantidos:
+// - SWAP/remanejamento: cancela em uma data, cria em outra → totalPlanned
+//   preserva → não dispara.
+// - ABSENT com reposição já agendada: scheduled futuro entra em totalPlanned
+//   → cobre o esperado → não dispara.
+// - ABSENT/DROP/remoção sem reposição: totalPlanned cai → debt > 0 → dispara.
+// - Líder não escalou Sem N (corrente ou passada): totalPlanned < esperado
+//   → dispara, sem precisar virar absence.
+// - Semanas futuras vazias (UNIFACS alocando incrementalmente):
+//   semanaCorrente conta só até hoje, então gaps em Sem futura não geram
+//   débito — não há falso positivo natural pra alocação em curso.
+//
+// Trava: se intern não tem rotationStartDate (sem cohort + sem
+// faculties.rotationStartDate), retorna null — não há base pra calcular.
+function coverageGap(intern: ComplianceIntern): { detail: string; breakdown: WeekBreakdown[] } | null {
+  if (!intern.semanaCorrente || intern.semanaCorrente <= 0) return null;
+  const sem = intern.semanaCorrente;
 
-  const deficit = intern.targetShifts - (intern.totalCompleted + intern.futureScheduled);
-  if (deficit <= 0) return null;
+  const expectedUSA = sem * intern.targetUSAPerWeek;
+  const expectedCRU = sem * intern.targetCRUPerWeek;
+  // CRL: targetCRLPerWeek é tratado como meta TOTAL (semantic do produto:
+  // "1 plantão CRL na vida da rotação", não 1 por semana).
+  const expectedCRL = intern.targetCRLPerWeek;
 
-  // Heurística B: pré-semana-2 sem absence concreta = ainda em alocação.
-  if (intern.weeksElapsed < 2 && intern.totalAbsent === 0) return null;
+  const debtUSA = Math.max(0, expectedUSA - intern.totalUSAPlanned);
+  const debtCRU = Math.max(0, expectedCRU - intern.totalCRUPlanned);
+  const debtCRL = Math.max(0, expectedCRL - intern.totalCRLPlanned);
 
-  const weekCapacity = Math.max(intern.targetShiftsPerWeek + 1, 3);
-  const remaining = intern.weeksRemaining;
-  const fits = remaining > 0 && remaining * weekCapacity >= deficit;
+  if (debtUSA === 0 && debtCRU === 0 && debtCRL === 0) return null;
 
-  const gap = `${deficit} plant${deficit > 1 ? "ões" : "ão"}`;
-  let detail: string;
-  if (remaining === 0) {
-    detail = `faltam ${gap} · rotação encerrada`;
-  } else if (!fits) {
-    detail = `faltam ${gap} · não cabe em ${remaining}sem`;
-  } else {
-    detail = `faltam ${gap} · cabe em ${remaining}sem`;
+  // Breakdown estruturado para o componente renderizar badges per-tipo
+  // com cor (tipo com débito vermelho, tipo OK em slate). Inclui também
+  // tipos OK que têm meta > 0, pra dar contexto visual completo.
+  const breakdown: WeekBreakdown[] = [];
+  if (intern.targetUSAPerWeek > 0) {
+    breakdown.push({ type: "USA", completed: intern.totalUSAPlanned, target: expectedUSA, below: debtUSA > 0 });
+  }
+  if (intern.targetCRUPerWeek > 0) {
+    breakdown.push({ type: "CRU", completed: intern.totalCRUPlanned, target: expectedCRU, below: debtCRU > 0 });
+  }
+  if (intern.targetCRLPerWeek > 0) {
+    breakdown.push({ type: "CRL", completed: intern.totalCRLPlanned, target: expectedCRL, below: debtCRL > 0 });
   }
 
-  return { deficit, detail };
+  return { detail: `Sem ${sem}`, breakdown };
 }
 
 export function buildCockpitData(params: {
@@ -230,9 +247,9 @@ export function buildCockpitData(params: {
     detail: `${r.base_code} · ${PERIOD_LABEL[r.period] ?? r.period.toLowerCase()}`,
   }));
 
-  // Atraso sem cobertura: saldo da rotação não cobre o target, considerando
-  // futuros não-cancelados como reposição válida. Ver `coverageGap` para a
-  // motivação do invariante e a heurística B (UNIFACS-tolerant).
+  // Atraso sem cobertura: limiar semanal linear por tipo. Ver `coverageGap`
+  // para a definição do detector.
+  // detail = "Sem N" (contexto) + breakdown estruturado per-tipo (badges).
   // Ordenação por (faculdade, nome) pra permitir agrupamento no UI.
   const unreplacedItems: AlarmItem[] = complianceInterns
     .map((i) => {
@@ -243,6 +260,7 @@ export function buildCockpitData(params: {
         internName: i.name,
         facultyAbbr: i.facultyAbbr ?? "",
         detail: gap.detail,
+        breakdown: gap.breakdown,
       } as AlarmItem;
     })
     .filter((it): it is AlarmItem => it !== null)

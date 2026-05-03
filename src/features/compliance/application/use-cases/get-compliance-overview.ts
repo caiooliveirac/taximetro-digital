@@ -1,5 +1,6 @@
 import {
   addDaysToDateStr,
+  localDateStr,
   operationalDateStr,
   startOfWeekDateStr,
   sumAssignmentHours,
@@ -179,6 +180,32 @@ export async function executeGetComplianceOverview(params: {
       weeksRemaining = Math.max(0, rem);
     }
 
+    // Numeração rígida de semanas seg-dom da rotação (Sem 1, Sem 2, ...).
+    // Sem 1 = semana ISO da segunda-feira que contém rotationStartDate.
+    // Usado pelo cockpit para "esperado-até-agora = semanaCorrente × meta/sem".
+    //
+    // Calendar date (sem carryover do noturno): a contagem de semanas é uma
+    // visão de calendário, não operacional. Se for 23h59 de domingo, ainda
+    // estamos na semana corrente — só vira Sem N+1 na meia-noite de segunda.
+    let semanaCorrente = 0;
+    let semanaTotal: number | null = null;
+    if (intern.rotationStartDate) {
+      const sem1Start = startOfWeekDateStr(intern.rotationStartDate);
+      const calToday = localDateStr();
+      if (intern.rotationEndDate) {
+        // Total de semanas da rotação (Sem 1 → Sem N inclusive).
+        // weeksBetweenDateStr é um floor; +1 cobre rotação parcial na última semana.
+        semanaTotal = Math.max(1, weeksBetweenDateStr(sem1Start, intern.rotationEndDate) + 1);
+      }
+      if (calToday < intern.rotationStartDate) {
+        semanaCorrente = 0; // rotação ainda não começou
+      } else if (intern.rotationEndDate && calToday > intern.rotationEndDate) {
+        semanaCorrente = semanaTotal ?? 0; // trava no fim
+      } else {
+        semanaCorrente = weeksBetweenDateStr(sem1Start, calToday) + 1;
+      }
+    }
+
     const rawDeficit = Math.max(0, expectedToNow - totalCompleted);
     const netDeficit = Math.max(0, rawDeficit - futureScheduled);
     const compensating = rawDeficit > 0 && futureScheduled > 0 && netDeficit === 0;
@@ -227,6 +254,8 @@ export async function executeGetComplianceOverview(params: {
       expectedToNow,
       weeksElapsed,
       weeksRemaining,
+      semanaCorrente,
+      semanaTotal,
       rawDeficit,
       futureScheduled,
       netDeficit,
