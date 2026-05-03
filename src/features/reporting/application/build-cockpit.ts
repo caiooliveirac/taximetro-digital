@@ -47,6 +47,21 @@ type NoCheckinRow = {
   date: string;
 };
 
+export type AbsenceAlertRow = {
+  assignmentId: string;
+  internId: string;
+  internName: string;
+  facultyAbbr: string;
+  baseCode: string;
+  baseName: string;
+  period: "DAY" | "NIGHT";
+  date: string;
+  hasJustification: boolean;
+  justification: string | null;
+  justifiedBy: string | null;
+  justifiedAt: string | null;
+};
+
 const PERIOD_LABEL: Record<string, string> = { DAY: "diurno", NIGHT: "noturno" };
 
 export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
@@ -102,6 +117,67 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
       if (baseDiff !== 0) return baseDiff;
       return a.intern_name.localeCompare(b.intern_name);
     });
+}
+
+// Lista TODAS as faltas pendentes de revisão pelo coordenador, da
+// rotação corrente em diante. "Pendente" = ABSENT + dismissed_at IS NULL.
+// Inclui justificadas e não-justificadas — o card separa visualmente.
+//
+// Range temporal: a partir do rotation_start_date do intern (cohort se
+// houver, faculties.rotation_start_date como fallback). Plantões anteriores
+// à rotação corrente não aparecem — são histórico de outra turma.
+//
+// Ordenação inicial irrelevante (o consumer agrupa/ordena na UI).
+export async function fetchAbsenceAlerts(): Promise<AbsenceAlertRow[]> {
+  const rows = await db.execute(sql`
+    SELECT
+      a.id::text AS assignment_id,
+      a.intern_id::text AS intern_id,
+      u.name AS intern_name,
+      f.abbreviation AS faculty_abbr,
+      b.code AS base_code,
+      b.name AS base_name,
+      a.period::text AS period,
+      a.date::text AS date,
+      a.absence_justification AS justification,
+      a.absence_justification_actor AS justified_by_actor,
+      to_char(a.absence_justification_at, 'YYYY-MM-DD"T"HH24:MI:SSZ') AS justified_at,
+      COALESCE(c.start_date, f.rotation_start_date) AS rotation_start
+    FROM assignments a
+    JOIN users u ON u.id = a.intern_id
+    JOIN bases b ON b.id = a.base_id
+    JOIN faculties f ON f.id = a.faculty_id
+    LEFT JOIN user_roles ur
+      ON ur.user_id = a.intern_id
+     AND ur.faculty_id = a.faculty_id
+     AND ur.role = 'INTERN'
+     AND ur.is_active = true
+     AND ur.is_archived = false
+    LEFT JOIN cohorts c ON c.id = ur.cohort_id
+    WHERE a.status = 'ABSENT'
+      AND a.is_extra_shift = false
+      AND a.absence_alert_dismissed_at IS NULL
+      AND a.date >= COALESCE(c.start_date, f.rotation_start_date)
+      AND a.date <= CURRENT_DATE
+  `);
+
+  return (rows as Record<string, unknown>[]).map((r) => {
+    const justification = r.justification ? String(r.justification) : null;
+    return {
+      assignmentId: String(r.assignment_id ?? ""),
+      internId: String(r.intern_id ?? ""),
+      internName: String(r.intern_name ?? ""),
+      facultyAbbr: r.faculty_abbr ? String(r.faculty_abbr) : "",
+      baseCode: String(r.base_code ?? ""),
+      baseName: String(r.base_name ?? ""),
+      period: (String(r.period ?? "DAY") === "NIGHT" ? "NIGHT" : "DAY") as "DAY" | "NIGHT",
+      date: String(r.date ?? ""),
+      hasJustification: Boolean(justification && justification.trim().length > 0),
+      justification,
+      justifiedBy: r.justified_by_actor ? String(r.justified_by_actor) : null,
+      justifiedAt: r.justified_at ? String(r.justified_at) : null,
+    };
+  });
 }
 
 function byFacultyThenName(a: { facultyAbbr: string; internName: string }, b: { facultyAbbr: string; internName: string }) {
