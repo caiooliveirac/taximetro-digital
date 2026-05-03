@@ -163,10 +163,20 @@ export async function executeGetComplianceOverview(params: {
     const weeklyCRLDeficit = Math.max(0, targetCRLPerWeek - thisWeekCRLScheduledOrCompleted);
 
     let expectedToNow = 0;
+    let weeksElapsed = 0;
     if (weeklyTarget > 0 && relevantRows.length > 0) {
       const rotationMonStr = startOfWeekDateStr(rotationStart);
-      const weeksElapsed = weeksBetweenDateStr(rotationMonStr, thisWeek.from) + 1;
+      weeksElapsed = weeksBetweenDateStr(rotationMonStr, thisWeek.from) + 1;
       expectedToNow = weeksElapsed * weeklyTarget;
+    }
+
+    // Semanas restantes até o fim da rotação (cohort.endDate). 0 quando a
+    // rotação acabou ou não há cohort vinculada — o consumidor decide se
+    // isso vira "rotação encerrada" ou apenas degrada o detector.
+    let weeksRemaining = 0;
+    if (intern.rotationEndDate) {
+      const rem = weeksBetweenDateStr(todayStr, intern.rotationEndDate);
+      weeksRemaining = Math.max(0, rem);
     }
 
     const rawDeficit = Math.max(0, expectedToNow - totalCompleted);
@@ -215,6 +225,8 @@ export async function executeGetComplianceOverview(params: {
       totalDeficit,
       totalPct,
       expectedToNow,
+      weeksElapsed,
+      weeksRemaining,
       rawDeficit,
       futureScheduled,
       netDeficit,
