@@ -4,17 +4,23 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   UserPlus, Link2, Copy, Check, Clock, UserCheck, UserX, Trash2, Target,
-  ChevronDown, Calendar, MapPin, Sun, Moon, ArrowRight, Plus, X, Repeat,
+  ChevronDown, Calendar, MapPin, ArrowRight, Plus, X,
   Archive, ArchiveRestore,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/status-badge";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
+import { operationalDateStr } from "@/lib/utils";
+import {
+  RealizedByTypeBoxes,
+  ShiftListByKind,
+  WeekBreakdownByType,
+  SwapHistoryList,
+  AssignmentDetailPanel,
+} from "@/components/admin/intern-shifts-blocks";
 
 type UserRow = {
   id: string;
@@ -48,6 +54,15 @@ type ComplianceRow = {
   status: "ok" | "compensating" | "partial" | "deficit";
   rotationStartDate: string | null;
   rotationEndDate: string | null;
+  targetUSAPerWeek?: number;
+  targetCRUPerWeek?: number;
+  targetCRLPerWeek?: number;
+  thisWeekUSAPlanned?: number;
+  thisWeekCRUPlanned?: number;
+  thisWeekCRLPlanned?: number;
+  lastWeekUSACompleted?: number;
+  lastWeekCRUCompleted?: number;
+  lastWeekCRLCompleted?: number;
 };
 
 type AssignmentRow = {
@@ -443,15 +458,13 @@ export default function LeaderInternos() {
                   const isExpanded = expandedId === u.id;
                   const allAssignmentsForIntern = internAssignmentsById[u.id] ?? [];
                   const loadingHistory = loadingHistoryById[u.id] ?? false;
-                  const internAssignments = isExpanded
-                    ? allAssignmentsForIntern
+                  const today = operationalDateStr();
+                  const pastAssignmentsLeader = isExpanded
+                    ? allAssignmentsForIntern.filter((a) => a.date <= today)
                     : [];
-                  const internCompleted = isExpanded
-                    ? allAssignmentsForIntern.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status))
+                  const upcomingAssignmentsLeader = isExpanded
+                    ? allAssignmentsForIntern.filter((a) => a.date > today)
                     : [];
-                  const cruCount = internCompleted.filter((a) => a.baseType === "CENTRAL").length;
-                  const usaCount = internCompleted.filter((a) => a.baseType === "USA").length;
-                  const crlCount = internCompleted.filter((a) => a.baseType === "CRL").length;
                   const internSwaps = isExpanded
                     ? swapHistory.filter((s) => s.requester.id === u.id || s.target.id === u.id)
                     : [];
@@ -574,150 +587,81 @@ export default function LeaderInternos() {
                               </div>
                             )}
 
-                            {/* Base type boxes */}
-                            {(cruCount > 0 || usaCount > 0 || crlCount > 0) && (
-                              <div className="grid grid-cols-3 gap-2">
-                                <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-center">
-                                  <p className="text-lg font-bold text-violet-700">{cruCount}</p>
-                                  <p className="text-[10px] font-medium text-violet-600">CRU</p>
-                                </div>
-                                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center">
-                                  <p className="text-lg font-bold text-red-700">{usaCount}</p>
-                                  <p className="text-[10px] font-medium text-red-600">USA</p>
-                                </div>
-                                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-center">
-                                  <p className="text-lg font-bold text-rose-700">{crlCount}</p>
-                                  <p className="text-[10px] font-medium text-rose-600">CRL</p>
-                                </div>
-                              </div>
+                            {/* Breakdown semanal por tipo */}
+                            <WeekBreakdownByType compliance={c} />
+
+                            {/* Caixinhas CRU/USA/CRL realizados */}
+                            {pastAssignmentsLeader.length > 0 && (
+                              <RealizedByTypeBoxes assignments={pastAssignmentsLeader} size="sm" />
                             )}
+
+                            {/* Próximos plantões */}
+                            <div>
+                              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Próximos plantões</h3>
+                              {loadingHistory ? (
+                                <p className="text-xs text-slate-400">Carregando...</p>
+                              ) : (
+                                <ShiftListByKind
+                                  items={upcomingAssignmentsLeader}
+                                  emptyMessage="Nenhum plantão agendado."
+                                  showStatus
+                                  initialLimit={10}
+                                />
+                              )}
+                            </div>
 
                             {/* Swap history */}
-                            {internSwaps.length > 0 && (
-                              <div>
-                                <div className="flex items-center gap-1.5 mb-2">
-                                  <Repeat className="h-3.5 w-3.5 text-indigo-500" strokeWidth={1.5} />
-                                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Trocas ({internSwaps.length})</h3>
-                                </div>
-                                <div className="space-y-1.5">
-                                  {internSwaps.slice(0, 5).map((swap) => {
-                                    const isReq = swap.requester.id === u.id;
-                                    const self = isReq ? swap.requester : swap.target;
-                                    const peer = isReq ? swap.target : swap.requester;
-                                    return (
-                                      <div key={swap.id} className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm">
-                                        <div className="flex items-center justify-between mb-1">
-                                          <span className="text-[11px] text-slate-400">
-                                            {new Date(swap.completedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                                          </span>
-                                          <span className="text-[11px] text-slate-400">com {peer.name}</span>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                          <div className="rounded bg-red-50 px-2 py-1">
-                                            <p className="text-[10px] font-medium text-red-600">Deu</p>
-                                            {self.gave ? (
-                                              <span className="text-xs font-medium text-slate-900">
-                                                {self.gave.baseCode} {new Date(self.gave.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                                                <span className={`ml-1 ${self.gave.period === "DAY" ? "text-amber-600" : "text-indigo-600"}`}>{self.gave.period === "DAY" ? "☀" : "🌙"}</span>
-                                              </span>
-                                            ) : <span className="text-xs text-slate-400">—</span>}
-                                          </div>
-                                          <div className="rounded bg-emerald-50 px-2 py-1">
-                                            <p className="text-[10px] font-medium text-emerald-600">Recebeu</p>
-                                            {self.received ? (
-                                              <span className="text-xs font-medium text-slate-900">
-                                                {self.received.baseCode} {new Date(self.received.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                                                <span className={`ml-1 ${self.received.period === "DAY" ? "text-amber-600" : "text-indigo-600"}`}>{self.received.period === "DAY" ? "☀" : "🌙"}</span>
-                                              </span>
-                                            ) : <span className="text-xs text-slate-400">—</span>}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
+                            <SwapHistoryList
+                              swaps={internSwaps}
+                              currentInternId={u.id}
+                              initialLimit={5}
+                              density="compact"
+                            />
 
-                            {/* Recent assignments */}
+                            {/* Histórico de plantões — agrupado por tipo, com expand para detalhes */}
                             <div>
                               <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Histórico de plantões</h3>
                               {loadingHistory ? (
                                 <p className="text-xs text-slate-400">Carregando histórico...</p>
-                              ) : internAssignments.length > 0 ? (
-                                <div className="space-y-1">
-                                  {internAssignments.map((a) => {
-                                    const isAssignmentExpanded = expandedAssignmentId === a.id;
-                                    const bs = getBaseStyle(a.baseType);
-                                    const ps = getPeriodStyle(a.period);
-                                    const records = (caseRecordsByInternId[u.id] ?? []).filter((record) => record.assignmentId === a.id);
-                                    return (
-                                      <div key={a.id} className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm">
+                              ) : (
+                                <ShiftListByKind
+                                  items={[...pastAssignmentsLeader].reverse()}
+                                  emptyMessage="Nenhum plantão registrado."
+                                  showStatus
+                                  initialLimit={10}
+                                  expandedId={expandedAssignmentId}
+                                  onToggleExpand={setExpandedAssignmentId}
+                                  renderInlineExtra={(a) =>
+                                    a.status === "ABSENT" ? (
+                                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="min-w-0 text-xs text-slate-500">
+                                          {(a as AssignmentRow).absenceJustification ? (
+                                            <p className="truncate">{(a as AssignmentRow).absenceJustification}</p>
+                                          ) : (
+                                            <p className="text-amber-600">Sem justificativa registrada.</p>
+                                          )}
+                                        </div>
                                         <button
                                           type="button"
-                                          onClick={() => setExpandedAssignmentId(isAssignmentExpanded ? null : a.id)}
-                                          className="flex w-full items-center gap-3 text-left"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setJustificationAssignment(a as AssignmentRow);
+                                          }}
+                                          className="shrink-0 text-xs font-medium text-accent-600 hover:text-accent-500"
                                         >
-                                          <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${bs.dot}`} />
-                                          <span className="font-medium text-slate-900 w-14">{a.baseCode}</span>
-                                          <span className="text-xs text-slate-500 w-20">
-                                            {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                                          </span>
-                                          <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${ps.text}`}>
-                                            {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
-                                            {ps.label}
-                                          </span>
-                                          <span className="ml-auto"><StatusBadge status={a.status} /></span>
+                                          {(a as AssignmentRow).absenceJustification ? "Ver ou editar justificativa" : "Justificar falta"}
                                         </button>
-                                        {a.status === "ABSENT" && (
-                                          <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <div className="min-w-0 text-xs text-slate-500">
-                                              {a.absenceJustification
-                                                ? <p className="truncate">{a.absenceJustification}</p>
-                                                : <p className="text-amber-600">Sem justificativa registrada.</p>}
-                                            </div>
-                                            <button
-                                              type="button"
-                                              onClick={() => setJustificationAssignment(a)}
-                                              className="shrink-0 text-xs font-medium text-accent-600 hover:text-accent-500"
-                                            >
-                                              {a.absenceJustification ? "Ver ou editar justificativa" : "Justificar falta"}
-                                            </button>
-                                          </div>
-                                        )}
-                                        {isAssignmentExpanded && (
-                                          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-xs text-slate-600">
-                                            <p><span className="font-semibold">Check-in:</span> {a.checkinAt ? new Date(a.checkinAt).toLocaleString("pt-BR") : "—"}</p>
-                                            <p><span className="font-semibold">Validação check-in:</span> {a.totpValidatedAt ? new Date(a.totpValidatedAt).toLocaleString("pt-BR") : "—"}</p>
-                                            <p><span className="font-semibold">Validado por:</span> {a.validatedBy ? (userNameById[a.validatedBy] ?? a.validatedBy) : (a.validatedByName ? a.validatedByName : (a.totpValidatedAt ? "Telegram" : "—"))}</p>
-                                            <p><span className="font-semibold">Checkout:</span> {a.checkoutAt ? new Date(a.checkoutAt).toLocaleString("pt-BR") : "—"}</p>
-                                            <p><span className="font-semibold">Checkout confirmado por:</span> {a.checkoutConfirmedBy ? (userNameById[a.checkoutConfirmedBy] ?? a.checkoutConfirmedBy) : (a.checkoutConfirmedByName ? a.checkoutConfirmedByName : (a.checkoutAt ? "Telegram" : "—"))}</p>
-                                            <p><span className="font-semibold">Observação do interno:</span> {a.internObservations || "—"}</p>
-                                            <p><span className="font-semibold">Observação do preceptor:</span> {a.preceptorObservations || "—"}</p>
-                                            <p><span className="font-semibold">Notas de checkout:</span> {a.checkoutNotes || "—"}</p>
-                                            <div>
-                                              <p className="font-semibold">Ocorrências clínicas:</p>
-                                              {records.length > 0 ? (
-                                                <ul className="mt-1 space-y-1">
-                                                  {records.map((record) => (
-                                                    <li key={record.id} className="rounded border border-slate-200 bg-slate-50 px-2 py-1">
-                                                      <span className="font-medium">#{record.caseNumber} · {record.nickname}</span>
-                                                      {record.description ? <span> — {record.description}</span> : null}
-                                                    </li>
-                                                  ))}
-                                                </ul>
-                                              ) : (
-                                                <p>—</p>
-                                              )}
-                                            </div>
-                                          </div>
-                                        )}
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <p className="text-xs text-slate-400">Nenhum plantão registrado.</p>
+                                    ) : null
+                                  }
+                                  renderDetail={(a) => (
+                                    <AssignmentDetailPanel
+                                      assignment={a as AssignmentRow}
+                                      caseRecords={(caseRecordsByInternId[u.id] ?? []).filter((r) => r.assignmentId === a.id)}
+                                      userNameById={userNameById}
+                                    />
+                                  )}
+                                />
                               )}
                             </div>
 
