@@ -2,35 +2,22 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { addDaysToDateStr, operationalDateStr, operationalPeriod } from "@/lib/utils";
 import { baseViewIndex } from "@/lib/base-colors";
-import type { CockpitData, AlarmItem, WeekBreakdown } from "@/components/admin/cockpit-alarms";
+import type { CockpitData, AlarmItem, AbsenceAlertItem, WeekBreakdown } from "@/components/admin/cockpit-alarms";
 
 type ComplianceIntern = {
   userId: string;
   name: string;
   facultyAbbr?: string | null;
-  totalAbsent: number;
-  totalCompleted: number;
-  futureScheduled: number;
-  targetShifts: number;
-  targetShiftsPerWeek: number;
-  lastWeekCompleted: number;
-  belowWeeklyTarget: boolean;
-  // per-type weekly metas (já expostos por executeGetComplianceOverview).
+  // Metas semanais por tipo (já expostas por executeGetComplianceOverview).
+  // CRL: meta cumulativa, não semanal (ex: 1 plantão na rotação inteira).
   targetUSAPerWeek: number;
   targetCRUPerWeek: number;
-  targetUSATotal: number;
-  targetCRUTotal: number;
-  // CRL: meta cumulativa, não semanal (ex: 1 plantão na rotação inteira).
   targetCRLPerWeek: number;
-  thisWeekUSAPlanned: number;
-  thisWeekCRUPlanned: number;
   // Cumulativo da rotação inteira (cumpridos + escalados não-absent).
   // Usado pelo detector "esperado-até-agora = semanaCorrente × meta/sem".
   totalUSAPlanned: number;
   totalCRUPlanned: number;
   totalCRLPlanned: number;
-  rotationStartDate: string | null;
-  rotationEndDate: string | null;
   // Numeração rígida seg-dom da rotação. semanaCorrente cresce 1 a cada
   // segunda-feira a partir de Sem 1; trava em semanaTotal após cohort.endDate.
   // 0 quando rotação ainda não começou ou intern sem rotationStartDate.
@@ -45,6 +32,21 @@ type NoCheckinRow = {
   base_code: string;
   period: string;
   date: string;
+};
+
+export type AbsenceAlertRow = {
+  assignmentId: string;
+  internId: string;
+  internName: string;
+  facultyAbbr: string;
+  baseCode: string;
+  baseName: string;
+  period: "DAY" | "NIGHT";
+  date: string;
+  hasJustification: boolean;
+  justification: string | null;
+  justifiedBy: string | null;
+  justifiedAt: string | null;
 };
 
 const PERIOD_LABEL: Record<string, string> = { DAY: "diurno", NIGHT: "noturno" };
@@ -104,71 +106,71 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
     });
 }
 
+// Lista TODAS as faltas pendentes de revisão pelo coordenador, da
+// rotação corrente em diante. "Pendente" = ABSENT + dismissed_at IS NULL.
+// Inclui justificadas e não-justificadas — o card separa visualmente.
+//
+// Range temporal: a partir do rotation_start_date do intern (cohort se
+// houver, faculties.rotation_start_date como fallback). Plantões anteriores
+// à rotação corrente não aparecem — são histórico de outra turma.
+//
+// Ordenação inicial irrelevante (o consumer agrupa/ordena na UI).
+export async function fetchAbsenceAlerts(): Promise<AbsenceAlertRow[]> {
+  const rows = await db.execute(sql`
+    SELECT
+      a.id::text AS assignment_id,
+      a.intern_id::text AS intern_id,
+      u.name AS intern_name,
+      f.abbreviation AS faculty_abbr,
+      b.code AS base_code,
+      b.name AS base_name,
+      a.period::text AS period,
+      a.date::text AS date,
+      a.absence_justification AS justification,
+      a.absence_justification_actor AS justified_by_actor,
+      to_char(a.absence_justification_at, 'YYYY-MM-DD"T"HH24:MI:SSZ') AS justified_at,
+      COALESCE(c.start_date, f.rotation_start_date) AS rotation_start
+    FROM assignments a
+    JOIN users u ON u.id = a.intern_id
+    JOIN bases b ON b.id = a.base_id
+    JOIN faculties f ON f.id = a.faculty_id
+    LEFT JOIN user_roles ur
+      ON ur.user_id = a.intern_id
+     AND ur.faculty_id = a.faculty_id
+     AND ur.role = 'INTERN'
+     AND ur.is_active = true
+     AND ur.is_archived = false
+    LEFT JOIN cohorts c ON c.id = ur.cohort_id
+    WHERE a.status = 'ABSENT'
+      AND a.is_extra_shift = false
+      AND a.absence_alert_dismissed_at IS NULL
+      AND a.date >= COALESCE(c.start_date, f.rotation_start_date)
+      AND a.date <= CURRENT_DATE
+  `);
+
+  return (rows as Record<string, unknown>[]).map((r) => {
+    const justification = r.justification ? String(r.justification) : null;
+    return {
+      assignmentId: String(r.assignment_id ?? ""),
+      internId: String(r.intern_id ?? ""),
+      internName: String(r.intern_name ?? ""),
+      facultyAbbr: r.faculty_abbr ? String(r.faculty_abbr) : "",
+      baseCode: String(r.base_code ?? ""),
+      baseName: String(r.base_name ?? ""),
+      period: (String(r.period ?? "DAY") === "NIGHT" ? "NIGHT" : "DAY") as "DAY" | "NIGHT",
+      date: String(r.date ?? ""),
+      hasJustification: Boolean(justification && justification.trim().length > 0),
+      justification,
+      justifiedBy: r.justified_by_actor ? String(r.justified_by_actor) : null,
+      justifiedAt: r.justified_at ? String(r.justified_at) : null,
+    };
+  });
+}
+
 function byFacultyThenName(a: { facultyAbbr: string; internName: string }, b: { facultyAbbr: string; internName: string }) {
   const fac = a.facultyAbbr.localeCompare(b.facultyAbbr);
   if (fac !== 0) return fac;
   return a.internName.localeCompare(b.internName);
-}
-
-// Quantas semanas a rotação tem (do início ao fim da cohort).
-// Usado pra derivar o target total por tipo quando faculties.target_*_total
-// não está populado. Fallback conservador: 0 desabilita o suppressor.
-function rotationDurationWeeks(intern: ComplianceIntern): number {
-  if (!intern.rotationStartDate || !intern.rotationEndDate) return 0;
-  const ms = new Date(`${intern.rotationEndDate}T12:00:00Z`).getTime()
-           - new Date(`${intern.rotationStartDate}T12:00:00Z`).getTime();
-  if (ms <= 0) return 0;
-  return Math.max(1, Math.ceil(ms / (7 * 86_400_000)));
-}
-
-function expectedTotalForType(intern: ComplianceIntern, type: "USA" | "CRU"): number {
-  const declared = type === "USA" ? intern.targetUSATotal : intern.targetCRUTotal;
-  if (declared > 0) return declared;
-  const perWeek = type === "USA" ? intern.targetUSAPerWeek : intern.targetCRUPerWeek;
-  const weeks = rotationDurationWeeks(intern);
-  return perWeek * weeks;
-}
-
-// Tipo conta como "abaixo da meta" quando o intern não tem o número-alvo
-// de plantões DESTA SEMANA garantidos (cumpridos OU escalados) E a rotação
-// como um todo NÃO tem o tipo coberto pelo calendário. Suprime quando:
-//   - Coordenador já tem tudo escalado: troca/variação semanal não é alarme
-//
-// Captura ainda os cenários úteis pro coordenador:
-//   - Leader não escalou e meta total descoberta: planned=0 → erro de leader
-//   - Intern faltou, ninguém repôs e meta total descoberta: planned=0 → dispara
-//
-// CRL deliberadamente fora — meta não-semanal por decisão do produto.
-function isBelowType(intern: ComplianceIntern, type: "USA" | "CRU"): boolean {
-  const target = type === "USA" ? intern.targetUSAPerWeek : intern.targetCRUPerWeek;
-  if (target === 0) return false;
-
-  const thisWeekPlanned = type === "USA" ? intern.thisWeekUSAPlanned : intern.thisWeekCRUPlanned;
-  if (thisWeekPlanned >= target) return false;
-
-  // Suppressor: total da rotação já tem o tipo coberto (passado + futuro escalado).
-  const totalPlanned = type === "USA" ? intern.totalUSAPlanned : intern.totalCRUPlanned;
-  const expectedTotal = expectedTotalForType(intern, type);
-  if (expectedTotal > 0 && totalPlanned >= expectedTotal) return false;
-
-  return true;
-}
-
-function buildWeeklyBreakdown(intern: ComplianceIntern) {
-  // Mostra somente os tipos que dispararam o alarme.
-  // Valores são thisWeek-planned (cumpridos + escalados não-absent).
-  const types: Array<{ type: "USA" | "CRU"; completed: number; target: number; below: boolean }> = [];
-  if (isBelowType(intern, "USA")) {
-    types.push({ type: "USA", completed: intern.thisWeekUSAPlanned, target: intern.targetUSAPerWeek, below: true });
-  }
-  if (isBelowType(intern, "CRU")) {
-    types.push({ type: "CRU", completed: intern.thisWeekCRUPlanned, target: intern.targetCRUPerWeek, below: true });
-  }
-  return types;
-}
-
-function isBelowAnyTypeWeekly(intern: ComplianceIntern): boolean {
-  return isBelowType(intern, "USA") || isBelowType(intern, "CRU");
 }
 
 // Detector de "atraso sem cobertura" — limiar semanal linear por tipo.
@@ -236,8 +238,9 @@ function coverageGap(intern: ComplianceIntern): { detail: string; breakdown: Wee
 export function buildCockpitData(params: {
   complianceInterns: ComplianceIntern[];
   noCheckinRows: NoCheckinRow[];
+  absenceAlertRows: AbsenceAlertRow[];
 }): CockpitData {
-  const { complianceInterns, noCheckinRows } = params;
+  const { complianceInterns, noCheckinRows, absenceAlertRows } = params;
 
   // Sem check-in agora: ordem por base já aplicada em fetchNoCheckinNow.
   const noCheckinItems: AlarmItem[] = noCheckinRows.map((r) => ({
@@ -266,27 +269,26 @@ export function buildCockpitData(params: {
     .filter((it): it is AlarmItem => it !== null)
     .sort(byFacultyThenName);
 
-  // Abaixo da meta semanal: trigger per-type — captura "compensou um tipo,
-  // perdeu outro". Cada item carrega breakdown estruturado pra UI renderizar
-  // badges per-type com cor por estado.
-  const belowWeeklyItems: AlarmItem[] = complianceInterns
-    .filter(isBelowAnyTypeWeekly)
-    .map((i) => {
-      const breakdown = buildWeeklyBreakdown(i);
-      const fallbackParts = breakdown.map((b) => `${b.type} ${b.completed}/${b.target}`);
-      return {
-        internId: i.userId,
-        internName: i.name,
-        facultyAbbr: i.facultyAbbr ?? "",
-        detail: fallbackParts.join(" · "),
-        breakdown,
-      };
-    })
-    .sort(byFacultyThenName);
+  // Faltas pendentes: passa-direto da query (UI agrupa por sub-bloco
+  // sem-justificativa/justificada → faculdade → ordem alfabética).
+  const absenceItems: AbsenceAlertItem[] = absenceAlertRows.map((r) => ({
+    assignmentId: r.assignmentId,
+    internId: r.internId,
+    internName: r.internName,
+    facultyAbbr: r.facultyAbbr,
+    baseCode: r.baseCode,
+    baseName: r.baseName,
+    period: r.period,
+    date: r.date,
+    hasJustification: r.hasJustification,
+    justification: r.justification,
+    justifiedBy: r.justifiedBy,
+    justifiedAt: r.justifiedAt,
+  }));
 
   return {
     noCheckin: { count: noCheckinItems.length, items: noCheckinItems },
     unreplacedAbsence: { count: unreplacedItems.length, items: unreplacedItems },
-    belowWeeklyTarget: { count: belowWeeklyItems.length, items: belowWeeklyItems },
+    absenceAlerts: { count: absenceItems.length, items: absenceItems },
   };
 }

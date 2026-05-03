@@ -137,6 +137,11 @@ export const assignments = pgTable("assignments", {
   absenceJustification: text("absence_justification"),
   absenceJustificationActor: varchar("absence_justification_actor", { length: 20 }),
   absenceJustificationAt: timestamp("absence_justification_at"),
+  // Dismiss do alerta de falta no cockpit /admin. Quando preenchido, a
+  // falta não aparece mais no card "Faltas pendentes" mas continua em
+  // banco com status='ABSENT' (preserva histórico para relatório).
+  absenceAlertDismissedAt: timestamp("absence_alert_dismissed_at"),
+  absenceAlertDismissedBy: uuid("absence_alert_dismissed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

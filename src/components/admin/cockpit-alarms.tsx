@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Info, AlertCircle, AlertTriangle, Clock, CheckCircle2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Info, AlertCircle, ClipboardList, Clock, CheckCircle2 } from "lucide-react";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { InternQuickModal } from "@/components/admin/intern-quick-modal";
+import { AbsenceQuickModal } from "@/components/admin/absence-quick-modal";
 
 export type WeekBreakdown = {
   type: "USA" | "CRU" | "CRL";
@@ -20,14 +21,29 @@ export type AlarmItem = {
   breakdown?: WeekBreakdown[];
 };
 
+export type AbsenceAlertItem = {
+  assignmentId: string;
+  internId: string;
+  internName: string;
+  facultyAbbr: string;
+  baseCode: string;
+  baseName: string;
+  period: "DAY" | "NIGHT";
+  date: string;
+  hasJustification: boolean;
+  justification: string | null;
+  justifiedBy: string | null;
+  justifiedAt: string | null;
+};
+
 export type CockpitData = {
   noCheckin: { count: number; items: AlarmItem[] };
   unreplacedAbsence: { count: number; items: AlarmItem[] };
-  belowWeeklyTarget: { count: number; items: AlarmItem[] };
+  absenceAlerts: { count: number; items: AbsenceAlertItem[] };
 };
 
 type AlarmCardProps = {
-  id: "noCheckin" | "unreplacedAbsence" | "belowWeeklyTarget";
+  id: "noCheckin" | "unreplacedAbsence";
   title: string;
   items: AlarmItem[];
   severity: "danger" | "warning" | "info";
@@ -244,8 +260,174 @@ function AlarmCard({ id, title, items, severity, Icon, caveat, expanded, onToggl
   );
 }
 
-const ALARM_CAVEAT_WEEKLY =
-  "Sinal informativo de ritmo da semana corrente. Não é acionável por si só — interno com saldo de rotação OK pode aparecer aqui (ex: troca pra outra semana). O alarme acionável é 'Atraso sem cobertura'.";
+function formatShortDate(iso: string): string {
+  // YYYY-MM-DD → DD/MM
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}` : iso;
+}
+
+const PERIOD_LABEL: Record<"DAY" | "NIGHT", string> = { DAY: "diurno", NIGHT: "noturno" };
+
+type AbsenceCardProps = {
+  items: AbsenceAlertItem[];
+  expanded: boolean;
+  onToggle: () => void;
+  onItemClick: (item: AbsenceAlertItem) => void;
+  facultyFilter: string | null;
+};
+
+// Card "Faltas pendentes": estrutura de 2 sub-blocos (sem-justificativa /
+// justificadas), cada um agrupado por faculdade e alfabético dentro.
+// Cor do card é dinâmica: red se há ≥1 sem-justificativa, amber se só
+// justificadas. Click numa linha abre AbsenceQuickModal pra ação per-falta.
+function AbsenceAlertsCard({ items, expanded, onToggle, onItemClick, facultyFilter }: AbsenceCardProps) {
+  const filtered = facultyFilter ? items.filter((it) => it.facultyAbbr === facultyFilter) : items;
+  const unjustified = filtered.filter((it) => !it.hasJustification);
+  const justified = filtered.filter((it) => it.hasJustification);
+
+  const visibleCount = filtered.length;
+  const hasItems = visibleCount > 0;
+  const severity: "danger" | "warning" | "info" = unjustified.length > 0 ? "danger" : justified.length > 0 ? "warning" : "info";
+  const s = SEVERITY_STYLES[severity];
+
+  function groupAndSort(list: AbsenceAlertItem[]) {
+    const map = new Map<string, AbsenceAlertItem[]>();
+    for (const it of list) {
+      const key = it.facultyAbbr || "?";
+      const arr = map.get(key) ?? [];
+      arr.push(it);
+      map.set(key, arr);
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([abbr, arr]) => ({
+        abbr,
+        items: [...arr].sort((a, b) => a.internName.localeCompare(b.internName)),
+      }));
+  }
+
+  const unjustifiedGroups = groupAndSort(unjustified);
+  const justifiedGroups = groupAndSort(justified);
+
+  return (
+    <div
+      className={`rounded-xl bg-white ring-1 transition-all duration-200 ${
+        hasItems ? `${s.ring} ${s.bg} shadow-[0_1px_3px_rgba(0,0,0,0.04)]` : "ring-slate-200"
+      }`}
+      data-alarm-id="absenceAlerts"
+    >
+      <button
+        onClick={onToggle}
+        disabled={!hasItems}
+        className={`w-full px-4 py-3.5 text-left ${hasItems ? "cursor-pointer hover:brightness-[0.98]" : "cursor-default opacity-70"}`}
+        aria-expanded={expanded}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${s.iconBg}`}>
+            <ClipboardList className={`h-5 w-5 ${s.iconColor}`} strokeWidth={1.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Faltas pendentes</p>
+            <p className={`mt-0.5 text-3xl font-bold tabular-nums leading-none ${hasItems ? s.numColor : "text-slate-300"}`}>
+              {visibleCount}
+            </p>
+            {hasItems && (unjustified.length > 0 || justified.length > 0) && (
+              <p className="mt-1 text-[10px] tabular-nums text-slate-500">
+                {unjustified.length > 0 && (
+                  <span className="font-semibold text-red-700">{unjustified.length} sem justif.</span>
+                )}
+                {unjustified.length > 0 && justified.length > 0 && <span className="mx-1 text-slate-300">·</span>}
+                {justified.length > 0 && (
+                  <span className="font-semibold text-amber-700">{justified.length} justif.</span>
+                )}
+              </p>
+            )}
+          </div>
+          {hasItems && (
+            <div className={`shrink-0 self-end ${s.chev}`}>
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          )}
+        </div>
+      </button>
+
+      {expanded && hasItems && (
+        <div className="border-t border-slate-200/60">
+          {unjustifiedGroups.length > 0 && (
+            <AbsenceSection
+              label="Sem justificativa"
+              accent="text-red-700"
+              groups={unjustifiedGroups}
+              onItemClick={onItemClick}
+            />
+          )}
+          {justifiedGroups.length > 0 && (
+            <AbsenceSection
+              label="Justificadas"
+              accent="text-amber-700"
+              groups={justifiedGroups}
+              onItemClick={onItemClick}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AbsenceSection({
+  label,
+  accent,
+  groups,
+  onItemClick,
+}: {
+  label: string;
+  accent: string;
+  groups: { abbr: string; items: AbsenceAlertItem[] }[];
+  onItemClick: (item: AbsenceAlertItem) => void;
+}) {
+  return (
+    <div className="border-b border-slate-200/60 last:border-b-0">
+      <div className="flex items-center justify-between px-4 py-1.5 bg-slate-50/80">
+        <span className={`text-[10px] font-semibold uppercase tracking-wider ${accent}`}>{label}</span>
+        <span className="text-[10px] tabular-nums text-slate-500">
+          {groups.reduce((acc, g) => acc + g.items.length, 0)}
+        </span>
+      </div>
+      <div className="divide-y divide-slate-200/60">
+        {groups.map(({ abbr, items }) => {
+          const fst = getFacultyStyle(abbr);
+          return (
+            <div key={`abs-${label}-${abbr}`}>
+              <div className="flex items-center justify-between px-4 py-1.5 bg-slate-50/40">
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${fst.pill}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
+                  {abbr || "Sem faculdade"}
+                </span>
+                <span className="text-[10px] tabular-nums text-slate-500">{items.length}</span>
+              </div>
+              <ul className="divide-y divide-slate-100/80">
+                {items.map((it) => (
+                  <li key={`abs-${it.assignmentId}`}>
+                    <button
+                      onClick={() => onItemClick(it)}
+                      className="group flex w-full items-center justify-between gap-2 px-4 py-2 text-left transition-colors hover:bg-white/70"
+                    >
+                      <span className="truncate text-sm font-medium text-slate-800 group-hover:text-slate-900">{it.internName}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                        {formatShortDate(it.date)} · {it.baseCode} · {PERIOD_LABEL[it.period]}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function CockpitAlarms({
   data,
@@ -258,20 +440,22 @@ export function CockpitAlarms({
   // (facilita varredura visual e printscreen para repassar ao líder).
   const [allExpanded, setAllExpanded] = useState(false);
   const [modalIntern, setModalIntern] = useState<AlarmItem | null>(null);
+  const [modalAbsence, setModalAbsence] = useState<AbsenceAlertItem | null>(null);
 
-  function applyFilter(items: AlarmItem[]): AlarmItem[] {
+  function applyFilter<T extends { facultyAbbr: string }>(items: T[]): T[] {
     return facultyFilter ? items.filter((it) => it.facultyAbbr === facultyFilter) : items;
   }
 
   const noCheckinFiltered = applyFilter(data.noCheckin.items);
   const unreplacedFiltered = applyFilter(data.unreplacedAbsence.items);
-  const belowWeeklyFiltered = applyFilter(data.belowWeeklyTarget.items);
-  // "Acionáveis" = vermelhos (sem check-in agora + atraso sem cobertura).
-  // "Ritmo da semana" é informativo: aparece no card mas não conta como
-  // alarme para o estado vazio nem para o badge de contagem.
-  const actionableCount = noCheckinFiltered.length + unreplacedFiltered.length;
-  const infoCount = belowWeeklyFiltered.length;
-  const totalShown = actionableCount + infoCount;
+  const absenceAlertsFiltered = applyFilter(data.absenceAlerts.items);
+  const unjustifiedCount = absenceAlertsFiltered.filter((it) => !it.hasJustification).length;
+  const justifiedCount = absenceAlertsFiltered.length - unjustifiedCount;
+  // "Acionáveis" = vermelhos (sem check-in agora + atraso sem cobertura
+  // + faltas SEM justificativa). "A conferir" = faltas justificadas.
+  const actionableCount = noCheckinFiltered.length + unreplacedFiltered.length + unjustifiedCount;
+  const reviewCount = justifiedCount;
+  const totalShown = actionableCount + reviewCount;
 
   function toggleAll() {
     setAllExpanded((v) => !v);
@@ -304,8 +488,8 @@ export function CockpitAlarms({
             {actionableCount === 0
               ? "Nenhum acionável"
               : `${actionableCount} ${actionableCount === 1 ? "acionável" : "acionáveis"}`}
-            {infoCount > 0 && (
-              <span className="ml-1 text-slate-300">· {infoCount} info</span>
+            {reviewCount > 0 && (
+              <span className="ml-1 text-slate-300">· {reviewCount} a conferir</span>
             )}
           </p>
         </div>
@@ -333,18 +517,12 @@ export function CockpitAlarms({
             facultyFilter={facultyFilter}
             groupByFaculty
           />
-          <AlarmCard
-            id="belowWeeklyTarget"
-            title="Ritmo da semana"
-            items={data.belowWeeklyTarget.items}
-            severity="info"
-            Icon={AlertTriangle}
-            caveat={ALARM_CAVEAT_WEEKLY}
+          <AbsenceAlertsCard
+            items={data.absenceAlerts.items}
             expanded={allExpanded}
             onToggle={toggleAll}
-            onItemClick={setModalIntern}
+            onItemClick={setModalAbsence}
             facultyFilter={facultyFilter}
-            groupByFaculty
           />
         </div>
       </div>
@@ -355,6 +533,13 @@ export function CockpitAlarms({
           internName={modalIntern.internName}
           facultyAbbr={modalIntern.facultyAbbr}
           onClose={() => setModalIntern(null)}
+        />
+      )}
+
+      {modalAbsence && (
+        <AbsenceQuickModal
+          absence={modalAbsence}
+          onClose={() => setModalAbsence(null)}
         />
       )}
     </>

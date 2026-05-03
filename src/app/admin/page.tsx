@@ -1,7 +1,7 @@
 import { AdminDashboardClient } from "@/components/admin-dashboard";
 import { localDateStr, operationalDateStr, operationalPeriod } from "@/lib/utils";
 import { fetchDashboardData } from "@/features/reporting/infra/repositories/dashboard-query";
-import { buildCockpitData, fetchNoCheckinNow } from "@/features/reporting/application/build-cockpit";
+import { buildCockpitData, fetchNoCheckinNow, fetchAbsenceAlerts } from "@/features/reporting/application/build-cockpit";
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import { listFaculties } from "@/features/faculties/infra/repositories/faculty-repository";
 import { auth } from "@/lib/auth";
@@ -65,10 +65,14 @@ async function AdminDashboardContent({ searchParams }: { searchParams: SearchPar
     listFaculties(),
   ]);
 
-  const noCheckinRows = await fetchNoCheckinNow();
+  const [noCheckinRows, absenceAlertRows] = await Promise.all([
+    fetchNoCheckinNow(),
+    fetchAbsenceAlerts(),
+  ]);
   const cockpit = buildCockpitData({
     complianceInterns: compliance.data,
     noCheckinRows,
+    absenceAlertRows,
   });
 
   const facultyOptions = faculties
