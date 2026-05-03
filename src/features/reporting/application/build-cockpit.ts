@@ -31,10 +31,6 @@ type ComplianceIntern = {
   totalCRLPlanned: number;
   rotationStartDate: string | null;
   rotationEndDate: string | null;
-  // Tempo decorrido/restante da rotação (em semanas). Mantido por consumidores
-  // legados; o detector novo usa semanaCorrente abaixo.
-  weeksElapsed: number;
-  weeksRemaining: number;
   // Numeração rígida seg-dom da rotação. semanaCorrente cresce 1 a cada
   // segunda-feira a partir de Sem 1; trava em semanaTotal após cohort.endDate.
   // 0 quando rotação ainda não começou ou intern sem rotationStartDate.
