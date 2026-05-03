@@ -8,29 +8,16 @@ type ComplianceIntern = {
   userId: string;
   name: string;
   facultyAbbr?: string | null;
-  totalAbsent: number;
-  totalCompleted: number;
-  futureScheduled: number;
-  targetShifts: number;
-  targetShiftsPerWeek: number;
-  lastWeekCompleted: number;
-  belowWeeklyTarget: boolean;
-  // per-type weekly metas (já expostos por executeGetComplianceOverview).
+  // Metas semanais por tipo (já expostas por executeGetComplianceOverview).
+  // CRL: meta cumulativa, não semanal (ex: 1 plantão na rotação inteira).
   targetUSAPerWeek: number;
   targetCRUPerWeek: number;
-  targetUSATotal: number;
-  targetCRUTotal: number;
-  // CRL: meta cumulativa, não semanal (ex: 1 plantão na rotação inteira).
   targetCRLPerWeek: number;
-  thisWeekUSAPlanned: number;
-  thisWeekCRUPlanned: number;
   // Cumulativo da rotação inteira (cumpridos + escalados não-absent).
   // Usado pelo detector "esperado-até-agora = semanaCorrente × meta/sem".
   totalUSAPlanned: number;
   totalCRUPlanned: number;
   totalCRLPlanned: number;
-  rotationStartDate: string | null;
-  rotationEndDate: string | null;
   // Numeração rígida seg-dom da rotação. semanaCorrente cresce 1 a cada
   // segunda-feira a partir de Sem 1; trava em semanaTotal após cohort.endDate.
   // 0 quando rotação ainda não começou ou intern sem rotationStartDate.
@@ -184,67 +171,6 @@ function byFacultyThenName(a: { facultyAbbr: string; internName: string }, b: { 
   const fac = a.facultyAbbr.localeCompare(b.facultyAbbr);
   if (fac !== 0) return fac;
   return a.internName.localeCompare(b.internName);
-}
-
-// Quantas semanas a rotação tem (do início ao fim da cohort).
-// Usado pra derivar o target total por tipo quando faculties.target_*_total
-// não está populado. Fallback conservador: 0 desabilita o suppressor.
-function rotationDurationWeeks(intern: ComplianceIntern): number {
-  if (!intern.rotationStartDate || !intern.rotationEndDate) return 0;
-  const ms = new Date(`${intern.rotationEndDate}T12:00:00Z`).getTime()
-           - new Date(`${intern.rotationStartDate}T12:00:00Z`).getTime();
-  if (ms <= 0) return 0;
-  return Math.max(1, Math.ceil(ms / (7 * 86_400_000)));
-}
-
-function expectedTotalForType(intern: ComplianceIntern, type: "USA" | "CRU"): number {
-  const declared = type === "USA" ? intern.targetUSATotal : intern.targetCRUTotal;
-  if (declared > 0) return declared;
-  const perWeek = type === "USA" ? intern.targetUSAPerWeek : intern.targetCRUPerWeek;
-  const weeks = rotationDurationWeeks(intern);
-  return perWeek * weeks;
-}
-
-// Tipo conta como "abaixo da meta" quando o intern não tem o número-alvo
-// de plantões DESTA SEMANA garantidos (cumpridos OU escalados) E a rotação
-// como um todo NÃO tem o tipo coberto pelo calendário. Suprime quando:
-//   - Coordenador já tem tudo escalado: troca/variação semanal não é alarme
-//
-// Captura ainda os cenários úteis pro coordenador:
-//   - Leader não escalou e meta total descoberta: planned=0 → erro de leader
-//   - Intern faltou, ninguém repôs e meta total descoberta: planned=0 → dispara
-//
-// CRL deliberadamente fora — meta não-semanal por decisão do produto.
-function isBelowType(intern: ComplianceIntern, type: "USA" | "CRU"): boolean {
-  const target = type === "USA" ? intern.targetUSAPerWeek : intern.targetCRUPerWeek;
-  if (target === 0) return false;
-
-  const thisWeekPlanned = type === "USA" ? intern.thisWeekUSAPlanned : intern.thisWeekCRUPlanned;
-  if (thisWeekPlanned >= target) return false;
-
-  // Suppressor: total da rotação já tem o tipo coberto (passado + futuro escalado).
-  const totalPlanned = type === "USA" ? intern.totalUSAPlanned : intern.totalCRUPlanned;
-  const expectedTotal = expectedTotalForType(intern, type);
-  if (expectedTotal > 0 && totalPlanned >= expectedTotal) return false;
-
-  return true;
-}
-
-function buildWeeklyBreakdown(intern: ComplianceIntern) {
-  // Mostra somente os tipos que dispararam o alarme.
-  // Valores são thisWeek-planned (cumpridos + escalados não-absent).
-  const types: Array<{ type: "USA" | "CRU"; completed: number; target: number; below: boolean }> = [];
-  if (isBelowType(intern, "USA")) {
-    types.push({ type: "USA", completed: intern.thisWeekUSAPlanned, target: intern.targetUSAPerWeek, below: true });
-  }
-  if (isBelowType(intern, "CRU")) {
-    types.push({ type: "CRU", completed: intern.thisWeekCRUPlanned, target: intern.targetCRUPerWeek, below: true });
-  }
-  return types;
-}
-
-function isBelowAnyTypeWeekly(intern: ComplianceIntern): boolean {
-  return isBelowType(intern, "USA") || isBelowType(intern, "CRU");
 }
 
 // Detector de "atraso sem cobertura" — limiar semanal linear por tipo.
