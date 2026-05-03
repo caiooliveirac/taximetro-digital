@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { addDaysToDateStr, operationalDateStr, operationalPeriod } from "@/lib/utils";
 import { baseViewIndex } from "@/lib/base-colors";
-import type { CockpitData, AlarmItem } from "@/components/admin/cockpit-alarms";
+import type { CockpitData, AlarmItem, WeekBreakdown } from "@/components/admin/cockpit-alarms";
 
 type ComplianceIntern = {
   userId: string;
@@ -204,7 +204,7 @@ function isBelowAnyTypeWeekly(intern: ComplianceIntern): boolean {
 //
 // Trava: se intern não tem rotationStartDate (sem cohort + sem
 // faculties.rotationStartDate), retorna null — não há base pra calcular.
-function coverageGap(intern: ComplianceIntern): { detail: string } | null {
+function coverageGap(intern: ComplianceIntern): { detail: string; breakdown: WeekBreakdown[] } | null {
   if (!intern.semanaCorrente || intern.semanaCorrente <= 0) return null;
   const sem = intern.semanaCorrente;
 
@@ -220,13 +220,21 @@ function coverageGap(intern: ComplianceIntern): { detail: string } | null {
 
   if (debtUSA === 0 && debtCRU === 0 && debtCRL === 0) return null;
 
-  const parts: string[] = [];
-  if (debtUSA > 0) parts.push(`USA ${intern.totalUSAPlanned}/${expectedUSA}`);
-  if (debtCRU > 0) parts.push(`CRU ${intern.totalCRUPlanned}/${expectedCRU}`);
-  if (debtCRL > 0) parts.push(`CRL ${intern.totalCRLPlanned}/${expectedCRL}`);
+  // Breakdown estruturado para o componente renderizar badges per-tipo
+  // com cor (tipo com débito vermelho, tipo OK em slate). Inclui também
+  // tipos OK que têm meta > 0, pra dar contexto visual completo.
+  const breakdown: WeekBreakdown[] = [];
+  if (intern.targetUSAPerWeek > 0) {
+    breakdown.push({ type: "USA", completed: intern.totalUSAPlanned, target: expectedUSA, below: debtUSA > 0 });
+  }
+  if (intern.targetCRUPerWeek > 0) {
+    breakdown.push({ type: "CRU", completed: intern.totalCRUPlanned, target: expectedCRU, below: debtCRU > 0 });
+  }
+  if (intern.targetCRLPerWeek > 0) {
+    breakdown.push({ type: "CRL", completed: intern.totalCRLPlanned, target: expectedCRL, below: debtCRL > 0 });
+  }
 
-  const semLabel = `Sem ${sem}`;
-  return { detail: `${semLabel} · ${parts.join(" · ")}` };
+  return { detail: `Sem ${sem}`, breakdown };
 }
 
 export function buildCockpitData(params: {
@@ -243,9 +251,9 @@ export function buildCockpitData(params: {
     detail: `${r.base_code} · ${PERIOD_LABEL[r.period] ?? r.period.toLowerCase()}`,
   }));
 
-  // Atraso sem cobertura: saldo da rotação não cobre o target, considerando
-  // futuros não-cancelados como reposição válida. Ver `coverageGap` para a
-  // motivação do invariante e a heurística B (UNIFACS-tolerant).
+  // Atraso sem cobertura: limiar semanal linear por tipo. Ver `coverageGap`
+  // para a definição do detector.
+  // detail = "Sem N" (contexto) + breakdown estruturado per-tipo (badges).
   // Ordenação por (faculdade, nome) pra permitir agrupamento no UI.
   const unreplacedItems: AlarmItem[] = complianceInterns
     .map((i) => {
@@ -256,6 +264,7 @@ export function buildCockpitData(params: {
         internName: i.name,
         facultyAbbr: i.facultyAbbr ?? "",
         detail: gap.detail,
+        breakdown: gap.breakdown,
       } as AlarmItem;
     })
     .filter((it): it is AlarmItem => it !== null)
