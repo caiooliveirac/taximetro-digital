@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import {
   Search, User, Sun, Moon, Calendar, CheckCircle, XCircle,
   Target, Clock, Send, ArrowLeftRight, Trash2, Plus, Eye,
-  ChevronDown, ChevronUp, TrendingUp, Repeat, FileText,
+  Repeat, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,12 @@ import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle, getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
 import { operationalDateStr } from "@/lib/utils";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
+import {
+  RealizedByTypeBoxes,
+  ShiftListByKind,
+  WeekBreakdownByType,
+  AssignmentDetailPanel,
+} from "@/components/admin/intern-shifts-blocks";
 
 /* ── types ── */
 type Intern = { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId: string | null; cohortName: string | null; isArchived: boolean };
@@ -47,6 +53,9 @@ type ComplianceRow = {
   thisWeekAbsent: number; rawDeficit: number; netDeficit: number;
   futureScheduled: number; status: "ok" | "compensating" | "partial" | "deficit";
   rotationStartDate: string | null; rotationEndDate: string | null;
+  targetUSAPerWeek?: number; targetCRUPerWeek?: number; targetCRLPerWeek?: number;
+  thisWeekUSAPlanned?: number; thisWeekCRUPlanned?: number; thisWeekCRLPlanned?: number;
+  lastWeekUSACompleted?: number; lastWeekCRUCompleted?: number; lastWeekCRLCompleted?: number;
 };
 type Request = {
   id: string; type: string; status: string; createdAt: string;
@@ -525,6 +534,9 @@ function AdminVerComoInterno() {
             />
           </div>
 
+          {/* Breakdown semanal por tipo (CRU/USA/CRL — esta semana vs passada) */}
+          <WeekBreakdownByType compliance={compliance} />
+
           {/* Velocímetro da rotação */}
           {compliance && compliance.targetShifts > 0 && (
             <VelocimeterCard
@@ -555,26 +567,16 @@ function AdminVerComoInterno() {
             </div>
           )}
 
-          {/* Upcoming */}
+          {/* Upcoming — agrupados por tipo */}
           {upcoming.length > 0 && (
             <div>
               <h2 className="text-sm font-semibold text-slate-900 mb-2">Próximos Plantões</h2>
-              <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] divide-y divide-slate-100">
-                  {upcoming.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 px-4 py-2.5">
-                    <span className={`inline-block h-2 w-2 rounded-full ${getBaseStyle(a.baseType).dot}`} />
-                    <span className="text-sm font-medium text-slate-900 w-12">{a.baseCode}</span>
-                    <span className="text-xs text-slate-500 w-28">
-                      {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                    </span>
-                    <span className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ${getPeriodStyle(a.period).bg} ${getPeriodStyle(a.period).text}`}>
-                      {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
-                      {getPeriodStyle(a.period).label}
-                    </span>
-                    <StatusBadge status={a.status} />
-                  </div>
-                ))}
-              </div>
+              <ShiftListByKind
+                items={upcoming}
+                emptyMessage="Nenhum plantão agendado."
+                showStatus
+                initialLimit={10}
+              />
             </div>
           )}
 
@@ -748,101 +750,35 @@ function AdminVerComoInterno() {
           )}
 
           {/* Completed shifts by base type */}
-          {pastAssignments.length > 0 && (() => {
-            const realized = pastAssignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status));
-            const cruCount = realized.filter((a) => a.baseType === "CENTRAL").length;
-            const usaCount = realized.filter((a) => a.baseType === "USA").length;
-            const crlCount = realized.filter((a) => a.baseType === "CRL").length;
-            return (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <FileText className="h-4 w-4 text-slate-500" strokeWidth={1.5} />
-                  <h2 className="text-sm font-semibold text-slate-900">Plantões por Tipo</h2>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-center">
-                    <p className="text-2xl font-bold text-violet-700">{cruCount}</p>
-                    <p className="text-[11px] font-medium text-violet-600">CRU</p>
-                  </div>
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-center">
-                    <p className="text-2xl font-bold text-red-700">{usaCount}</p>
-                    <p className="text-[11px] font-medium text-red-600">USA</p>
-                  </div>
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-center">
-                    <p className="text-2xl font-bold text-rose-700">{crlCount}</p>
-                    <p className="text-[11px] font-medium text-rose-600">CRL</p>
-                  </div>
-                </div>
+          {pastAssignments.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="h-4 w-4 text-slate-500" strokeWidth={1.5} />
+                <h2 className="text-sm font-semibold text-slate-900">Plantões por Tipo (realizados)</h2>
               </div>
-            );
-          })()}
+              <RealizedByTypeBoxes assignments={pastAssignments} />
+            </div>
+          )}
 
-          {/* Past history (last 15) */}
+          {/* Past history — agrupado por tipo, com expand para detalhes */}
           {pastAssignments.length > 0 && (
             <div>
               <h2 className="text-sm font-semibold text-slate-900 mb-2">Histórico Completo</h2>
-              <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Data</TableHead>
-                      <TableHead>Base</TableHead>
-                      <TableHead>Turno</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {[...pastAssignments].reverse().map((a) => {
-                      const isExpanded = expandedAssignmentId === a.id;
-                      const records = caseRecordsByAssignment.get(a.id) ?? [];
-                      return [
-                        <TableRow key={a.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setExpandedAssignmentId(isExpanded ? null : a.id)}>
-                          <TableCell className="text-xs">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}</TableCell>
-                          <TableCell className="font-medium">{a.baseCode}</TableCell>
-                          <TableCell>
-                            <span className={`flex items-center gap-1 text-xs ${getPeriodStyle(a.period).text}`}>
-                              {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
-                              {getPeriodStyle(a.period).label}
-                            </span>
-                          </TableCell>
-                          <TableCell><StatusBadge status={a.status} /></TableCell>
-                        </TableRow>,
-                        isExpanded ? (
-                          <TableRow key={`${a.id}-detail`} className="bg-slate-50/70">
-                            <TableCell colSpan={4}>
-                              <div className="space-y-2 text-xs text-slate-700">
-                                <p><span className="font-semibold">Check-in:</span> {a.checkinAt ? new Date(a.checkinAt).toLocaleString("pt-BR") : "—"}</p>
-                                <p><span className="font-semibold">Validação check-in:</span> {a.totpValidatedAt ? new Date(a.totpValidatedAt).toLocaleString("pt-BR") : "—"}</p>
-                                <p><span className="font-semibold">Validado por:</span> {a.validatedBy ? (userNameById[a.validatedBy] ?? a.validatedBy) : (a.validatedByName ? a.validatedByName : (a.totpValidatedAt ? "Telegram" : "—"))}</p>
-                                <p><span className="font-semibold">Checkout:</span> {a.checkoutAt ? new Date(a.checkoutAt).toLocaleString("pt-BR") : "—"}</p>
-                                <p><span className="font-semibold">Checkout confirmado por:</span> {a.checkoutConfirmedBy ? (userNameById[a.checkoutConfirmedBy] ?? a.checkoutConfirmedBy) : (a.checkoutConfirmedByName ? a.checkoutConfirmedByName : (a.checkoutAt ? "Telegram" : "—"))}</p>
-                                <p><span className="font-semibold">Observação do interno:</span> {a.internObservations || "—"}</p>
-                                <p><span className="font-semibold">Observação do preceptor:</span> {a.preceptorObservations || "—"}</p>
-                                <p><span className="font-semibold">Notas de checkout:</span> {a.checkoutNotes || "—"}</p>
-                                <div>
-                                  <p className="font-semibold">Ocorrências clínicas:</p>
-                                  {records.length > 0 ? (
-                                    <ul className="mt-1 space-y-1">
-                                      {records.map((record) => (
-                                        <li key={record.id} className="rounded border border-slate-200 bg-white px-2 py-1">
-                                          <span className="font-medium">#{record.caseNumber} · {record.nickname}</span>
-                                          {record.description ? <span className="text-slate-600"> — {record.description}</span> : null}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p>—</p>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ) : null,
-                      ];
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+              <ShiftListByKind
+                items={[...pastAssignments].reverse()}
+                emptyMessage="Sem histórico."
+                showStatus
+                initialLimit={10}
+                expandedId={expandedAssignmentId}
+                onToggleExpand={setExpandedAssignmentId}
+                renderDetail={(a) => (
+                  <AssignmentDetailPanel
+                    assignment={a as Assignment}
+                    caseRecords={caseRecordsByAssignment.get(a.id) ?? []}
+                    userNameById={userNameById}
+                  />
+                )}
+              />
             </div>
           )}
         </>
