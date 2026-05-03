@@ -297,7 +297,7 @@ export function CockpitAlarms({
           />
           <AlarmCard
             id="unreplacedAbsence"
-            title="Faltou sem reposição"
+            title="Atraso sem cobertura"
             items={data.unreplacedAbsence.items}
             severity="danger"
             Icon={AlertCircle}

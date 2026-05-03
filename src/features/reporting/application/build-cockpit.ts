@@ -30,6 +30,11 @@ type ComplianceIntern = {
   totalCRUPlanned: number;
   rotationStartDate: string | null;
   rotationEndDate: string | null;
+  // Tempo decorrido/restante da rotação (em semanas). Usado pelo detector
+  // de "atraso sem cobertura" para calibrar quando o saldo negativo
+  // realmente vira alarme.
+  weeksElapsed: number;
+  weeksRemaining: number;
 };
 
 type NoCheckinRow = {
@@ -165,6 +170,52 @@ function isBelowAnyTypeWeekly(intern: ComplianceIntern): boolean {
   return isBelowType(intern, "USA") || isBelowType(intern, "CRU");
 }
 
+// Detector de "atraso sem cobertura" — substituiu "faltou sem reposição".
+//
+// Invariante central: o sinal é o saldo agregado da rotação:
+//   deficit = target − (completed + futureScheduled)
+//
+// Por construção, swap e remanejamento NÃO disparam (cancela 1 + cria 1
+// preserva saldo). Absences COM reposição já agendada NÃO disparam
+// (futureScheduled cobre). Disparam: ABSENT sem reposição, DROP_SHIFT
+// aprovado sem reposição, remoção pelo líder sem reposição, e
+// sub-alocação que vai estourar o calendário.
+//
+// Heurística B (UNIFACS-tolerant): no início da rotação tolera
+// sub-alocação que ainda não foi corrigida — alocação incremental é
+// legítima até a semana 2. A partir daí, deficit puro vira alarme.
+// Se houver QUALQUER absence concreta (totalAbsent > 0), dispara
+// independente da semana — perda factual já merece atenção.
+//
+// Distinção "cabe vs não cabe" mora no detail per-item, não na cor do
+// card. Card mantém severity "danger" — qualquer atraso sem cobertura
+// é acionável pelo coordenador.
+function coverageGap(intern: ComplianceIntern): { deficit: number; detail: string } | null {
+  if (intern.targetShifts <= 0) return null;
+
+  const deficit = intern.targetShifts - (intern.totalCompleted + intern.futureScheduled);
+  if (deficit <= 0) return null;
+
+  // Heurística B: pré-semana-2 sem absence concreta = ainda em alocação.
+  if (intern.weeksElapsed < 2 && intern.totalAbsent === 0) return null;
+
+  const weekCapacity = Math.max(intern.targetShiftsPerWeek + 1, 3);
+  const remaining = intern.weeksRemaining;
+  const fits = remaining > 0 && remaining * weekCapacity >= deficit;
+
+  const gap = `${deficit} plant${deficit > 1 ? "ões" : "ão"}`;
+  let detail: string;
+  if (remaining === 0) {
+    detail = `faltam ${gap} · rotação encerrada`;
+  } else if (!fits) {
+    detail = `faltam ${gap} · não cabe em ${remaining}sem`;
+  } else {
+    detail = `faltam ${gap} · cabe em ${remaining}sem`;
+  }
+
+  return { deficit, detail };
+}
+
 export function buildCockpitData(params: {
   complianceInterns: ComplianceIntern[];
   noCheckinRows: NoCheckinRow[];
@@ -179,19 +230,22 @@ export function buildCockpitData(params: {
     detail: `${r.base_code} · ${PERIOD_LABEL[r.period] ?? r.period.toLowerCase()}`,
   }));
 
-  // Faltou sem reposição: agregado por design (saldo da rotação).
+  // Atraso sem cobertura: saldo da rotação não cobre o target, considerando
+  // futuros não-cancelados como reposição válida. Ver `coverageGap` para a
+  // motivação do invariante e a heurística B (UNIFACS-tolerant).
   // Ordenação por (faculdade, nome) pra permitir agrupamento no UI.
   const unreplacedItems: AlarmItem[] = complianceInterns
-    .filter((i) => i.totalAbsent > 0 && i.totalCompleted + i.futureScheduled < i.targetShifts)
     .map((i) => {
-      const gap = Math.max(0, i.targetShifts - (i.totalCompleted + i.futureScheduled));
+      const gap = coverageGap(i);
+      if (!gap) return null;
       return {
         internId: i.userId,
         internName: i.name,
         facultyAbbr: i.facultyAbbr ?? "",
-        detail: `${i.totalAbsent} falta${i.totalAbsent > 1 ? "s" : ""} · faltam ${gap}`,
-      };
+        detail: gap.detail,
+      } as AlarmItem;
     })
+    .filter((it): it is AlarmItem => it !== null)
     .sort(byFacultyThenName);
 
   // Abaixo da meta semanal: trigger per-type — captura "compensou um tipo,
