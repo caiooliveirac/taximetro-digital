@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, AlertCircle, CheckCircle2, ExternalLink } from "lucide-react";
 import { getFacultyStyle } from "@/lib/base-colors";
+import { InternHistorySection, useInternHistory, COMPLIANCE_BADGE } from "@/components/admin/intern-history-section";
 import type { AbsenceAlertItem } from "@/components/admin/cockpit-alarms";
 
 const PERIOD_LABEL: Record<"DAY" | "NIGHT", string> = { DAY: "Diurno", NIGHT: "Noturno" };
@@ -25,6 +26,8 @@ export function AbsenceQuickModal({ absence, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const fst = getFacultyStyle(absence.facultyAbbr);
+  const history = useInternHistory(absence.internId);
+  const { compliance } = history;
 
   async function handleDismiss() {
     setBusy("dismiss");
@@ -76,37 +79,42 @@ export function AbsenceQuickModal({ absence, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 animate-[fadeInUp_120ms_ease-out]"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200"
+        className="relative max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Falta</p>
-            <h3 className="mt-0.5 truncate text-base font-semibold text-slate-900">{absence.internName}</h3>
-            <div className="mt-1 flex items-center gap-2 text-xs">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Falta pendente</p>
+            <div className="mt-0.5 flex items-center gap-2">
+              <h3 className="truncate text-lg font-semibold text-slate-900">{absence.internName}</h3>
+              <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${fst.pill}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
                 {absence.facultyAbbr}
               </span>
-              <span className="text-slate-500 tabular-nums">
-                {formatLongDate(absence.date)} · {absence.baseCode} · {PERIOD_LABEL[absence.period]}
-              </span>
+              {compliance && (
+                <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${COMPLIANCE_BADGE[compliance.status].pill}`}>
+                  {COMPLIANCE_BADGE[compliance.status].label}
+                </span>
+              )}
             </div>
+            <p className="mt-1 text-xs text-slate-500 tabular-nums">
+              {formatLongDate(absence.date)} · {absence.baseCode} · {PERIOD_LABEL[absence.period]}
+            </p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
             aria-label="Fechar"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="px-5 py-4">
+        <div className="max-h-[65vh] overflow-y-auto px-6 py-4 space-y-5">
           {absence.hasJustification ? (
             <div className="rounded-lg bg-amber-50/60 ring-1 ring-amber-200 px-3 py-2.5">
               <div className="flex items-center gap-1.5">
@@ -134,22 +142,24 @@ export function AbsenceQuickModal({ absence, onClose }: Props) {
             </div>
           )}
 
+          <InternHistorySection data={history} />
+
           <a
             href={`/taximetro/admin/ver-interno?internId=${absence.internId}`}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-accent-600 hover:text-accent-700"
+            className="inline-flex items-center gap-1 text-xs font-medium text-accent-600 hover:text-accent-700"
           >
             Ver perfil completo do interno
             <ExternalLink className="h-3 w-3" />
           </a>
 
           {error && (
-            <p className="mt-3 rounded-md bg-red-50 px-2.5 py-1.5 text-xs text-red-700 ring-1 ring-red-200">
+            <p className="rounded-md bg-red-50 px-2.5 py-1.5 text-xs text-red-700 ring-1 ring-red-200">
               {error}
             </p>
           )}
         </div>
 
-        <div className="border-t border-slate-200 px-5 py-3">
+        <div className="border-t border-slate-100 bg-slate-50 px-6 py-3">
           {!confirmCancel ? (
             <div className="flex flex-wrap items-center gap-2">
               <button

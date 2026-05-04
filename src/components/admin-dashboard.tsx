@@ -7,6 +7,7 @@ import { MetricCard } from "@/components/metric-card";
 import { InviteButton } from "@/components/invite-button";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { CockpitAlarms, type CockpitData } from "@/components/admin/cockpit-alarms";
+import { InternQuickModal } from "@/components/admin/intern-quick-modal";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 import { formatBrazilTime, localDateStr } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ const REFRESH_INTERVAL_MS = 60_000;
 type FacultyOption = { id: string; abbreviation: string; name: string };
 
 type DetailRow = {
+  internId?: string | null;
   name: string;
   faculty: string;
   extra: string;
@@ -24,6 +26,7 @@ type FacultyRow = { abbreviation: string; total: number; present: number; absent
 type BaseRow = { code: string; name: string; total: number; present: number; absent: number };
 
 type BaseDetailItem = {
+  internId?: string | null;
   internName: string;
   faculty: string;
   period: string;
@@ -60,6 +63,7 @@ export type DashboardData = {
   dateLabel: string;
   todayRoster: Array<{
     id: string;
+    internId?: string | null;
     name: string;
     faculty: string;
     baseCode: string;
@@ -96,6 +100,7 @@ export function AdminDashboardClient({
   const router = useRouter();
   const pathname = usePathname();
   const [modal, setModal] = useState<ModalData>(null);
+  const [internModal, setInternModal] = useState<{ id: string; name: string; faculty: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(() => new Date());
 
@@ -163,11 +168,11 @@ export function AdminDashboardClient({
       const res = await fetch(`/taximetro/api/assignments?from=${dateStr}&to=${dateStr}`);
       const json = await res.json();
       if (json.success) {
-        type Row = { internName: string; facultyAbbr: string; baseCode: string; period: string; status: string };
+        type Row = { internId?: string | null; internName: string; facultyAbbr: string; baseCode: string; period: string; status: string };
         setCompletedRows((json.data as Row[])
           .filter((a) => a.status === "CHECKED_OUT")
           .sort((a, b) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode))
-          .map((a) => ({ name: a.internName, faculty: a.facultyAbbr ?? "", extra: `${a.baseCode} — ${PERIOD_LABEL[a.period] ?? a.period}` })));
+          .map((a) => ({ internId: a.internId ?? null, name: a.internName, faculty: a.facultyAbbr ?? "", extra: `${a.baseCode} — ${PERIOD_LABEL[a.period] ?? a.period}` })));
       }
     } catch { /* keep current */ }
     setCompletedLoading(false);
@@ -367,10 +372,21 @@ export function AdminDashboardClient({
                   <ul className="divide-y divide-slate-100">
                     {filteredRows.map((r, i) => {
                       const fst = getFacultyStyle(r.faculty);
+                      const clickable = !!r.internId;
                       return (
                         <li key={i} className="flex items-center justify-between py-2.5">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                            {clickable ? (
+                              <button
+                                type="button"
+                                onClick={() => setInternModal({ id: r.internId!, name: r.name, faculty: r.faculty })}
+                                className="truncate text-left text-sm font-medium text-slate-800 hover:text-accent-700 hover:underline"
+                              >
+                                {r.name}
+                              </button>
+                            ) : (
+                              <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                            )}
                             {r.faculty && (
                               <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
                                 <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
@@ -417,7 +433,17 @@ export function AdminDashboardClient({
           return (
             <li key={i} className="flex items-center justify-between py-2">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                {r.internId ? (
+                  <button
+                    type="button"
+                    onClick={() => setInternModal({ id: r.internId!, name: r.name, faculty: r.faculty })}
+                    className="truncate text-left text-sm font-medium text-slate-800 hover:text-accent-700 hover:underline"
+                  >
+                    {r.name}
+                  </button>
+                ) : (
+                  <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                )}
                 {r.remanejado && (
                   <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">
                     Remanejado
@@ -558,7 +584,17 @@ export function AdminDashboardClient({
                   {r.period === "DAY"
                     ? <Sun className="mt-0.5 h-3.5 w-3.5 text-amber-500 shrink-0" strokeWidth={1.5} />
                     : <Moon className="mt-0.5 h-3.5 w-3.5 text-indigo-500 shrink-0" strokeWidth={1.5} />}
-                  <span className="text-[15px] font-semibold leading-snug text-slate-900 break-words">{r.name}</span>
+                  {r.internId ? (
+                    <button
+                      type="button"
+                      onClick={() => setInternModal({ id: r.internId!, name: r.name, faculty: r.faculty })}
+                      className="text-left text-[15px] font-semibold leading-snug text-slate-900 break-words hover:text-accent-700 hover:underline"
+                    >
+                      {r.name}
+                    </button>
+                  ) : (
+                    <span className="text-[15px] font-semibold leading-snug text-slate-900 break-words">{r.name}</span>
+                  )}
                   {r.faculty && (
                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
                       <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />{r.faculty}
@@ -721,7 +757,17 @@ export function AdminDashboardClient({
                         {item.period === "DAY"
                           ? <Sun className="h-3.5 w-3.5 text-amber-500 shrink-0" strokeWidth={1.5} />
                           : <Moon className="h-3.5 w-3.5 text-indigo-500 shrink-0" strokeWidth={1.5} />}
-                        <span className="text-sm font-medium text-slate-800 truncate">{item.internName}</span>
+                        {item.internId ? (
+                          <button
+                            type="button"
+                            onClick={() => setInternModal({ id: item.internId!, name: item.internName, faculty: item.faculty })}
+                            className="truncate text-left text-sm font-medium text-slate-800 hover:text-accent-700 hover:underline"
+                          >
+                            {item.internName}
+                          </button>
+                        ) : (
+                          <span className="text-sm font-medium text-slate-800 truncate">{item.internName}</span>
+                        )}
                         {item.remanejado && (
                           <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">
                             Remanejado
@@ -743,6 +789,16 @@ export function AdminDashboardClient({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Intern Quick Modal — opened by clicking an intern name in any KPI list */}
+      {internModal && (
+        <InternQuickModal
+          internId={internModal.id}
+          internName={internModal.name}
+          facultyAbbr={internModal.faculty}
+          onClose={() => setInternModal(null)}
+        />
       )}
 
       {/* Week Modal */}
@@ -825,7 +881,17 @@ export function AdminDashboardClient({
                     return (
                       <li key={i} className="flex items-center justify-between py-2.5">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                          {r.internId ? (
+                            <button
+                              type="button"
+                              onClick={() => setInternModal({ id: r.internId!, name: r.name, faculty: r.faculty })}
+                              className="truncate text-left text-sm font-medium text-slate-800 hover:text-accent-700 hover:underline"
+                            >
+                              {r.name}
+                            </button>
+                          ) : (
+                            <span className="text-sm font-medium text-slate-800 truncate">{r.name}</span>
+                          )}
                           {r.faculty && (
                             <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${fst.pill}`}>
                               <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
