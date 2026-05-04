@@ -49,5 +49,26 @@ export async function executeListAssignments(params: {
   }
 
   const rows = await listAssignmentsWithRelations(normalized);
+
+  // Avaliação do preceptor (preceptorObservations + NPS dentro de checkoutNotes)
+  // só pode ser vista por COORDINATOR. Líderes recebem os demais detalhes do
+  // plantão, mas nunca a opinião/avaliação que o preceptor fez do interno.
+  if (actor.role !== "COORDINATOR") {
+    return rows.map((r) => ({
+      ...r,
+      preceptorObservations: null,
+      checkoutNotes: stripNpsFromNotes(r.checkoutNotes),
+    }));
+  }
   return rows;
+}
+
+function stripNpsFromNotes(notes: string | null | undefined): string | null {
+  if (!notes) return null;
+  const cleaned = notes
+    .split("|")
+    .map((seg) => seg.trim())
+    .filter((seg) => seg && !seg.startsWith("NPS"))
+    .join(" | ");
+  return cleaned || null;
 }

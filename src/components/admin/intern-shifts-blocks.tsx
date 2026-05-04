@@ -2,8 +2,10 @@
 
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Sun, Moon, Repeat } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { StatusBadge } from "@/components/status-badge";
 import { getPeriodStyle } from "@/lib/base-colors";
+import { sessionHasRole } from "@/lib/roles";
 
 /* ──────────────────────────────────────────────────────────────────
  * Tipos compartilhados
@@ -447,6 +449,16 @@ export type CaseRecordSummary = {
   description: string | null;
 };
 
+function stripNpsFromNotes(notes: string | null | undefined): string | null {
+  if (!notes) return null;
+  const cleaned = notes
+    .split("|")
+    .map((seg) => seg.trim())
+    .filter((seg) => seg && !seg.startsWith("NPS"))
+    .join(" | ");
+  return cleaned || null;
+}
+
 export function AssignmentDetailPanel({
   assignment: a,
   caseRecords,
@@ -456,6 +468,9 @@ export function AssignmentDetailPanel({
   caseRecords: CaseRecordSummary[];
   userNameById?: Record<string, string>;
 }) {
+  const { data: session } = useSession();
+  const canSeeEvaluation = sessionHasRole(session, "COORDINATOR");
+  const visibleCheckoutNotes = canSeeEvaluation ? a.checkoutNotes : stripNpsFromNotes(a.checkoutNotes);
   return (
     <div className="space-y-1 text-xs text-slate-700">
       <p>
@@ -493,11 +508,13 @@ export function AssignmentDetailPanel({
       <p>
         <span className="font-semibold">Observação do interno:</span> {a.internObservations || "—"}
       </p>
+      {canSeeEvaluation && (
+        <p>
+          <span className="font-semibold">Observação do preceptor:</span> {a.preceptorObservations || "—"}
+        </p>
+      )}
       <p>
-        <span className="font-semibold">Observação do preceptor:</span> {a.preceptorObservations || "—"}
-      </p>
-      <p>
-        <span className="font-semibold">Notas de checkout:</span> {a.checkoutNotes || "—"}
+        <span className="font-semibold">Notas de checkout:</span> {visibleCheckoutNotes || "—"}
       </p>
       <div>
         <p className="font-semibold">Ocorrências clínicas:</p>

@@ -8,7 +8,10 @@ import {
   RealizedByTypeBoxes,
   ShiftListByKind,
   WeekBreakdownByType,
+  AssignmentDetailPanel,
   type Assignment as ShiftAssignment,
+  type AssignmentDetail,
+  type CaseRecordSummary,
   type ComplianceWeekFields,
 } from "@/components/admin/intern-shifts-blocks";
 
@@ -32,10 +35,11 @@ type Compliance = ComplianceWeekFields & {
   rotationEndDate: string | null;
 };
 
-type Assignment = ShiftAssignment;
+type Assignment = ShiftAssignment & Partial<Omit<AssignmentDetail, keyof ShiftAssignment>>;
 
 type CaseRecord = {
   id: string;
+  assignmentId?: string | null;
   caseNumber: string;
   nickname: string;
   description: string | null;
@@ -102,12 +106,33 @@ type SectionProps =
 export function InternHistorySection(props: SectionProps) {
   const fetched = useInternHistory(props.internId ?? "");
   const { loading, compliance, assignments, caseRecords } = props.data ?? fetched;
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const today = operationalDateStr();
   const pastAll = assignments.filter((a) => a.date <= today);
   const upcomingAll = assignments.filter((a) => a.date > today);
   const pastReversed = [...pastAll].reverse();
   const recentCases = caseRecords.slice(0, 3);
+
+  const caseRecordsByAssignment = new Map<string, CaseRecordSummary[]>();
+  for (const cr of caseRecords) {
+    if (!cr.assignmentId) continue;
+    const list = caseRecordsByAssignment.get(cr.assignmentId) ?? [];
+    list.push({
+      id: cr.id,
+      caseNumber: cr.caseNumber,
+      nickname: cr.nickname,
+      description: cr.description,
+    });
+    caseRecordsByAssignment.set(cr.assignmentId, list);
+  }
+
+  const renderShiftDetail = (a: ShiftAssignment) => (
+    <AssignmentDetailPanel
+      assignment={a as AssignmentDetail}
+      caseRecords={caseRecordsByAssignment.get(a.id) ?? []}
+    />
+  );
 
   if (loading) {
     return (
@@ -179,14 +204,30 @@ export function InternHistorySection(props: SectionProps) {
         <h4 className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           <Clock className="h-3 w-3" strokeWidth={2} /> Próximos plantões
         </h4>
-        <ShiftListByKind items={upcomingAll} emptyMessage="Nenhum plantão agendado." showStatus={false} initialLimit={10} />
+        <ShiftListByKind
+          items={upcomingAll}
+          emptyMessage="Nenhum plantão agendado."
+          showStatus={false}
+          initialLimit={10}
+          expandedId={expandedId}
+          onToggleExpand={setExpandedId}
+          renderDetail={renderShiftDetail}
+        />
       </section>
 
       <section>
         <h4 className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           <Activity className="h-3 w-3" strokeWidth={2} /> Últimos plantões
         </h4>
-        <ShiftListByKind items={pastReversed} emptyMessage="Sem histórico." showStatus initialLimit={10} />
+        <ShiftListByKind
+          items={pastReversed}
+          emptyMessage="Sem histórico."
+          showStatus
+          initialLimit={10}
+          expandedId={expandedId}
+          onToggleExpand={setExpandedId}
+          renderDetail={renderShiftDetail}
+        />
       </section>
 
       {recentCases.length > 0 && (
