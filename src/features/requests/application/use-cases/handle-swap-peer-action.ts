@@ -179,9 +179,11 @@ export async function executeSwapPeerAction(params: {
     return { status: 200, body: { success: true } } as const;
   }
 
-  if (input.action === "cancel" || input.action === "withdraw_proposal") {
-    if (request.requesterId !== userId) {
-      return { status: 403, body: { success: false, error: "Só o solicitante pode cancelar" } } as const;
+  if (input.action === "cancel") {
+    const isRequester = request.requesterId === userId;
+    const isTarget = request.targetInternId === userId;
+    if (!isRequester && !isTarget) {
+      return { status: 403, body: { success: false, error: "Você não participa desta troca" } } as const;
     }
     if (!["OPEN", "PENDING"].includes(request.status)) {
       return { status: 400, body: { success: false, error: "Não é possível cancelar neste estado" } } as const;
@@ -192,6 +194,27 @@ export async function executeSwapPeerAction(params: {
     await logAudit({
       userId: actor.realUserId ?? actor.id,
       action: "CANCEL_REQUEST",
+      entity: "request",
+      entityId: input.id,
+      payload: { cancelledBy: isRequester ? "requester" : "target" },
+    });
+
+    return { status: 200, body: { success: true } } as const;
+  }
+
+  if (input.action === "withdraw_proposal") {
+    if (request.targetInternId !== userId) {
+      return { status: 403, body: { success: false, error: "Só quem propôs pode desistir da proposta" } } as const;
+    }
+    if (request.status !== "PENDING") {
+      return { status: 400, body: { success: false, error: "Nenhuma proposta para retirar" } } as const;
+    }
+
+    await reopenSwapRequest(input.id);
+
+    await logAudit({
+      userId: actor.realUserId ?? actor.id,
+      action: "WITHDRAW_SWAP_PROPOSAL",
       entity: "request",
       entityId: input.id,
       payload: {},
