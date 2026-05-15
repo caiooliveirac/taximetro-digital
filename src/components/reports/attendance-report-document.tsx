@@ -623,7 +623,7 @@ function Cover({ document }: { document: ReportDocument }) {
             <div className="text-sm font-semibold text-amber-900">Abaixo da meta</div>
             <div className="text-xs text-amber-800">{document.cover.belowTargetInterns.length} internos</div>
           </div>
-          <div className="max-h-44 overflow-y-auto rounded-lg border border-amber-200 bg-amber-100/30 p-2">
+          <div className="max-h-44 overflow-y-auto rounded-lg border border-amber-200 bg-amber-100/30 p-2 print:max-h-none print:overflow-visible">
             <div className="flex flex-wrap gap-2">
             {document.cover.belowTargetInterns.map((intern) => (
               <span key={intern.internId} className="rounded-full bg-white px-3 py-1 text-xs text-amber-900 shadow-sm">
