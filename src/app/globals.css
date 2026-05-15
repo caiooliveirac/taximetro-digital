@@ -258,6 +258,14 @@ main>* {
     overflow: visible !important;
   }
 
+  /* Tabela ocupa 100% da página e distribui as colunas — assim o heatmap
+     cabe mesmo que o navegador ignore a @page paisagem (o diálogo de
+     impressão interativo às vezes ignora). Nada é cortado. */
+  .report-heatmap-section table {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+
   .report-heatmap-section thead th,
   .report-heatmap-name {
     position: static !important;
@@ -268,20 +276,20 @@ main>* {
   }
 
   .report-heatmap-cell {
-    height: 13px !important;
-    width: 13px !important;
+    width: 100% !important;
+    height: 12px !important;
   }
 
   .report-heatmap-day-label {
-    width: 13px !important;
+    width: auto !important;
     font-size: 7px !important;
     writing-mode: vertical-rl;
     white-space: nowrap;
-    line-height: 13px;
+    line-height: 12px;
     margin: 0 auto;
   }
 
   .report-heatmap-name {
-    width: 150px !important;
+    width: 130px !important;
   }
 }
