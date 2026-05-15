@@ -316,6 +316,45 @@ Fecha o follow-up do Next 16: `middleware` é convenção depreciada, substituí
 
 **Rollback:** `git revert <commit ONDA 10>`. Volta a `src/middleware.ts` + `export async function middleware`. Sem efeito em DB ou env.
 
+## ONDA 11 — next-auth 5.0.0-beta.29 → 5.0.0-beta.31 (2026-05-15) ✅
+
+Bump dentro da mesma linha beta, decisão consciente fora da política Grupo C (que pediria espera pelo 5.x estável). Aceita o risco de drift no caminho crítico de auth em troca dos fixes abaixo.
+
+**O que mudou:**
+
+- `next-auth 5.0.0-beta.29 → 5.0.0-beta.31` (pinado exato).
+- `overrides.next-auth.next` **removido** — beta.31 declara `peer next ^14 || ^15 || ^16`, então o override que tínhamos para forçar Next 16 ficou supérfluo.
+- `overrides.next-auth.nodemailer` **mantido** — beta.31 ainda pede `peer nodemailer ^7.0.7` e nós usamos `^8.0.7` (o provider Email do next-auth não é usado pelo projeto).
+
+**Por que subiu:**
+
+- Validação de e-mail mais estrita no provider de Credentials/OAuth callbacks (rejeita endereços com aspas, múltiplos `@` e domínio vazio) — endurecimento defensivo, sem mudança de UX para fluxos válidos.
+- `@auth/core 0.41.0 → 0.41.2`, que limpa o conflito interno de nodemailer.
+
+**Verificação de peer deps após o bump:**
+
+```
+peerDependencies = {
+  next: '^14.0.0-0 || ^15.0.0 || ^16.0.0',  ← aceita Next 16 nativo
+  nodemailer: '^7.0.7',                      ← override ainda necessário
+  react: '^18.2.0 || ^19.0.0',
+}
+```
+
+**Testes:** `typecheck` ✅, `lint` ✅ (0 errors, 116 warnings), `test` 80/80 ✅, `build` ✅.
+
+**Audit pós-bump:** `npm audit --audit-level=high --omit=dev` → 0 HIGH (CI verde). Moderates totais caíram de 7 para 6 — sai o aviso de "Email misdelivery" do provider; restam `postcss` aninhado em `next` (sai com algum patch do Next 16.x futuro) e transitivos dev-only sob `drizzle-kit`.
+
+**Smoke pós-deploy obrigatório** (toca auth):
+
+1. Login (COORDINATOR, INTERN, LEADER, PRECEPTOR) → dashboard correto.
+2. Reset de senha → e-mail entrega.
+3. Sessão JWT existente continua válida após swap (sem logout forçado).
+4. `mustChangePassword=true` redireciona para `/trocar-senha`.
+
+**Rollback:** `git revert <commit ONDA 11>` + `npm ci`. Restaura `next-auth@beta.29` e o `overrides.next-auth.next`.
+
+
 
 
 
