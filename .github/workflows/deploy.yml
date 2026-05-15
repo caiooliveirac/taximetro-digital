@@ -57,13 +57,6 @@ jobs:
           echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.PROD_SSH_HOST }} >> ~/.ssh/known_hosts
-          cat > ~/.ssh/config <<'SSHCONFIG'
-          Host *
-            ServerAliveInterval 30
-            ServerAliveCountMax 120
-            TCPKeepAlive yes
-          SSHCONFIG
-          chmod 600 ~/.ssh/config
 
       - name: Send source to server
         run: |
@@ -74,12 +67,12 @@ jobs:
 
       - name: Apply schema changes (manual only)
         run: |
-          ssh ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=180 ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
             set -euo pipefail
             cd ${{ env.DEPLOY_DIR }}
 
             echo "=== Building builder image ==="
-            docker build --pull --target builder -t ${{ env.APP }}-builder .
+            docker build --pull --progress=plain --target builder -t ${{ env.APP }}-builder .
 
             echo "=== Running schema changes (manual trigger) ==="
             docker run --rm \
@@ -113,13 +106,6 @@ jobs:
           echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.PROD_SSH_HOST }} >> ~/.ssh/known_hosts
-          cat > ~/.ssh/config <<'SSHCONFIG'
-          Host *
-            ServerAliveInterval 30
-            ServerAliveCountMax 120
-            TCPKeepAlive yes
-          SSHCONFIG
-          chmod 600 ~/.ssh/config
 
       - name: Send source to server
         run: |
@@ -130,7 +116,7 @@ jobs:
 
       - name: Build and deploy on server (native ARM64)
         run: |
-          ssh ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=180 ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
             set -euo pipefail
             cd ${{ env.DEPLOY_DIR }}
 
@@ -138,7 +124,7 @@ jobs:
             CANARY_NAME="${{ env.APP }}-canary"
 
             echo "=== Building Docker image (native ARM64) ==="
-            docker build --pull -t "$IMAGE_CANDIDATE" .
+            docker build --pull --progress=plain -t "$IMAGE_CANDIDATE" .
 
             echo "=== Ensuring backup volume exists ==="
             sudo mkdir -p /var/backups/taximetro
