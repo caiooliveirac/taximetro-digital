@@ -1457,7 +1457,7 @@ export default function LeaderEscala() {
               </div>
               {removeTarget.baseCode === "CRU" && (
                 <div className="rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 text-xs text-violet-800">
-                  ℹ️ Se este plantão veio do CRU fixo semanal, remover aqui afeta somente este dia. Para remover recorrência, use o painel "CRU — Fixos Semanais".
+                  ℹ️ Se este plantão veio do CRU fixo semanal, remover aqui afeta somente este dia. Para remover recorrência, use o painel &quot;CRU — Fixos Semanais&quot;.
                 </div>
               )}
               {removeError && (
