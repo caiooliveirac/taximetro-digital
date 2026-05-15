@@ -230,9 +230,16 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ to: recipient, filters }),
       });
-      const json = await response.json();
-      if (!response.ok || !json.success) {
-        throw new Error(json.error ?? "Não foi possível enviar.");
+      const rawText = await response.text();
+      let json: { success?: boolean; error?: string; diagnostic?: string } | null = null;
+      try {
+        json = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        json = null;
+      }
+      if (!response.ok || !json || !json.success) {
+        const fallback = `Erro ${response.status}${response.statusText ? ` (${response.statusText})` : ""}`;
+        throw new Error(json?.error ?? fallback);
       }
       setEmailFeedback({ kind: "success", message: `Relatório enviado para ${recipient}.` });
     } catch (err) {
