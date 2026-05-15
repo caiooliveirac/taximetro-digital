@@ -1,6 +1,5 @@
 import "server-only";
 import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import type { DailyAttendanceByFaculty } from "@/app/api/report/daily-attendance-by-faculty/route";
 import { AttendanceReportDocument } from "@/components/reports/attendance-report-document";
 import {
@@ -161,7 +160,8 @@ function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument 
   };
 }
 
-export function renderAttendanceReportHTML(document: ReportDocument, autoPrint = false): string {
+export async function renderAttendanceReportHTML(document: ReportDocument, autoPrint = false): Promise<string> {
+  const { renderToStaticMarkup } = await import("react-dom/server");
   const markup = renderToStaticMarkup(createElement(AttendanceReportDocument, { document }));
   const title = `Relatório de Plantões — ${document.facultyLabel} — ${document.periodLabel}`;
 
@@ -203,7 +203,7 @@ export function renderAttendanceReportHTML(document: ReportDocument, autoPrint =
 </html>`;
 }
 
-export function generateFacultyAttendanceHTML(faculty: DailyAttendanceByFaculty): string {
+export async function generateFacultyAttendanceHTML(faculty: DailyAttendanceByFaculty): Promise<string> {
   return renderAttendanceReportHTML(buildLegacyDocument(faculty));
 }
 
