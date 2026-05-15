@@ -11,7 +11,9 @@ import {
   getUserRoleFacultyIds,
   listInternsByCohort,
   unassignCohort,
+  closeCohortAndArchiveInterns,
 } from "@/features/cohorts/infra/repositories/cohort-repository";
+import { evaluateCohortLifecycle } from "@/features/cohorts/application/use-cases/cohort-lifecycle";
 
 export const cohortCreateSchema = z.object({
   facultyId: z.string().uuid(),
@@ -70,7 +72,14 @@ export async function executeCreateCohort(params: {
     payload: params.input,
   });
 
-  return { status: 201, body: { success: true, data: created } } as const;
+  // Datas recém-salvas: aplica transição de status se já couberem na janela.
+  const lifecycle = await evaluateCohortLifecycle({
+    cohortId: created.id,
+    actorUserId: params.actorUserId,
+  });
+
+  const fresh = await getCohortById(created.id);
+  return { status: 201, body: { success: true, data: fresh ?? created, lifecycle } } as const;
 }
 
 export async function executeUpdateCohort(params: {
@@ -93,9 +102,16 @@ export async function executeUpdateCohort(params: {
     return { status: 400, body: { success: false, error: "endDate deve ser >= startDate" } } as const;
   }
 
+  // Fechar manualmente ("Arquivada" no dropdown) arquiva todos os internos.
+  const wantsClose = params.input.status === "CLOSED";
+
+  // updateCohort não fecha por conta própria — o status CLOSED é tratado abaixo.
+  const { status: _ignoredStatus, ...rest } = params.input;
+  const updateInput = wantsClose ? rest : params.input;
+
   let updated;
   try {
-    updated = await updateCohort(params.cohortId, params.input);
+    updated = await updateCohort(params.cohortId, updateInput);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("23505") || msg.includes("unique") || msg.includes("uq_cohort")) {
@@ -112,7 +128,30 @@ export async function executeUpdateCohort(params: {
     payload: params.input,
   });
 
-  return { status: 200, body: { success: true, data: updated } } as const;
+  if (wantsClose) {
+    const archivedInterns = await closeCohortAndArchiveInterns({
+      cohortId: params.cohortId,
+      closedBy: params.actorUserId,
+    });
+    await logAudit({
+      userId: params.actorUserId,
+      action: "CLOSE_COHORT",
+      entity: "cohort",
+      entityId: params.cohortId,
+      payload: { archivedInterns },
+    });
+    const fresh = await getCohortById(params.cohortId);
+    return { status: 200, body: { success: true, data: fresh ?? updated, archivedInterns } } as const;
+  }
+
+  // Datas alteradas: reavalia a janela e aplica transição automática se couber.
+  const lifecycle = await evaluateCohortLifecycle({
+    cohortId: params.cohortId,
+    actorUserId: params.actorUserId,
+  });
+
+  const fresh = await getCohortById(params.cohortId);
+  return { status: 200, body: { success: true, data: fresh ?? updated, lifecycle } } as const;
 }
 
 export async function executeDeleteCohort(params: {

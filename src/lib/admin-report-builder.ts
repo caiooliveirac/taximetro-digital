@@ -38,6 +38,7 @@ export type ReportCatalogIntern = {
   lastAssignmentDate: string | null;
   targetHours: number;
   targetShifts: number;
+  isArchived: boolean;
 };
 
 type AssignmentRow = {
@@ -494,12 +495,16 @@ export async function listReportCatalog(): Promise<{
       targetShifts: faculties.targetShifts,
       cohortId: userRoles.cohortId,
       cohortName: cohorts.name,
+      isArchived: userRoles.isArchived,
     })
     .from(users)
     .innerJoin(userRoles, eq(userRoles.userId, users.id))
     .leftJoin(faculties, eq(faculties.id, userRoles.facultyId))
     .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
-    .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true), eq(userRoles.isArchived, false), eq(users.isActive, true)))
+    // Internos arquivados permanecem no catálogo: relatórios de turmas
+    // fechadas continuam funcionando. O escopo (COHORT vs ALL_FACULTY)
+    // decide se eles entram no recorte — ver generateAdminReport.
+    .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true), eq(users.isActive, true)))
     .orderBy(faculties.abbreviation, users.name);
 
   const internIds = rows.map((row) => row.internId);
@@ -573,6 +578,7 @@ export async function listReportCatalog(): Promise<{
         lastAssignmentDate: lastAssignmentByIntern.get(row.internId) ?? null,
         targetHours: row.targetHours ?? 0,
         targetShifts: row.targetShifts ?? 0,
+        isArchived: row.isArchived ?? false,
       } satisfies ReportCatalogIntern;
     })
   );
@@ -644,9 +650,14 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
 
   const selectedInternCatalog = facultyFilteredInterns.filter((intern) => {
     const cohort = getCohortForIntern(intern, filters.cohortGrouping);
+    // Internos arquivados só entram quando o recorte é explícito: uma turma
+    // selecionada ou internos escolhidos a dedo. Recortes amplos os omitem.
     if (filters.scopeMode === "SPECIFIC_INTERNS") return filters.selectedInternIds.includes(intern.internId);
-    if (filters.scopeMode === "COHORT") return filters.selectedCohorts.length === 0 || filters.selectedCohorts.includes(cohort.key);
-    return true;
+    if (filters.scopeMode === "COHORT") {
+      if (filters.selectedCohorts.length > 0) return filters.selectedCohorts.includes(cohort.key);
+      return !intern.isArchived;
+    }
+    return !intern.isArchived;
   });
 
   const scopedInternIds = selectedInternCatalog.map((intern) => intern.internId);
