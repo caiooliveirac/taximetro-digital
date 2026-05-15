@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { JWT } from "next-auth/jwt";
 import { db } from "@/db";
@@ -128,13 +128,15 @@ export async function POST(req: NextRequest) {
   const [intern] = await db.select({ name: users.name }).from(users).where(eq(users.id, effectiveInternId)).limit(1);
   const [base] = await db.select({ code: bases.code, name: bases.name }).from(bases).where(eq(bases.id, assignment.baseId)).limit(1);
 
-  await logAudit({
-    userId: effectiveInternId,
-    action: "CHECKOUT_INITIATED",
-    entity: "checkin",
-    entityId: checkin.id,
-    realUserId: impersonating ? (token.id as string) : undefined,
-  });
+  after(() =>
+    logAudit({
+      userId: effectiveInternId,
+      action: "CHECKOUT_INITIATED",
+      entity: "checkin",
+      entityId: checkin.id,
+      realUserId: impersonating ? (token.id as string) : undefined,
+    }),
+  );
 
   return NextResponse.json({
     success: true,
@@ -217,21 +219,23 @@ export async function PUT(req: NextRequest) {
     checkoutNotes,
   }).where(inArray(checkins.assignmentId, assignmentIdsToCheckout));
 
-  await logAudit({
-    userId: user.realUserId ?? user.id,
-    action: "CHECKOUT_CONFIRMED",
-    entity: "assignment",
-    entityId: assignmentId,
-    ...((user.isImpersonating || assignmentIdsToCheckout.length > 1 || !!nps)
-      ? {
-        payload: {
-          ...(user.isImpersonating ? { actingAs: user.id } : {}),
-          ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
-          ...(nps ? { nps } : {}),
-        },
-      }
-      : {}),
-  });
+  after(() =>
+    logAudit({
+      userId: user.realUserId ?? user.id,
+      action: "CHECKOUT_CONFIRMED",
+      entity: "assignment",
+      entityId: assignmentId,
+      ...((user.isImpersonating || assignmentIdsToCheckout.length > 1 || !!nps)
+        ? {
+          payload: {
+            ...(user.isImpersonating ? { actingAs: user.id } : {}),
+            ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
+            ...(nps ? { nps } : {}),
+          },
+        }
+        : {}),
+    }),
+  );
 
   return NextResponse.json({ success: true, data: { assignmentIds: assignmentIdsToCheckout } });
 }

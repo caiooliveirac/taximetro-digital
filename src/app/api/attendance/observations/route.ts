@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/db";
@@ -62,18 +62,20 @@ export async function PUT(req: NextRequest) {
 
     await db.update(checkins).set({ internObservations: observations }).where(eq(checkins.id, checkin.id));
 
-    await logAudit({
-        userId: user.realUserId ?? user.id,
-        action: "INTERN_OBSERVATIONS_UPDATED",
-        entity: "checkin",
-        entityId: checkin.id,
-        ...((user.isImpersonating || observations) ? {
-            payload: {
-                ...(user.isImpersonating ? { actingAs: user.id } : {}),
-                ...(observations ? { hasObservations: true } : {}),
-            },
-        } : {}),
-    });
+    after(() =>
+        logAudit({
+            userId: user.realUserId ?? user.id,
+            action: "INTERN_OBSERVATIONS_UPDATED",
+            entity: "checkin",
+            entityId: checkin.id,
+            ...((user.isImpersonating || observations) ? {
+                payload: {
+                    ...(user.isImpersonating ? { actingAs: user.id } : {}),
+                    ...(observations ? { hasObservations: true } : {}),
+                },
+            } : {}),
+        }),
+    );
 
     return NextResponse.json({ success: true, data: { observations } });
 }
