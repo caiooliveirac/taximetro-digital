@@ -1,0 +1,119 @@
+# AI_MODERNIZATION_LOG
+
+Log vivo da modernização de stack. Cada onda é registrada aqui: o que mudou, por quê,
+erros encontrados, correção, testes e rollback.
+
+---
+
+## Análise — 2026-05-15 (Fase 2, pós-primeira atualização)
+
+### Estado atual da stack
+
+| Camada      | Versão atual         | Latest estável | Observação |
+|-------------|----------------------|----------------|------------|
+| Node (host/imagem) | 24.8 / 24.15 (`node:24-alpine`) | 24.x LTS / 25.x Current | `.nvmrc` = 24 |
+| npm         | 11.6                 | 11.x           | OK |
+| Next.js     | 15.5.18              | **16.2.6**     | major atrás |
+| React / React-DOM | 19.2.6         | 19.2.6         | **já em latest** |
+| TypeScript  | 5.9.3                | **6.0.3**      | major atrás |
+| ESLint      | 10.3.0 (instalado)   | 10.x           | **sem config — `next lint` quebrado** |
+| Tailwind CSS | 4.3.0               | 4.3.0          | já em latest |
+| @tailwindcss/postcss / postcss | 4.3.0 / 8.5.14 | idem  | já em latest |
+| Drizzle ORM / Kit | 0.45.2 / 0.31.10 | idem        | já em latest |
+| next-auth (Auth.js) | 5.0.0-beta.29  | 5.x beta       | v5 ainda em beta |
+| postgres (driver) | 3.4.9          | 3.4.9          | já em latest |
+| nodemailer  | 8.0.7                | 8.0.7          | já em latest (Fase 1) |
+| grammy      | 1.42.0               | 1.42.0         | já em latest |
+| lucide-react | 0.577.0             | **1.16.0**     | major atrás |
+| react-day-picker | 9.14.0          | **10.0.1**     | major atrás |
+| @types/node | 24.12.4              | 25.8.0         | mantido em 24 p/ casar com runtime |
+| zod / date-fns / @aws-sdk | 4.4.3 / 4.1.0 / 3.1047 | idem | já em latest |
+
+### Já atualizado pela Fase 1 (não commitado ainda — branch `chore/modernize-runtime-and-deps`)
+
+Node 20→24, nodemailer 6→8, next 15.5.13→15.5.18, drizzle-orm 0.45.1→0.45.2 (SQL
+injection HIGH), minors diversos, `.nvmrc`, `engines`, `--pull` no deploy, guardrail
+de versão de Node. Detalhe em [AI_PROJECT_UPGRADE_CONTEXT.md](AI_PROJECT_UPGRADE_CONTEXT.md).
+
+### Ainda desatualizado
+
+`next` (16), `typescript` (6), `lucide-react` (1.x), `react-day-picker` (10) — e a
+configuração de ESLint, que hoje não existe (o script `lint` usa `next lint`, depreciado).
+
+### Riscos / bugs já presentes (pré-existentes, não introduzidos pela Fase 1)
+
+- **`npm run lint` não funciona**: `next lint` está depreciado, abre prompt interativo
+  (`How would you like to configure ESLint?`) porque não há config ESLint nem
+  `eslint-config-next`. Em CI isso travaria — por isso a CI hoje **não** roda lint.
+- 7 vulnerabilidades **moderate** (0 high): `postcss` empacotado dentro do `next`
+  (resolve com next 16); `next-auth` beta (aviso do Email provider, não usado);
+  transitivas dev-only sob `drizzle-kit`/`eslint`.
+
+### Healthcheck / testes
+
+- Healthcheck existe: `GET /taximetro/api/health` (checa env crítico + ping no DB).
+- Testes: `node:test` + `tsx`, 80 testes verdes. Há `typecheck`. **Não há lint funcional.**
+
+### Decisão sobre "latest" no runtime
+
+O pedido é mirar em latest. Node 25 ("Current") é o latest absoluto, mas as próprias
+regras desta fase (Tarefa 8.4) proíbem runtime fora de LTS em produção. **Decisão:
+manter Node em 24 (Active LTS) como "latest estável seguro para runtime"** e aplicar
+a política latest de forma agressiva nas *bibliotecas*. Node 25 fica como onda opcional
+quando virar LTS (out/2026).
+
+---
+
+## TAREFA 2 — Classificação das dependências
+
+### GRUPO A — latest com baixo risco
+Já estão em latest após a Fase 1 (`react`, `tailwindcss`, `drizzle-*`, `zod`, `grammy`,
+`nodemailer`, `@aws-sdk`, `postgres`, `tsx`, `date-fns`, `postcss`). Nada a fazer.
+
+### GRUPO B — latest com breaking change administrável (exige adaptação)
+
+| Dependência | Atual → Latest | Distância | Risco | Reescrita? | Teste |
+|---|---|---|---|---|---|
+| ESLint (config) | inexistente → flat config v9/10 | — | baixo | config nova (não código) | `npm run lint` |
+| typescript | 5.9.3 → 6.0.3 | 1 major | baixo-médio | provável: poucos ajustes de tipo | `typecheck`, `build` |
+| next | 15.5.18 → 16.2.6 | 1 major | médio | possível: APIs async, `next lint`→ESLint CLI | `build`, smoke health |
+| lucide-react | 0.577 → 1.16 | 1 major | baixo | possível: renome de ícones | `build`, inspeção visual |
+| react-day-picker | 9.14 → 10.0.1 | 1 major | médio | provável: props do componente de data | `build`, teste do date picker |
+
+### GRUPO C — não atualizar ainda sem plano específico
+
+| Dependência | Motivo |
+|---|---|
+| next-auth (Auth.js) | em **beta**; mexe em sessão/token/cookie e roda em produção. Mantém `5.0.0-beta.29` pinado até a v5 estável. Não voltar para v4. |
+| drizzle-orm / drizzle-kit | já em latest, mas qualquer bump futuro toca geração de schema/migrations — exige revisão dedicada. |
+
+### GRUPO D — substituir ou remover
+
+| Item | Situação | Ação |
+|---|---|---|
+| `next lint` (script) | depreciado, será removido no Next 16 | **substituir** por ESLint CLI + flat config |
+| `eslint` 10.3.0 instalado sem config | meio-termo inútil hoje | **configurar** corretamente (ONDA 0) |
+
+Nenhuma dependência abandonada/duplicada/não-usada detectada além disso.
+
+---
+
+## TAREFA 3 — Plano de ondas
+
+| Onda | Escopo | Risco | Estado |
+|---|---|---|---|
+| **0** | Estabilização: commitar Fase 1; configurar ESLint flat config (corrige `lint`); `check:versions`; garantir `ci/build/typecheck/lint/docker` verdes | baixo | pendente |
+| **1** | Runtime: Node permanece 24 LTS (decisão acima). Sem mudança de código. | baixo | pendente |
+| **2** | TypeScript 5.9 → 6; `@types/*` compatíveis; afinar config ESLint | baixo-médio | pendente |
+| **3** | Next 15.5 → 16; `eslint-config-next`; adaptar breaking changes; validar build/rotas | médio | pendente |
+| **4** | UI: lucide-react 1.x; react-day-picker 10; Tailwind já em latest | médio | pendente |
+| **5** | DB/ORM: Drizzle já em latest — apenas revalidar geração de schema | baixo | pendente |
+| **6** | Auth: next-auth permanece beta pinado — sem ação, só monitorar v5 estável | — | pendente |
+| **7** | Integrações: nodemailer/grammy já em latest — sem ação | — | pendente |
+| **8** | Docker/deploy: revisão final (já modernizado na Fase 1) | baixo | pendente |
+
+Regra: não avançar de onda se `npm ci`, `build`, `typecheck`, `lint`, `docker compose
+config` ou `docker build` falharem.
+
+---
+<!-- Registros de execução de cada onda são acrescentados abaixo desta linha -->
