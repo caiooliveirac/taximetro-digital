@@ -160,3 +160,43 @@ migração para Next 16, que já vem com `eslint-config-next@16` (suporta ESLint
 **Testes:** `typecheck` ✅, `test` 80/80 ✅, `build` ✅.
 
 **Rollback:** `git revert <commit ONDA 2>`.
+
+## ONDA 3 — Next 15.5 → 16 + ESLint flat config (2026-05-15) ✅
+
+**O que mudou:**
+
+- `next ^15.5.18 → 16.2.6` (pinado, sem `^`)
+- `eslint-config-next` adicionado em `16.2.6`
+- `eslint ^10.0.3 → ^9.39.4` (downgrade deliberado — ver bug abaixo)
+- `eslint.config.mjs` novo (flat config consumindo `eslint-config-next/core-web-vitals` + `/typescript`)
+- script `lint`: `next lint` → `eslint .`
+- `overrides.next-auth` estendido com `"next": "$next"` (next-auth@5beta declara peer `next ^14||^15`; v5 não usa internals do Next em runtime)
+- `tsconfig.json`: `jsx: "preserve" → "react-jsx"` e `next-env.d.ts` reescrito (ambos auto-editados pelo Next 16 no primeiro build)
+
+**Bugs encontrados:**
+
+### Bug: `eslint-config-next@15` não suporta ESLint 10
+
+- Tentativa: usar ESLint 10 com `eslint-config-next@15`.
+- Erro: peer `eslint ^7||^8||^9`. Adiado para esta onda quando `eslint-config-next@16` (peer `>=9.0.0`) ficaria disponível.
+
+### Bug: `eslint-plugin-react@7.37.5` quebra com ESLint 10
+
+- Erro em runtime: `TypeError: contextOrFilename.getFilename is not a function`.
+- Causa: ESLint 10 removeu `context.getFilename()`; latest `eslint-plugin-react` ainda não migrou. Sem fix upstream disponível.
+- Decisão (regra 8.3 — não usar latest cego se quebra build): **pinar ESLint em ^9.39.4** até o ecossistema React/Next alcançar ESLint 10. Documentado como follow-up.
+
+### Bug: peer conflict `next-auth` ↔ Next 16
+
+- next-auth@5.0.0-beta.29 declara `peer next ^14 || ^15`.
+- Fix: estender `overrides` com `"next-auth": {"next": "$next"}`. Justificativa: next-auth v5 não toca internals do Next em runtime; usamos apenas Credentials + Google (Email provider, alvo do peer, **não é usado**).
+
+**Itens fora do escopo (follow-up registrado):**
+
+1. **`middleware.ts` → `proxy.ts`** — Next 16 depreciou o nome `middleware`. Build emite warning. Renomear toca auth/redirect; adiado por regra 8.4 (mudanças sensíveis em auth saem em onda dedicada).
+2. **52 erros de lint pré-existentes** (`react-hooks/rules-of-hooks` em ~30 client components). Nunca foram pegos porque `next lint` nunca rodou direito (sem config). Lint **não entra na CI** até esses erros serem corrigidos em revisão dedicada.
+
+**Testes executados:** `typecheck` ✅, `test` 80/80 ✅, `build` ✅ (Next 16, warning de `middleware` deprecation), `lint` roda (mas surfaceia 52 erros pré-existentes — não regridem build).
+
+**Rollback:** `git revert <commit ONDA 3>` + reinstalar (`npm ci`) — Next volta para 15.5.18 via `package-lock`.
+
