@@ -130,6 +130,123 @@ function InternCheckinContent() {
   const normalizedInternObservations = normalizeObservation(internObservations);
   const normalizedSavedInternObservations = normalizeObservation(savedInternObservations);
 
+  // Step 3: Timer — code rotates every 90s
+  const startCodeRotation = useCallback((checkinId: string, expiresAt: string) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    let lastFetchedStep = -1;
+
+    const tick = async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const currentStep = Math.floor(nowSec / TOTP_STEP);
+      const timeLeft = TOTP_STEP - (nowSec % TOTP_STEP);
+      setCountdown(timeLeft);
+
+      if (new Date() > new Date(expiresAt)) {
+        setStep("ERROR");
+        setErrorText("Sessão expirou. Inicie o check-in novamente.");
+        if (timerRef.current) clearInterval(timerRef.current);
+        if (sseRef.current) sseRef.current.close();
+        return;
+      }
+
+      // Fetch new code from server when TOTP step changes
+      if (currentStep !== lastFetchedStep) {
+        lastFetchedStep = currentStep;
+        try {
+          const res = await fetch(`/taximetro/api/attendance/checkin/current-code?checkinId=${checkinId}`);
+          const data = await res.json();
+          if (data.success && data.code) {
+            setCurrentCode(data.code);
+          }
+        } catch { /* keep current code */ }
+      }
+    };
+
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+  }, []);
+
+  // Step 4: SSE — listen for preceptor validation
+  const startSSE = useCallback(function startSSE(assignmentId: string, attempt = 0) {
+    if (sseRef.current) sseRef.current.close();
+    const es = new EventSource(`/taximetro/api/attendance/status/${assignmentId}`);
+    es.addEventListener("status", (e) => {
+      const data = JSON.parse(e.data);
+      if (data.status === "CHECKED_IN") {
+        setStep("VALIDATED");
+        if (timerRef.current) clearInterval(timerRef.current);
+        es.close();
+      }
+    });
+    es.onerror = () => {
+      es.close();
+      if (attempt < 10) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+        setTimeout(() => startSSE(assignmentId, attempt + 1), delay);
+      }
+    };
+    sseRef.current = es;
+  }, []);
+
+  // SSE for checkout — listen for CHECKED_OUT
+  const startCheckoutSSE = useCallback(function startCheckoutSSE(assignmentId: string, attempt = 0) {
+    if (sseRef.current) sseRef.current.close();
+    const es = new EventSource(`/taximetro/api/attendance/status/${assignmentId}?after=CHECKED_IN`);
+    es.addEventListener("status", (e) => {
+      const data = JSON.parse(e.data);
+      if (data.status === "CHECKED_OUT") {
+        setStep("CHECKED_OUT");
+        if (timerRef.current) clearInterval(timerRef.current);
+        es.close();
+      }
+    });
+    es.onerror = () => {
+      es.close();
+      if (attempt < 10) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+        setTimeout(() => startCheckoutSSE(assignmentId, attempt + 1), delay);
+      }
+    };
+    sseRef.current = es;
+  }, []);
+
+  // Step 2: Generate TOTP on server
+  const generateTotp = useCallback(async (lat: number, lng: number, geoValid: boolean) => {
+    if (!assignment) return;
+    setStep("GENERATING");
+
+    try {
+      const res = await fetch("/taximetro/api/attendance/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignmentId: assignment.id,
+          latitude: lat,
+          longitude: lng,
+          geoValid,
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        setErrorText(data.error || "Erro ao gerar código.");
+        setStep("ERROR");
+        return;
+      }
+
+      setCheckinData(data.data);
+      setCurrentCode(data.data.currentCode);
+      setCountdown(TOTP_STEP);
+      setStep("AWAITING");
+
+      startCodeRotation(data.data.checkinId, data.data.expiresAt);
+      startSSE(data.data.assignmentId);
+    } catch (err) {
+      setErrorText(err instanceof Error ? err.message : "Erro de conexão. Verifique sua internet.");
+      setStep("ERROR");
+    }
+  }, [assignment, startCodeRotation, startSSE]);
+
   // Step 1: Get geolocation and check against base
   const startCheckin = useCallback(async () => {
     if (!assignment) return;
@@ -183,102 +300,7 @@ function InternCheckinContent() {
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
-  }, [assignment]);
-
-  // Step 2: Generate TOTP on server
-  const generateTotp = useCallback(async (lat: number, lng: number, geoValid: boolean) => {
-    if (!assignment) return;
-    setStep("GENERATING");
-
-    try {
-      const res = await fetch("/taximetro/api/attendance/checkin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          assignmentId: assignment.id,
-          latitude: lat,
-          longitude: lng,
-          geoValid,
-        }),
-      });
-      const data = await res.json();
-
-      if (!data.success) {
-        setErrorText(data.error || "Erro ao gerar código.");
-        setStep("ERROR");
-        return;
-      }
-
-      setCheckinData(data.data);
-      setCurrentCode(data.data.currentCode);
-      setCountdown(TOTP_STEP);
-      setStep("AWAITING");
-
-      startCodeRotation(data.data.checkinId, data.data.expiresAt);
-      startSSE(data.data.assignmentId);
-    } catch (err) {
-      setErrorText(err instanceof Error ? err.message : "Erro de conexão. Verifique sua internet.");
-      setStep("ERROR");
-    }
-  }, [assignment]);
-
-  // Step 3: Timer — code rotates every 90s
-  const startCodeRotation = useCallback((checkinId: string, expiresAt: string) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    let lastFetchedStep = -1;
-
-    const tick = async () => {
-      const nowSec = Math.floor(Date.now() / 1000);
-      const currentStep = Math.floor(nowSec / TOTP_STEP);
-      const timeLeft = TOTP_STEP - (nowSec % TOTP_STEP);
-      setCountdown(timeLeft);
-
-      if (new Date() > new Date(expiresAt)) {
-        setStep("ERROR");
-        setErrorText("Sessão expirou. Inicie o check-in novamente.");
-        if (timerRef.current) clearInterval(timerRef.current);
-        if (sseRef.current) sseRef.current.close();
-        return;
-      }
-
-      // Fetch new code from server when TOTP step changes
-      if (currentStep !== lastFetchedStep) {
-        lastFetchedStep = currentStep;
-        try {
-          const res = await fetch(`/taximetro/api/attendance/checkin/current-code?checkinId=${checkinId}`);
-          const data = await res.json();
-          if (data.success && data.code) {
-            setCurrentCode(data.code);
-          }
-        } catch { /* keep current code */ }
-      }
-    };
-
-    tick();
-    timerRef.current = setInterval(tick, 1000);
-  }, []);
-
-  // Step 4: SSE — listen for preceptor validation
-  const startSSE = useCallback((assignmentId: string, attempt = 0) => {
-    if (sseRef.current) sseRef.current.close();
-    const es = new EventSource(`/taximetro/api/attendance/status/${assignmentId}`);
-    es.addEventListener("status", (e) => {
-      const data = JSON.parse(e.data);
-      if (data.status === "CHECKED_IN") {
-        setStep("VALIDATED");
-        if (timerRef.current) clearInterval(timerRef.current);
-        es.close();
-      }
-    });
-    es.onerror = () => {
-      es.close();
-      if (attempt < 10) {
-        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-        setTimeout(() => startSSE(assignmentId, attempt + 1), delay);
-      }
-    };
-    sseRef.current = es;
-  }, []);
+  }, [assignment, generateTotp]);
 
   // Checkout: generate TOTP via POST /api/attendance/checkout
   const startCheckout = useCallback(async () => {
@@ -312,7 +334,7 @@ function InternCheckinContent() {
       setErrorText(err instanceof Error ? err.message : "Erro de conexão.");
       setStep("ERROR");
     }
-  }, [assignment]);
+  }, [assignment, startCodeRotation, startCheckoutSSE]);
 
   const saveObservations = useCallback(async () => {
     if (!assignment) return;
@@ -347,27 +369,6 @@ function InternCheckinContent() {
     }
   }, [assignment, internObservations]);
 
-  // SSE for checkout — listen for CHECKED_OUT
-  const startCheckoutSSE = useCallback((assignmentId: string, attempt = 0) => {
-    if (sseRef.current) sseRef.current.close();
-    const es = new EventSource(`/taximetro/api/attendance/status/${assignmentId}?after=CHECKED_IN`);
-    es.addEventListener("status", (e) => {
-      const data = JSON.parse(e.data);
-      if (data.status === "CHECKED_OUT") {
-        setStep("CHECKED_OUT");
-        if (timerRef.current) clearInterval(timerRef.current);
-        es.close();
-      }
-    });
-    es.onerror = () => {
-      es.close();
-      if (attempt < 10) {
-        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-        setTimeout(() => startCheckoutSSE(assignmentId, attempt + 1), delay);
-      }
-    };
-    sseRef.current = es;
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -751,7 +752,7 @@ function InternCheckinContent() {
 
             <div className="rounded-lg bg-orange-100/50 p-3 text-xs text-orange-700 text-center">
               <Smartphone className="inline h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
-              No iPhone: Ajustes → Privacidade → Serviços de Localização → Safari → "Durante o Uso"
+              No iPhone: Ajustes → Privacidade → Serviços de Localização → Safari → &quot;Durante o Uso&quot;
             </div>
           </div>
 

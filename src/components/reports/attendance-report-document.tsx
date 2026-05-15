@@ -430,8 +430,6 @@ const STATE_LABELS: Record<ReportHeatmapCellState, string> = {
 };
 
 export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin/assignments" }: { document: ReportDocument; assignmentDetailPath?: string }) {
-  if (document.cover.heatmapDays.length === 0 || document.cover.heatmapRows.length === 0) return null;
-
   const assignmentsByInternDate = useMemo(() => {
     const map = new Map<string, ReportAssignmentCard[]>();
     for (const intern of document.interns) {
@@ -460,6 +458,8 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailedAssignment, setDetailedAssignment] = useState<DetailedAssignment | null>(null);
+
+  if (document.cover.heatmapDays.length === 0 || document.cover.heatmapRows.length === 0) return null;
 
   async function loadAssignmentDetailById(assignmentId: string) {
     setDetailLoading(true);

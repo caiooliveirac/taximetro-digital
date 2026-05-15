@@ -141,8 +141,8 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
     const [complianceRows, setComplianceRows] = useState<ComplianceRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [fromDate, setFromDate] = useState(localDateStr(new Date(Date.now() - 90 * 86400000)));
-    const [toDate, setToDate] = useState(localDateStr());
+    const [fromDate, setFromDate] = useState(() => localDateStr(new Date(Date.now() - 90 * 86400000)));
+    const [toDate, setToDate] = useState(() => localDateStr());
     const [search, setSearch] = useState("");
     const [filterBase, setFilterBase] = useState("");
     const [filterFaculty, setFilterFaculty] = useState("");
