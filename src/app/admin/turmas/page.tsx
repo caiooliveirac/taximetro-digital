@@ -86,6 +86,9 @@ export default function AdminTurmas() {
 
   async function save() {
     if (!editing) return;
+    if (editing.status === "CLOSED") {
+      if (!confirm("Arquivar esta turma? O status vai para Fechada e TODOS os interns ainda ativos nela serão arquivados. Essa ação não pode ser desfeita pela tela de turmas.")) return;
+    }
     setError("");
     try {
       const res = await fetch(
@@ -98,6 +101,15 @@ export default function AdminTurmas() {
       );
       const json = await res.json();
       if (!json.success) { setError(json.error); return; }
+      if (typeof json.archivedInterns === "number") {
+        alert(`Turma fechada. ${json.archivedInterns} interno(s) arquivado(s).`);
+      } else if (json.lifecycle && (json.lifecycle.activated?.length || json.lifecycle.closed?.length)) {
+        const closed = json.lifecycle.closed?.reduce((sum: number, c: { archivedInterns: number }) => sum + c.archivedInterns, 0) ?? 0;
+        const parts: string[] = [];
+        if (json.lifecycle.activated?.length) parts.push(`${json.lifecycle.activated.length} turma(s) ativada(s)`);
+        if (json.lifecycle.closed?.length) parts.push(`${json.lifecycle.closed.length} turma(s) fechada(s), ${closed} interno(s) arquivado(s)`);
+        if (parts.length) alert(`Datas aplicadas automaticamente: ${parts.join("; ")}.`);
+      }
       setEditing(null);
       load();
     } catch {
@@ -185,6 +197,7 @@ export default function AdminTurmas() {
                 >
                   <option value="PLANNED">Planejada</option>
                   <option value="ACTIVE">Ativa</option>
+                  <option value="CLOSED">Arquivada (fecha e arquiva os interns)</option>
                 </select>
               </label>
             )}

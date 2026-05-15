@@ -61,6 +61,17 @@ function getCohortsDateRange(
   return { from: firsts[0], to: lasts[lasts.length - 1] };
 }
 
+// Para turmas nomeadas, o recorte de datas é a janela CONFIGURADA da turma
+// (start/end), não o intervalo dos plantões registrados. Assim o relatório
+// respeita as datas definidas na tela de turmas.
+function getNamedCohortDateRange(
+  cohorts: ReportCatalogCohort[],
+  cohortId: string,
+): { from: string; to: string } | null {
+  const cohort = cohorts.find((c) => c.id === cohortId);
+  return cohort ? { from: cohort.startDate, to: cohort.endDate } : null;
+}
+
 function submitExport(format: "html" | "pdf", filters: ReportFilterInput) {
   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(filters))));
   window.open(`/taximetro/admin/relatorios/export?format=${format}&filters=${encodeURIComponent(encoded)}`, "_blank", "noopener,noreferrer");
@@ -356,7 +367,7 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
                     size="sm"
                     variant={filters.selectedCohorts.includes(c.id) && filters.cohortGrouping === "NAMED_COHORT" ? "default" : "outline"}
                     onClick={() => setFilters((prev) => {
-                      const range = getCohortsDateRange(catalog.interns, [c.id], "NAMED_COHORT");
+                      const range = getNamedCohortDateRange(catalog.cohorts, c.id);
                       return {
                         ...prev,
                         scopeMode: "COHORT",
@@ -411,7 +422,11 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
                   <span className="text-xs font-medium text-slate-500">Turma</span>
                   <select className={SELECT_CLASS} value={filters.selectedCohorts[0] ?? ""} onChange={(event) => setFilters((prev) => {
                     const key = event.target.value;
-                    const range = key ? getCohortsDateRange(facultyFilteredInterns, [key], prev.cohortGrouping) : null;
+                    const range = !key
+                      ? null
+                      : prev.cohortGrouping === "NAMED_COHORT"
+                        ? getNamedCohortDateRange(catalog.cohorts, key)
+                        : getCohortsDateRange(facultyFilteredInterns, [key], prev.cohortGrouping);
                     return { ...prev, selectedCohorts: key ? [key] : [], ...(range ?? {}) };
                   })}>
                     <option value="">Todas</option>

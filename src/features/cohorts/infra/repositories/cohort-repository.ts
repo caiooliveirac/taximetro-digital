@@ -1,6 +1,6 @@
 import { db } from "@/shared/db/client";
 import { cohorts, faculties, userRoles, users } from "@/db/schema";
-import { eq, and, inArray, isNull } from "drizzle-orm";
+import { eq, and, inArray, isNull, ne } from "drizzle-orm";
 
 export async function listCohorts(filters?: {
   facultyId?: string;
@@ -151,4 +151,62 @@ export async function unassignCohort(userRoleId: string) {
     .update(userRoles)
     .set({ cohortId: null })
     .where(eq(userRoles.id, userRoleId));
+}
+
+// F3: lifecycle por datas (start/end)
+
+/** Turmas ainda não fechadas — candidatas a transição automática de status. */
+export async function listCohortsForLifecycle(cohortId?: string) {
+  const conditions = [ne(cohorts.status, "CLOSED")];
+  if (cohortId) conditions.push(eq(cohorts.id, cohortId));
+  return db
+    .select({
+      id: cohorts.id,
+      label: cohorts.label,
+      name: cohorts.name,
+      status: cohorts.status,
+      startDate: cohorts.startDate,
+      endDate: cohorts.endDate,
+    })
+    .from(cohorts)
+    .where(and(...conditions));
+}
+
+/** Marca uma turma como ACTIVE (promoção PLANNED → ACTIVE). */
+export async function activateCohort(cohortId: string) {
+  await db
+    .update(cohorts)
+    .set({ status: "ACTIVE", updatedAt: new Date() })
+    .where(eq(cohorts.id, cohortId));
+}
+
+/**
+ * Fecha uma turma e arquiva todos os internos ainda ativos nela.
+ * Idempotente: internos já arquivados não são tocados.
+ * Retorna a quantidade de internos arquivados nesta chamada.
+ */
+export async function closeCohortAndArchiveInterns(params: {
+  cohortId: string;
+  closedBy: string | null;
+}): Promise<number> {
+  const now = new Date();
+
+  await db
+    .update(cohorts)
+    .set({ status: "CLOSED", closedAt: now, closedBy: params.closedBy, updatedAt: now })
+    .where(eq(cohorts.id, params.cohortId));
+
+  const archived = await db
+    .update(userRoles)
+    .set({ isArchived: true, archivedAt: now, archivedBy: params.closedBy })
+    .where(
+      and(
+        eq(userRoles.cohortId, params.cohortId),
+        eq(userRoles.role, "INTERN"),
+        eq(userRoles.isArchived, false),
+      ),
+    )
+    .returning({ id: userRoles.id });
+
+  return archived.length;
 }
