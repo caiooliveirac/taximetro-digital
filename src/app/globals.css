@@ -246,6 +246,23 @@ main>* {
     break-before: page;
   }
 
+  /* Cards de plantão compactos no PDF — na tela seguem no tamanho normal. */
+  .report-shift-card {
+    padding: 3px 8px !important;
+    margin-bottom: 3px !important;
+    box-shadow: none !important;
+  }
+
+  .report-shift-card,
+  .report-shift-card * {
+    font-size: 8.5px !important;
+    line-height: 1.35 !important;
+  }
+
+  .report-shift-card > div {
+    margin-top: 2px !important;
+  }
+
   .report-heatmap-section {
     page: landscape-heatmap;
     break-before: page;
@@ -275,9 +292,14 @@ main>* {
     break-inside: avoid;
   }
 
+  /* Linhas baixas — heatmap denso ocupa menos páginas. */
+  .report-heatmap-section td {
+    padding: 0.5px 1px !important;
+  }
+
   .report-heatmap-cell {
     width: 100% !important;
-    height: 12px !important;
+    height: 9px !important;
   }
 
   .report-heatmap-day-label {
@@ -285,11 +307,14 @@ main>* {
     font-size: 7px !important;
     writing-mode: vertical-rl;
     white-space: nowrap;
-    line-height: 12px;
+    line-height: 11px;
     margin: 0 auto;
   }
 
   .report-heatmap-name {
     width: 130px !important;
+    padding: 1px 6px !important;
+    font-size: 8px !important;
+    line-height: 1.2 !important;
   }
 }

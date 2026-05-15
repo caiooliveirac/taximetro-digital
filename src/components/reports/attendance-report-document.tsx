@@ -34,6 +34,29 @@ function periodDetailedLabel(period: string, shift: string | null | undefined) {
   return "Dia";
 }
 
+// "Dr/Dra Primeiro Segundo" — médico do check-in (login ou nome do Telegram).
+// Se o nome já vier com título, reaproveita-o; senão, heurística pelo fim do
+// primeiro nome (não há dado de gênero no cadastro).
+function formatCheckinDoctor(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let parts = raw.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+
+  let title: string | null = null;
+  const head = parts[0].toLowerCase().replace(/\.$/, "");
+  if (head === "dr" || head === "dra") {
+    title = head === "dra" ? "Dra" : "Dr";
+    parts = parts.slice(1);
+  }
+  if (parts.length === 0) return null;
+
+  if (!title) {
+    const firstNormalized = parts[0].toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    title = firstNormalized.endsWith("a") ? "Dra" : "Dr";
+  }
+  return `${title} ${parts.slice(0, 2).join(" ")}`;
+}
+
 function assignmentStatusBadge(assignment: ReportAssignmentCard, group: "done" | "scheduled" | "absent") {
   if (group === "done") {
     return {
@@ -63,19 +86,21 @@ function AssignmentCard({
   compactCompleted: boolean;
 }) {
   const badge = assignmentStatusBadge(assignment, group);
+  const doctorName = formatCheckinDoctor(assignment.checkinDoctorName);
   if (compactCompleted && group === "done") {
     return (
-      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-slate-700">
+      <div className="report-shift-card mb-2 flex flex-wrap items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-slate-700">
         <span className="font-medium text-slate-900">{formatBrazilLongDate(assignment.date)}</span>
         <span className="rounded bg-white px-2 py-0.5 text-xs text-slate-600">{assignment.baseCode}</span>
         <span className="rounded bg-white px-2 py-0.5 text-xs text-slate-600">{periodLabel(assignment.period)}</span>
         <span className="text-xs text-slate-500">{formatTimeOrDash(assignment.checkinAt)} → {formatTimeOrDash(assignment.checkoutAt)}</span>
+        {doctorName ? <span className="text-xs font-medium text-slate-600">{doctorName}</span> : null}
       </div>
     );
   }
 
   return (
-    <div className="mb-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="report-shift-card mb-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold text-slate-900">{formatBrazilLongDate(assignment.date)}</span>
         <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">{periodLabel(assignment.period)}</span>
@@ -87,6 +112,7 @@ function AssignmentCard({
         {assignment.shift ? <span>{assignment.shift === "MORNING" ? "Manhã" : "Tarde"}</span> : null}
         {assignment.checkinAt ? <span>Check-in: {formatTimeOrDash(assignment.checkinAt)}</span> : null}
         {assignment.checkoutAt ? <span>Check-out: {formatTimeOrDash(assignment.checkoutAt)}</span> : null}
+        {doctorName ? <span className="font-medium text-slate-600">{doctorName}</span> : null}
       </div>
       {group === "absent" && assignment.isJustified ? (
         <div className="mt-2 rounded border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -366,7 +392,9 @@ function AssignmentDetailModal({
 }
 
 const HEATMAP_COLORS: Record<ReportHeatmapCellState, string> = {
-  done: "#34d399",            // emerald-400 — cumprido
+  doneCru: "#34d399",         // emerald-400 — CRU cumprido (cor pré-existente de "cumprido")
+  doneCrl: "#0d9488",         // teal-600 — CRL cumprido
+  doneUsa: "#15803d",         // green-700 — USA cumprido
   scheduled: "#cbd5e1",       // slate-300 — agendado futuro
   absentConfirmed: "#dc2626", // red-600 — falta lançada
   noCheckin: "#fb923c",       // orange-400 — sem check-in
@@ -374,7 +402,9 @@ const HEATMAP_COLORS: Record<ReportHeatmapCellState, string> = {
 };
 
 const HEATMAP_LEGEND: Array<{ state: ReportHeatmapCellState; label: string }> = [
-  { state: "done", label: "Cumprido" },
+  { state: "doneCru", label: "CRU cumprido" },
+  { state: "doneCrl", label: "CRL cumprido" },
+  { state: "doneUsa", label: "USA cumprido" },
   { state: "scheduled", label: "Agendado" },
   { state: "absentConfirmed", label: "Falta lançada" },
   { state: "noCheckin", label: "Sem check-in" },
@@ -390,7 +420,9 @@ function heatmapCellBackground(states: ReportHeatmapCellState[]): string {
 }
 
 const STATE_LABELS: Record<ReportHeatmapCellState, string> = {
-  done: "cumprido",
+  doneCru: "CRU cumprido",
+  doneCrl: "CRL cumprido",
+  doneUsa: "USA cumprido",
   scheduled: "agendado",
   absentConfirmed: "falta lançada",
   noCheckin: "sem check-in",
@@ -485,7 +517,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
           <span className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2 py-0.5">
             <span
               className="h-3 w-3 rounded"
-              style={{ background: `linear-gradient(135deg, ${HEATMAP_COLORS.done} 0%, ${HEATMAP_COLORS.done} 50%, ${HEATMAP_COLORS.absentConfirmed} 50%, ${HEATMAP_COLORS.absentConfirmed} 100%)` }}
+              style={{ background: `linear-gradient(135deg, ${HEATMAP_COLORS.doneCru} 0%, ${HEATMAP_COLORS.doneCru} 50%, ${HEATMAP_COLORS.absentConfirmed} 50%, ${HEATMAP_COLORS.absentConfirmed} 100%)` }}
             />
             Dois plantões no dia
           </span>
