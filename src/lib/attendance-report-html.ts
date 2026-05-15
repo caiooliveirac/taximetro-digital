@@ -163,13 +163,33 @@ function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument 
 
 export function renderAttendanceReportHTML(document: ReportDocument, autoPrint = false): string {
   const markup = renderToStaticMarkup(createElement(AttendanceReportDocument, { document }));
+  const title = `Relatório de Plantões — ${document.facultyLabel} — ${document.periodLabel}`;
 
+  // Tailwind play CDN escaneia o markup e gera as utilities on-the-fly ao abrir o HTML em
+  // um navegador. Indispensável quando o HTML é enviado como anexo de email, já que ali
+  // não há acesso ao CSS compilado do Next.
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Relatório de Plantões</title>
+  <title>${title}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            accent: {
+              50: '#FFF7ED', 100: '#FFEDD5', 200: '#FED7AA',
+              400: '#FB923C', 500: '#F97316', 600: '#EA580C', 700: '#C2410C'
+            },
+            navy: { 500: '#3B5998', 700: '#1E3A5F', 800: '#172B45', 900: '#0F1D2F' }
+          }
+        }
+      }
+    }
+  </script>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; background: #f8fafc; color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }

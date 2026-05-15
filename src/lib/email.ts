@@ -243,6 +243,71 @@ export function getEmailErrorSummary(error: unknown): EmailErrorSummary {
   }
 }
 
+type ReportEmailSummary = {
+  facultyLabel: string;
+  periodLabel: string;
+  scopeLabel: string;
+  internCount: number;
+  assignmentCount: number;
+};
+
+export async function sendReportEmail(to: string, html: string, summary: ReportEmailSummary, attachmentBaseName: string, senderName: string | null) {
+  const transporter = await getVerifiedTransporter();
+  const config = getSmtpConfig();
+  const subject = `Relatório de plantões — ${summary.facultyLabel} — ${summary.periodLabel}`;
+  const attachmentName = `${attachmentBaseName}.html`;
+  const senderLine = senderName ? `${senderName} (Taxímetro Digital)` : "Taxímetro Digital";
+
+  try {
+    await transporter.sendMail({
+      from: config.from,
+      to,
+      subject,
+      html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #0f172a;">
+        <div style="margin-bottom: 24px;">
+          <h1 style="font-size: 20px; color: #1E3A5F; margin: 0;">Relatório de Plantões</h1>
+          <p style="font-size: 13px; color: #64748b; margin: 4px 0 0;">Taxímetro Digital — SAMU 192 Salvador</p>
+        </div>
+        <p style="font-size: 15px; color: #334155; margin: 0 0 16px;">${senderLine} compartilhou um relatório de plantões com você.</p>
+        <table style="border-collapse: collapse; font-size: 14px; color: #334155; margin-bottom: 20px;">
+          <tr><td style="padding: 4px 12px 4px 0; color: #64748b;">Faculdade</td><td style="padding: 4px 0;"><strong>${summary.facultyLabel}</strong></td></tr>
+          <tr><td style="padding: 4px 12px 4px 0; color: #64748b;">Período</td><td style="padding: 4px 0;"><strong>${summary.periodLabel}</strong></td></tr>
+          <tr><td style="padding: 4px 12px 4px 0; color: #64748b;">Escopo</td><td style="padding: 4px 0;"><strong>${summary.scopeLabel}</strong></td></tr>
+          <tr><td style="padding: 4px 12px 4px 0; color: #64748b;">Internos</td><td style="padding: 4px 0;"><strong>${summary.internCount}</strong></td></tr>
+          <tr><td style="padding: 4px 12px 4px 0; color: #64748b;">Plantões</td><td style="padding: 4px 0;"><strong>${summary.assignmentCount}</strong></td></tr>
+        </table>
+        <div style="border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 8px; padding: 16px;">
+          <p style="margin: 0 0 8px; font-size: 14px; color: #334155;"><strong>Anexo:</strong> ${attachmentName}</p>
+          <p style="margin: 0; font-size: 13px; color: #64748b;">Abra o arquivo no navegador para visualizar o relatório completo com a formatação original. Você pode imprimi-lo ou salvar como PDF a partir de lá.</p>
+        </div>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+        <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Este email foi gerado automaticamente pelo Taxímetro Digital.</p>
+      </div>
+    `,
+      attachments: [
+        {
+          filename: attachmentName,
+          content: html,
+          contentType: "text/html; charset=utf-8",
+        },
+      ],
+    });
+  } catch (error) {
+    const normalizedError = normalizeEmailError(error, {
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      requireTls: config.requireTls,
+      user: maskEmail(config.user),
+      to: maskEmail(to),
+      kind: "report",
+    });
+    logEmailEvent("send", config, normalizedError);
+    throw normalizedError;
+  }
+}
+
 export async function sendPasswordResetEmail(to: string, name: string, token: string) {
   const transporter = await getVerifiedTransporter();
   const config = getSmtpConfig();

@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { BarChart3, Download, FileCode2, Filter, Loader2, MailPlus, Printer, Share2, Sparkles } from "lucide-react";
+import { BarChart3, Download, FileCode2, Filter, Loader2, MailPlus, Printer, Share2, Sparkles, X } from "lucide-react";
 import { AttendanceReportDocument } from "@/components/reports/attendance-report-document";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_REPORT_FILTERS, type ReportFilterInput } from "@/lib/report-filters";
@@ -67,6 +67,10 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
   const [error, setError] = useState<string | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailRecipient, setEmailRecipient] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailFeedback, setEmailFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const deferredInternSearch = useDeferredValue(internSearch);
 
   const facultyFilteredInterns = useMemo(() => {
@@ -206,6 +210,36 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
       ...prev,
       selectedInternIds: [...new Set([...prev.selectedInternIds, ...ids])],
     }));
+  }
+
+  async function sendReportByEmail() {
+    const recipient = emailRecipient.trim();
+    if (!recipient) {
+      setEmailFeedback({ kind: "error", message: "Informe um email." });
+      return;
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipient)) {
+      setEmailFeedback({ kind: "error", message: "Email inválido." });
+      return;
+    }
+    setEmailSending(true);
+    setEmailFeedback(null);
+    try {
+      const response = await fetch("/taximetro/api/reports/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: recipient, filters }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.success) {
+        throw new Error(json.error ?? "Não foi possível enviar.");
+      }
+      setEmailFeedback({ kind: "success", message: `Relatório enviado para ${recipient}.` });
+    } catch (err) {
+      setEmailFeedback({ kind: "error", message: err instanceof Error ? err.message : "Erro ao enviar." });
+    } finally {
+      setEmailSending(false);
+    }
   }
 
   function applyRotationShortcut(kind: "CURRENT" | "PREVIOUS" | "PENULTIMATE" | "CURRENT_AND_PREVIOUS") {
@@ -517,7 +551,7 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
             <Button variant="outline" size="sm" onClick={() => setMobileFiltersOpen(true)} className="lg:hidden"><Filter className="h-4 w-4" /> Filtros</Button>
             <Button variant="outline" size="sm" onClick={() => submitExport("html", filters)}><FileCode2 className="h-4 w-4" /> HTML</Button>
             <Button variant="outline" size="sm" onClick={() => submitExport("pdf", filters)}><Printer className="h-4 w-4" /> PDF</Button>
-            <Button variant="outline" size="sm" disabled title="Em breve"><MailPlus className="h-4 w-4" /> Agendar</Button>
+            <Button variant="outline" size="sm" onClick={() => { setEmailFeedback(null); setEmailModalOpen(true); }} disabled={!preview || loading}><MailPlus className="h-4 w-4" /> Enviar por email</Button>
             <Button variant="outline" size="sm" disabled title="Requer schema novo para report_presets"><Sparkles className="h-4 w-4" /> Preset</Button>
             <Button variant="outline" size="sm" disabled title="Requer schema novo para link assinado"><Share2 className="h-4 w-4" /> Compartilhar</Button>
           </div>
@@ -556,6 +590,64 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
           </div>
         </section>
       </div>
+
+      {emailModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <button className="absolute inset-0" aria-label="Fechar" onClick={() => emailSending ? undefined : setEmailModalOpen(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900"><MailPlus className="h-4 w-4 text-accent-500" /> Enviar relatório por email</h2>
+                <p className="mt-1 text-xs text-slate-500">O HTML é anexado ao email com os filtros que estão aplicados agora.</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                onClick={() => !emailSending && setEmailModalOpen(false)}
+                disabled={emailSending}
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                <div><strong>{preview?.document.facultyLabel ?? "—"}</strong> · {preview?.document.scopeLabel ?? "—"}</div>
+                <div className="mt-1">{preview?.document.periodLabel ?? "—"}</div>
+                <div className="mt-1">{preview?.document.previewSummary.internCount ?? 0} internos · {preview?.document.previewSummary.assignmentCount ?? 0} plantões</div>
+              </div>
+
+              <label className="block text-sm text-slate-700">
+                <span className="text-xs font-medium text-slate-500">Destinatário</span>
+                <input
+                  type="email"
+                  autoFocus
+                  className={INPUT_CLASS}
+                  value={emailRecipient}
+                  onChange={(event) => setEmailRecipient(event.target.value)}
+                  placeholder="email@exemplo.com"
+                  disabled={emailSending}
+                  onKeyDown={(event) => { if (event.key === "Enter" && !emailSending) void sendReportByEmail(); }}
+                />
+              </label>
+
+              {emailFeedback ? (
+                <div className={`rounded-lg px-3 py-2 text-sm ${emailFeedback.kind === "success" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-700"}`}>
+                  {emailFeedback.message}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2 pt-1">
+                <Button variant="outline" size="sm" onClick={() => setEmailModalOpen(false)} disabled={emailSending}>Cancelar</Button>
+                <Button size="sm" onClick={() => void sendReportByEmail()} disabled={emailSending || !preview}>
+                  {emailSending ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando…</> : <><MailPlus className="h-4 w-4" /> Enviar</>}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {mobileFiltersOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
