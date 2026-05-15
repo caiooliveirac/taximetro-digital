@@ -489,7 +489,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
             />
             Dois plantões no dia
           </span>
-          <span className="rounded bg-sky-100 px-2 py-0.5 text-sky-800">Clique para ver detalhes</span>
+          <span className="rounded bg-sky-100 px-2 py-0.5 text-sky-800 print:hidden">Clique para ver detalhes</span>
         </div>
         <div className="report-heatmap-scroll max-h-[72vh] overflow-auto rounded-lg border border-slate-200">
           <table className="w-max min-w-full border-separate border-spacing-0">
@@ -646,7 +646,7 @@ function InternCard({ document, intern }: { document: ReportDocument; intern: Re
   const hideEmptySections = document.filters.display.hideEmptySections;
 
   return (
-    <article className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <article className="report-intern-card mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

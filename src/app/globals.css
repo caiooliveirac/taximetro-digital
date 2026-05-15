@@ -224,6 +224,28 @@ main>* {
     margin: 10mm;
   }
 
+  /* Sem isto o navegador descarta cores de fundo na impressão —
+     heatmap, chips e barras saem em branco. */
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Animações de entrada (tw-animate-css) começam em opacity:0; ao gerar
+     PDF o navegador captura nesse estado inicial e o relatório sai em
+     branco. Desligar animação/transição no print mantém tudo visível. */
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Cada interno começa em página própria (pode ocupar mais de uma). */
+  .report-intern-card {
+    break-before: page;
+  }
+
   .report-heatmap-section {
     page: landscape-heatmap;
     break-before: page;
@@ -252,7 +274,11 @@ main>* {
 
   .report-heatmap-day-label {
     width: 13px !important;
-    font-size: 8px !important;
+    font-size: 7px !important;
+    writing-mode: vertical-rl;
+    white-space: nowrap;
+    line-height: 13px;
+    margin: 0 auto;
   }
 
   .report-heatmap-name {
