@@ -50,7 +50,7 @@ export function InternQuickModal({
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-slate-500">Resumo rápido — clique em "Ver perfil completo" para gerir o interno</p>
+            <p className="mt-1 text-xs text-slate-500">Resumo rápido — clique em &quot;Ver perfil completo&quot; para gerir o interno</p>
           </div>
           <button
             onClick={onClose}

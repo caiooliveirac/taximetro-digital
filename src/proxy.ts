@@ -22,7 +22,7 @@ function withDetectedBasePath(rawPathname: string, targetPathname: string) {
   return targetPathname;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const rawPathname = req.nextUrl.pathname;
   const pathname = stripBasePath(rawPathname);
 
