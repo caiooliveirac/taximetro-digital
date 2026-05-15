@@ -54,6 +54,7 @@ type AssignmentRow = {
   checkoutAt: string | null;
   absenceJustification: string | null;
   isExtraShift: boolean;
+  checkinDoctorName: string | null;
 };
 
 type RequestRow = {
@@ -88,6 +89,7 @@ export type ReportAssignmentCard = {
   isJustified: boolean;
   absenceJustification: string | null;
   isExtraShift: boolean;
+  checkinDoctorName: string | null;
 };
 
 export type ReportTypeSection = {
@@ -166,7 +168,9 @@ export type ReportHeatmapDay = {
 };
 
 export type ReportHeatmapCellState =
-  | "done"
+  | "doneCru"
+  | "doneCrl"
+  | "doneUsa"
   | "scheduled"
   | "absentConfirmed"
   | "noCheckin"
@@ -275,12 +279,14 @@ export function classifyReportAssignment(
 }
 
 export function classifyHeatmapCell(
-  assignment: { status: string; date: string; period: string; isExtraShift: boolean },
+  assignment: { status: string; date: string; period: string; isExtraShift: boolean; baseType: string | null },
   todayStr: string,
   hourNow: number
 ): ReportHeatmapCellState {
   if (assignment.isExtraShift) return "extra";
-  if (assignment.status === "CHECKED_IN" || assignment.status === "CHECKED_OUT") return "done";
+  if (assignment.status === "CHECKED_IN" || assignment.status === "CHECKED_OUT") {
+    return assignment.baseType === "CRL" ? "doneCrl" : assignment.baseType === "USA" ? "doneUsa" : "doneCru";
+  }
   if (assignment.status === "ABSENT") return "absentConfirmed";
 
   if (assignment.status === "SCHEDULED" || assignment.status === "CONFIRMED") {
@@ -690,10 +696,12 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       checkoutAt: checkins.checkoutAt,
       absenceJustification: assignments.absenceJustification,
       isExtraShift: assignments.isExtraShift,
+      checkinDoctorName: sql<string | null>`coalesce(${users.name}, ${checkins.validatedByName})`,
     })
     .from(assignments)
     .innerJoin(bases, eq(bases.id, assignments.baseId))
     .leftJoin(checkins, eq(checkins.assignmentId, assignments.id))
+    .leftJoin(users, eq(users.id, checkins.validatedBy))
     .where(
       and(
         inArray(assignments.internId, scopedInternIds),
@@ -718,6 +726,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     checkoutAt: row.checkoutAt ? row.checkoutAt.toISOString() : null,
     absenceJustification: row.absenceJustification,
     isExtraShift: row.isExtraShift,
+    checkinDoctorName: row.checkinDoctorName,
   }));
 
   const requestRowsRaw = await db
@@ -814,6 +823,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       isJustified: Boolean(assignment.absenceJustification),
       absenceJustification: assignment.absenceJustification,
       isExtraShift: assignment.isExtraShift,
+      checkinDoctorName: assignment.checkinDoctorName,
     } satisfies ReportAssignmentCard));
 
     const typeSections: Record<ReportTypeKey, ReportTypeSection> = {
