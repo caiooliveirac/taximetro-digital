@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { X, AlertCircle, CheckCircle2, ExternalLink } from "lucide-react";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { InternHistorySection, useInternHistory, COMPLIANCE_BADGE } from "@/components/admin/intern-history-section";
 import type { AbsenceAlertItem } from "@/components/admin/cockpit-alarms";
+import { dismissAbsenceAlertAction, cancelAssignmentAction } from "@/app/admin/actions";
 
 const PERIOD_LABEL: Record<"DAY" | "NIGHT", string> = { DAY: "Diurno", NIGHT: "Noturno" };
 
@@ -22,6 +23,7 @@ type Props = {
 export function AbsenceQuickModal({ absence, onClose }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<"dismiss" | "cancel" | null>(null);
+  const [, startTransition] = useTransition();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,52 +31,47 @@ export function AbsenceQuickModal({ absence, onClose }: Props) {
   const history = useInternHistory(absence.internId);
   const { compliance } = history;
 
-  async function handleDismiss() {
+  function handleDismiss() {
     setBusy("dismiss");
     setError(null);
-    try {
-      const res = await fetch(`/taximetro/api/admin/absence-alerts/${absence.assignmentId}/dismiss`, {
-        method: "POST",
-      });
-      const json = await res.json();
-      if (!res.ok || !json?.success) {
-        setError(json?.error ?? "Falha ao dispensar alerta");
+    startTransition(async () => {
+      try {
+        const result = await dismissAbsenceAlertAction(absence.assignmentId);
+        if (!result.success) {
+          setError(result.error);
+          setBusy(null);
+          return;
+        }
+        router.refresh();
+        onClose();
+      } catch {
+        setError("Erro de rede");
         setBusy(null);
-        return;
       }
-      router.refresh();
-      onClose();
-    } catch {
-      setError("Erro de rede");
-      setBusy(null);
-    }
+    });
   }
 
-  async function handleCancel() {
+  function handleCancel() {
     setBusy("cancel");
     setError(null);
-    try {
-      const res = await fetch(`/taximetro/api/assignments`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: absence.assignmentId,
-          status: "CANCELLED",
-          notes: "Plantão cancelado via card de faltas pendentes",
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json?.success) {
-        setError(json?.error ?? "Falha ao cancelar plantão");
+    startTransition(async () => {
+      try {
+        const result = await cancelAssignmentAction(
+          absence.assignmentId,
+          "Plantão cancelado via card de faltas pendentes",
+        );
+        if (!result.success) {
+          setError(result.error);
+          setBusy(null);
+          return;
+        }
+        router.refresh();
+        onClose();
+      } catch {
+        setError("Erro de rede");
         setBusy(null);
-        return;
       }
-      router.refresh();
-      onClose();
-    } catch {
-      setError("Erro de rede");
-      setBusy(null);
-    }
+    });
   }
 
   return (
