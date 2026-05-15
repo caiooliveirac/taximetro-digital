@@ -285,6 +285,38 @@ No `eslint.config.mjs`, rebaixei **apenas essa regra** para `warn`, com comentá
 
 **Rollback:** `git revert <commit ONDA 9>`. Reverte fixes + a inclusão do `lint` na CI.
 
+## ONDA 10 — Rename `middleware.ts → proxy.ts` (2026-05-15) ✅
+
+Fecha o follow-up do Next 16: `middleware` é convenção depreciada, substituída por `proxy`.
+
+**O que mudou:**
+
+- `src/middleware.ts` → `src/proxy.ts` (`git mv`).
+- `export async function middleware(req)` → `export async function proxy(req)`.
+- Nenhuma outra mudança: `matcher`, `config`, lógica de auth/redirect, `getToken({ secureCookie: process.env.NODE_ENV === "production" })` — tudo inalterado.
+
+**Por que estava adiado:** regra 8.4 — toca o ponto de entrada de auth/redirect. Adiado da ONDA 3 (Next 16) para revisão dedicada. Agora isolado em commit próprio: se quebrar, `git revert` desfaz só o rename.
+
+**Estado pré-existente preservado:**
+
+- Comentários de código (`role-switcher.tsx:23`, `lib/roles.ts:92`) ainda mencionam "middleware" como contexto narrativo — não é referência ao símbolo, deixados intactos.
+- `next.config.ts` não tem `basePath` redundante para proxy — o `basePath: "/taximetro"` global continua aplicando ao `proxy.ts`.
+
+**Verificação no `npm run build`:** warning `The "middleware" file convention is deprecated. Please use "proxy" instead` **sumiu**. Resta um warning não-relacionado no `next.config.ts` ("Encountered unexpected file in NFT list"), pré-existente.
+
+**Testes:** `typecheck` ✅, `lint` ✅ (0 errors, 116 warnings inalterados), `test` 80/80 ✅, `build` ✅ sem o warning de middleware.
+
+**Smoke recomendado pós-deploy** (já que toca auth):
+
+1. `https://mnrs.com.br/taximetro/login` → 200.
+2. Login COORDINATOR/INTERN/LEADER/PRECEPTOR → redireciona para o dashboard correto.
+3. Acessar URL fora do `ROLE_PREFIX` do papel → redireciona para o dashboard permitido.
+4. Usuário com `mustChangePassword=true` → forçado para `/trocar-senha`.
+5. `GET /taximetro/api/health` (rota pública) → `healthy`.
+
+**Rollback:** `git revert <commit ONDA 10>`. Volta a `src/middleware.ts` + `export async function middleware`. Sem efeito em DB ou env.
+
+
 
 
 
