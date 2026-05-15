@@ -40,6 +40,27 @@ function formatMonthDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+// Intervalo real de registros (primeiro/último plantão) das turmas dadas.
+// Permite que clicar numa turma já encaixe o filtro de data no recorte certo.
+function getCohortsDateRange(
+  interns: ReportCatalogIntern[],
+  cohortKeys: string[],
+  grouping: ReportFilterInput["cohortGrouping"],
+): { from: string; to: string } | null {
+  const keySet = new Set(cohortKeys);
+  const firsts: string[] = [];
+  const lasts: string[] = [];
+  for (const intern of interns) {
+    if (!keySet.has(getInternCohortByGrouping(intern, grouping).key)) continue;
+    if (intern.firstAssignmentDate) firsts.push(intern.firstAssignmentDate);
+    if (intern.lastAssignmentDate) lasts.push(intern.lastAssignmentDate);
+  }
+  if (firsts.length === 0 || lasts.length === 0) return null;
+  firsts.sort();
+  lasts.sort();
+  return { from: firsts[0], to: lasts[lasts.length - 1] };
+}
+
 function submitExport(format: "html" | "pdf", filters: ReportFilterInput) {
   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(filters))));
   window.open(`/taximetro/admin/relatorios/export?format=${format}&filters=${encodeURIComponent(encoded)}`, "_blank", "noopener,noreferrer");
@@ -250,38 +271,22 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
   }
 
   function applyRotationShortcut(kind: "CURRENT" | "PREVIOUS" | "PENULTIMATE" | "CURRENT_AND_PREVIOUS") {
-    if (kind === "CURRENT") {
-      setFilters((prev) => ({
-        ...prev,
-        scopeMode: "COHORT",
-        display: { ...prev.display, compareCohorts: false },
-        selectedCohorts: currentRotationCohort ? [currentRotationCohort.key] : [],
-      }));
-      return;
-    }
-    if (kind === "PREVIOUS") {
-      setFilters((prev) => ({
-        ...prev,
-        scopeMode: "COHORT",
-        display: { ...prev.display, compareCohorts: false },
-        selectedCohorts: previousRotationCohort ? [previousRotationCohort.key] : [],
-      }));
-      return;
-    }
-    if (kind === "PENULTIMATE") {
-      setFilters((prev) => ({
-        ...prev,
-        scopeMode: "COHORT",
-        display: { ...prev.display, compareCohorts: false },
-        selectedCohorts: penultimateRotationCohort ? [penultimateRotationCohort.key] : [],
-      }));
-      return;
-    }
+    const keysByKind: Record<typeof kind, Array<string | undefined>> = {
+      CURRENT: [currentRotationCohort?.key],
+      PREVIOUS: [previousRotationCohort?.key],
+      PENULTIMATE: [penultimateRotationCohort?.key],
+      CURRENT_AND_PREVIOUS: [currentRotationCohort?.key, previousRotationCohort?.key],
+    };
+    const selectedCohorts = keysByKind[kind].filter(Boolean) as string[];
+    const range = selectedCohorts.length > 0
+      ? getCohortsDateRange(facultyFilteredInterns, selectedCohorts, "ROTATION_7W")
+      : null;
     setFilters((prev) => ({
       ...prev,
       scopeMode: "COHORT",
-      selectedCohorts: [currentRotationCohort?.key, previousRotationCohort?.key].filter(Boolean) as string[],
-      display: { ...prev.display, compareCohorts: true },
+      selectedCohorts,
+      display: { ...prev.display, compareCohorts: kind === "CURRENT_AND_PREVIOUS" },
+      ...(range ?? {}),
     }));
   }
 
@@ -350,13 +355,17 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
                     type="button"
                     size="sm"
                     variant={filters.selectedCohorts.includes(c.id) && filters.cohortGrouping === "NAMED_COHORT" ? "default" : "outline"}
-                    onClick={() => setFilters((prev) => ({
-                      ...prev,
-                      scopeMode: "COHORT",
-                      cohortGrouping: "NAMED_COHORT",
-                      selectedCohorts: [c.id],
-                      display: { ...prev.display, compareCohorts: false },
-                    }))}
+                    onClick={() => setFilters((prev) => {
+                      const range = getCohortsDateRange(catalog.interns, [c.id], "NAMED_COHORT");
+                      return {
+                        ...prev,
+                        scopeMode: "COHORT",
+                        cohortGrouping: "NAMED_COHORT",
+                        selectedCohorts: [c.id],
+                        display: { ...prev.display, compareCohorts: false },
+                        ...(range ?? {}),
+                      };
+                    })}
                   >
                     {c.name ?? c.label}
                     {c.status === "ACTIVE" && <span className="ml-1 rounded-full bg-emerald-200 px-1 text-[10px] text-emerald-800">ativa</span>}
@@ -400,7 +409,11 @@ export function AdminReportsExplorer({ catalog }: { catalog: CatalogData }) {
               {!filters.display.compareCohorts ? (
                 <label className="block text-sm text-slate-700">
                   <span className="text-xs font-medium text-slate-500">Turma</span>
-                  <select className={SELECT_CLASS} value={filters.selectedCohorts[0] ?? ""} onChange={(event) => setFilters((prev) => ({ ...prev, selectedCohorts: event.target.value ? [event.target.value] : [] }))}>
+                  <select className={SELECT_CLASS} value={filters.selectedCohorts[0] ?? ""} onChange={(event) => setFilters((prev) => {
+                    const key = event.target.value;
+                    const range = key ? getCohortsDateRange(facultyFilteredInterns, [key], prev.cohortGrouping) : null;
+                    return { ...prev, selectedCohorts: key ? [key] : [], ...(range ?? {}) };
+                  })}>
                     <option value="">Todas</option>
                     {cohorts.map((cohort) => (
                       <option key={cohort.key} value={cohort.key}>{cohort.label}</option>

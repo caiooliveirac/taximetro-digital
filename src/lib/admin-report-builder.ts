@@ -35,6 +35,7 @@ export type ReportCatalogIntern = {
   cohortRotationLabel: string;
   rotationStartDate: string | null;
   firstAssignmentDate: string | null;
+  lastAssignmentDate: string | null;
   targetHours: number;
   targetShifts: number;
 };
@@ -499,18 +500,21 @@ export async function listReportCatalog(): Promise<{
   const facultyIds = [...new Set(rows.map((row) => row.facultyId).filter(Boolean))] as string[];
 
   const firstAssignmentByIntern = new Map<string, string>();
+  const lastAssignmentByIntern = new Map<string, string>();
   if (internIds.length > 0) {
-    const firstAssignmentRows = await db
+    const assignmentDateRows = await db
       .select({
         internId: assignments.internId,
         firstAssignmentDate: sql<string>`min(${assignments.date})`,
+        lastAssignmentDate: sql<string>`max(${assignments.date})`,
       })
       .from(assignments)
       .where(and(inArray(assignments.internId, internIds), ne(assignments.status, "CANCELLED")))
       .groupBy(assignments.internId);
 
-    for (const row of firstAssignmentRows) {
+    for (const row of assignmentDateRows) {
       if (row.firstAssignmentDate) firstAssignmentByIntern.set(row.internId, row.firstAssignmentDate);
+      if (row.lastAssignmentDate) lastAssignmentByIntern.set(row.internId, row.lastAssignmentDate);
     }
   }
 
@@ -560,6 +564,7 @@ export async function listReportCatalog(): Promise<{
         cohortRotationLabel: rotation.label,
         rotationStartDate: row.rotationStartDate,
         firstAssignmentDate,
+        lastAssignmentDate: lastAssignmentByIntern.get(row.internId) ?? null,
         targetHours: row.targetHours ?? 0,
         targetShifts: row.targetShifts ?? 0,
       } satisfies ReportCatalogIntern;
