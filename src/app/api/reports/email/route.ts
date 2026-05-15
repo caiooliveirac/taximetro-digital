@@ -120,5 +120,42 @@ async function fetchExportHtml(req: NextRequest, filters: ReportFilterInput): Pr
   if (!response.ok) {
     throw new Error(`Falha ao renderizar export (${response.status} ${response.statusText})`);
   }
-  return response.text();
+  const rawHtml = await response.text();
+  return inlineAssetsForEmail(rawHtml, internalOrigin);
+}
+
+// Transforma o HTML do Next em algo abrível offline:
+// 1. Inline cada <link rel="stylesheet"> (fetch loopback do CSS e embute em <style>)
+// 2. Remove <script> e preloads de script (sem servidor pra entregá-los)
+async function inlineAssetsForEmail(html: string, origin: string): Promise<string> {
+  const linkStylesheetRegex = /<link[^>]+rel=["']stylesheet["'][^>]*>/gi;
+  const hrefRegex = /href=["']([^"']+)["']/i;
+  const stylesheetTags = html.match(linkStylesheetRegex) ?? [];
+
+  const cssChunks: string[] = [];
+  for (const tag of stylesheetTags) {
+    const hrefMatch = tag.match(hrefRegex);
+    if (!hrefMatch) continue;
+    const href = hrefMatch[1];
+    const url = href.startsWith("http") ? href : `${origin}${href.startsWith("/") ? "" : "/"}${href}`;
+    try {
+      const cssResponse = await fetch(url, { cache: "no-store" });
+      if (cssResponse.ok) cssChunks.push(await cssResponse.text());
+    } catch {
+      // se falhar, segue sem esse stylesheet
+    }
+  }
+
+  let out = html
+    .replace(linkStylesheetRegex, "")
+    .replace(/<link[^>]+rel=["']preload["'][^>]+as=["']script["'][^>]*\/?>/gi, "")
+    .replace(/<link[^>]+rel=["']manifest["'][^>]*\/?>/gi, "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<script\b[^>]*\/>/gi, "");
+
+  if (cssChunks.length > 0) {
+    const inlineStyle = `<style>${cssChunks.join("\n")}</style>`;
+    out = out.includes("</head>") ? out.replace("</head>", `${inlineStyle}</head>`) : `${inlineStyle}${out}`;
+  }
+  return out;
 }
