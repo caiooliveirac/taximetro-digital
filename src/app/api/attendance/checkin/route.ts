@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { JWT } from "next-auth/jwt";
 import { db } from "@/db";
@@ -154,14 +154,16 @@ export async function POST(req: NextRequest) {
   const [intern] = await db.select({ selfie: users.selfie, name: users.name })
     .from(users).where(eq(users.id, effectiveInternId)).limit(1);
 
-  await logAudit({
-    userId: effectiveInternId,
-    action: "CHECKIN_INITIATED",
-    entity: "checkin",
-    entityId: checkinId,
-    realUserId: impersonating ? (token.id as string) : undefined,
-    payload: { distance: hasGps ? geo.distance : null, geoValid: hasGps ? geo.valid : false, hasGps, reused: !!existingCheckin },
-  });
+  after(() =>
+    logAudit({
+      userId: effectiveInternId,
+      action: "CHECKIN_INITIATED",
+      entity: "checkin",
+      entityId: checkinId,
+      realUserId: impersonating ? (token.id as string) : undefined,
+      payload: { distance: hasGps ? geo.distance : null, geoValid: hasGps ? geo.valid : false, hasGps, reused: !!existingCheckin },
+    }),
+  );
 
   return NextResponse.json({
     success: true,
