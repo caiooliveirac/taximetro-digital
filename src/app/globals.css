@@ -210,3 +210,52 @@ main>* {
   position: relative;
   overflow: hidden;
 }
+/* ── Impressão / export PDF ──
+   Relatório de plantões: corpo em retrato, heatmap (42 dias de rodízio)
+   numa página dedicada em paisagem com células comprimidas para caber. */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm;
+  }
+
+  @page landscape-heatmap {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  .report-heatmap-section {
+    page: landscape-heatmap;
+    break-before: page;
+    break-after: page;
+    box-shadow: none !important;
+  }
+
+  .report-heatmap-scroll {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .report-heatmap-section thead th,
+  .report-heatmap-name {
+    position: static !important;
+  }
+
+  .report-heatmap-section table tr {
+    break-inside: avoid;
+  }
+
+  .report-heatmap-cell {
+    height: 13px !important;
+    width: 13px !important;
+  }
+
+  .report-heatmap-day-label {
+    width: 13px !important;
+    font-size: 8px !important;
+  }
+
+  .report-heatmap-name {
+    width: 150px !important;
+  }
+}
