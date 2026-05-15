@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
   const { to, filters } = parsed.data;
   const { document, exportBaseName } = await generateAdminReport(filters);
-  const html = renderAttendanceReportHTML(document);
+  const html = await renderAttendanceReportHTML(document);
 
   const headerStore = await headers();
   const ipAddress = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() || headerStore.get("x-real-ip") || undefined;
