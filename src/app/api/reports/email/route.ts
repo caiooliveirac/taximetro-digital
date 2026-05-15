@@ -4,8 +4,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { generateAdminReport } from "@/lib/admin-report-builder";
-import { renderAttendanceReportHTML } from "@/lib/attendance-report-html";
-import { reportFilterInputSchema } from "@/lib/report-filters";
+import { reportFilterInputSchema, type ReportFilterInput } from "@/lib/report-filters";
 import { getEmailErrorSummary, sendReportEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
@@ -33,10 +32,10 @@ export async function POST(req: NextRequest) {
 
     const { to, filters } = parsed.data;
     const { document, exportBaseName } = await generateAdminReport(filters);
-    const html = await renderAttendanceReportHTML(document);
 
     const headerStore = await headers();
     const ipAddress = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() || headerStore.get("x-real-ip") || undefined;
+    const html = await fetchExportHtml(req, filters);
 
     try {
       await sendReportEmail(
@@ -89,4 +88,37 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+async function fetchExportHtml(req: NextRequest, filters: ReportFilterInput): Promise<string> {
+  // AttendanceReportDocument é "use client"; renderToStaticMarkup direto não consegue
+  // invocar componentes client fora da pipeline RSC do Next. Reusamos a página
+  // /admin/relatorios/export, que já faz SSR correto, via fetch loopback.
+  const encodedFilters = Buffer.from(JSON.stringify(filters), "utf8").toString("base64");
+  const port = process.env.PORT ?? "3000";
+  const internalOrigin = `http://127.0.0.1:${port}`;
+  const requestOrigin = new URL(req.url).origin;
+  const exportPath = `/taximetro/admin/relatorios/export?format=html&filters=${encodeURIComponent(encodedFilters)}`;
+  const cookie = req.headers.get("cookie") ?? "";
+
+  const tryFetch = async (origin: string) => {
+    return fetch(`${origin}${exportPath}`, {
+      method: "GET",
+      headers: { cookie, accept: "text/html" },
+      redirect: "manual",
+      cache: "no-store",
+    });
+  };
+
+  let response: Response;
+  try {
+    response = await tryFetch(internalOrigin);
+  } catch {
+    response = await tryFetch(requestOrigin);
+  }
+
+  if (!response.ok) {
+    throw new Error(`Falha ao renderizar export (${response.status} ${response.statusText})`);
+  }
+  return response.text();
 }
