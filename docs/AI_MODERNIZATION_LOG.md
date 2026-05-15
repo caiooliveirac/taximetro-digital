@@ -117,3 +117,46 @@ config` ou `docker build` falharem.
 
 ---
 <!-- Registros de execução de cada onda são acrescentados abaixo desta linha -->
+
+## ONDA 0 — Estabilização (2026-05-15) ✅
+
+**O que mudou:** Fase 1 commitada como baseline (`chore(modernize): unify Node 24 + nodemailer 8 + security fixes (Phase 1)`).
+
+**Decisão:** configuração ESLint (substituir `next lint`) **adiada para ONDA 3** porque
+`eslint-config-next@15` só aceita ESLint ≤ 9, enquanto temos ESLint 10. O caminho
+arquiteturalmente correto é rodar o codemod `next-lint-to-eslint-cli` durante a
+migração para Next 16, que já vem com `eslint-config-next@16` (suporta ESLint 10).
+
+**ONDA 1 (runtime):** Node já está em 24 LTS (Fase 1). Sem ação. Node 25 Current não
+é alvo (regra 8.4).
+
+**Testes executados:** `npm ci` ✅, `npm run typecheck` ✅, `npm test` ✅ (80/80),
+`docker compose -f docker-compose.dev.yml config` ✅.
+
+**Risco residual:** `npm run lint` continua quebrado (estado pré-existente),
+**não está na CI**. Resolvido na ONDA 3.
+
+**Rollback:** `git revert HEAD` (commit único de baseline).
+
+## ONDA 2 — TypeScript 6 (2026-05-15) ✅
+
+**O que mudou:** `typescript ^5.9.3 → ^6.0.3`.
+
+**Erro encontrado e corrigido:**
+
+### Bug de migração: TS2882 em side-effect import de CSS
+
+- Onda: 2
+- Dependência: typescript
+- Versão anterior: 5.9.3
+- Nova versão: 6.0.3
+- Erro: `Cannot find module or type declarations for side-effect import of '@/app/globals.css'`
+- Causa: TS 6 passou a exigir `declare module` para imports side-effect de arquivos não-TS; `next-env.d.ts` (gerado) ainda não cobre `*.css`.
+- Arquivos afetados: `src/app/layout.tsx:4`
+- Solução: novo `src/types/globals.d.ts` com `declare module "*.css";`. **Sem** `@ts-expect-error`.
+- Testes que validaram: `typecheck`, `test` (80/80), `build`.
+- Risco residual: nenhum.
+
+**Testes:** `typecheck` ✅, `test` 80/80 ✅, `build` ✅.
+
+**Rollback:** `git revert <commit ONDA 2>`.
