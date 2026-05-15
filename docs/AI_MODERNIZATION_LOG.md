@@ -218,4 +218,35 @@ migração para Next 16, que já vem com `eslint-config-next@16` (suporta ESLint
 
 **Rollback:** `git revert <commit ONDA 4>` + `npm ci`.
 
+## ONDAS 5, 6, 7 — sem ação (2026-05-15) ✅
+
+- **ONDA 5 (DB/ORM)**: `drizzle-orm 0.45.2` e `drizzle-kit 0.31.9` já estão em latest desde a Fase 1. Schema regenerado em `npm run build` (`drizzle-kit generate` no Dockerfile builder) — sem mudança.
+- **ONDA 6 (Auth)**: `next-auth 5.0.0-beta.29` permanece **pinado** (Grupo C — beta em produção, troca planejada quando 5.x estável for publicado). Nada a fazer.
+- **ONDA 7 (Integrações)**: `nodemailer 8.0.7` (subido na Fase 1) e `grammy 1.41.1` já em latest. Nada a fazer.
+
+## ONDA 8 — Fechamento docker/deploy + docs (2026-05-15) ✅
+
+**O que mudou:**
+
+- Novos docs: `docs/DEPLOY.md`, `docs/ROLLBACK.md`, `docs/DEPENDENCY_UPGRADE_POLICY.md`.
+- Revisão final de Dockerfile, deploy.yml e ci.yml — **sem alterações necessárias** (Fase 1 já modernizou: `node:24-alpine`, `--pull` no build, `node-version-file: .nvmrc`, canário antes de swap, healthcheck, smoke via Nginx).
+
+**Testes finais:** `npm ci` ✅, `typecheck` ✅, `test` 80/80 ✅, `build` ✅, `docker compose -f docker-compose.dev.yml config` ✅.
+
+**Risco residual da modernização inteira:**
+
+1. **Warning de `middleware` deprecation no build do Next 16** — funcional, mas remove ruído ao renomear para `proxy.ts`. Saída: onda dedicada (toca auth).
+2. **52 erros pré-existentes de `react-hooks/rules-of-hooks`** — não regridem produção (CI roda só typecheck/test/build), mas precisam de revisão antes de habilitar lint na CI.
+3. **`eslint 9` pinado** (não 10) — devido a `eslint-plugin-react@7.37.5` não suportar a remoção de `context.getFilename()` no ESLint 10. Subir quando o plugin migrar.
+4. **`next-auth 5.0.0-beta.29` pinado em produção** — Grupo C. Monitorar release de 5.x estável.
+5. **`postcss` aninhado em `next`** já saiu (Next 16 trouxe versão patcheada). `npm audit` final: 0 HIGH; moderates restantes são dev-only sob `drizzle-kit`/`eslint` ou no Email provider não-usado do next-auth.
+
+**Próximas ondas (fora desta rodada):**
+
+- Onda futura — rename `middleware.ts → proxy.ts` + remoção do warning.
+- Onda futura — limpeza dos 52 erros `react-hooks/rules-of-hooks` + adicionar `lint` à CI.
+- Onda futura — quando `next-auth 5.x` sair estável.
+- Onda futura — Node 25 quando entrar em LTS (esperado out/2026).
+
+
 
