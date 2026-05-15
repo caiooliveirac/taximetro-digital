@@ -468,7 +468,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
 
   return (
     <>
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="report-heatmap-section rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm font-semibold text-slate-900">Heatmap de presença</div>
           <div className="text-xs text-slate-500">
@@ -491,14 +491,14 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
           </span>
           <span className="rounded bg-sky-100 px-2 py-0.5 text-sky-800">Clique para ver detalhes</span>
         </div>
-        <div className="max-h-[72vh] overflow-auto rounded-lg border border-slate-200">
+        <div className="report-heatmap-scroll max-h-[72vh] overflow-auto rounded-lg border border-slate-200">
           <table className="w-max min-w-full border-separate border-spacing-0">
             <thead className="sticky top-0 z-20 bg-white">
               <tr>
-                <th className="sticky left-0 z-30 w-60 border-b border-r border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-600">Interno</th>
+                <th className="report-heatmap-name sticky left-0 z-30 w-60 border-b border-r border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-600">Interno</th>
                 {document.cover.heatmapDays.map((day) => (
                   <th key={day.date} className="border-b border-slate-200 bg-white px-1 py-2 text-center text-[10px] font-medium text-slate-500">
-                    <div className="w-5">{day.label}</div>
+                    <div className="report-heatmap-day-label w-5">{day.label}</div>
                   </th>
                 ))}
               </tr>
@@ -506,7 +506,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
             <tbody>
               {document.cover.heatmapRows.map((row) => (
                 <tr key={row.internId} className="odd:bg-slate-50/40">
-                  <td className="sticky left-0 z-10 border-r border-slate-200 bg-inherit px-3 py-2 align-middle">
+                  <td className="report-heatmap-name sticky left-0 z-10 border-r border-slate-200 bg-inherit px-3 py-2 align-middle">
                     <div className="truncate text-xs font-medium text-slate-800">{row.internName}</div>
                     <div className="truncate text-[10px] text-slate-500">{row.cohortLabel}</div>
                   </td>
@@ -526,7 +526,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
                           disabled={!isClickable}
                           onClick={() => openCellDetails(row.internName, day.date, assignmentIds)}
                           style={{ background: heatmapCellBackground(cell) }}
-                          className={`h-5 w-5 rounded ${isClickable ? "cursor-pointer hover:brightness-90" : ""} ${isSelected ? "ring-2 ring-sky-500 ring-offset-1" : ""}`}
+                          className={`report-heatmap-cell h-5 w-5 rounded ${isClickable ? "cursor-pointer hover:brightness-90" : ""} ${isSelected ? "ring-2 ring-sky-500 ring-offset-1" : ""}`}
                           aria-label={isClickable ? `Ver detalhes de ${row.internName} em ${day.label}${stateLabel ? ` — ${stateLabel}` : ""}` : `Sem plantão para ${row.internName} em ${day.label}`}
                           title={tooltip}
                         />
