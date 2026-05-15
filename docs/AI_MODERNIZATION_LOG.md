@@ -200,3 +200,22 @@ migração para Next 16, que já vem com `eslint-config-next@16` (suporta ESLint
 
 **Rollback:** `git revert <commit ONDA 3>` + reinstalar (`npm ci`) — Next volta para 15.5.18 via `package-lock`.
 
+## ONDA 4 — UI: lucide-react 1.x + react-day-picker 10 (2026-05-15) ✅
+
+**O que mudou:**
+
+- `lucide-react ^0.577.0 → ^1.16.0`
+- `react-day-picker ^9.14.0 → ^10.0.1`
+
+**Erros encontrados:** nenhum. Build, typecheck e testes passaram no primeiro try.
+
+- Os ícones usados (`ChevronLeft/Right`, `Sun`, `Moon`, etc., em 54 arquivos) não tiveram rename na v1.
+- A API do `react-day-picker` 10 (`DayPicker`, `DayButton` slot, `classNames`, `startMonth`/`endMonth`, `month`/`onMonthChange`) permanece compatível com o uso atual em `src/components/intern-calendar.tsx`.
+
+**Testes:** `typecheck` ✅, `test` 80/80 ✅, `build` ✅ (apenas o warning de `middleware` deprecation herdado da ONDA 3, fora do escopo).
+
+**Risco residual:** mudanças visuais sutis em ícones (lucide v1 ajustou alguns trazos). Validação visual completa fica para QA pós-deploy — todos os pontos críticos (calendário, sidebar, dashboards) compilam sem erro de tipo.
+
+**Rollback:** `git revert <commit ONDA 4>` + `npm ci`.
+
+
