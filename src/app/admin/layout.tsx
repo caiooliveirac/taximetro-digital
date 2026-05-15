@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { AppSidebar, type NavItem } from "@/components/app-sidebar";
 import {
   LayoutDashboard,
@@ -41,6 +42,13 @@ const NAV: NavItem[] = [
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  // Rota de exportação de relatórios é renderizada "nua" (sem sidebar) para que
+  // o usuário possa imprimir/salvar como PDF sem capturar a barra lateral.
+  if (pathname === "/admin/relatorios/export") {
+    return <main className="min-h-screen bg-white">{children}</main>;
+  }
+
   return (
     <div className="flex min-h-screen">
       <AppSidebar
