@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { FileText, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { saveAbsenceJustificationAction } from "@/app/admin/actions";
 
 type AbsenceJustificationAssignment = {
     id: string;
@@ -40,6 +41,7 @@ function formatJustificationActor(actor: string | null | undefined) {
 export function AbsenceJustificationDialog({ assignment, title, onClose, onSaved }: AbsenceJustificationDialogProps) {
     const [text, setText] = useState("");
     const [loading, setLoading] = useState(false);
+    const [, startTransition] = useTransition();
     const [error, setError] = useState("");
 
     useEffect(() => {
@@ -62,25 +64,21 @@ export function AbsenceJustificationDialog({ assignment, title, onClose, onSaved
         setLoading(true);
         setError("");
 
-        try {
-            const res = await fetch(`/taximetro/api/assignments/${currentAssignment.id}/absence-justification`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ justification: text }),
-            });
-            const json = await res.json();
-            if (!json.success) {
-                setError(json.error ?? "Não foi possível salvar a justificativa.");
-                return;
+        startTransition(async () => {
+            try {
+                const result = await saveAbsenceJustificationAction(currentAssignment.id, { justification: text });
+                if (!result.success) {
+                    setError(result.error);
+                    return;
+                }
+                onSaved(currentAssignment.id, result.data);
+                onClose();
+            } catch {
+                setError("Erro de conexão. Tente novamente.");
+            } finally {
+                setLoading(false);
             }
-
-            onSaved(currentAssignment.id, json.data);
-            onClose();
-        } catch {
-            setError("Erro de conexão. Tente novamente.");
-        } finally {
-            setLoading(false);
-        }
+        });
     }
 
     return (

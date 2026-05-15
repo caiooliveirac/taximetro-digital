@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { Link2, X, Copy, Check, Loader2 } from "lucide-react";
+import { createInviteLinkAction } from "@/app/admin/actions";
 
 type Faculty = { id: string; abbreviation: string };
 type Cohort = { id: string; label: string; status: string };
@@ -21,6 +22,7 @@ export function InviteButton() {
     const [faculties, setFaculties] = useState<Faculty[]>([]);
     const [cohorts, setCohorts] = useState<Cohort[]>([]);
     const [loading, setLoading] = useState(false);
+    const [, startTransition] = useTransition();
     const [error, setError] = useState("");
     const [generatedUrl, setGeneratedUrl] = useState("");
     const [copied, setCopied] = useState(false);
@@ -60,27 +62,24 @@ export function InviteButton() {
     async function generate() {
         setError("");
         setLoading(true);
-        try {
-            const body: Record<string, string> = { targetRole: role };
-            if (needsFaculty) body.facultyId = facultyId;
-            if (role === "INTERN" && cohortId) body.cohortId = cohortId;
+        startTransition(async () => {
+            try {
+                const body: Record<string, string> = { targetRole: role };
+                if (needsFaculty) body.facultyId = facultyId;
+                if (role === "INTERN" && cohortId) body.cohortId = cohortId;
 
-            const res = await fetch("/taximetro/api/admin/invites", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-            });
-            const json = await res.json();
-            if (!json.success) {
-                setError(json.error ?? "Erro ao gerar link");
-            } else {
-                setGeneratedUrl(json.data.url);
+                const result = await createInviteLinkAction(body);
+                if (!result.success) {
+                    setError(result.error);
+                } else {
+                    setGeneratedUrl(result.data.url);
+                }
+            } catch {
+                setError("Erro de conexão.");
+            } finally {
+                setLoading(false);
             }
-        } catch {
-            setError("Erro de conexão.");
-        } finally {
-            setLoading(false);
-        }
+        });
     }
 
     async function copyLink() {
