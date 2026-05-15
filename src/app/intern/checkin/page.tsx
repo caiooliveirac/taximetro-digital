@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useState, useRef, useCallback } from "react";
+import { Suspense, useEffect, useState, useRef, useCallback, useOptimistic, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import { MapPin, Sun, Moon, CheckCircle, Clock, Loader2, AlertCircle, UserCircle, AlertTriangle, LogOut, Shield, Settings, RotateCcw, Smartphone } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
+import { saveObservationsAction } from "./actions";
 import { NavigationLinks } from "@/components/navigation-links";
 import { TOTP_STEP_SECONDS } from "@/lib/totp-config";
 import { formatBrazilTime, getShiftLabel } from "@/lib/utils";
@@ -120,7 +121,8 @@ function InternCheckinContent() {
   const [canRequestCheckout, setCanRequestCheckout] = useState(false);
   const [internObservations, setInternObservations] = useState("");
   const [savedInternObservations, setSavedInternObservations] = useState("");
-  const [savingObservations, setSavingObservations] = useState(false);
+  const [optimisticSaved, setOptimisticSaved] = useOptimistic(savedInternObservations);
+  const [isSavingObservations, startSaveObservationsTransition] = useTransition();
   const [observationsMsg, setObservationsMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>(null);
   const sseRef = useRef<EventSource>(null);
@@ -128,7 +130,7 @@ function InternCheckinContent() {
   // QR value — opens the Telegram group directly
   const qrValue = `https://t.me/${GROUP_NAME}`;
   const normalizedInternObservations = normalizeObservation(internObservations);
-  const normalizedSavedInternObservations = normalizeObservation(savedInternObservations);
+  const normalizedOptimisticSavedObservations = normalizeObservation(optimisticSaved);
 
   // Step 3: Timer — code rotates every 90s
   const startCodeRotation = useCallback((checkinId: string, expiresAt: string) => {
@@ -336,38 +338,34 @@ function InternCheckinContent() {
     }
   }, [assignment, startCodeRotation, startCheckoutSSE]);
 
-  const saveObservations = useCallback(async () => {
+  const saveObservations = useCallback(() => {
     if (!assignment) return;
 
-    setSavingObservations(true);
+    const nextValue = internObservations;
     setObservationsMsg(null);
 
-    try {
-      const res = await fetch("/taximetro/api/attendance/observations", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    startSaveObservationsTransition(async () => {
+      setOptimisticSaved(nextValue);
+      try {
+        const result = await saveObservationsAction({
           assignmentId: assignment.id,
-          observations: internObservations,
-        }),
-      });
-      const data = await res.json();
+          observations: nextValue,
+        });
 
-      if (!data.success) {
-        setObservationsMsg({ type: "error", text: data.error || "Não foi possível salvar as observações." });
-        return;
+        if (!result.success) {
+          setObservationsMsg({ type: "error", text: result.error || "Não foi possível salvar as observações." });
+          return;
+        }
+
+        const savedValue = result.observations ?? "";
+        setInternObservations(savedValue);
+        setSavedInternObservations(savedValue);
+        setObservationsMsg({ type: "success", text: "Observações salvas." });
+      } catch {
+        setObservationsMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
       }
-
-      const savedValue = data.data?.observations ?? "";
-      setInternObservations(savedValue);
-      setSavedInternObservations(savedValue);
-      setObservationsMsg({ type: "success", text: "Observações salvas." });
-    } catch {
-      setObservationsMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
-    } finally {
-      setSavingObservations(false);
-    }
-  }, [assignment, internObservations]);
+    });
+  }, [assignment, internObservations, setOptimisticSaved]);
 
 
   useEffect(() => {
@@ -705,10 +703,10 @@ function InternCheckinContent() {
               <Button
                 variant="outline"
                 onClick={saveObservations}
-                disabled={savingObservations || normalizedInternObservations === normalizedSavedInternObservations}
+                disabled={isSavingObservations || normalizedInternObservations === normalizedOptimisticSavedObservations}
                 className="gap-2"
               >
-                {savingObservations ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</> : "Salvar observações"}
+                {isSavingObservations ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</> : "Salvar observações"}
               </Button>
             </div>
           </div>
