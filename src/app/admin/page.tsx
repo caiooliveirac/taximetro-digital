@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AdminDashboardClient } from "@/components/admin-dashboard";
 import { localDateStr, operationalDateStr, operationalPeriod } from "@/lib/utils";
 import { fetchDashboardData } from "@/features/reporting/infra/repositories/dashboard-query";
@@ -5,18 +6,45 @@ import { buildCockpitData, fetchNoCheckinNow, fetchAbsenceAlerts } from "@/featu
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import { listFaculties } from "@/features/faculties/infra/repositories/faculty-repository";
 import { auth } from "@/lib/auth";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const dynamic = "force-dynamic";
 
 type SearchParamsShape = Promise<{ faculty?: string }>;
 
-export default async function AdminDashboard({ searchParams }: { searchParams: SearchParamsShape }) {
+export default function AdminDashboard({ searchParams }: { searchParams: SearchParamsShape }) {
+  return (
+    <Suspense fallback={<AdminDashboardSkeleton />}>
+      <AdminDashboardAsync searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function AdminDashboardAsync({ searchParams }: { searchParams: SearchParamsShape }) {
   try {
     return await AdminDashboardContent({ searchParams });
   } catch (err) {
     console.error("[Admin] Dashboard error:", err);
     return <AdminDashboardError message={err instanceof Error ? err.message : "Erro desconhecido"} />;
   }
+}
+
+function AdminDashboardSkeleton() {
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-9 w-40" />
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-28" />
+        ))}
+      </div>
+      <Skeleton className="h-64" />
+      <Skeleton className="h-48" />
+    </div>
+  );
 }
 
 function AdminDashboardError({ message }: { message: string }) {

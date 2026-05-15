@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { CheckCircle2, Loader2, LogOut, UserX } from "lucide-react";
+import { manualAttendanceAction } from "@/app/admin/actions";
 
 type ManualAction = "CONFIRM_PRESENT" | "CONFIRM_CHECKOUT" | "MARK_ABSENT";
 
@@ -22,6 +23,7 @@ export function AdminManualAttendanceActions({
 }) {
     const [pendingAction, setPendingAction] = useState<ManualAction | null>(null);
     const [feedback, setFeedback] = useState<{ type: "error" | "success"; text: string } | null>(null);
+    const [, startTransition] = useTransition();
 
     const canConfirm = CONFIRMABLE_STATUSES.has(status);
     const canCheckout = CHECKOUTABLE_STATUSES.has(status);
@@ -29,54 +31,42 @@ export function AdminManualAttendanceActions({
 
     if (!canConfirm && !canCheckout && !canMarkAbsent) return null;
 
-    async function runAction(action: ManualAction) {
+    function runAction(action: ManualAction) {
         setPendingAction(action);
         setFeedback(null);
 
-        try {
-            const response = await fetch("/taximetro/api/admin/attendance/manual", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ assignmentId, action }),
-            });
+        startTransition(async () => {
+            try {
+                const result = await manualAttendanceAction({ assignmentId, action });
 
-            const contentType = response.headers.get("content-type") ?? "";
-            const json = contentType.includes("application/json") ? await response.json() : null;
-            if (!response.ok) {
-                const fallback = response.status === 401
-                    ? "Sua sessão expirou. Faça login novamente."
-                    : `Falha ao registrar a ação (HTTP ${response.status}).`;
-                setFeedback({ type: "error", text: json?.error ?? fallback });
-                return;
+                if (!result.success) {
+                    setFeedback({ type: "error", text: result.error });
+                    return;
+                }
+
+                const notifications = Number(result.data?.leaderNotificationsSent ?? 0);
+                setFeedback({
+                    type: "success",
+                    text:
+                        action === "CONFIRM_PRESENT"
+                            ? "Presença confirmada manualmente."
+                            : action === "CONFIRM_CHECKOUT"
+                                ? "Checkout confirmado manualmente."
+                                : notifications > 0
+                                    ? `Falta lançada. ${notifications} líder(es) avisado(s).`
+                                    : "Falta lançada manualmente.",
+                });
+
+                await onUpdated?.();
+            } catch (error) {
+                setFeedback({
+                    type: "error",
+                    text: error instanceof Error ? error.message : "Erro ao registrar a ação",
+                });
+            } finally {
+                setPendingAction(null);
             }
-
-            if (!json.success) {
-                setFeedback({ type: "error", text: json.error ?? "Não foi possível registrar a ação" });
-                return;
-            }
-
-            const notifications = Number(json.data?.leaderNotificationsSent ?? 0);
-            setFeedback({
-                type: "success",
-                text:
-                    action === "CONFIRM_PRESENT"
-                        ? "Presença confirmada manualmente."
-                        : action === "CONFIRM_CHECKOUT"
-                            ? "Checkout confirmado manualmente."
-                            : notifications > 0
-                                ? `Falta lançada. ${notifications} líder(es) avisado(s).`
-                                : "Falta lançada manualmente.",
-            });
-
-            await onUpdated?.();
-        } catch (error) {
-            setFeedback({
-                type: "error",
-                text: error instanceof Error ? error.message : "Erro de conexão ao registrar a ação",
-            });
-        } finally {
-            setPendingAction(null);
-        }
+        });
     }
 
     const buttonClass = compact
