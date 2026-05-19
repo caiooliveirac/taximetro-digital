@@ -2,6 +2,35 @@
 
 import { useEffect } from "react";
 
+const STALE_BUNDLE_RELOAD_KEY = "__taximetro_stale_reload_at";
+const STALE_BUNDLE_RELOAD_COOLDOWN_MS = 60_000;
+
+function isStaleBundleError(error: Error & { digest?: string }) {
+    const name = error?.name ?? "";
+    const message = error?.message ?? "";
+    return (
+        name === "ChunkLoadError" ||
+        /Loading chunk [\w-]+ failed/i.test(message) ||
+        /Loading CSS chunk/i.test(message) ||
+        /Failed to fetch dynamically imported module/i.test(message) ||
+        /router state header/i.test(message) ||
+        /Unexpected Server Response/i.test(message)
+    );
+}
+
+function tryHardReloadOnce() {
+    if (typeof window === "undefined") return false;
+    try {
+        const last = Number(sessionStorage.getItem(STALE_BUNDLE_RELOAD_KEY) ?? "0");
+        if (Date.now() - last < STALE_BUNDLE_RELOAD_COOLDOWN_MS) return false;
+        sessionStorage.setItem(STALE_BUNDLE_RELOAD_KEY, String(Date.now()));
+    } catch {
+        // sessionStorage indisponível — segue o reload mesmo assim
+    }
+    window.location.reload();
+    return true;
+}
+
 export default function GlobalError({
     error,
     reset,
@@ -9,14 +38,18 @@ export default function GlobalError({
     error: Error & { digest?: string };
     reset: () => void;
 }) {
+    const staleBundle = isStaleBundleError(error);
+
     useEffect(() => {
         console.error("[GlobalError]", error);
-    }, [error]);
+        if (staleBundle) tryHardReloadOnce();
+    }, [error, staleBundle]);
 
     const isDbError =
-        error.message?.includes("ECONNREFUSED") ||
-        error.message?.includes("connect") ||
-        error.message?.includes("timeout");
+        !staleBundle &&
+        (error.message?.includes("ECONNREFUSED") ||
+            error.message?.includes("connect") ||
+            error.message?.includes("timeout"));
 
     return (
         <div className="flex min-h-[60vh] items-center justify-center p-8">
