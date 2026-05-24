@@ -179,7 +179,7 @@ export default function InternHistorico() {
               const ps = getPeriodStyle(a.period);
               return (
                 <TableRow key={a.id}>
-                  <TableCell className="text-slate-900">{new Date(a.date).toLocaleDateString("pt-BR")}</TableCell>
+                  <TableCell className="text-slate-900">{new Date(`${a.date}T12:00:00`).toLocaleDateString("pt-BR")}</TableCell>
                   <TableCell>
                     <span className="flex items-center gap-1.5 text-slate-900">
                       <span className={`inline-block h-2 w-2 rounded-full ${bs.dot}`} />
