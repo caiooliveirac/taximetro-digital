@@ -5,6 +5,17 @@ import { assignments, bases, cruFixedAssignments, users } from "@/db/schema";
 export const CRU_FIXED_NOTE = "CRU fixo semanal";
 export const CRU_FIXED_REMOVED_NOTE = "CRU fixo semanal removido";
 
+/**
+ * Decide se um assignment CANCELLED foi cancelado pelo próprio fluxo CRU fixo
+ * (criação ou remoção de template) e portanto pode ser reativado automaticamente
+ * quando a materialização passar por ele de novo. Cancelamentos com qualquer
+ * outra `note` (ex.: "Removido da escala pelo líder em DD/MM") representam ação
+ * humana deliberada e devem ser preservados.
+ */
+export function isCruFixedReactivatableNote(notes: string | null): boolean {
+    return notes === CRU_FIXED_NOTE || notes === CRU_FIXED_REMOVED_NOTE;
+}
+
 const ISO_DAY_BY_KEY: Record<string, number> = {
     MON: 1,
     TUE: 2,
@@ -263,9 +274,13 @@ export async function materializeCruFixedAssignments(params: {
             const isMutable = existing.status === "SCHEDULED" || existing.status === "CONFIRMED";
 
             if (existing.status === "CANCELLED") {
-                // Respect manual cancellations (e.g. removed by leader).
-                // Only auto-reactivate when the cancelled record still carries the CRU fixed note.
-                if (existing.notes === CRU_FIXED_NOTE) {
+                // Respect manual cancellations (e.g. removed by leader) — those carry
+                // notes como "Removido da escala pelo líder em DD/MM".
+                // Reativar somente quando o cancelamento veio do próprio fluxo CRU fixo
+                // (note original "CRU fixo semanal" ou o marcador "...removido" que o
+                // remove-template seta — sem isso, REMOVE+ADD do mesmo template em
+                // sequência perdia turnos no skip em vez de reativar).
+                if (isCruFixedReactivatableNote(existing.notes)) {
                     const [reactivated] = await db
                         .update(assignments)
                         .set({
