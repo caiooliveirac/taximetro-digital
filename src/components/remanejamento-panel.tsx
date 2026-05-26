@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { ArrowRightLeft, ChevronLeft, ChevronRight, Loader2, MapPin, Search, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
@@ -51,6 +52,8 @@ function periodLabel(period: string) {
 }
 
 export function RemanejamentoPanel({ scope, highlightedAssignmentId }: { scope: Scope; highlightedAssignmentId?: string }) {
+    const router = useRouter();
+    const pathname = usePathname();
     const [weekStart, setWeekStart] = useState(() => startOfWeek());
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -64,6 +67,13 @@ export function RemanejamentoPanel({ scope, highlightedAssignmentId }: { scope: 
     const [targetBaseId, setTargetBaseId] = useState("");
     const [reason, setReason] = useState("");
     const [authorized, setAuthorized] = useState(false);
+    const [lastHighlightedId, setLastHighlightedId] = useState<string | undefined>(undefined);
+    const [closedHighlighted, setClosedHighlighted] = useState(false);
+
+    if (highlightedAssignmentId !== lastHighlightedId) {
+        setLastHighlightedId(highlightedAssignmentId);
+        setClosedHighlighted(false);
+    }
 
     const weekEnd = useMemo(() => plusDays(weekStart, 6), [weekStart]);
 
@@ -98,7 +108,7 @@ export function RemanejamentoPanel({ scope, highlightedAssignmentId }: { scope: 
     }, [load]);
 
     useEffect(() => {
-        if (!highlightedAssignmentId || assignments.length === 0 || modalAssignment) return;
+        if (!highlightedAssignmentId || assignments.length === 0 || modalAssignment || closedHighlighted) return;
         const highlighted = assignments.find((assignment) => assignment.id === highlightedAssignmentId);
         if (highlighted) {
             setModalAssignment(highlighted);
@@ -106,7 +116,7 @@ export function RemanejamentoPanel({ scope, highlightedAssignmentId }: { scope: 
             setReason("");
             setAuthorized(false);
         }
-    }, [assignments, highlightedAssignmentId, modalAssignment]);
+    }, [assignments, highlightedAssignmentId, modalAssignment, closedHighlighted]);
 
     const filteredAssignments = useMemo(() => {
         const query = search.trim().toLowerCase();
@@ -155,6 +165,13 @@ export function RemanejamentoPanel({ scope, highlightedAssignmentId }: { scope: 
         setTargetBaseId("");
         setReason("");
         setAuthorized(false);
+        setClosedHighlighted(true);
+
+        const url = new URL(window.location.href);
+        if (url.searchParams.has("assignmentId")) {
+            url.searchParams.delete("assignmentId");
+            router.replace(`${pathname}${url.search}`);
+        }
     }
 
     async function submitReassignment() {
