@@ -1795,7 +1795,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 </div>
 
                                 <div className="flex flex-wrap gap-2">
-                                    <Link href={`/taximetro/admin/remanejamento?assignmentId=${selectedAssignment.id}`} className="inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100">
+                                    <Link href={`/admin/remanejamento?assignmentId=${selectedAssignment.id}`} className="inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100">
                                         <MapPin className="h-4 w-4" /> Remanejar / alocar em outra base
                                     </Link>
 
