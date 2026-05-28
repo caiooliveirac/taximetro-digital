@@ -140,7 +140,10 @@ export async function executeCreateAssignment(params: {
 
     const created = await createAssignment({
       internId: input.internId,
-      facultyId: input.facultyId,
+      // Grava a faculdade real do interno (resolvedFacultyId), não a faculdade da vaga na grade.
+      // Assim um interno UNIFACS alocado em vaga ZARNS aparece como UNIFACS em escalas, relatórios
+      // e no app dele para check-in, sem alterar a slotRules (grade segue ZARNS para outras semanas).
+      facultyId: resolvedFacultyId,
       baseId: input.baseId,
       date: input.date,
       period: input.period,
@@ -158,7 +161,8 @@ export async function executeCreateAssignment(params: {
       entityId: created.id,
       payload: {
         internId: input.internId,
-        facultyId: input.facultyId,
+        facultyId: resolvedFacultyId,
+        slotFacultyId: input.facultyId,
         baseId: input.baseId,
         date: input.date,
         period: input.period,
