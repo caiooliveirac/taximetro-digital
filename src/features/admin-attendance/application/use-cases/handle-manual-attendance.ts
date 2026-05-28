@@ -5,6 +5,7 @@ import { assignments, bases, checkins, faculties, qrSessions, telegramBindings, 
 import { logAudit } from "@/shared/infra/logger/audit";
 import { bot, TELEGRAM_BOT_TOKEN } from "@/lib/telegram";
 import { localDateStr } from "@/lib/utils";
+import { pickPlausibleShiftTimes } from "@/features/admin-attendance/application/plausible-shift-times";
 
 export const manualAttendanceSchema = z.object({
   assignmentId: z.string().uuid(),
@@ -105,14 +106,19 @@ export async function executeManualAttendance(params: {
       return { status: 409, body: { success: false, error: "Este plantão não pode mais ser confirmado manualmente" } } as const;
     }
 
+    // Horário sintético plausível para que o relatório do diretor não exponha
+    // o instante (potencialmente dias depois) em que o coordenador clicou.
+    const plausible = pickPlausibleShiftTimes({ date: assignment.date, period: assignment.period });
+    const syntheticCheckinAt = plausible.checkinAt;
+
     await db.transaction(async (tx) => {
       if (existingCheckin) {
         await tx.update(checkins).set({
-          checkinAt: existingCheckin.checkinAt ?? now,
+          checkinAt: syntheticCheckinAt,
           geoValid: true,
           status: "VALIDATED",
           validatedBy: params.actor.id,
-          totpValidatedAt: now,
+          totpValidatedAt: syntheticCheckinAt,
           method: "APP_DIRECT",
         }).where(eq(checkins.id, existingCheckin.id));
 
@@ -122,11 +128,11 @@ export async function executeManualAttendance(params: {
         await tx.insert(checkins).values({
           assignmentId,
           internId: assignment.internId,
-          checkinAt: now,
+          checkinAt: syntheticCheckinAt,
           geoValid: true,
           status: "VALIDATED",
           validatedBy: params.actor.id,
-          totpValidatedAt: now,
+          totpValidatedAt: syntheticCheckinAt,
           method: "APP_DIRECT",
         });
       }
@@ -151,6 +157,8 @@ export async function executeManualAttendance(params: {
         internId: assignment.internId,
         facultyId: assignment.facultyId,
         retroactive: isRetroactive,
+        syntheticCheckinAt: syntheticCheckinAt.toISOString(),
+        previousCheckinAt: existingCheckin?.checkinAt ? existingCheckin.checkinAt.toISOString() : null,
       },
     });
 
@@ -166,6 +174,15 @@ export async function executeManualAttendance(params: {
       return { status: 409, body: { success: false, error: "Checkout manual exige um check-in validado" } } as const;
     }
 
+    // Horário sintético plausível de fim de turno. Se o checkinAt existente já é
+    // posterior (caso degenerado), garante que checkoutAt > checkinAt + 11h.
+    const plausible = pickPlausibleShiftTimes({ date: assignment.date, period: assignment.period });
+    let syntheticCheckoutAt = plausible.checkoutAt;
+    if (existingCheckin.checkinAt) {
+      const minCheckout = new Date(existingCheckin.checkinAt.getTime() + 11 * 60 * 60 * 1000);
+      if (syntheticCheckoutAt < minCheckout) syntheticCheckoutAt = minCheckout;
+    }
+
     await db.transaction(async (tx) => {
       await tx.update(assignments).set({
         status: "CHECKED_OUT",
@@ -176,7 +193,7 @@ export async function executeManualAttendance(params: {
       }).where(eq(assignments.id, assignmentId));
 
       await tx.update(checkins).set({
-        checkoutAt: now,
+        checkoutAt: syntheticCheckoutAt,
         checkoutConfirmedBy: params.actor.id,
         checkoutNotes: "Checkout confirmado manualmente pelo admin",
       }).where(eq(checkins.id, existingCheckin.id));
@@ -196,6 +213,7 @@ export async function executeManualAttendance(params: {
         internId: assignment.internId,
         facultyId: assignment.facultyId,
         retroactive: isRetroactive,
+        syntheticCheckoutAt: syntheticCheckoutAt.toISOString(),
       },
     });
 
