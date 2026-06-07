@@ -132,6 +132,22 @@ const DAY_LONG_LABEL_BY_KEY: Record<(typeof DAYS)[number], string> = {
 
 const SLOT_LIMIT_PER_PERIOD = 2;
 
+type StatusFilterKey = "SCHEDULED" | "CHECKED_IN" | "NO_CHECKOUT" | "CHECKED_OUT" | "ABSENT";
+
+const STATUS_FILTER_OPTIONS: Array<{
+    key: StatusFilterKey;
+    label: string;
+    icon: LucideIcon;
+    activeClass: string;
+    idleClass: string;
+}> = [
+    { key: "SCHEDULED", label: "Agendado", icon: Clock3, activeClass: "bg-orange-500 text-white shadow-[0_10px_18px_rgba(249,115,22,0.24)]", idleClass: "border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100" },
+    { key: "CHECKED_IN", label: "Check-in", icon: CheckCircle2, activeClass: "bg-sky-700 text-white shadow-[0_10px_18px_rgba(2,132,199,0.24)]", idleClass: "border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100" },
+    { key: "NO_CHECKOUT", label: "Sem checkout", icon: AlertTriangle, activeClass: "bg-violet-600 text-white shadow-[0_10px_18px_rgba(139,92,246,0.26)]", idleClass: "border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100" },
+    { key: "CHECKED_OUT", label: "Check-out", icon: CheckCircle2, activeClass: "bg-zinc-700 text-white shadow-[0_10px_18px_rgba(63,63,70,0.24)]", idleClass: "border border-zinc-200 bg-zinc-100 text-zinc-700 hover:bg-zinc-200" },
+    { key: "ABSENT", label: "Falta", icon: AlertTriangle, activeClass: "bg-red-700 text-white shadow-[0_10px_18px_rgba(127,29,29,0.24)]", idleClass: "border border-red-200 bg-red-50 text-red-700 hover:bg-red-100" },
+];
+
 type ActualPeriodGridSlot =
     | { kind: "assignment"; key: string; assignment: AssignmentDetail }
     | { kind: "vacancy"; key: string; allocation: AllocationState; facultyAbbr: string };
@@ -270,8 +286,9 @@ function getPeriodTone(period: "DAY" | "NIGHT") {
 function getMutedSlotClass(date: string, kind: "assignment" | "vacancy" | "open", status?: string) {
     const phase = getDatePhase(date);
     if (kind === "assignment") {
-        const isIssue = status === "ABSENT" || (date <= localDateStr() && isPendingStatus(status ?? ""));
-        if (status === "ABSENT") return "opacity-100";
+        const isCheckinWithoutCheckout = status === "CHECKED_IN" && date < localDateStr();
+        const isIssue = status === "ABSENT" || isCheckinWithoutCheckout || (date <= localDateStr() && isPendingStatus(status ?? ""));
+        if (status === "ABSENT" || isCheckinWithoutCheckout) return "opacity-100";
         if (phase === "past") {
             return isIssue
                 ? "opacity-80 saturate-[0.88]"
@@ -330,6 +347,20 @@ function getAssignmentVisualState(assignment: AssignmentDetail, period: "DAY" | 
             icon: CheckCircle2 as LucideIcon,
             darkSurface: false,
             animationClass: "",
+        };
+    }
+
+    if (assignment.status === "CHECKED_IN" && phase === "past") {
+        return {
+            cardClass: "border-[2.5px] border-violet-500 bg-[linear-gradient(135deg,rgba(245,243,255,0.99),rgba(221,214,254,0.96))] text-violet-950 shadow-[0_0_0_1px_rgba(139,92,246,0.28),0_16px_30px_rgba(139,92,246,0.2)]",
+            iconWrapClass: "border border-violet-300/80 bg-white/70",
+            iconClass: "text-violet-700",
+            dotClass: "bg-violet-500 shadow-[0_0_0_5px_rgba(139,92,246,0.22)]",
+            metaLabel: assignment.checkin_at ? `Sem checkout · entrou ${formatBrazilTime(assignment.checkin_at)}` : "Sem checkout",
+            metaClass: "text-violet-700/80",
+            icon: AlertTriangle as LucideIcon,
+            darkSurface: false,
+            animationClass: "animate-[pulse_0.9s_ease-out_1]",
         };
     }
 
@@ -551,6 +582,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [filterFaculty, setFilterFaculty] = useState("");
     const [filterDayKey, setFilterDayKey] = useState<"" | (typeof DAYS)[number]>("");
     const [filterPeriod, setFilterPeriod] = useState<"" | "DAY" | "NIGHT">("");
+    const [filterStatus, setFilterStatus] = useState<"" | StatusFilterKey>("");
     const [filterMissingCheckin, setFilterMissingCheckin] = useState(false);
     const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
     const [allocation, setAllocation] = useState<AllocationState | null>(null);
@@ -597,7 +629,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const today = localDateStr();
     const isRegulationScope = scope === "cru" || scope === "crl";
     const hasInternSearch = searchIntern.trim().length > 0;
-    const hasStrictContentFilter = hasInternSearch || filterMissingCheckin;
+    const hasStrictContentFilter = hasInternSearch || filterMissingCheckin || Boolean(filterStatus);
     const hidesNight = scope === "crl";
     const scopePeriods: Array<"DAY" | "NIGHT"> = hidesNight ? ["DAY"] : PERIODS;
     const filteredWeekDates = useMemo(
@@ -696,6 +728,15 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             if (filterBase && assignment.base_id !== filterBase) return false;
             if (filterFaculty && assignment.faculty_id !== filterFaculty) return false;
             if (filterPeriod && assignment.period !== filterPeriod) return false;
+            if (filterStatus) {
+                const matchesStatus =
+                    filterStatus === "SCHEDULED" ? isPendingStatus(assignment.status)
+                    : filterStatus === "CHECKED_IN" ? assignment.status === "CHECKED_IN"
+                    : filterStatus === "NO_CHECKOUT" ? assignment.status === "CHECKED_IN" && assignment.date < today
+                    : filterStatus === "CHECKED_OUT" ? assignment.status === "CHECKED_OUT"
+                    : assignment.status === "ABSENT";
+                if (!matchesStatus) return false;
+            }
             if (
                 filterMissingCheckin
                 && !(assignment.status === "ABSENT" || (isPendingStatus(assignment.status) && assignment.date <= today))
@@ -703,10 +744,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             if (internQuery && !assignment.intern_name.toLowerCase().includes(internQuery)) return false;
             return true;
         });
-    }, [assignments, filterBase, filterFaculty, filterMissingCheckin, filterPeriod, searchIntern, today]);
+    }, [assignments, filterBase, filterFaculty, filterMissingCheckin, filterPeriod, filterStatus, searchIntern, today]);
 
     const filteredRules = useMemo(() => {
-        if (filterMissingCheckin) return [];
+        if (filterMissingCheckin || filterStatus) return [];
 
         return rules.filter((rule) => {
             if (filterBase && rule.baseId !== filterBase) return false;
@@ -714,7 +755,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             if (filterPeriod && rule.period !== filterPeriod) return false;
             return true;
         });
-    }, [filterBase, filterFaculty, filterMissingCheckin, filterPeriod, rules]);
+    }, [filterBase, filterFaculty, filterMissingCheckin, filterPeriod, filterStatus, rules]);
 
     const cruConflicts = useMemo(() => {
         const blocked = new Set<string>();
@@ -1422,12 +1463,30 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     <span className="mx-1 text-slate-300">|</span>
                     <button
                         type="button"
-                        onClick={() => setFilterMissingCheckin((current) => !current)}
+                        onClick={() => { setFilterMissingCheckin((current) => !current); setFilterStatus(""); }}
                         className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 transition-all ${filterMissingCheckin ? "bg-red-700 font-semibold text-white shadow-[0_10px_18px_rgba(127,29,29,0.24)] scale-105" : "border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"}`}
                         title="Mostrar apenas plantões sem check-in validado ou com falta"
                     >
                         <AlertTriangle className="h-3.5 w-3.5" strokeWidth={1.7} /> Ausência / sem check-in
                     </button>
+
+                    <span className="mx-1 text-slate-300">|</span>
+                    <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Status</span>
+                    {STATUS_FILTER_OPTIONS.map((option) => {
+                        const active = filterStatus === option.key;
+                        const Icon = option.icon;
+                        return (
+                            <button
+                                key={option.key}
+                                type="button"
+                                onClick={() => { setFilterStatus(active ? "" : option.key); setFilterMissingCheckin(false); }}
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 transition-all ${active ? `${option.activeClass} scale-105` : option.idleClass} ${filterStatus && !active ? "opacity-45" : ""}`}
+                                title={option.key === "NO_CHECKOUT" ? "Plantões com check-in mas sem checkout (auditar)" : `Mostrar apenas: ${option.label}`}
+                            >
+                                <Icon className="h-3.5 w-3.5" strokeWidth={1.7} /> {option.label}
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
