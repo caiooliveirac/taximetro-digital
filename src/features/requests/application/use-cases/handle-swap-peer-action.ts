@@ -6,6 +6,7 @@ import {
   cancelOpenSwapRequest,
   completeSwapRequest,
   createSwapAssignment,
+  findAssignmentBaseType,
   findAssignmentById,
   findAssignmentWithOwnership,
   findInternFacultiesByUserId,
@@ -13,6 +14,7 @@ import {
   findRequestById,
   hasCheckinRecord,
   reopenSwapRequest,
+  setSwapAwaitingAuth,
   updateRequestProposal,
 } from "@/features/requests/infra/repositories/request-repository";
 
@@ -69,6 +71,18 @@ export async function executeSwapPeerAction(params: {
       return { status: 400, body: { success: false, error: "Troca só é permitida dentro da mesma faculdade" } } as const;
     }
 
+    // Troca só entre plantões do mesmo tipo de base (CRU↔CRU, CRL↔CRL, USA↔USA)
+    if (request.assignmentId) {
+      const offeredType = await findAssignmentBaseType(request.assignmentId);
+      const proposedType = await findAssignmentBaseType(input.assignmentId);
+      if (!offeredType || !proposedType || offeredType !== proposedType) {
+        return {
+          status: 400,
+          body: { success: false, error: "Troca só é permitida entre plantões do mesmo tipo (CRU↔CRU, CRL↔CRL, USA↔USA)" },
+        } as const;
+      }
+    }
+
     const existingReq = await findPendingRequestByAssignment(input.assignmentId);
     if (existingReq) {
       return {
@@ -121,6 +135,31 @@ export async function executeSwapPeerAction(params: {
       return { status: 409, body: { success: false, error: "Um dos plantões já possui check-in" } } as const;
     }
 
+    // Apenas trocas de CRU (base.type === "CENTRAL") exigem autorização de um
+    // preceptor. Os dois plantões têm o mesmo tipo (validado no propose), então
+    // basta checar um lado. CRL e USA são efetivados imediatamente.
+    const baseType = await findAssignmentBaseType(origAssignment.id);
+
+    if (baseType === "CENTRAL") {
+      // Não executa a troca aqui: aguarda autorização do preceptor (ver authorize-swap.ts).
+      await setSwapAwaitingAuth(input.id);
+
+      await logAudit({
+        userId: actor.realUserId ?? actor.id,
+        action: "CONFIRM_SWAP",
+        entity: "request",
+        entityId: input.id,
+        payload: {
+          origAssignmentId: origAssignment.id,
+          targetAssignmentId: targetAssignment.id,
+          awaitingPreceptorAuth: true,
+        },
+      });
+
+      return { status: 200, body: { success: true } } as const;
+    }
+
+    // CRL / USA: troca efetivada na hora
     await cancelAssignmentForSwap(origAssignment.id);
     await cancelAssignmentForSwap(targetAssignment.id);
 
@@ -152,6 +191,7 @@ export async function executeSwapPeerAction(params: {
       payload: {
         origAssignmentId: origAssignment.id,
         targetAssignmentId: targetAssignment.id,
+        awaitingPreceptorAuth: false,
       },
     });
 
@@ -185,7 +225,7 @@ export async function executeSwapPeerAction(params: {
     if (!isRequester && !isTarget) {
       return { status: 403, body: { success: false, error: "Você não participa desta troca" } } as const;
     }
-    if (!["OPEN", "PENDING"].includes(request.status)) {
+    if (!["OPEN", "PENDING", "AWAITING_AUTH"].includes(request.status)) {
       return { status: 400, body: { success: false, error: "Não é possível cancelar neste estado" } } as const;
     }
 

@@ -246,6 +246,31 @@ export async function findAssignmentById(assignmentId: string) {
   return assignment;
 }
 
+export async function findAssignmentBaseType(assignmentId: string) {
+  const [row] = await db
+    .select({ baseType: bases.type })
+    .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
+    .where(eq(assignments.id, assignmentId))
+    .limit(1);
+
+  return row?.baseType ?? null;
+}
+
+export async function findUserNameById(userId: string) {
+  const [row] = await db
+    .select({ name: users.name })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return row?.name ?? null;
+}
+
+export async function setSwapAwaitingAuth(requestId: string) {
+  await db.update(requests).set({ status: "AWAITING_AUTH" }).where(eq(requests.id, requestId));
+}
+
 export async function hasCheckinRecord(assignmentId: string) {
   const [checkin] = await db
     .select({ id: checkins.id })
@@ -267,6 +292,7 @@ export async function createSwapAssignment(params: {
   date: string;
   period: "DAY" | "NIGHT";
   createdBy: string;
+  notes?: string;
 }) {
   await db.insert(assignments).values({
     internId: params.internId,
@@ -275,7 +301,7 @@ export async function createSwapAssignment(params: {
     date: params.date,
     period: params.period,
     createdBy: params.createdBy,
-    notes: "Troca entre internos",
+    notes: params.notes ?? "Troca entre internos",
   });
 }
 

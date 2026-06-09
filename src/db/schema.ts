@@ -35,6 +35,8 @@ export const requestTypeEnum = pgEnum("request_type", [
 
 export const requestStatusEnum = pgEnum("request_status", [
   "PENDING", "APPROVED", "REJECTED", "ESCALATED", "COMPLETED", "OPEN", "CANCELLED",
+  // AWAITING_AUTH: troca acordada entre os dois internos, aguardando autorização de um preceptor
+  "AWAITING_AUTH",
 ]);
 
 // ==================== TABELAS ====================
