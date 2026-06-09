@@ -1,11 +1,9 @@
 import {
-  cancelAssignmentById,
   createApprovedExtraAssignment,
   findBaseAvailability,
   findExistingAssignmentForInternSlot,
   findRequestById,
   findRequesterFacultyRole,
-  hasCheckinForAssignment,
   reactivateCancelledAssignment,
   updateRequestReview,
 } from "@/features/requests/infra/repositories/request-repository";
@@ -108,17 +106,6 @@ export async function executeReviewRequest(params: {
           });
         }
 
-        finalStatus = "COMPLETED";
-      } else if (request.type === "DROP_SHIFT" && request.assignmentId) {
-        const checkinExists = await hasCheckinForAssignment(request.assignmentId);
-        if (checkinExists) {
-          return {
-            status: 409,
-            body: { success: false, error: "Plantão já possui check-in e não pode ser descartado" },
-          } as const;
-        }
-
-        await cancelAssignmentById(request.assignmentId, "Descartado via solicitação");
         finalStatus = "COMPLETED";
       }
     }

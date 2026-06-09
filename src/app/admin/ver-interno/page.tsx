@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Search, User, Sun, Moon, Calendar, CheckCircle, XCircle,
-  Target, Clock, Send, ArrowLeftRight, Trash2, Plus, Eye,
+  Target, Clock, Send, ArrowLeftRight, Plus, Eye,
   Repeat, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -125,8 +125,7 @@ function AdminVerComoInterno() {
   const [userNameById, setUserNameById] = useState<Record<string, string>>({});
 
   /* ── action panel ── */
-  const [actionTab, setActionTab] = useState<"DROP" | "EXTRA" | null>(null);
-  const [actionAssignmentId, setActionAssignmentId] = useState("");
+  const [actionTab, setActionTab] = useState<"EXTRA" | null>(null);
   const [extraBaseId, setExtraBaseId] = useState("");
   const [extraDate, setExtraDate] = useState("");
   const [extraPeriod, setExtraPeriod] = useState<"DAY" | "NIGHT">("DAY");
@@ -275,9 +274,7 @@ function AdminVerComoInterno() {
     setSubmitting(true);
     setActionMsg(null);
     const body: Record<string, string> =
-      actionTab === "DROP"
-        ? { type: "DROP_SHIFT", assignmentId: actionAssignmentId, onBehalfOf: selected.id }
-        : { type: "EXTRA_SHIFT", extraBaseId, extraDate, extraPeriod, onBehalfOf: selected.id };
+      { type: "EXTRA_SHIFT", extraBaseId, extraDate, extraPeriod, onBehalfOf: selected.id };
 
     try {
       const res = await fetch("/taximetro/api/requests", {
@@ -325,7 +322,6 @@ function AdminVerComoInterno() {
   const todayAssignment = assignments.find((a) => a.date === today);
   const upcoming = assignments.filter((a) => a.date > today);
   const pastAssignments = assignments.filter((a) => a.date <= today);
-  const scheduledForAction = assignments.filter((a) => a.date >= today && a.status === "SCHEDULED");
   const present = pastAssignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status)).length;
   const absent = pastAssignments.filter((a) => a.status === "ABSENT").length;
 
@@ -585,9 +581,6 @@ function AdminVerComoInterno() {
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold text-slate-900">Solicitações</h2>
               <div className="flex gap-1">
-                <Button size="sm" variant={actionTab === "DROP" ? "default" : "outline"} onClick={() => setActionTab(actionTab === "DROP" ? null : "DROP")}>
-                  <Trash2 className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} /> Descarte
-                </Button>
                 <Button size="sm" variant={actionTab === "EXTRA" ? "default" : "outline"} onClick={() => setActionTab(actionTab === "EXTRA" ? null : "EXTRA")}>
                   <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} /> Extra
                 </Button>
@@ -600,19 +593,6 @@ function AdminVerComoInterno() {
                 <p className="text-xs font-medium text-amber-700">
                   ⚠ Ação em nome de {selected.name} — ficará registrada na auditoria
                 </p>
-                {actionTab === "DROP" && (
-                  <label className="block">
-                    <span className="text-xs font-medium text-slate-600">Plantão de referência</span>
-                    <select value={actionAssignmentId} onChange={(e) => setActionAssignmentId(e.target.value)} className={selectClass}>
-                      <option value="">Selecionar...</option>
-                      {scheduledForAction.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.baseCode} — {a.date} ({a.period === "DAY" ? "Diurno" : "Noturno"})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
                 {actionTab === "EXTRA" && (
                   <>
                     <p className="text-xs text-slate-600">Solicitação de extra não exige plantão de referência.</p>
@@ -640,7 +620,7 @@ function AdminVerComoInterno() {
                     </div>
                   </>
                 )}
-                <Button onClick={submitAction} disabled={(actionTab === "DROP" ? !actionAssignmentId : !extraBaseId || !extraDate || !extraPeriod) || submitting} size="sm">
+                <Button onClick={submitAction} disabled={!extraBaseId || !extraDate || !extraPeriod || submitting} size="sm">
                   <Send className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
                   {submitting ? "Enviando..." : "Criar Solicitação"}
                 </Button>

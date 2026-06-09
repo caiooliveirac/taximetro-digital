@@ -27,6 +27,7 @@ const TYPE_ICON: Record<string, typeof ArrowLeftRight> = { SWAP: ArrowLeftRight,
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "Pendente", APPROVED: "Aprovada", COMPLETED: "Concluída",
   REJECTED: "Rejeitada", ESCALATED: "Escalada", OPEN: "Aberta", CANCELLED: "Cancelada",
+  AWAITING_AUTH: "Aguardando preceptor",
 };
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "bg-amber-50 text-amber-700",
@@ -36,6 +37,7 @@ const STATUS_COLOR: Record<string, string> = {
   REJECTED: "bg-red-50 text-red-700",
   ESCALATED: "bg-orange-50 text-orange-700",
   CANCELLED: "bg-slate-100 text-slate-500",
+  AWAITING_AUTH: "bg-violet-50 text-violet-700",
 };
 
 function fmtDate(d: string) {

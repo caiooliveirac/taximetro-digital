@@ -23,12 +23,7 @@ const extraShiftSchema = z.object({
   extraPeriod: z.enum(["DAY", "NIGHT"]),
 });
 
-const dropShiftSchema = z.object({
-  type: z.literal("DROP_SHIFT"),
-  assignmentId: z.string().uuid(),
-});
-
-export const createRequestSchema = z.discriminatedUnion("type", [swapSchema, extraShiftSchema, dropShiftSchema]);
+export const createRequestSchema = z.discriminatedUnion("type", [swapSchema, extraShiftSchema]);
 
 export function getRequestValidationError(error: z.ZodError): string {
   const extraDateIssue = error.issues.find((issue) => issue.path.join(".") === "extraDate");
@@ -59,12 +54,12 @@ export async function executeCreateRequest(params: {
   const requesterId = (typeof onBehalfOf === "string" && ["COORDINATOR", "LEADER"].includes(actor.role)) ? onBehalfOf : actor.id;
   const todayStr = operationalDateStr();
 
-  if (input.type === "SWAP" || input.type === "DROP_SHIFT") {
+  if (input.type === "SWAP") {
     const ownerAssignment = await findAssignmentOwnerBasic(input.assignmentId);
 
     if (!ownerAssignment) return { status: 404, body: { success: false, error: "Plantão não encontrado" } } as const;
     if (ownerAssignment.internId !== requesterId) return { status: 403, body: { success: false, error: "Esse plantão não pertence a você" } } as const;
-    if (ownerAssignment.isExtraShift) return { status: 400, body: { success: false, error: "Plantões extras não podem ser trocados ou abertos para drop" } } as const;
+    if (ownerAssignment.isExtraShift) return { status: 400, body: { success: false, error: "Plantões extras não podem ser trocados" } } as const;
     if (ownerAssignment.date < todayStr) return { status: 400, body: { success: false, error: "Não é possível solicitar alteração de plantão passado" } } as const;
     if (!["SCHEDULED", "CONFIRMED"].includes(ownerAssignment.status)) {
       return {
