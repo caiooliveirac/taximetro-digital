@@ -16,12 +16,15 @@ export default function InternOcorrencias() {
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const today = localDateStr();
+  // Janela retroativa: permite registrar ocorrências de plantões passados (até 90 dias atrás).
+  const from = localDateStr(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
 
   useEffect(() => {
-    fetch(`/taximetro/api/assignments?from=${today}&to=${today}`)
+    fetch(`/taximetro/api/assignments?from=${from}&to=${today}`)
       .then((r) => r.json())
       .then((json) => {
-        if (json.success) setAssignments(json.data.filter((a: { status: string }) => a.status !== "CANCELLED"));
+        // Só plantões aos quais o interno já fez checkin (presente em campo) podem receber ocorrências.
+        if (json.success) setAssignments(json.data.filter((a: { status: string }) => a.status === "CHECKED_IN" || a.status === "CHECKED_OUT"));
         setLoading(false);
       })
       .catch(() => {
