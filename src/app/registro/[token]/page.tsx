@@ -6,30 +6,7 @@ import { Ambulance, CheckCircle, Camera, ImagePlus, UserCircle, Eye, EyeOff, X }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RegistrationPendingApproval } from "@/components/registration-pending-approval";
-
-function compressImage(file: File, maxSize = 400): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let w = img.width, h = img.height;
-        if (w > h) { if (w > maxSize) { h = (h * maxSize) / w; w = maxSize; } }
-        else { if (h > maxSize) { w = (w * maxSize) / h; h = maxSize; } }
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", 0.8));
-      };
-      img.onerror = reject;
-      img.src = reader.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+import { compressImage } from "@/lib/compress-image";
 
 const PASSWORD_RULES = [
   { test: (v: string) => v.length >= 8, label: "Mínimo 8 caracteres" },
