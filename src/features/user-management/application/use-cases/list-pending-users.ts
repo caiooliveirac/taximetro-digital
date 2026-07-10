@@ -1,4 +1,4 @@
-import { listPendingUsersRows } from "@/features/user-management/infra/repositories/user-management-repository";
+import { listPendingPhotoChangeRequestsRows, listPendingUsersRows } from "@/features/user-management/infra/repositories/user-management-repository";
 
 type Actor = {
   role: string;
@@ -10,6 +10,16 @@ export async function executeListPendingUsers(actor: Actor) {
 
   if (actor.role === "LEADER") {
     return rows.filter((r) => r.facultyId === actor.facultyId && r.role === "INTERN");
+  }
+
+  return rows;
+}
+
+export async function executeListPendingPhotoChangeRequests(actor: Actor) {
+  const rows = await listPendingPhotoChangeRequestsRows();
+
+  if (actor.role === "LEADER") {
+    return rows.filter((r) => r.facultyId === actor.facultyId);
   }
 
   return rows;

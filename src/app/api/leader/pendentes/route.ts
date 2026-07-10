@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEffectiveUser } from "@/lib/impersonate";
 import {
+  executeListPendingPhotoChangeRequests,
   executeListPendingUsers,
 } from "@/features/user-management/application/use-cases/list-pending-users";
 import {
@@ -14,12 +15,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 
-  const filtered = await executeListPendingUsers({
+  const actor = {
     role: user.role,
     facultyId: user.facultyId,
-  });
+  };
 
-  return NextResponse.json({ success: true, data: filtered });
+  const [pendingUsers, photoChanges] = await Promise.all([
+    executeListPendingUsers(actor),
+    executeListPendingPhotoChangeRequests(actor),
+  ]);
+
+  return NextResponse.json({ success: true, data: { users: pendingUsers, photoChanges } });
 }
 
 export async function POST(req: NextRequest) {

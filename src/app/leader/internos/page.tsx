@@ -35,6 +35,19 @@ type UserRow = {
   createdAt?: string;
 };
 
+type PhotoChangeRequestRow = {
+  id: string;
+  userId: string;
+  userName: string;
+  email: string;
+  facultyId: string | null;
+  facultyAbbr: string | null;
+  currentSelfie: string | null;
+  requestedSelfie: string;
+  requestedAt: string;
+  status: string;
+};
+
 type ComplianceRow = {
   userId: string;
   name: string;
@@ -141,6 +154,7 @@ export default function LeaderInternos() {
   const [caseRecordsByInternId, setCaseRecordsByInternId] = useState<Record<string, CaseRecord[]>>({});
   const [loadingHistoryById, setLoadingHistoryById] = useState<Record<string, boolean>>({});
   const [pending, setPending] = useState<UserRow[]>([]);
+  const [pendingPhotoChanges, setPendingPhotoChanges] = useState<PhotoChangeRequestRow[]>([]);
   const [links, setLinks] = useState<InviteLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -179,7 +193,10 @@ export default function LeaderInternos() {
         setUsers(allInterns.filter((u: UserRow) => !u.isArchived));
         setArchivedUsers(allInterns.filter((u: UserRow) => u.isArchived));
       }
-      if (pendingRes.success) setPending(pendingRes.data);
+      if (pendingRes.success) {
+        setPending(pendingRes.data.users ?? []);
+        setPendingPhotoChanges(pendingRes.data.photoChanges ?? []);
+      }
       if (linksRes.success) setLinks(linksRes.data.filter((l: InviteLink) => l.isActive));
       if (complianceRes.success) setCompliance(complianceRes.data);
       if (swapRes.success) setSwapHistory(swapRes.data);
@@ -299,6 +316,24 @@ export default function LeaderInternos() {
     setActing(null);
   }
 
+  async function handlePhotoAction(requestId: string, action: "approve" | "reject") {
+    setActing(requestId);
+    try {
+      const res = await fetch("/taximetro/api/leader/photo-change-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId, action }),
+      });
+      const json = await res.json();
+      if (!json.success) setActionMsg({ type: "error", text: json.error || "Erro ao processar troca de foto." });
+      else setActionMsg({ type: "success", text: action === "approve" ? "Troca de foto aprovada!" : "Troca de foto rejeitada." });
+      loadData();
+    } catch {
+      setActionMsg({ type: "error", text: "Erro de conexão." });
+    }
+    setActing(null);
+  }
+
   function copyLink(token: string) {
     const url = `${window.location.origin}/taximetro/registro/${token}`;
     navigator.clipboard.writeText(url);
@@ -384,7 +419,7 @@ export default function LeaderInternos() {
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "ativos", label: "Ativos", count: users.length },
     { key: "arquivados", label: "Arquivados", count: archivedUsers.length },
-    { key: "pendentes", label: "Pendentes", count: pending.length },
+    { key: "pendentes", label: "Pendentes", count: pending.length + pendingPhotoChanges.length },
     { key: "convites", label: "Links", count: links.length },
   ];
 
@@ -709,49 +744,119 @@ export default function LeaderInternos() {
       {/* Tab: Pendentes */}
       {tab === "pendentes" && (
         <div className="space-y-3">
-          {pending.length === 0 ? (
+          {pending.length === 0 && pendingPhotoChanges.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
               <Clock className="h-8 w-8 text-slate-400 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Nenhum registro pendente de aprovação.</p>
+              <p className="text-sm text-slate-500">Nenhuma pendência de aprovação.</p>
             </div>
           ) : (
-            pending.map((u) => (
-              <div key={u.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-900">{u.name}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{u.cpf} · {u.email}</p>
-                    {u.phone && <p className="text-xs text-slate-500">{u.phone}</p>}
-                    {u.createdAt && (
-                      <p className="text-xs text-slate-400 mt-1">
-                        Registrado em {new Date(u.createdAt).toLocaleDateString("pt-BR")}
-                      </p>
-                    )}
+            <>
+              {pending.length > 0 && (
+                <div className="space-y-3">
+                  <div className="px-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Novos usuários</p>
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleAction(u.id, "reject")}
-                      disabled={acting === u.id}
-                      className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
-                    >
-                      <UserX className="h-4 w-4" />
-                      <span className="hidden sm:inline">Rejeitar</span>
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => handleAction(u.id, "approve")}
-                      disabled={acting === u.id}
-                      className="gap-1"
-                    >
-                      <UserCheck className="h-4 w-4" />
-                      <span className="hidden sm:inline">Aprovar</span>
-                    </Button>
-                  </div>
+                  {pending.map((u) => (
+                    <div key={u.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900">{u.name}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{u.cpf} · {u.email}</p>
+                          {u.phone && <p className="text-xs text-slate-500">{u.phone}</p>}
+                          {u.createdAt && (
+                            <p className="text-xs text-slate-400 mt-1">
+                              Registrado em {new Date(u.createdAt).toLocaleDateString("pt-BR")}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleAction(u.id, "reject")}
+                            disabled={acting === u.id}
+                            className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                          >
+                            <UserX className="h-4 w-4" />
+                            <span className="hidden sm:inline">Rejeitar</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleAction(u.id, "approve")}
+                            disabled={acting === u.id}
+                            className="gap-1"
+                          >
+                            <UserCheck className="h-4 w-4" />
+                            <span className="hidden sm:inline">Aprovar</span>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))
+              )}
+
+              {pendingPhotoChanges.length > 0 && (
+                <div className="space-y-3">
+                  <div className="px-1 pt-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trocas de foto</p>
+                  </div>
+                  {pendingPhotoChanges.map((request) => (
+                    <div key={request.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                      <div className="flex flex-col gap-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-900">{request.userName}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{request.email}{request.facultyAbbr ? ` · ${request.facultyAbbr}` : ""}</p>
+                            <p className="text-xs text-slate-400 mt-1">
+                              Solicitação enviada em {new Date(request.requestedAt).toLocaleString("pt-BR")}
+                            </p>
+                          </div>
+                          <div className="flex gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handlePhotoAction(request.id, "reject")}
+                              disabled={acting === request.id}
+                              className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                            >
+                              <UserX className="h-4 w-4" />
+                              <span className="hidden sm:inline">Rejeitar</span>
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handlePhotoAction(request.id, "approve")}
+                              disabled={acting === request.id}
+                              className="gap-1"
+                            >
+                              <UserCheck className="h-4 w-4" />
+                              <span className="hidden sm:inline">Aprovar</span>
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Foto atual</p>
+                            {request.currentSelfie ? (
+                              <img src={request.currentSelfie} alt="Foto atual" className="mx-auto h-24 w-24 rounded-full object-cover ring-2 ring-slate-200" />
+                            ) : (
+                              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-dashed border-slate-300 text-xs text-slate-400">
+                                Sem foto
+                              </div>
+                            )}
+                          </div>
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">Nova foto</p>
+                            <img src={request.requestedSelfie} alt="Nova foto solicitada" className="mx-auto h-24 w-24 rounded-full object-cover ring-2 ring-amber-200" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

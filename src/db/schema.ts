@@ -39,6 +39,10 @@ export const requestStatusEnum = pgEnum("request_status", [
   "AWAITING_AUTH",
 ]);
 
+export const photoChangeRequestStatusEnum = pgEnum("photo_change_request_status", [
+  "PENDING", "APPROVED", "REJECTED",
+]);
+
 // ==================== TABELAS ====================
 
 export const faculties = pgTable("faculties", {
@@ -263,6 +267,25 @@ export const userMergeEvents = pgTable("user_merge_events", {
   index("idx_user_merge_events_source").on(t.sourceUserId),
   index("idx_user_merge_events_target").on(t.targetUserId),
   index("idx_user_merge_events_available_until").on(t.rollbackAvailableUntil),
+]);
+
+export const userPhotoChangeRequests = pgTable("user_photo_change_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  facultyId: uuid("faculty_id").references(() => faculties.id),
+  currentSelfie: text("current_selfie"),
+  requestedSelfie: text("requested_selfie").notNull(),
+  status: photoChangeRequestStatusEnum("status").notNull().default("PENDING"),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewNotes: text("review_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_photo_change_user_status").on(t.userId, t.status),
+  index("idx_photo_change_faculty_status").on(t.facultyId, t.status),
+  index("idx_photo_change_requested_at").on(t.requestedAt),
 ]);
 
 export const inviteLinks = pgTable("invite_links", {

@@ -1,6 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { bases, faculties, inviteLinks, userRoles, users } from "@/shared/db/schema";
+import { bases, faculties, inviteLinks, userPhotoChangeRequests, userRoles, users } from "@/shared/db/schema";
 
 export async function listFacultyInternRows(facultyId: string, cohortId?: string | null) {
   const conditions = [
@@ -97,6 +97,172 @@ export async function findUserRoleFaculty(userId: string) {
     .limit(1);
 
   return role;
+}
+
+export async function findPendingPhotoChangeRequestByUserId(userId: string) {
+  const [request] = await db
+    .select({
+      id: userPhotoChangeRequests.id,
+      requestedSelfie: userPhotoChangeRequests.requestedSelfie,
+      requestedAt: userPhotoChangeRequests.requestedAt,
+      status: userPhotoChangeRequests.status,
+    })
+    .from(userPhotoChangeRequests)
+    .where(and(
+      eq(userPhotoChangeRequests.userId, userId),
+      eq(userPhotoChangeRequests.status, "PENDING"),
+    ))
+    .orderBy(desc(userPhotoChangeRequests.requestedAt))
+    .limit(1);
+
+  return request;
+}
+
+export async function createOrReplacePhotoChangeRequest(params: {
+  userId: string;
+  facultyId: string | null;
+  currentSelfie: string | null;
+  requestedSelfie: string;
+}) {
+  const now = new Date();
+  const existing = await findPendingPhotoChangeRequestByUserId(params.userId);
+
+  if (existing) {
+    const [updated] = await db
+      .update(userPhotoChangeRequests)
+      .set({
+        facultyId: params.facultyId,
+        currentSelfie: params.currentSelfie,
+        requestedSelfie: params.requestedSelfie,
+        requestedAt: now,
+        updatedAt: now,
+        reviewNotes: null,
+        reviewedAt: null,
+        reviewedBy: null,
+      })
+      .where(eq(userPhotoChangeRequests.id, existing.id))
+      .returning({
+        id: userPhotoChangeRequests.id,
+        requestedSelfie: userPhotoChangeRequests.requestedSelfie,
+        requestedAt: userPhotoChangeRequests.requestedAt,
+        status: userPhotoChangeRequests.status,
+      });
+
+    return updated;
+  }
+
+  const [created] = await db
+    .insert(userPhotoChangeRequests)
+    .values({
+      userId: params.userId,
+      facultyId: params.facultyId,
+      currentSelfie: params.currentSelfie,
+      requestedSelfie: params.requestedSelfie,
+      requestedAt: now,
+      updatedAt: now,
+    })
+    .returning({
+      id: userPhotoChangeRequests.id,
+      requestedSelfie: userPhotoChangeRequests.requestedSelfie,
+      requestedAt: userPhotoChangeRequests.requestedAt,
+      status: userPhotoChangeRequests.status,
+    });
+
+  return created;
+}
+
+export async function listPendingPhotoChangeRequestsRows() {
+  return db
+    .select({
+      id: userPhotoChangeRequests.id,
+      userId: users.id,
+      userName: users.name,
+      email: users.email,
+      facultyId: userPhotoChangeRequests.facultyId,
+      facultyAbbr: faculties.abbreviation,
+      currentSelfie: userPhotoChangeRequests.currentSelfie,
+      requestedSelfie: userPhotoChangeRequests.requestedSelfie,
+      requestedAt: userPhotoChangeRequests.requestedAt,
+      status: userPhotoChangeRequests.status,
+    })
+    .from(userPhotoChangeRequests)
+    .innerJoin(users, eq(users.id, userPhotoChangeRequests.userId))
+    .leftJoin(faculties, eq(faculties.id, userPhotoChangeRequests.facultyId))
+    .where(eq(userPhotoChangeRequests.status, "PENDING"))
+    .orderBy(userPhotoChangeRequests.requestedAt);
+}
+
+export async function findPhotoChangeRequestForReview(requestId: string) {
+  const [request] = await db
+    .select({
+      id: userPhotoChangeRequests.id,
+      userId: userPhotoChangeRequests.userId,
+      facultyId: userPhotoChangeRequests.facultyId,
+      requestedSelfie: userPhotoChangeRequests.requestedSelfie,
+      status: userPhotoChangeRequests.status,
+    })
+    .from(userPhotoChangeRequests)
+    .where(eq(userPhotoChangeRequests.id, requestId))
+    .limit(1);
+
+  return request;
+}
+
+export async function reviewPhotoChangeRequest(params: {
+  requestId: string;
+  status: "APPROVED" | "REJECTED";
+  reviewedBy: string;
+  reviewNotes?: string | null;
+}) {
+  const now = new Date();
+
+  return db.transaction(async (tx) => {
+    const [request] = await tx
+      .select({
+        id: userPhotoChangeRequests.id,
+        userId: userPhotoChangeRequests.userId,
+        requestedSelfie: userPhotoChangeRequests.requestedSelfie,
+        status: userPhotoChangeRequests.status,
+      })
+      .from(userPhotoChangeRequests)
+      .where(eq(userPhotoChangeRequests.id, params.requestId))
+      .limit(1);
+
+    if (!request) return null;
+
+    if (request.status !== "PENDING") {
+      return { id: request.id, userId: request.userId, status: request.status };
+    }
+
+    const [updated] = await tx
+      .update(userPhotoChangeRequests)
+      .set({
+        status: params.status,
+        reviewedAt: now,
+        reviewedBy: params.reviewedBy,
+        reviewNotes: params.reviewNotes ?? null,
+        updatedAt: now,
+      })
+      .where(eq(userPhotoChangeRequests.id, params.requestId))
+      .returning({
+        id: userPhotoChangeRequests.id,
+        userId: userPhotoChangeRequests.userId,
+        status: userPhotoChangeRequests.status,
+      });
+
+    if (params.status === "APPROVED") {
+      await tx
+        .update(users)
+        .set({
+          selfie: request.requestedSelfie,
+          selfieUploadedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(users.id, request.userId));
+    }
+
+    return updated;
+  });
 }
 
 export async function approvePendingUser(userId: string) {
