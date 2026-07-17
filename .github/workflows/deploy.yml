@@ -1,5 +1,10 @@
 name: Deploy
 
+# Produção: host Magalu (201.23.89.0) — migrado da EC2 AWS em 2026-07.
+# Padrão do host (igual checklist/plantoes): container em --network host,
+# Postgres 16 nativo em 127.0.0.1:5432, Nginx roteia mnrs.com.br/taximetro
+# para 127.0.0.1:3000 (bloco em /etc/nginx/sites-enabled/estaticos.conf).
+
 on:
   push:
     branches: [master]
@@ -76,14 +81,14 @@ jobs:
 
             echo "=== Running schema changes (manual trigger) ==="
             docker run --rm \
-              --add-host=host.docker.internal:host-gateway \
+              --network host \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               ${{ env.APP }}-builder \
               npx drizzle-kit push --force
 
             echo "=== Recreating available_slots materialized view/triggers ==="
             docker run --rm \
-              --add-host=host.docker.internal:host-gateway \
+              --network host \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -v "$(pwd)/scripts/materialized-view-available-slots.sql:/tmp/mv.sql:ro" \
               postgres:16-alpine \
@@ -114,7 +119,7 @@ jobs:
             --exclude '.env*' --include '.env.example' \
             ./ ${{ env.REMOTE }}:${{ env.DEPLOY_DIR }}/
 
-      - name: Build and deploy on server (native ARM64)
+      - name: Build and deploy on server
         run: |
           ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=180 ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
             set -euo pipefail
@@ -123,20 +128,21 @@ jobs:
             IMAGE_CANDIDATE="${{ env.APP }}:candidate"
             CANARY_NAME="${{ env.APP }}-canary"
 
-            echo "=== Building Docker image (native ARM64) ==="
+            echo "=== Building Docker image ==="
             docker build --pull --progress=plain -t "$IMAGE_CANDIDATE" .
 
             echo "=== Ensuring backup volume exists ==="
             sudo mkdir -p /var/backups/taximetro
             sudo chmod 777 /var/backups/taximetro
 
-            echo "=== Starting canary for pre-swap validation ==="
+            echo "=== Starting canary for pre-swap validation (porta 3011) ==="
             docker rm -f "$CANARY_NAME" 2>/dev/null || true
             docker run --rm \
               -d \
               --name "$CANARY_NAME" \
-              --network repo_default \
-              --add-host=host.docker.internal:host-gateway \
+              --network host \
+              -e PORT=3011 \
+              -e HOSTNAME=127.0.0.1 \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e AUTH_SECRET="${{ secrets.AUTH_SECRET }}" \
               -e AUTH_URL="https://mnrs.com.br" \
@@ -151,11 +157,12 @@ jobs:
               -e SMTP_PASS="${{ secrets.SMTP_PASS }}" \
               -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
               -e DB_BACKUP_EMAIL_TO="${{ secrets.DB_BACKUP_EMAIL_TO }}" \
+              -e DB_BACKUP_ENABLED=false \
               "$IMAGE_CANDIDATE"
 
             echo "=== Validating canary health ==="
             for i in $(seq 1 45); do
-              if docker exec "$CANARY_NAME" wget -q -O- http://127.0.0.1:3000/taximetro/api/health 2>/dev/null | grep -q healthy; then
+              if curl -fsS http://127.0.0.1:3011/taximetro/api/health 2>/dev/null | grep -q healthy; then
                 echo "✅ Canary healthy after ${i}s"
                 break
               fi
@@ -171,12 +178,12 @@ jobs:
             echo "=== Replacing production container only after validation ==="
             docker rm -f ${{ env.APP }} 2>/dev/null || true
 
-            echo "=== Starting container ==="
+            echo "=== Starting container (porta 3000, network host) ==="
             docker run -d \
               --name ${{ env.APP }} \
               --restart unless-stopped \
-              --network repo_default \
-              -p 127.0.0.1:3010:3000 \
+              --network host \
+              -e HOSTNAME=127.0.0.1 \
               -v /var/backups/taximetro:/var/backups/taximetro \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e AUTH_SECRET="${{ secrets.AUTH_SECRET }}" \
@@ -192,12 +199,11 @@ jobs:
               -e SMTP_PASS="${{ secrets.SMTP_PASS }}" \
               -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
               -e DB_BACKUP_EMAIL_TO="${{ secrets.DB_BACKUP_EMAIL_TO }}" \
-              --add-host=host.docker.internal:host-gateway \
               "$IMAGE_CANDIDATE"
 
             echo "=== Waiting for production healthcheck ==="
             for i in $(seq 1 30); do
-              if docker exec ${{ env.APP }} wget -q -O- http://127.0.0.1:3000/taximetro/api/health 2>/dev/null | grep -q healthy; then
+              if curl -fsS http://127.0.0.1:3000/taximetro/api/health 2>/dev/null | grep -q healthy; then
                 echo "✅ App healthy after ${i}s"
                 break
               fi

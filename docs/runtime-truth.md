@@ -3,6 +3,14 @@
 Este documento define o que manda de verdade em producao para evitar diagnostico incorreto por agentes.
 Se houver divergencia entre documentacao antiga e este arquivo, este arquivo prevalece.
 
+> **Migracao 2026-07**: producao saiu da EC2 AWS (suspensa) para o host Magalu
+> (`201.23.89.0`, alias SSH `magalu`, user `ubuntu`). Banco restaurado do backup
+> de 2026-05-22 com todas as turmas fechadas e internos arquivados (molde limpo).
+> Padrao do host: container em `--network host`, Postgres 16 nativo em
+> `127.0.0.1:5432`, Nginx roteia `mnrs.com.br/taximetro` -> `127.0.0.1:3000`
+> no bloco `server mnrs.com.br` de `/etc/nginx/sites-enabled/estaticos.conf`
+> (atencao: NAO e o `mnrs.conf` — o bloco de mesmo nome la e ignorado pelo nginx).
+
 ## 0. Pontos operacionais minimos
 
 - `basePath` oficial da app: `/taximetro` (fonte: [next.config.ts](../next.config.ts))
@@ -14,7 +22,7 @@ Se houver divergencia entre documentacao antiga e este arquivo, este arquivo pre
   2. Recriar `taximetro-digital` com `.env` e `DATABASE_URL` valido para runtime
   3. Validar health interno
   4. Validar rota externa via Nginx
-- Papel do Nginx externo: terminar trafego do dominio e rotear `/taximetro/*` para `taximetro-digital:3000`
+- Papel do Nginx externo: terminar trafego do dominio (cert de origem Cloudflare) e rotear `/taximetro/*` para `127.0.0.1:3000` (container em network host)
 - Validacao minima de healthcheck:
   - Interno: `wget -q -O- http://127.0.0.1:3000/taximetro/api/health` dentro do container
   - Externo: `curl -sk -o /dev/null -w "%{http_code}" "https://127.0.0.1/taximetro/login" -H "Host: mnrs.com.br"`
@@ -31,15 +39,16 @@ Se houver divergencia entre documentacao antiga e este arquivo, este arquivo pre
 
 ## 2. Processo oficial que atende o dominio
 
-- O dominio e atendido por Nginx service instalado no host da VM (systemd)
-- O Nginx roteia `/taximetro/*` para `127.0.0.1:3010` (container `taximetro-digital` publicado em loopback)
+- DNS de `mnrs.com.br` aponta para Cloudflare (proxy) -> host Magalu
+- O dominio e atendido por Nginx service instalado no host (systemd)
+- O Nginx roteia `/taximetro/*` para `127.0.0.1:3000` (container `taximetro-digital` em `--network host`, bind em loopback via `HOSTNAME=127.0.0.1`)
 - A app oficial usa `basePath` `/taximetro`
 
 ## 3. Banco oficial
 
-- Banco oficial: PostgreSQL na EC2
+- Banco oficial: PostgreSQL 16 nativo no host Magalu (`127.0.0.1:5432`, db `taximetro`, role `taximetro`)
 - A app acessa o banco pela `DATABASE_URL` injetada no container
-- Em runtime containerizado, nao assumir `localhost` como host do banco da VM
+- Como o container roda em `--network host`, o host do banco E `127.0.0.1` (nao usar `host.docker.internal`)
 
 ## 4. Webhook vs polling
 
@@ -122,4 +131,4 @@ Arquivos que devem guiar a analise primeiro:
 - [scripts/container-entrypoint.sh](../scripts/container-entrypoint.sh)
 - [next.config.ts](../next.config.ts)
 
-Ultima atualizacao: 2026-04-10
+Ultima atualizacao: 2026-07-17 (migracao para host Magalu)

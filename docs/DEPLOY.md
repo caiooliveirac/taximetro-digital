@@ -5,8 +5,10 @@ Como o `taximetro-digital` chega em produção.
 ## Visão geral
 
 - **Trigger**: push em `master` ou `workflow_dispatch` em `.github/workflows/deploy.yml`.
-- **Modelo**: build *na própria VM de produção* (ARM64 nativo), com canário antes do swap.
-- **Container alvo**: `taximetro-digital` em `127.0.0.1:3010` (proxy reverso Nginx para `https://mnrs.com.br/taximetro/*`).
+- **Servidor**: host Magalu `201.23.89.0` (x86_64) — migrado da EC2 AWS em 2026-07.
+- **Modelo**: build *no próprio servidor de produção*, com canário (porta 3011) antes do swap.
+- **Container alvo**: `taximetro-digital` em `--network host`, bind `127.0.0.1:3000` (proxy reverso Nginx em `/etc/nginx/sites-enabled/estaticos.conf` para `https://mnrs.com.br/taximetro/*`).
+- **Banco**: Postgres 16 nativo no host (`127.0.0.1:5432`, db/role `taximetro`) — mesmo padrão dos demais apps do host (checklist, plantoes).
 - **Imagem**: Next.js standalone, `node:24-alpine`, multi-stage (`deps` → `builder` → `runner`).
 
 ## Fluxo de deploy (resumido)
@@ -26,10 +28,10 @@ Se qualquer passo falhar (canário não-saudável, healthcheck, smoke), o workfl
 
 ## Pré-requisitos na VM
 
-- Docker, `psql`, `wget`, Nginx com TLS configurado.
+- Docker, `psql`, `curl`, Nginx com TLS (cert de origem Cloudflare em `/etc/ssl/cloudflare/`).
 - Diretório `/var/backups/taximetro` montado e gravável (cria automaticamente no deploy).
-- Rede Docker `repo_default` existindo.
-- Postgres no host acessível via `host.docker.internal` (`--add-host=host.docker.internal:host-gateway`).
+- Containers rodam em `--network host`; Postgres nativo acessível em `127.0.0.1:5432`.
+- Chave de deploy dedicada `taximetro-ci-magalu` no `authorized_keys` do host.
 - Secrets do GitHub: `PROD_SSH_HOST`, `PROD_SSH_USER`, `PROD_SSH_KEY`, `DATABASE_URL`, `AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TELEGRAM_BOT_TOKEN*`, `TELEGRAM_GROUP_ID`, `SMTP_*`, `DB_BACKUP_EMAIL_TO`.
 
 ## Build local equivalente
