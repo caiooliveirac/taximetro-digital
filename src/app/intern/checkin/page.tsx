@@ -86,7 +86,8 @@ type CurrentAttendancePayload = {
   };
 };
 
-const GROUP_NAME = "TaximetrosSAMUInternos";
+// Link do grupo Telegram de validação — por instância (build arg, ver docs/vitalmed.md)
+const GROUP_LINK = process.env.NEXT_PUBLIC_TELEGRAM_GROUP_LINK || "https://t.me/TaximetrosSAMUInternos";
 const TOTP_STEP = TOTP_STEP_SECONDS;
 
 function normalizeObservation(value: string) {
@@ -128,7 +129,7 @@ function InternCheckinContent() {
   const sseRef = useRef<EventSource>(null);
 
   // QR value — opens the Telegram group directly
-  const qrValue = `https://t.me/${GROUP_NAME}`;
+  const qrValue = GROUP_LINK;
   const normalizedInternObservations = normalizeObservation(internObservations);
   const normalizedOptimisticSavedObservations = normalizeObservation(optimisticSaved);
 

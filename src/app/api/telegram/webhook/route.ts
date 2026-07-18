@@ -9,9 +9,13 @@ import { formatBrazilTime } from "@/lib/utils";
 import { canTriggerPendingReminderFromTelegram, sendPendingCheckinReminder } from "@/lib/telegram-checkin-pending-reminder";
 import { z } from "zod/v4";
 
-const PRECEPTOR_REGISTRATION_URL = "https://mnrs.com.br/taximetro/registro/9NPQUwOwats7IZDuLbpuUw";
+// Por instância: env com link de cadastro próprio, "off" suprime a dica (ver docs/vitalmed.md)
+const PRECEPTOR_REGISTRATION_URL =
+  process.env.TELEGRAM_PRECEPTOR_REGISTRATION_URL ||
+  "https://mnrs.com.br/taximetro/registro/9NPQUwOwats7IZDuLbpuUw";
 
 function formatValidationNudge() {
+  if (PRECEPTOR_REGISTRATION_URL === "off") return "";
   return [
     "💡 Dica para preceptor:",
     "Só digitar o código no grupo funciona, mas no site é mais fácil e permite avaliar o interno (NPS), não só registrar presença.",

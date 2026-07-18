@@ -18,7 +18,7 @@ este arquivo prevalece **para a instância Vitalmed** (a instância original seg
 | AUTH_URL | `https://mnrs.com.br` | `https://vitalmed.mnrs.com.br` |
 | AUTH_SECRET | GitHub Secrets | próprio (gerado no provisionamento, guardado no `.env` de referência do host) |
 | Backup diário | `/var/backups/taximetro`, e-mail 03:37 | `/var/backups/vitalmed` (`DB_BACKUP_DIR`), e-mail **04:07** (`DB_BACKUP_CRON="7 4 * * *"`, para não colidir com o pg_dump do original) |
-| Telegram | bot ativo | **desativado** no MVP (tokens vazios → cron não agenda) |
+| Telegram | bot ativo (@? SAMU) | bot **@VitalmedCheckin_bot** (`TELEGRAM_BOT_TOKEN_NEXT` no `.env.vitalmed`), webhook `https://vitalmed.mnrs.com.br/taximetro/api/telegram/webhook`; QR do check-in usa `NEXT_PUBLIC_TELEGRAM_GROUP_LINK` (build arg); dica de cadastro do preceptor suprimida via `TELEGRAM_PRECEPTOR_REGISTRATION_URL=off` até existir link de convite Vitalmed |
 | Login Google | ativo | indisponível até adicionar o redirect URI no Google Console (ver abaixo) |
 
 O `basePath` continua `/taximetro` também na Vitalmed — ele está acoplado em ~70
