@@ -10,10 +10,13 @@ const paths = [
   "/api/telegram/checkin-pending-reminder",
 ];
 
+// PORT vem do container (instâncias distintas rodam em portas distintas no host).
+const appPort = process.env.PORT || "3000";
+
 let lastError = null;
 
 for (const path of paths) {
-  const url = new URL(`http://127.0.0.1:3000${path}`);
+  const url = new URL(`http://127.0.0.1:${appPort}${path}`);
   url.searchParams.set("key", key);
 
   try {

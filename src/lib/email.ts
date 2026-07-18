@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { ORG_NAME } from "@/lib/branding";
 
 type EmailErrorCode =
   | "SMTP_NOT_CONFIGURED"
@@ -267,7 +268,7 @@ export async function sendReportEmail(to: string, html: string, summary: ReportE
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #0f172a;">
         <div style="margin-bottom: 24px;">
           <h1 style="font-size: 20px; color: #1E3A5F; margin: 0;">Relatório de Plantões</h1>
-          <p style="font-size: 13px; color: #64748b; margin: 4px 0 0;">Taxímetro Digital — SAMU 192 Salvador</p>
+          <p style="font-size: 13px; color: #64748b; margin: 4px 0 0;">Taxímetro Digital — ${ORG_NAME}</p>
         </div>
         <p style="font-size: 15px; color: #334155; margin: 0 0 16px;">${senderLine} compartilhou um relatório de plantões com você.</p>
         <table style="border-collapse: collapse; font-size: 14px; color: #334155; margin-bottom: 20px;">
@@ -322,7 +323,7 @@ export async function sendPasswordResetEmail(to: string, name: string, token: st
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
     <div style="text-align: center; margin-bottom: 24px;">
       <h1 style="font-size: 20px; color: #1E3A5F; margin: 0;">Taxímetro Digital</h1>
-      <p style="font-size: 13px; color: #64748b; margin: 4px 0 0;">SAMU 192 Salvador</p>
+      <p style="font-size: 13px; color: #64748b; margin: 4px 0 0;">${ORG_NAME}</p>
     </div>
     <p style="font-size: 15px; color: #334155;">Olá, <strong>${name}</strong>.</p>
     <p style="font-size: 15px; color: #334155;">Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para criar uma nova senha:</p>

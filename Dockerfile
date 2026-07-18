@@ -9,6 +9,10 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Branding por instância (vazio = SAMU Salvador, ver src/lib/branding.ts e docs/vitalmed.md)
+ARG NEXT_PUBLIC_ORG_NAME=""
+ARG NEXT_PUBLIC_ORG_NAME_SHORT=""
+ENV NEXT_PUBLIC_ORG_NAME=${NEXT_PUBLIC_ORG_NAME} NEXT_PUBLIC_ORG_NAME_SHORT=${NEXT_PUBLIC_ORG_NAME_SHORT}
 RUN npx drizzle-kit generate
 RUN npm run build
 

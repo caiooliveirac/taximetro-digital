@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Ambulance, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ORG_NAME } from "@/lib/branding";
 
 export default function LoginPage() {
   return (
@@ -89,7 +90,7 @@ function LoginForm() {
               <Ambulance className="h-6 w-6 text-accent-600" strokeWidth={1.5} />
             </div>
             <h1 className="text-xl font-semibold text-slate-900">Taxímetro Digital</h1>
-            <p className="mt-1 text-sm text-slate-500">SAMU 192 Salvador</p>
+            <p className="mt-1 text-sm text-slate-500">{ORG_NAME}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
