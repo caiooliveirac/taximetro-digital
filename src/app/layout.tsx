@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Providers from "@/app/providers";
-import { ORG_NAME, ORG_NAME_SHORT } from "@/lib/branding";
+import { ORG_BASE_URL, ORG_NAME, ORG_NAME_SHORT, ORG_OG_IMAGE } from "@/lib/branding";
 import "@/app/globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -10,17 +10,17 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: `Taxímetro Digital — ${ORG_NAME_SHORT}`,
   description: `Tecnologia e eficiência no registro de presença — ${ORG_NAME}`,
-  metadataBase: new URL("https://mnrs.com.br"),
+  metadataBase: new URL(ORG_BASE_URL),
   openGraph: {
     title: `Taxímetro Digital — ${ORG_NAME}`,
     description: "Tecnologia e eficiência no registro de presença. Conectando dados, salvando vidas.",
-    url: "https://mnrs.com.br/taximetro",
+    url: `${ORG_BASE_URL}/taximetro`,
     siteName: `Taxímetro ${ORG_NAME_SHORT}`,
     images: [
       {
-        url: "/taximetro/icons/image.png",
-        width: 1024,
-        height: 559,
+        url: ORG_OG_IMAGE.url,
+        width: ORG_OG_IMAGE.width,
+        height: ORG_OG_IMAGE.height,
         alt: `Taxímetro ${ORG_NAME_SHORT} — Registro de presença digital`,
       },
     ],
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: `Taxímetro Digital — ${ORG_NAME}`,
     description: "Tecnologia e eficiência no registro de presença. Conectando dados, salvando vidas.",
-    images: ["/taximetro/icons/image.png"],
+    images: [ORG_OG_IMAGE.url],
   },
 };
 

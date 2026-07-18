@@ -84,8 +84,15 @@ O GHA (`deploy.yml`) só cuida da instância original. Vitalmed:
 
 ```bash
 # 1. Código no host (~/vitalmed-digital) e build
+#    (build args de branding: vazio = SAMU; ver src/lib/branding.ts)
 ssh magalu 'cd ~/vitalmed-digital && git fetch && git checkout <ref> && \
-  docker build -t vitalmed-digital:mvp .'
+  docker build -t vitalmed-digital:mvp \
+    --build-arg NEXT_PUBLIC_ORG_NAME="Vitalmed" \
+    --build-arg NEXT_PUBLIC_ORG_NAME_SHORT="Vitalmed" \
+    --build-arg NEXT_PUBLIC_ORG_OG_IMAGE="vitalmed" \
+    --build-arg NEXT_PUBLIC_ORG_BASE_URL="https://vitalmed.mnrs.com.br" \
+    --build-arg NEXT_PUBLIC_TELEGRAM_GROUP_LINK="https://t.me/+AMX6JIqps6o3YmUx" \
+    --build-arg INSTALL_CHROMIUM=1 .'
 
 # 2. Migrations/seed — rodar do notebook via túnel SSH (PG só escuta em loopback)
 ssh -fN -L 15432:127.0.0.1:5432 magalu
