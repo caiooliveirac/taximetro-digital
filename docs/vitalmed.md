@@ -17,7 +17,7 @@ este arquivo prevalece **para a instância Vitalmed** (a instância original seg
 | Banco | PG 16 nativo `127.0.0.1:5432`, db `taximetro` | PG 16 nativo `127.0.0.1:5432`, db **`vitalmed`**, role **`vitalmed`** |
 | AUTH_URL | `https://mnrs.com.br` | `https://vitalmed.mnrs.com.br` |
 | AUTH_SECRET | GitHub Secrets | próprio (gerado no provisionamento, guardado no `.env` de referência do host) |
-| Backup diário | `/var/backups/taximetro`, e-mail 03:37 | `/var/backups/vitalmed` (`DB_BACKUP_DIR`), e-mail **04:07** (`DB_BACKUP_CRON="7 4 * * *"`, para não colidir com o pg_dump do original) |
+| Backup diário | `/var/backups/taximetro`, e-mail 03:37 | `/var/backups/vitalmed` (`DB_BACKUP_DIR`), **22:00** (`DB_BACKUP_CRON="0 22 * * *"`): e-mail + dump e relatórios de presenças **em PDF no privado do admin** (`TELEGRAM_ADMIN_CHAT_ID`, chromium headless via build arg `INSTALL_CHROMIUM=1`) |
 | Telegram | bot ativo (@? SAMU) | bot **@VitalmedCheckin_bot** (`TELEGRAM_BOT_TOKEN_NEXT` no `.env.vitalmed`), webhook `https://vitalmed.mnrs.com.br/taximetro/api/telegram/webhook`; QR do check-in usa `NEXT_PUBLIC_TELEGRAM_GROUP_LINK` (build arg); dica de cadastro do preceptor suprimida via `TELEGRAM_PRECEPTOR_REGISTRATION_URL=off` até existir link de convite Vitalmed |
 | Login Google | ativo | indisponível até adicionar o redirect URI no Google Console (ver abaixo) |
 
@@ -51,6 +51,16 @@ db:seed-vitalmed`). Idempotente (`onConflictDoNothing`). Exige `DATABASE_URL`
 explícito (sem fallback). Env vars: `SEED_ADMIN_PASSWORD` (default `admin123`)
 e `SEED_ADMIN_FORCE_CHANGE=1` (força troca de senha no primeiro login — usar em
 prod).
+
+## Relatório de presenças (PDF via Telegram)
+
+- Geração compartilhada em `scripts/attendance-report-lib.mjs` (HTML por faculdade:
+  internos em ordem alfabética, meta de plantões/regulação, check-in/checkout,
+  ausências) + conversão PDF com chromium headless (fallback: envia HTML).
+- **Backup diário 22h** (`daily-db-backup.mjs`): além do e-mail, envia dump +
+  PDFs ao `TELEGRAM_ADMIN_CHAT_ID`; falha de qualquer perna alerta grupo + admin.
+- **Sob demanda**: comando `/relatorio` no privado do bot (exige vínculo
+  coordenação/liderança/preceptoria) — dispara `scripts/telegram-send-attendance-report.mjs`.
 
 ## Limitações conhecidas do MVP
 

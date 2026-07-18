@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties, userRoles } from "@/db/schema";
@@ -122,17 +124,14 @@ export async function POST(req: NextRequest) {
         return await handleBinding(cpf, telegramUserId, message.from.first_name, chatId);
       }
 
+      // /relatorio — relatório de presenças em PDF (gestão vinculada)
+      if (command === "relatorio") {
+        return await handleReportCommand(telegramUserId, chatId);
+      }
+
       // /ajuda
-      if (text === "/ajuda" || text === "/help") {
-        await bot.api.sendMessage(chatId,
-          "🩺 *Taxímetro Bot*\n\n" +
-          "Comandos:\n" +
-          "• `/vincular 000.000.000-00` — vincular seu Telegram ao cadastro\n" +
-          "• Escaneie o QR Code do interno para abrir o grupo\n" +
-          "• No grupo: envie somente o código de 6 dígitos do interno\n" +
-          "• No grupo: `/pendencias` — avisar faltas de check-in do plantão diurno",
-          { parse_mode: "Markdown" }
-        );
+      if (command === "ajuda" || command === "help" || text === "/start") {
+        await bot.api.sendMessage(chatId, buildPrivateHelpMessage(), { parse_mode: "Markdown" });
         return NextResponse.json({ ok: true });
       }
 
@@ -141,6 +140,22 @@ export async function POST(req: NextRequest) {
 
     if (command === "pendencias" || command === "checkinspendentes") {
       return await handleManualPendingReminderCommand(telegramUserId, telegramName, chatId, isGroup, messageThreadId);
+    }
+
+    if (command === "relatorio") {
+      await sendTelegramMessage(chatId, "🔒 O relatório contém dados dos internos — peça no privado do bot com /relatorio.", { messageThreadId });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (command === "ajuda" || command === "help") {
+      await sendTelegramMessage(chatId,
+        "🩺 Neste grupo:\n" +
+        "• Digite o código de 6 dígitos do interno para validar check-in/checkout\n" +
+        "• /pendencias — aviso de check-ins pendentes (gestão vinculada)\n" +
+        "Guia completo: mande /ajuda no privado do bot.",
+        { messageThreadId },
+      );
+      return NextResponse.json({ ok: true });
     }
 
     // Group messages — any 6-digit code validates (no binding required)
@@ -153,6 +168,60 @@ export async function POST(req: NextRequest) {
     console.error("Telegram webhook error:", err);
     return NextResponse.json({ ok: true });
   }
+}
+
+function buildPrivateHelpMessage() {
+  return [
+    "🩺 *Guia rápido do bot*",
+    "",
+    "*Validar presença do interno (preceptores):*",
+    "1️⃣ O interno abre a tela de check-in no celular dele e mostra o *QR Code*",
+    "2️⃣ Escaneie o QR — ele abre o *grupo de validação*",
+    "3️⃣ No grupo, digite o *código de 6 dígitos* que aparece na tela do interno",
+    "✅ Pronto, check-in registrado! No fim do plantão é igual: o interno gera novo código e você digita no grupo para registrar o *checkout*.",
+    "",
+    "*Comandos aqui no privado:*",
+    "• `/vincular 000.000.000-00` — conecta este Telegram ao seu cadastro (use seu CPF). Libera os comandos de gestão.",
+    "• `/relatorio` — recebe o relatório de presenças em PDF: internos em ordem alfabética, metas, plantões com check-in/checkout e ausências (gestão vinculada)",
+    "• `/ajuda` — mostra este guia",
+    "",
+    "*Comandos no grupo:*",
+    "• Código de 6 dígitos — valida check-in/checkout",
+    "• `/pendencias` — dispara o aviso de check-ins pendentes (gestão vinculada)",
+    "",
+    "🤖 *Automático:* lembrete de check-in pendente pela manhã e, à noite, backup do banco + relatório em PDF no privado da administração.",
+  ].join("\n");
+}
+
+async function handleReportCommand(telegramUserId: string, chatId: string) {
+  const permission = await canTriggerPendingReminderFromTelegram(telegramUserId);
+
+  if (!permission.allowed) {
+    const message = permission.reason === "not-bound"
+      ? "Comando indisponível para este Telegram. Faça primeiro /vincular 000.000.000-00 aqui no privado."
+      : "Comando disponível apenas para coordenação, liderança ou preceptoria vinculadas.";
+    await bot.api.sendMessage(chatId, message);
+    return NextResponse.json({ ok: true });
+  }
+
+  await bot.api.sendMessage(chatId, "⏳ Gerando o relatório de presenças... os PDFs chegam em instantes.");
+
+  const scriptPath = path.join(process.cwd(), "scripts", "telegram-send-attendance-report.mjs");
+  const child = spawn(process.execPath, [scriptPath, chatId], {
+    detached: true,
+    stdio: "ignore",
+    env: process.env,
+  });
+  child.unref();
+
+  await logAudit({
+    userId: permission.userId,
+    action: "ATTENDANCE_REPORT_TELEGRAM_REQUESTED",
+    entity: "telegram",
+    payload: { telegramUserId },
+  });
+
+  return NextResponse.json({ ok: true });
 }
 
 async function handleManualPendingReminderCommand(

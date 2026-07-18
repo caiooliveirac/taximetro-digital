@@ -20,6 +20,10 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 RUN apk add --no-cache postgresql-client tzdata
+# Chromium headless para converter o relatório de presenças em PDF (Telegram).
+# Opt-in por build arg para não inflar a imagem de instâncias que não usam PDF.
+ARG INSTALL_CHROMIUM=""
+RUN if [ -n "$INSTALL_CHROMIUM" ]; then apk add --no-cache chromium font-dejavu font-noto-emoji; fi
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
