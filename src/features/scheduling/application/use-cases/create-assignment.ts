@@ -178,12 +178,21 @@ export async function executeCreateAssignment(params: {
     return { status: 201, body: { success: true, data: created } } as const;
   } catch (err: unknown) {
     const cause = typeof err === "object" && err !== null && "cause" in err
-      ? (err as { cause?: { code?: string } }).cause
+      ? (err as { cause?: { code?: string; constraint_name?: string } }).cause
       : undefined;
     if (cause?.code === "23505") {
       return {
         status: 409,
         body: { success: false, error: "Interno já possui plantão neste dia e turno" },
+      } as const;
+    }
+
+    // FK violation em created_by: o usuário do JWT não existe mais no banco
+    // (sessão anterior a uma restauração/merge). A sessão precisa ser refeita.
+    if (cause?.code === "23503" && cause.constraint_name === "assignments_created_by_users_id_fk") {
+      return {
+        status: 401,
+        body: { success: false, error: "Sua sessão está desatualizada. Saia da conta e faça login novamente." },
       } as const;
     }
 
