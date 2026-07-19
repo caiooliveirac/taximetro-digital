@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
+import { PhotoLightbox } from "@/components/photo-lightbox";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { Button } from "@/components/ui/button";
 import { getFacultyStyle } from "@/lib/base-colors";
@@ -28,6 +29,7 @@ type UserRow = {
   cpf: string;
   email: string;
   phone: string | null;
+  selfie?: string | null;
   isActive: boolean;
   isArchived?: boolean;
   role?: string;
@@ -165,6 +167,7 @@ export default function LeaderInternos() {
   const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [justificationAssignment, setJustificationAssignment] = useState<AssignmentRow | null>(null);
+  const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; alt: string } | null>(null);
   const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
   const [userNameById, setUserNameById] = useState<Record<string, string>>({});
 
@@ -759,7 +762,26 @@ export default function LeaderInternos() {
                   {pending.map((u) => (
                     <div key={u.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
                       <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
+                        <div className="flex min-w-0 items-start gap-3">
+                          {u.selfie ? (
+                            <button
+                              type="button"
+                              onClick={() => setZoomedPhoto({ src: u.selfie!, alt: `Foto de ${u.name}` })}
+                              className="shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                              aria-label={`Ampliar foto de ${u.name}`}
+                            >
+                              <img
+                                src={u.selfie}
+                                alt={`Foto de ${u.name}`}
+                                className="h-14 w-14 rounded-full object-cover ring-2 ring-slate-200"
+                              />
+                            </button>
+                          ) : (
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-dashed border-slate-300 text-[10px] text-slate-400">
+                              Sem foto
+                            </div>
+                          )}
+                          <div className="min-w-0">
                           <p className="font-medium text-slate-900">{u.name}</p>
                           <p className="text-xs text-slate-500 mt-0.5">{u.cpf} · {u.email}</p>
                           {u.phone && <p className="text-xs text-slate-500">{u.phone}</p>}
@@ -768,6 +790,7 @@ export default function LeaderInternos() {
                               Registrado em {new Date(u.createdAt).toLocaleDateString("pt-BR")}
                             </p>
                           )}
+                          </div>
                         </div>
                         <div className="flex gap-2 shrink-0">
                           <Button
@@ -839,7 +862,14 @@ export default function LeaderInternos() {
                           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
                             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Foto atual</p>
                             {request.currentSelfie ? (
-                              <img src={request.currentSelfie} alt="Foto atual" className="mx-auto h-24 w-24 rounded-full object-cover ring-2 ring-slate-200" />
+                              <button
+                                type="button"
+                                onClick={() => setZoomedPhoto({ src: request.currentSelfie!, alt: `Foto atual de ${request.userName}` })}
+                                className="mx-auto block rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                                aria-label={`Ampliar foto atual de ${request.userName}`}
+                              >
+                                <img src={request.currentSelfie} alt="Foto atual" className="h-24 w-24 rounded-full object-cover ring-2 ring-slate-200" />
+                              </button>
                             ) : (
                               <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-dashed border-slate-300 text-xs text-slate-400">
                                 Sem foto
@@ -848,7 +878,14 @@ export default function LeaderInternos() {
                           </div>
                           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
                             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">Nova foto</p>
-                            <img src={request.requestedSelfie} alt="Nova foto solicitada" className="mx-auto h-24 w-24 rounded-full object-cover ring-2 ring-amber-200" />
+                            <button
+                              type="button"
+                              onClick={() => setZoomedPhoto({ src: request.requestedSelfie, alt: `Nova foto de ${request.userName}` })}
+                              className="mx-auto block rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                              aria-label={`Ampliar nova foto de ${request.userName}`}
+                            >
+                              <img src={request.requestedSelfie} alt="Nova foto solicitada" className="h-24 w-24 rounded-full object-cover ring-2 ring-amber-200" />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1042,6 +1079,14 @@ export default function LeaderInternos() {
         onClose={() => setJustificationAssignment(null)}
         onSaved={handleJustificationSaved}
       />
+
+      {zoomedPhoto && (
+        <PhotoLightbox
+          src={zoomedPhoto.src}
+          alt={zoomedPhoto.alt}
+          onClose={() => setZoomedPhoto(null)}
+        />
+      )}
     </div>
   );
 }

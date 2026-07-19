@@ -74,6 +74,7 @@ export async function listPendingUsersRows() {
       cpf: users.cpf,
       email: users.email,
       phone: users.phone,
+      selfie: users.selfie,
       isActive: users.isActive,
       createdAt: users.createdAt,
       role: userRoles.role,
