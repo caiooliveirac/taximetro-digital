@@ -385,6 +385,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return true;
     },
     async jwt({ token, user, account }) {
+      // Sessões podem sobreviver a uma restauração de banco: o JWT continua
+      // válido mas o user id que ele carrega já não existe em `users`, e todo
+      // insert com created_by passa a falhar com FK 23503. Se o usuário do
+      // token sumiu (ou foi desativado), invalida a sessão para forçar novo login.
+      if (!user && token.id) {
+        try {
+          const [dbUser] = await db
+            .select({ id: users.id, isActive: users.isActive })
+            .from(users)
+            .where(eq(users.id, token.id as string))
+            .limit(1);
+          if (!dbUser || !dbUser.isActive) return null;
+        } catch (error) {
+          console.error("[auth] jwt callback: failed to verify user existence", error);
+        }
+      }
       if (account?.provider === "google" && user?.email) {
         const [dbUser] = await db.select().from(users)
           .where(and(eq(users.email, user.email), eq(users.isActive, true)))
