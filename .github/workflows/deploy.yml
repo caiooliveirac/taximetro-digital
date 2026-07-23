@@ -135,13 +135,17 @@ jobs:
             sudo mkdir -p /var/backups/taximetro
             sudo chmod 777 /var/backups/taximetro
 
-            echo "=== Starting canary for pre-swap validation (porta 3011) ==="
+            # Canário roda em --network host, então a porta precisa estar livre
+            # NO HOST. A 3011 (usada até jul/2026) passou a ser ocupada pelo app
+            # PM2 "bolao-web"; migramos para 3199 (livre). Se recolidir, escolher
+            # outra porta livre — conferir com: sudo ss -ltn | grep :PORTA
+            echo "=== Starting canary for pre-swap validation (porta 3199) ==="
             docker rm -f "$CANARY_NAME" 2>/dev/null || true
             docker run --rm \
               -d \
               --name "$CANARY_NAME" \
               --network host \
-              -e PORT=3011 \
+              -e PORT=3199 \
               -e HOSTNAME=127.0.0.1 \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e AUTH_SECRET="${{ secrets.AUTH_SECRET }}" \
@@ -162,7 +166,7 @@ jobs:
 
             echo "=== Validating canary health ==="
             for i in $(seq 1 45); do
-              if curl -fsS http://127.0.0.1:3011/taximetro/api/health 2>/dev/null | grep -q healthy; then
+              if curl -fsS http://127.0.0.1:3199/taximetro/api/health 2>/dev/null | grep -q healthy; then
                 echo "✅ Canary healthy after ${i}s"
                 break
               fi
