@@ -4,8 +4,17 @@ import { twMerge } from "tailwind-merge";
 const BRAZIL_TIME_ZONE = "America/Sao_Paulo";
 const OPERATIONAL_DAY_START_HOUR = 6;
 const OPERATIONAL_NIGHT_START_HOUR = 18;
-const DAY_SHIFT_CHECKOUT_START_HOUR = 15;
 const SHIFT_CHECKOUT_GRACE_HOURS = 6;
+
+// Janela de checkout do interno/preceptor: abre 4h após o INÍCIO do plantão
+// (hora local America/Sao_Paulo). Início considerado: diurno 07:00, noturno
+// 19:00, EBMSP manhã 07:00, EBMSP tarde 13:00.
+//   Diurno / EBMSP manhã → 11:00 (mesmo dia)
+//   EBMSP tarde          → 17:00 (mesmo dia)
+//   Noturno              → 23:00 (mesmo dia)
+const DAY_SHIFT_CHECKOUT_START_HOUR = 11;
+const AFTERNOON_SHIFT_CHECKOUT_START_HOUR = 17;
+const NIGHT_SHIFT_CHECKOUT_START_HOUR = 23;
 
 export type ShiftPeriod = "DAY" | "NIGHT";
 
@@ -125,9 +134,10 @@ function shiftCheckoutStartPoint(dateStr: string, period: ShiftPeriod): LocalDat
     };
   }
 
+  // Noturno: abre às 23:00 do MESMO dia (4h após o início às 19:00).
   return {
-    dateStr: addDaysToDateStr(dateStr, 1),
-    hour: OPERATIONAL_DAY_START_HOUR,
+    dateStr,
+    hour: NIGHT_SHIFT_CHECKOUT_START_HOUR,
     minute: 0,
   };
 }
@@ -321,9 +331,6 @@ export function formatValidatorName(name: string | null | undefined): string {
 
 export type EbmspShift = "MORNING" | "AFTERNOON";
 
-/** Unified day-shift checkout window start for shift-based schedules */
-const SHIFT_DAY_CHECKOUT_START_HOUR = 5;
-
 export function getShiftLabel(shift: string | null | undefined): string {
   if (shift === "MORNING") return "Manhã (07h–13h)";
   if (shift === "AFTERNOON") return "Tarde (13h–19h)";
@@ -337,8 +344,12 @@ export function getShiftShortLabel(shift: string | null | undefined): string {
 }
 
 /**
- * Shift-aware checkout window.
- * For shift-based DAY schedules, checkout opens uniformly at 05:00 and stays available until 00:00.
+ * Janela de checkout ciente do turno EBMSP.
+ * O checkout abre 4h após o início do plantão (fuso America/Sao_Paulo):
+ *   EBMSP manhã (início 07:00) → 11:00
+ *   EBMSP tarde (início 13:00) → 17:00
+ * e permanece disponível até 00:00. Diurno completo e noturno caem no
+ * caminho padrão (isWithinInternCheckoutWindow): 11:00 e 23:00 respectivamente.
  */
 export function isWithinShiftCheckoutWindow(
   assignmentDate: string,
@@ -354,7 +365,7 @@ export function isWithinShiftCheckoutWindow(
   const now = currentLocalPoint(date);
   const start: LocalDateTimePoint = {
     dateStr: assignmentDate,
-    hour: SHIFT_DAY_CHECKOUT_START_HOUR,
+    hour: shift === "AFTERNOON" ? AFTERNOON_SHIFT_CHECKOUT_START_HOUR : DAY_SHIFT_CHECKOUT_START_HOUR,
     minute: 0,
   };
   const deadline = shiftCheckoutDeadlinePoint(assignmentDate, period);

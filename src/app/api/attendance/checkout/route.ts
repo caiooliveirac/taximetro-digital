@@ -91,8 +91,10 @@ export async function POST(req: NextRequest) {
         success: false, error: assignment.period === "DAY"
           ? (assignment.shift === "MORNING"
             ? "O checkout do turno da manhã só fica liberado entre 11:00 e 00:00."
-            : `O checkout do plantão diurno${shiftInfo} só fica liberado entre 15:00 e 00:00.`)
-          : "O checkout do plantão noturno só fica liberado entre 06:00 e 12:00."
+            : assignment.shift === "AFTERNOON"
+              ? "O checkout do turno da tarde só fica liberado entre 17:00 e 00:00."
+              : `O checkout do plantão diurno${shiftInfo} só fica liberado entre 11:00 e 00:00.`)
+          : "O checkout do plantão noturno só fica liberado entre 23:00 e 12:00."
       },
       { status: 409 },
     );
