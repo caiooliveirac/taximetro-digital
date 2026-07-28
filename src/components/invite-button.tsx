@@ -102,9 +102,9 @@ export function InviteButton() {
         <>
             <button
                 onClick={handleOpen}
-                className="flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white shadow-md hover:bg-orange-600 active:bg-orange-700 transition-colors"
+                className="flex items-center gap-2 rounded-xl bg-orange-500 px-3.5 py-2 text-sm font-semibold text-white shadow-md hover:bg-orange-600 active:bg-orange-700 transition-colors sm:px-5 sm:py-3"
             >
-                <Link2 className="h-5 w-5" />
+                <Link2 className="h-4 w-4 sm:h-5 sm:w-5" />
                 Gerar Convite
             </button>
 
