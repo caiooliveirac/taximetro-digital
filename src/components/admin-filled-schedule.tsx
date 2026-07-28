@@ -469,7 +469,7 @@ function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "
     );
 }
 
-function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, onPublishExtra, facultyBadgeMode = "neutral", showBaseCode = false, isVirtual = false }: { facultyAbbr: string; allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; onPublishExtra?: (slot: AllocationState) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean; isVirtual?: boolean }) {
+function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, onPublishExtra, facultyBadgeMode = "neutral", showBaseCode = false, isVirtual = false, count = 1 }: { facultyAbbr: string; allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; onPublishExtra?: (slot: AllocationState) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean; isVirtual?: boolean; count?: number }) {
     const tone = getPeriodTone(period);
     const facultyTone = getFacultyBadgeClass(facultyAbbr, facultyBadgeMode, period === "NIGHT" ? "NIGHT" : undefined);
 
@@ -480,7 +480,7 @@ function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, onPublishExt
                 title={`Reservado — ${facultyAbbr}`}
             >
                 <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-60">Reservado</span>
+                    <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-60">{count > 1 ? `${count} reservadas` : "Reservado"}</span>
                     <span className="mt-1 flex items-center gap-2">
                         <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${facultyTone.pill}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
@@ -502,7 +502,7 @@ function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, onPublishExt
                 title={`Alocar interno em ${facultyAbbr}`}
             >
                 <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-75">Vaga</span>
+                    <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-75">{count > 1 ? `${count} vagas` : "Vaga"}</span>
                     <span className="mt-1 flex items-center gap-2">
                         <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${facultyTone.pill}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
@@ -636,6 +636,17 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         () => (filterDayKey ? weekDates.filter((date) => getDayKey(date) === filterDayKey) : weekDates),
         [filterDayKey, weekDates],
     );
+
+    // No mobile, a grade abre já rolada até a coluna de hoje (uma vez por montagem);
+    // no desktop a semana inteira cabe, então não faz nada.
+    const autoScrollGridToToday = useCallback((node: HTMLDivElement | null) => {
+        if (!node || node.dataset.autoScrolledToday) return;
+        node.dataset.autoScrolledToday = "1";
+        if (node.clientWidth >= 640) return;
+        const idx = filteredWeekDates.indexOf(today);
+        if (idx <= 0) return;
+        node.scrollLeft = idx * 162;
+    }, [filteredWeekDates, today]);
 
     const loadBaseData = useCallback(async () => {
         const [basesRes, rulesRes, facultiesRes] = await Promise.all([
@@ -1148,9 +1159,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     <span className="text-xs text-slate-400">{rows.length} bases</span>
                 </div>
 
-                <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div className="min-w-[1260px]" style={{ display: "grid", gridTemplateColumns: "124px repeat(7, minmax(162px, 1fr))" }}>
-                        <div className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Base</div>
+                <div ref={autoScrollGridToToday} className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    {/* Coluna Base estreita no mobile (só o código) pra sobrar tela pros dias */}
+                    <div className="min-w-[1198px] [--sched-base-col:64px] sm:min-w-[1260px] sm:[--sched-base-col:124px]" style={{ display: "grid", gridTemplateColumns: "var(--sched-base-col) repeat(7, minmax(162px, 1fr))" }}>
+                        <div className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:px-3">Base</div>
                         {filteredWeekDates.map((date) => (
                             <div key={date} className={`border-b border-slate-200 px-2 py-2 text-center text-[11px] font-semibold ${date === today ? "bg-accent-50/60 text-accent-700" : "bg-slate-50 text-slate-500"}`}>
                                 {DAY_LABEL_BY_KEY[getDayKey(date)]}<br />
@@ -1160,14 +1172,14 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                         {rows.map((base) => (
                             <Fragment key={base.id}>
-                                <div className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white px-2.5 py-2">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-base font-bold leading-none text-slate-900">{base.code}</span>
-                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBaseStyle(base.type).pill}`}>
+                                <div className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white px-2 py-2 sm:px-2.5">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm font-bold leading-none text-slate-900 sm:text-base">{base.code}</span>
+                                        <span className={`hidden items-center rounded-full px-2 py-0.5 text-[10px] font-semibold sm:inline-flex ${getBaseStyle(base.type).pill}`}>
                                             {getBaseStyle(base.type).label}
                                         </span>
                                     </div>
-                                    <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-500">{base.name}</p>
+                                    <p className="mt-1 hidden line-clamp-2 text-[11px] leading-4 text-slate-500 sm:block">{base.name}</p>
                                 </div>
 
                                 {filteredWeekDates.map((date) => {
@@ -1297,15 +1309,30 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                         </div>
 
                                         <div className="grid gap-2">
-                                            {items.map(({ slot }) => {
-                                                if (slot.kind === "assignment") {
-                                                    return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
+                                            {(() => {
+                                                // Vagas iguais (mesma base+faculdade+turno) viram 1 card com contador
+                                                // em vez de N botoes "Vaga" repetidos — encurta muito o CRU no mobile.
+                                                const collapsed: Array<{ slot: ActualPeriodGridSlot; count: number }> = [];
+                                                const vacancyIndex = new Map<string, number>();
+                                                for (const { slot } of items) {
+                                                    if (slot.kind === "vacancy") {
+                                                        const groupKey = `${slot.allocation.baseId}|${slot.allocation.facultyId ?? ""}`;
+                                                        const at = vacancyIndex.get(groupKey);
+                                                        if (at !== undefined) {
+                                                            collapsed[at].count += 1;
+                                                            continue;
+                                                        }
+                                                        vacancyIndex.set(groupKey, collapsed.length);
+                                                    }
+                                                    collapsed.push({ slot, count: 1 });
                                                 }
-
-                                                if (slot.kind === "vacancy") {
-                                                    return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} facultyBadgeMode="faculty" showBaseCode={showBaseCode} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
-                                                }
-                                            })}
+                                                return collapsed.map(({ slot, count }) => {
+                                                    if (slot.kind === "assignment") {
+                                                        return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
+                                                    }
+                                                    return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} facultyBadgeMode="faculty" showBaseCode={showBaseCode} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} count={count} />;
+                                                });
+                                            })()}
                                         </div>
                                     </div>
                                 );
@@ -1350,8 +1377,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
     return (
         <div className="space-y-4">
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 shadow-sm backdrop-blur-sm">
-                <div className="flex min-w-max flex-wrap items-center gap-2">
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 shadow-sm backdrop-blur-sm">
+                {/* Linha 1: semana + busca (quebram em telas estreitas) */}
+                <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
                         <button type="button" onClick={() => shiftWeek(-7)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition">
                             <ChevronLeft className="h-4 w-4" />
@@ -1368,37 +1396,44 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         </button>
                     </div>
 
-                    <label className="relative block w-52 shrink-0">
+                    <label className="relative block w-full min-w-44 flex-1 sm:w-52 sm:flex-none">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         <input value={searchIntern} onChange={(event) => setSearchIntern(event.target.value)} placeholder="Buscar interno" className="h-9 w-full rounded-xl border border-slate-200 bg-white/90 py-1.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-accent-400 focus:bg-white shadow-sm" />
                     </label>
+                </div>
 
-                    <button
-                        type="button"
-                        onClick={() => setFilterBase("")}
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${!filterBase ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
-                    >
-                        Todas as bases
-                    </button>
+                {/* Linha 2: chips de base com scroll horizontal próprio */}
+                <div className="overflow-x-auto">
+                    <div className="flex min-w-max items-center gap-2 pb-0.5">
+                        <button
+                            type="button"
+                            onClick={() => setFilterBase("")}
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${!filterBase ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
+                        >
+                            Todas as bases
+                        </button>
 
-                    {baseToggleOptions.map((base) => {
-                        const active = filterBase === base.id;
-                        return (
-                            <button
-                                key={base.id}
-                                type="button"
-                                onClick={() => setFilterBase(active ? "" : base.id)}
-                                className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${active ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-[1.02]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
-                            >
-                                {base.code}
-                            </button>
-                        );
-                    })}
+                        {baseToggleOptions.map((base) => {
+                            const active = filterBase === base.id;
+                            return (
+                                <button
+                                    key={base.id}
+                                    type="button"
+                                    onClick={() => setFilterBase(active ? "" : base.id)}
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${active ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-[1.02]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
+                                >
+                                    {base.code}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
-            <div className="overflow-x-auto rounded-[28px] border border-slate-200 bg-white/82 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm">
-                <div className="flex min-w-max flex-wrap items-center gap-1.5 text-xs">
+            <div className="space-y-2 rounded-[28px] border border-slate-200 bg-white/82 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm">
+                {/* Linha 1: dias da semana */}
+                <div className="overflow-x-auto">
+                <div className="flex min-w-max items-center gap-1.5 text-xs">
                     <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Dia</span>
                     <button
                         type="button"
@@ -1426,7 +1461,12 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         );
                     })}
 
-                    <span className="mx-1 text-slate-300">|</span>
+                </div>
+                </div>
+
+                {/* Linha 2: faculdades + turno (separada dos dias, pedido do mobile) */}
+                <div className="overflow-x-auto">
+                <div className="flex min-w-max items-center gap-1.5 text-xs">
                     {visibleFacultyOptions.map((faculty) => {
                         const active = filterFaculty === faculty.id;
                         const facultyTone = getFacultyStyle(faculty.abbreviation);
@@ -1460,7 +1500,12 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             <Moon className="h-3.5 w-3.5 text-current" strokeWidth={1.5} /> Noturno
                         </button>
                     )}
-                    <span className="mx-1 text-slate-300">|</span>
+                </div>
+                </div>
+
+                {/* Linha 3: ausência + status */}
+                <div className="overflow-x-auto">
+                <div className="flex min-w-max items-center gap-1.5 text-xs">
                     <button
                         type="button"
                         onClick={() => { setFilterMissingCheckin((current) => !current); setFilterStatus(""); }}
@@ -1487,6 +1532,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             </button>
                         );
                     })}
+                </div>
                 </div>
             </div>
 

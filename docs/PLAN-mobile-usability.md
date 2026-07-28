@@ -51,11 +51,22 @@ sem scroll e não há o mínimo de boas práticas mobile.
   com contador de filtros ativos); dica de scroll horizontal acima da grade
   (mobile-only); fix do 5º KPI órfão em `leader/relatorios` e `admin/presencas`
   (`col-span-2` no mobile). Sticky first column na grade **já existia**.
-- **Fase 2 — evolução da escala** (1 PR, se necessário após teste real): visão
-  "por dia" (accordion Seg-Dom) como alternativa ao scroll horizontal.
-- **Fase 3 — admin gestão** (1 PR, se prioridade confirmar): telas de tabela densa
-  (presencas, usuarios) ganham variante em cards no mobile; affordance de scroll
-  (sombra de borda) no componente `ui/Table`.
+- **Fase 2 — grade/CRU do admin** ✅ implementada em 2026-07-28 (pedidos diretos do
+  Caio + extras): coluna BASE estreita no mobile (64px, só o código; nome e pill a
+  partir de sm); vagas idênticas do CRU/CRL colapsadas em 1 card com contador
+  ("11 vagas" em vez de 11 botões "Vaga", idem "Reservado"); filtros da escala
+  preenchida reorganizados em linhas com scroll próprio (semana+busca / bases /
+  dias / faculdades+turno / status); grade abre auto-rolada até a coluna de hoje
+  no mobile.
+- **Fase 3 — backlog proposto** (aguardando priorização do Caio):
+  1. Modais (alocação, detalhe de plantão) como bottom-sheet no mobile com scroll
+     interno, em vez de modal centralizado.
+  2. Bloco de filtros da grade colapsável ("Filtros (N)") como na escala do leader —
+     os 2 cards de filtro ainda ocupam ~1/3 da primeira dobra.
+  3. Cabeçalho de dias sticky no scroll vertical da grade.
+  4. Affordance de scroll (sombra de borda) no componente `ui/Table`.
+  5. Telas de tabela densa (presencas, usuarios) com variante em cards no mobile.
+  6. Default mobile da grade em "hoje" (filtro de dia já ativo) em vez de semana toda.
 
 ## Open questions (pro Caio)
 
