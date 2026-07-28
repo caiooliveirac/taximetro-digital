@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canAccessPathWithRoles, extractRoleNames } from "../src/lib/role-access-policy";
+import { canAccessPathWithRoles, extractRoleNames, pickReturnRole } from "../src/lib/role-access-policy";
 
 test("extractRoleNames aceita mix string + objeto e ignora invalidos", () => {
   const roles = extractRoleNames([
@@ -43,4 +43,18 @@ test("COORDINATOR pode acessar qualquer area", () => {
 test("role principal desconhecida nao bloqueia (preserva semantica atual)", () => {
   assert.equal(canAccessPathWithRoles("/qualquer", undefined, []), true);
   assert.equal(canAccessPathWithRoles("/qualquer", "UNKNOWN", []), true);
+});
+
+test("pickReturnRole: LEADER+INTERN volta para area de lider", () => {
+  assert.equal(pickReturnRole(["LEADER", "INTERN"]), "LEADER");
+});
+
+test("pickReturnRole: INTERN puro nao tem area de retorno", () => {
+  assert.equal(pickReturnRole(["INTERN"]), null);
+  assert.equal(pickReturnRole([]), null);
+});
+
+test("pickReturnRole: COORDINATOR tem prioridade sobre LEADER e PRECEPTOR", () => {
+  assert.equal(pickReturnRole(["INTERN", "PRECEPTOR", "LEADER", "COORDINATOR"]), "COORDINATOR");
+  assert.equal(pickReturnRole(["PRECEPTOR", "LEADER"]), "LEADER");
 });

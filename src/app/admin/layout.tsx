@@ -60,7 +60,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           { label: "Governança", items: NAV.slice(15) },
         ]}
       />
-      <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">{children}</main>
+      {/* min-w-0: sem isso, conteúdo largo (grades) estica o main além do viewport
+          em vez de rolar dentro dos containers overflow-x-auto */}
+      <main className="min-w-0 flex-1 p-4 lg:p-6 pb-20 lg:pb-6">{children}</main>
     </div>
   );
 }

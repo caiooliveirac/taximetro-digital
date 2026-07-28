@@ -90,9 +90,9 @@ export default function AdminPresencas() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold text-slate-900">Presenças</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => shiftDate(-1)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -125,7 +125,7 @@ export default function AdminPresencas() {
             <MetricCard label="Presentes" value={checkedIn} icon={CheckCircle} />
             <MetricCard label="Pendentes" value={pending} icon={Clock} />
             <MetricCard label="Ausentes" value={absent} icon={XCircle} />
-            <MetricCard label="Taxa presença" value={`${rate}%`} icon={TrendingUp} />
+            <MetricCard label="Taxa presença" value={`${rate}%`} icon={TrendingUp} className="col-span-2 sm:col-span-1" />
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -195,9 +195,9 @@ export default function AdminPresencas() {
               </TableBody>
             </Table>
             {filtered.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Nenhum resultado para os filtros selecionados.</p>}
-            <div className="border-t border-slate-100 px-4 py-2 flex items-center justify-between">
+            <div className="border-t border-slate-100 px-4 py-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-slate-400">{filtered.length} de {active.length} registros</p>
-              <div className="flex items-center gap-3 text-[10px] text-slate-500">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
                 <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-5 rounded bg-emerald-50 border border-emerald-200" /> Presente</span>
                 <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-5 rounded bg-red-50 border border-red-200" /> Ausente</span>
                 <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-5 rounded bg-purple-50 border border-purple-200" /> Erro geo</span>

@@ -210,11 +210,11 @@ export function AdminDashboardClient({
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <select
             value={facultyFilter ?? ""}
             onChange={(e) => changeFacultyFilter(e.target.value || null)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20"
+            className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/20 sm:flex-none"
             aria-label="Filtrar por faculdade"
           >
             <option value="">Todas as faculdades</option>
@@ -343,8 +343,8 @@ export function AdminDashboardClient({
           !search || r.name.toLowerCase().includes(search.toLowerCase())
         );
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setModal(null); setSearch(""); }}>
-            <div className="relative mx-4 max-h-[70vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => { setModal(null); setSearch(""); }}>
+            <div className="relative mx-0 max-h-[85dvh] w-full max-w-lg overflow-hidden rounded-t-2xl sm:mx-4 sm:max-h-[70vh] sm:rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <h3 className="text-base font-semibold text-slate-900">{modal.title}</h3>
                 <button onClick={() => { setModal(null); setSearch(""); }} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -465,8 +465,8 @@ export function AdminDashboardClient({
         }
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeTodayModal}>
-            <div className="relative mx-4 max-h-[85vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={closeTodayModal}>
+            <div className="relative mx-0 max-h-[88dvh] w-full max-w-lg overflow-hidden rounded-t-2xl sm:mx-4 sm:max-h-[85vh] sm:rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <h3 className="text-base font-semibold text-slate-900">Plantões Hoje — {filtered.length}</h3>
                 <button onClick={closeTodayModal} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -626,8 +626,8 @@ export function AdminDashboardClient({
         }
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeCheckinModal}>
-            <div className="relative mx-2 max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={closeCheckinModal}>
+            <div className="relative mx-0 max-h-[90dvh] w-full max-w-5xl overflow-hidden rounded-t-2xl sm:mx-2 sm:max-h-[90vh] sm:rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <h3 className="text-base font-semibold text-slate-900">
                   Check-ins e Ações Manuais — {checkedIn.length}/{filtered.length}
@@ -736,8 +736,8 @@ export function AdminDashboardClient({
 
       {/* Base Detail Modal */}
       {baseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setBaseModal(null)}>
-          <div className="relative mx-4 max-h-[75vh] w-full max-w-xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setBaseModal(null)}>
+          <div className="relative mx-0 max-h-[85dvh] w-full max-w-xl overflow-hidden rounded-t-2xl sm:mx-4 sm:max-h-[75vh] sm:rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h3 className="text-base font-semibold text-slate-900">{baseModal.title}</h3>
               <button onClick={() => setBaseModal(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -803,8 +803,8 @@ export function AdminDashboardClient({
 
       {/* Week Modal */}
       {weekModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setWeekModal(false)}>
-          <div className="relative mx-4 w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setWeekModal(false)}>
+          <div className="relative mx-0 max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-t-2xl sm:mx-4 sm:max-h-none sm:rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h3 className="text-base font-semibold text-slate-900">Presença — Últimos 7 dias</h3>
               <button onClick={() => setWeekModal(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -849,8 +849,8 @@ export function AdminDashboardClient({
 
       {/* Completed Modal */}
       {completedModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setCompletedModal(false)}>
-          <div className="relative mx-4 max-h-[70vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setCompletedModal(false)}>
+          <div className="relative mx-0 max-h-[85dvh] w-full max-w-lg overflow-hidden rounded-t-2xl sm:mx-4 sm:max-h-[70vh] sm:rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h3 className="text-base font-semibold text-slate-900">Concluídos</h3>
               <button onClick={() => setCompletedModal(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
