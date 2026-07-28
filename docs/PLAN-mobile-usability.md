@@ -25,7 +25,7 @@ sem scroll e não há o mínimo de boas práticas mobile.
 | `/leader/escala` | Navegação de semana empilha em 2 linhas ("Anterior" / "Próxima" um embaixo do outro); botão SORTEAR desproporcional; bloco de filtros (2 buscas + 2 selects) consome ~1 tela inteira antes do conteúdo; grade semanal corta no "Seg" sem indicação de que dá pra rolar | screenshot na sessão de 2026-07-28 |
 | `/leader/relatorios` | 5 KPI cards grandes (~1,5 tela até chegar no conteúdo); tabela "Por Interno" **cortada à direita sem `overflow-x`** (coluna "A..." truncada) | idem |
 | `/leader` (dashboard) | KPIs 2-col aceitáveis; cards de Pendências com 4-6 badges que quebram em 3-4 linhas cada, lista fica quilométrica | idem |
-| `/admin/*` (inspeção de código) | Mesmos padrões: KPI grid `lg:grid-cols-4` vira 1-col gigante no mobile; `<table>` em `bases`, `audit`, `presencas`, `ver-interno` e `relatorios` **sem wrapper `overflow-x-auto`** (o padrão correto já existe em `admin/usuarios`) | grep em `src/app/admin` |
+| `/admin/*` (inspeção de código) | **Correção pós-auditoria:** as tabelas do admin usam o componente `ui/Table`, que já embute `overflow-auto` — rolam, mas sem indicação visual de que há mais conteúdo. KPI grids já são `grid-cols-2` no mobile; o problema pontual são grids de 5 cards com o 5º órfão (`presencas`, `leader/relatorios`) | grep em `src/app/admin` + `src/components/ui/table.tsx` |
 
 ## Princípios propostos (regras de implementação)
 
@@ -44,14 +44,17 @@ sem scroll e não há o mínimo de boas práticas mobile.
 
 ## Fases propostas
 
-- **Fase 1 — mecânica, baixo risco** (1 PR): wrappers `overflow-x-auto` em todas as
-  tabelas sem ele (leader/relatorios, admin/bases, admin/audit, admin/presencas,
-  admin/ver-interno); KPI tiles compactos em `/leader/relatorios` e `/admin`;
-  navegação de semana em 1 linha na escala.
-- **Fase 2 — escala mobile-first** (1 PR): filtros colapsáveis + sticky first column
-  na Planilha Única; avaliar visão por dia.
+- **Fase 1 — mecânica, baixo risco** ✅ implementada em 2026-07-28 (escopo ajustado
+  pós-correção da auditoria): navegação de semana em 1 linha + SORTEAR proporcional
+  no mobile (escala); filtros da escala colapsáveis no mobile (fechados por padrão,
+  com contador de filtros ativos); dica de scroll horizontal acima da grade
+  (mobile-only); fix do 5º KPI órfão em `leader/relatorios` e `admin/presencas`
+  (`col-span-2` no mobile). Sticky first column na grade **já existia**.
+- **Fase 2 — evolução da escala** (1 PR, se necessário após teste real): visão
+  "por dia" (accordion Seg-Dom) como alternativa ao scroll horizontal.
 - **Fase 3 — admin gestão** (1 PR, se prioridade confirmar): telas de tabela densa
-  (presencas, usuarios) ganham variante em cards no mobile.
+  (presencas, usuarios) ganham variante em cards no mobile; affordance de scroll
+  (sombra de borda) no componente `ui/Table`.
 
 ## Open questions (pro Caio)
 

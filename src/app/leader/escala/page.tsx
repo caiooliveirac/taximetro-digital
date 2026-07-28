@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState, useCallback } from "react";
 import {
-  Search, Filter, ChevronLeft, ChevronRight,
+  Search, Filter, ChevronLeft, ChevronRight, ChevronDown,
   Dices, X, RotateCcw, UserX, Plus,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
@@ -142,6 +142,7 @@ export default function LeaderEscala() {
   const [filterBase, setFilterBase] = useState("");
   const [filterPeriod, setFilterPeriod] = useState<"" | "DAY" | "NIGHT">("");
   const [searchBase, setSearchBase] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   /* ── Lottery modal ── */
   const [showLottery, setShowLottery] = useState(false);
@@ -717,6 +718,8 @@ export default function LeaderEscala() {
     (id) => (lotteryShiftsByIntern.get(id) ?? 0) >= maxShifts,
   ).length;
 
+  const activeFilterCount = [searchIntern, searchBase, filterBase, filterPeriod].filter(Boolean).length;
+
   if (loading) return <p className="p-8 text-slate-400">Carregando...</p>;
 
   return (
@@ -727,24 +730,24 @@ export default function LeaderEscala() {
         <div className="flex-1" />
         <button
           onClick={openLottery}
-          className="relative rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 px-7 py-3.5 text-base font-extrabold text-white shadow-[0_6px_20px_rgba(16,185,129,0.4)] transition hover:shadow-[0_8px_30px_rgba(16,185,129,0.5)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-[0_2px_8px_rgba(16,185,129,0.3)]"
+          className="relative rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_6px_20px_rgba(16,185,129,0.4)] transition hover:shadow-[0_8px_30px_rgba(16,185,129,0.5)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-[0_2px_8px_rgba(16,185,129,0.3)] sm:px-7 sm:py-3.5 sm:text-base"
         >
           <span className="flex items-center gap-2">
-            <Dices className="h-6 w-6" /> SORTEAR
+            <Dices className="h-5 w-5 sm:h-6 sm:w-6" /> SORTEAR
           </span>
         </button>
       </div>
 
-      {/* Week navigation */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <button onClick={() => shiftWeek(-1)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 flex items-center gap-1">
-          <ChevronLeft className="h-4 w-4" /> Anterior
+      {/* Week navigation — 1 linha sempre; labels só a partir de sm */}
+      <div className="flex items-center justify-between gap-2 sm:justify-start sm:gap-4">
+        <button onClick={() => shiftWeek(-1)} className="flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">
+          <ChevronLeft className="h-4 w-4" /> <span className="hidden sm:inline">Anterior</span>
         </button>
-        <span className="text-sm font-semibold text-slate-700">
+        <span className="text-center text-sm font-semibold text-slate-700">
           Semana de {formatDateLabel(weekStart, { day: "2-digit", month: "2-digit", year: "numeric" })}
         </span>
-        <button onClick={() => shiftWeek(1)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 flex items-center gap-1">
-          Próxima <ChevronRight className="h-4 w-4" />
+        <button onClick={() => shiftWeek(1)} className="flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200">
+          <span className="hidden sm:inline">Próxima</span> <ChevronRight className="h-4 w-4" />
         </button>
       </div>
 
@@ -760,47 +763,66 @@ export default function LeaderEscala() {
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <Filter className="h-4 w-4 text-slate-400" />
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar interno..."
-              value={searchIntern}
-              onChange={(e) => setSearchIntern(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm w-44 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-            />
-          </div>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar base..."
-              value={searchBase}
-              onChange={(e) => setSearchBase(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm w-44 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-            />
-          </div>
-          <select
-            value={filterBase}
-            onChange={(e) => setFilterBase(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          {/* Toggle mobile — filtros fechados por padrão pra grade aparecer sem rolar */}
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            className="flex min-h-11 w-full items-center gap-2 px-3 py-2.5 text-sm text-slate-600 sm:hidden"
           >
-            <option value="">Todas as bases</option>
-            {sortedBases.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
-          </select>
-          <select
-            value={filterPeriod}
-            onChange={(e) => setFilterPeriod(e.target.value as "" | "DAY" | "NIGHT")}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-          >
-            <option value="">Todos os turnos</option>
-            <option value="DAY">☀️ Diurno</option>
-            <option value="NIGHT">🌙 Noturno</option>
-          </select>
-          <span className="ml-auto text-xs text-slate-400">{mainScheduleBases.length} bases visíveis</span>
+            <Filter className="h-4 w-4 text-slate-400" />
+            <span className="font-medium">
+              Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+            </span>
+            <span className="ml-auto flex items-center gap-2 text-xs text-slate-400">
+              {mainScheduleBases.length} bases visíveis
+              <ChevronDown className={`h-4 w-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+            </span>
+          </button>
+          <div className={`${filtersOpen ? "flex" : "hidden"} flex-col items-stretch gap-3 border-t border-slate-100 p-3 sm:flex sm:flex-row sm:flex-wrap sm:items-center sm:border-t-0`}>
+            <Filter className="hidden h-4 w-4 text-slate-400 sm:block" />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar interno..."
+                value={searchIntern}
+                onChange={(e) => setSearchIntern(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm sm:w-44 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+              />
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar base..."
+                value={searchBase}
+                onChange={(e) => setSearchBase(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm sm:w-44 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+              />
+            </div>
+            <select
+              value={filterBase}
+              onChange={(e) => setFilterBase(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+            >
+              <option value="">Todas as bases</option>
+              {sortedBases.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
+            </select>
+            <select
+              value={filterPeriod}
+              onChange={(e) => setFilterPeriod(e.target.value as "" | "DAY" | "NIGHT")}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
+            >
+              <option value="">Todos os turnos</option>
+              <option value="DAY">☀️ Diurno</option>
+              <option value="NIGHT">🌙 Noturno</option>
+            </select>
+            <span className="ml-auto hidden text-xs text-slate-400 sm:inline">{mainScheduleBases.length} bases visíveis</span>
+          </div>
         </div>
+
+        <p className="text-[11px] text-slate-400 sm:hidden">Deslize a grade para o lado para ver os 7 dias →</p>
 
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="min-w-[1180px]" style={{ display: "grid", gridTemplateColumns: "150px repeat(7, minmax(146px, 1fr))" }}>

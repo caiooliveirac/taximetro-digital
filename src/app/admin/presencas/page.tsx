@@ -125,7 +125,7 @@ export default function AdminPresencas() {
             <MetricCard label="Presentes" value={checkedIn} icon={CheckCircle} />
             <MetricCard label="Pendentes" value={pending} icon={Clock} />
             <MetricCard label="Ausentes" value={absent} icon={XCircle} />
-            <MetricCard label="Taxa presença" value={`${rate}%`} icon={TrendingUp} />
+            <MetricCard label="Taxa presença" value={`${rate}%`} icon={TrendingUp} className="col-span-2 sm:col-span-1" />
           </div>
 
           <div className="flex flex-wrap gap-2">

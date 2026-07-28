@@ -141,7 +141,7 @@ export default function LeaderRelatorios() {
           <MetricCard label="Presentes" value={present} icon={CheckCircle} />
           <MetricCard label="Ausentes" value={absent} icon={XCircle} />
           <MetricCard label="Cancelados" value={cancelled} icon={Ban} />
-          <MetricCard label="Taxa presença" value={`${presenceRate}%`} icon={TrendingUp} />
+          <MetricCard label="Taxa presença" value={`${presenceRate}%`} icon={TrendingUp} className="col-span-2 sm:col-span-1" />
         </div>
       )}
 
