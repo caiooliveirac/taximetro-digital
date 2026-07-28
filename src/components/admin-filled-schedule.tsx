@@ -1152,6 +1152,100 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     function renderBaseSection(title: string, rows: Base[]) {
         if (rows.length === 0) return null;
 
+        const renderPeriodStack = (base: Base, date: string) => {
+            const periods = filterPeriod ? [filterPeriod] : scopePeriods;
+            return (
+                <div className="grid gap-1.5">
+                    {periods.map((period) => {
+                        const tone = getPeriodTone(period);
+                        const { slots, overflowCount, hiddenHasVacancy } = buildVisiblePeriodSlots(base, date, period);
+
+                        return (
+                            <div key={`${base.id}|${date}|${period}`} className={`rounded-xl border p-1.5 ${tone.shell}`}>
+                                <div className={`mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${tone.meta}`}>
+                                    <span>{formatPeriod(period)}</span>
+                                    {overflowCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${tone.overflow}`}>+{overflowCount}</span>}
+                                </div>
+
+                                <div className="grid gap-1">
+                                    {slots.map((slot) => {
+                                        if (slot.kind === "assignment") {
+                                            return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} />;
+                                        }
+
+                                        if (slot.kind === "vacancy") {
+                                            return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
+                                        }
+
+                                        return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} />;
+                                    })}
+
+                                    {overflowCount > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setFocusedPeriod({
+                                                baseId: base.id,
+                                                baseCode: base.code,
+                                                baseName: base.name,
+                                                date,
+                                                period,
+                                            })}
+                                            className={`flex w-full items-center justify-between rounded-xl border border-dashed px-2.5 py-2 text-left text-[11px] font-semibold transition hover:-translate-y-[1px] ${tone.ghost}`}
+                                        >
+                                            <span>
+                                                Ver +{overflowCount} item(ns)
+                                                {hiddenHasVacancy ? " e vagas" : ""}
+                                            </span>
+                                            <Plus className="h-3.5 w-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        // Filtro de dia único: transpõe a grade — cada base vira uma COLUNA
+        // (linha 1 = cabeçalho da base, linha 2 = vagas do dia), permitindo
+        // percorrer as unidades horizontalmente com o dedo no mobile.
+        const singleDate = filteredWeekDates.length === 1 ? filteredWeekDates[0] : null;
+
+        if (singleDate) {
+            return (
+                <section className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+                        <span className="text-xs text-slate-400">
+                            {rows.length} bases · {DAY_LABEL_BY_KEY[getDayKey(singleDate)]} {formatDayMonth(singleDate)}{singleDate === today ? " (hoje)" : ""}
+                        </span>
+                    </div>
+
+                    <div key={`day-grid-${singleDate}`} className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div style={{ display: "grid", gridTemplateColumns: `repeat(${rows.length}, minmax(190px, 1fr))`, minWidth: `${rows.length * 190}px` }}>
+                            {rows.map((base) => (
+                                <div key={`${base.id}|head`} className={`border-b border-r border-slate-200 px-2.5 py-2 ${singleDate === today ? "bg-accent-50/60" : "bg-slate-50"}`}>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-bold leading-none text-slate-900">{base.code}</span>
+                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBaseStyle(base.type).pill}`}>
+                                            {getBaseStyle(base.type).label}
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 truncate text-[11px] leading-4 text-slate-500">{base.name}</p>
+                                </div>
+                            ))}
+                            {rows.map((base) => (
+                                <div key={`${base.id}|${singleDate}`} className="border-r border-slate-100 px-1.5 py-1.5">
+                                    {renderPeriodStack(base, singleDate)}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            );
+        }
+
         return (
             <section className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -1159,7 +1253,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     <span className="text-xs text-slate-400">{rows.length} bases</span>
                 </div>
 
-                <div ref={autoScrollGridToToday} className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div key="week-grid" ref={autoScrollGridToToday} className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
                     {/* Coluna Base estreita no mobile (só o código) pra sobrar tela pros dias */}
                     <div className="min-w-[1198px] [--sched-base-col:64px] sm:min-w-[1260px] sm:[--sched-base-col:124px]" style={{ display: "grid", gridTemplateColumns: "var(--sched-base-col) repeat(7, minmax(162px, 1fr))" }}>
                         <div className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:px-3">Base</div>
@@ -1182,63 +1276,11 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                     <p className="mt-1 hidden line-clamp-2 text-[11px] leading-4 text-slate-500 sm:block">{base.name}</p>
                                 </div>
 
-                                {filteredWeekDates.map((date) => {
-                                    const periods = filterPeriod ? [filterPeriod] : scopePeriods;
-
-                                    return (
-                                        <div key={`${base.id}|${date}`} className={`border-b border-slate-100 px-1.5 py-1.5 ${date === today ? "bg-accent-50/20" : ""}`}>
-                                            <div className="grid gap-1.5">
-                                                {periods.map((period) => {
-                                                    const tone = getPeriodTone(period);
-                                                    const { slots, overflowCount, hiddenHasVacancy } = buildVisiblePeriodSlots(base, date, period);
-
-                                                    return (
-                                                        <div key={`${base.id}|${date}|${period}`} className={`rounded-xl border p-1.5 ${tone.shell}`}>
-                                                            <div className={`mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${tone.meta}`}>
-                                                                <span>{formatPeriod(period)}</span>
-                                                                {overflowCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${tone.overflow}`}>+{overflowCount}</span>}
-                                                            </div>
-
-                                                            <div className="grid gap-1">
-                                                                {slots.map((slot) => {
-                                                                    if (slot.kind === "assignment") {
-                                                                        return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} />;
-                                                                    }
-
-                                                                    if (slot.kind === "vacancy") {
-                                                                        return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
-                                                                    }
-
-                                                                    return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} />;
-                                                                })}
-
-                                                                {overflowCount > 0 && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setFocusedPeriod({
-                                                                            baseId: base.id,
-                                                                            baseCode: base.code,
-                                                                            baseName: base.name,
-                                                                            date,
-                                                                            period,
-                                                                        })}
-                                                                        className={`flex w-full items-center justify-between rounded-xl border border-dashed px-2.5 py-2 text-left text-[11px] font-semibold transition hover:-translate-y-[1px] ${tone.ghost}`}
-                                                                    >
-                                                                        <span>
-                                                                            Ver +{overflowCount} item(ns)
-                                                                            {hiddenHasVacancy ? " e vagas" : ""}
-                                                                        </span>
-                                                                        <Plus className="h-3.5 w-3.5" />
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                {filteredWeekDates.map((date) => (
+                                    <div key={`${base.id}|${date}`} className={`border-b border-slate-100 px-1.5 py-1.5 ${date === today ? "bg-accent-50/20" : ""}`}>
+                                        {renderPeriodStack(base, date)}
+                                    </div>
+                                ))}
                             </Fragment>
                         ))}
                     </div>
