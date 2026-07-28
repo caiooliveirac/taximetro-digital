@@ -58,15 +58,22 @@ sem scroll e não há o mínimo de boas práticas mobile.
   preenchida reorganizados em linhas com scroll próprio (semana+busca / bases /
   dias / faculdades+turno / status); grade abre auto-rolada até a coluna de hoje
   no mobile.
-- **Fase 3 — backlog proposto** (aguardando priorização do Caio):
-  1. Modais (alocação, detalhe de plantão) como bottom-sheet no mobile com scroll
-     interno, em vez de modal centralizado.
-  2. Bloco de filtros da grade colapsável ("Filtros (N)") como na escala do leader —
-     os 2 cards de filtro ainda ocupam ~1/3 da primeira dobra.
-  3. Cabeçalho de dias sticky no scroll vertical da grade.
-  4. Affordance de scroll (sombra de borda) no componente `ui/Table`.
-  5. Telas de tabela densa (presencas, usuarios) com variante em cards no mobile.
-  6. Default mobile da grade em "hoje" (filtro de dia já ativo) em vez de semana toda.
+- **Fase 3** ✅ implementada em 2026-07-28 ("gostei, implemente todos"):
+  1. ✅ Todos os modais do admin (4 da escala preenchida + 6 do cockpit) viram
+     bottom-sheet no mobile (ancorados embaixo, cantos arredondados só no topo,
+     `max-h` em dvh com scroll interno); no desktop seguem centralizados.
+  2. ✅ Filtros da grade reorganizados: Card A sempre visível (semana + chips de
+     dia); Card B ("Filtros (N)" com contador) colapsado por padrão no mobile
+     com busca, bases, faculdades+turno e status.
+  3. ✅ Grades com `max-h-[75dvh]` + scroll interno e cabeçalhos sticky no scroll
+     vertical (dias na visão semana, bases na visão dia; código da base também
+     fica visível via sticky interno na célula).
+  4. ✅ `ui/Table` virou client component com sombras de borda dinâmicas
+     (esquerda/direita conforme posição do scroll) em todas as tabelas do app.
+  5. ✅ Default mobile da grade = dia de hoje (efeito na montagem; "Semana toda"
+     volta à visão completa).
+- **Backlog restante** (baixa prioridade): variante em cards para tabelas densas
+  (presencas, usuarios) no mobile.
 
 ## Open questions (pro Caio)
 

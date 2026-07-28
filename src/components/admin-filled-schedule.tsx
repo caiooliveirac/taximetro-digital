@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, X, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, X, Zap } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
@@ -584,6 +584,14 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [filterPeriod, setFilterPeriod] = useState<"" | "DAY" | "NIGHT">("");
     const [filterStatus, setFilterStatus] = useState<"" | StatusFilterKey>("");
     const [filterMissingCheckin, setFilterMissingCheckin] = useState(false);
+    const [gradeFiltersOpen, setGradeFiltersOpen] = useState(false);
+
+    // Mobile-first: no celular a grade abre já filtrada no dia de hoje
+    // (1 toque em "Semana toda" volta à visão da semana). Roda só na montagem.
+    useEffect(() => {
+        if (typeof window === "undefined" || window.innerWidth >= 640) return;
+        setFilterDayKey(getDayKey(localDateStr()));
+    }, []);
     const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
     const [allocation, setAllocation] = useState<AllocationState | null>(null);
     const [focusedPeriod, setFocusedPeriod] = useState<PeriodFocusState | null>(null);
@@ -632,6 +640,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const hasStrictContentFilter = hasInternSearch || filterMissingCheckin || Boolean(filterStatus);
     const hidesNight = scope === "crl";
     const scopePeriods: Array<"DAY" | "NIGHT"> = hidesNight ? ["DAY"] : PERIODS;
+    const activeGradeFilterCount =
+        [searchIntern.trim(), filterBase, filterFaculty, filterPeriod, filterStatus].filter(Boolean).length +
+        (filterMissingCheckin ? 1 : 0);
     const filteredWeekDates = useMemo(
         () => (filterDayKey ? weekDates.filter((date) => getDayKey(date) === filterDayKey) : weekDates),
         [filterDayKey, weekDates],
@@ -1222,10 +1233,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         </span>
                     </div>
 
-                    <div key={`day-grid-${singleDate}`} className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div key={`day-grid-${singleDate}`} className="max-h-[75dvh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
                         <div style={{ display: "grid", gridTemplateColumns: `repeat(${rows.length}, minmax(190px, 1fr))`, minWidth: `${rows.length * 190}px` }}>
                             {rows.map((base) => (
-                                <div key={`${base.id}|head`} className={`border-b border-r border-slate-200 px-2.5 py-2 ${singleDate === today ? "bg-accent-50/60" : "bg-slate-50"}`}>
+                                <div key={`${base.id}|head`} className={`sticky top-0 z-10 border-b border-r border-slate-200 px-2.5 py-2 ${singleDate === today ? "bg-accent-50" : "bg-slate-50"}`}>
                                     <div className="flex items-center gap-2">
                                         <span className="text-sm font-bold leading-none text-slate-900">{base.code}</span>
                                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBaseStyle(base.type).pill}`}>
@@ -1253,12 +1264,12 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     <span className="text-xs text-slate-400">{rows.length} bases</span>
                 </div>
 
-                <div key="week-grid" ref={autoScrollGridToToday} className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div key="week-grid" ref={autoScrollGridToToday} className="max-h-[75dvh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
                     {/* Coluna Base estreita no mobile (só o código) pra sobrar tela pros dias */}
                     <div className="min-w-[1198px] [--sched-base-col:64px] sm:min-w-[1260px] sm:[--sched-base-col:124px]" style={{ display: "grid", gridTemplateColumns: "var(--sched-base-col) repeat(7, minmax(162px, 1fr))" }}>
-                        <div className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:px-3">Base</div>
+                        <div className="sticky left-0 top-0 z-30 border-b border-r border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:px-3">Base</div>
                         {filteredWeekDates.map((date) => (
-                            <div key={date} className={`border-b border-slate-200 px-2 py-2 text-center text-[11px] font-semibold ${date === today ? "bg-accent-50/60 text-accent-700" : "bg-slate-50 text-slate-500"}`}>
+                            <div key={date} className={`sticky top-0 z-20 border-b border-slate-200 px-2 py-2 text-center text-[11px] font-semibold ${date === today ? "bg-accent-50 text-accent-700" : "bg-slate-50 text-slate-500"}`}>
                                 {DAY_LABEL_BY_KEY[getDayKey(date)]}<br />
                                 <span className="font-normal">{formatDayMonth(date)}</span>
                             </div>
@@ -1267,13 +1278,16 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         {rows.map((base) => (
                             <Fragment key={base.id}>
                                 <div className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white px-2 py-2 sm:px-2.5">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-sm font-bold leading-none text-slate-900 sm:text-base">{base.code}</span>
-                                        <span className={`hidden items-center rounded-full px-2 py-0.5 text-[10px] font-semibold sm:inline-flex ${getBaseStyle(base.type).pill}`}>
-                                            {getBaseStyle(base.type).label}
-                                        </span>
+                                    {/* sticky top: o código da base continua visível ao rolar uma linha alta */}
+                                    <div className="sticky top-12">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-sm font-bold leading-none text-slate-900 sm:text-base">{base.code}</span>
+                                            <span className={`hidden items-center rounded-full px-2 py-0.5 text-[10px] font-semibold sm:inline-flex ${getBaseStyle(base.type).pill}`}>
+                                                {getBaseStyle(base.type).label}
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 hidden line-clamp-2 text-[11px] leading-4 text-slate-500 sm:block">{base.name}</p>
                                     </div>
-                                    <p className="mt-1 hidden line-clamp-2 text-[11px] leading-4 text-slate-500 sm:block">{base.name}</p>
                                 </div>
 
                                 {filteredWeekDates.map((date) => (
@@ -1419,8 +1433,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
     return (
         <div className="space-y-4">
+            {/* Card A — navegação primária (semana + dia), sempre visível */}
             <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 shadow-sm backdrop-blur-sm">
-                {/* Linha 1: semana + busca (quebram em telas estreitas) */}
                 <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
                         <button type="button" onClick={() => shiftWeek(-7)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition">
@@ -1437,43 +1451,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             <ChevronRight className="h-4 w-4" />
                         </button>
                     </div>
-
-                    <label className="relative block w-full min-w-44 flex-1 sm:w-52 sm:flex-none">
-                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <input value={searchIntern} onChange={(event) => setSearchIntern(event.target.value)} placeholder="Buscar interno" className="h-9 w-full rounded-xl border border-slate-200 bg-white/90 py-1.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-accent-400 focus:bg-white shadow-sm" />
-                    </label>
                 </div>
 
-                {/* Linha 2: chips de base com scroll horizontal próprio */}
-                <div className="overflow-x-auto">
-                    <div className="flex min-w-max items-center gap-2 pb-0.5">
-                        <button
-                            type="button"
-                            onClick={() => setFilterBase("")}
-                            className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${!filterBase ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
-                        >
-                            Todas as bases
-                        </button>
-
-                        {baseToggleOptions.map((base) => {
-                            const active = filterBase === base.id;
-                            return (
-                                <button
-                                    key={base.id}
-                                    type="button"
-                                    onClick={() => setFilterBase(active ? "" : base.id)}
-                                    className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${active ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-[1.02]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
-                                >
-                                    {base.code}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
-
-            <div className="space-y-2 rounded-[28px] border border-slate-200 bg-white/82 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm">
-                {/* Linha 1: dias da semana */}
                 <div className="overflow-x-auto">
                 <div className="flex min-w-max items-center gap-1.5 text-xs">
                     <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Dia</span>
@@ -1505,10 +1484,54 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                 </div>
                 </div>
+            </div>
 
-                {/* Linha 2: faculdades + turno (separada dos dias, pedido do mobile) */}
-                <div className="overflow-x-auto">
-                <div className="flex min-w-max items-center gap-1.5 text-xs">
+            {/* Card B — filtros secundários; no mobile ficam atrás do toggle "Filtros (N)" */}
+            <div className="rounded-[28px] border border-slate-200 bg-white/82 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm">
+                <button
+                    type="button"
+                    onClick={() => setGradeFiltersOpen((v) => !v)}
+                    className="flex min-h-10 w-full items-center gap-2 text-sm text-slate-600 sm:hidden"
+                >
+                    <Filter className="h-4 w-4 text-slate-400" />
+                    <span className="font-medium">Filtros{activeGradeFilterCount > 0 ? ` (${activeGradeFilterCount})` : ""}</span>
+                    <ChevronDown className={`ml-auto h-4 w-4 text-slate-400 transition-transform ${gradeFiltersOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                <div className={`${gradeFiltersOpen ? "block" : "hidden"} space-y-2 pt-2 sm:block sm:pt-0`}>
+                    <label className="relative block w-full sm:w-64">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input value={searchIntern} onChange={(event) => setSearchIntern(event.target.value)} placeholder="Buscar interno" className="h-9 w-full rounded-xl border border-slate-200 bg-white/90 py-1.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-accent-400 focus:bg-white shadow-sm" />
+                    </label>
+
+                    <div className="overflow-x-auto">
+                    <div className="flex min-w-max items-center gap-2 pb-0.5">
+                        <button
+                            type="button"
+                            onClick={() => setFilterBase("")}
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${!filterBase ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
+                        >
+                            Todas as bases
+                        </button>
+
+                        {baseToggleOptions.map((base) => {
+                            const active = filterBase === base.id;
+                            return (
+                                <button
+                                    key={base.id}
+                                    type="button"
+                                    onClick={() => setFilterBase(active ? "" : base.id)}
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${active ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-[1.02]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
+                                >
+                                    {base.code}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                    <div className="flex min-w-max items-center gap-1.5 text-xs">
                     {visibleFacultyOptions.map((faculty) => {
                         const active = filterFaculty === faculty.id;
                         const facultyTone = getFacultyStyle(faculty.abbreviation);
@@ -1576,6 +1599,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     })}
                 </div>
                 </div>
+                </div>
             </div>
 
             {message && (
@@ -1599,8 +1623,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             )}
 
             {allocation && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setAllocation(null)}>
-                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setAllocation(null)}>
+                    <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
                         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
                             <div>
                                 <h3 className="text-lg font-semibold text-slate-900">Alocar interno na vaga</h3>
@@ -1775,8 +1799,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
             {/* ─────────── Publish Extra Offer Modal ─────────── */}
             {publishExtraSlot && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPublishExtraSlot(null)}>
-                    <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setPublishExtraSlot(null)}>
+                    <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                             <div className="flex items-center gap-2">
                                 <Zap className="h-4 w-4 text-amber-500" strokeWidth={2.2} />
@@ -1826,8 +1850,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             )}
 
             {focusedPeriod && focusedPeriodBase && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setFocusedPeriod(null)}>
-                    <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={() => setFocusedPeriod(null)}>
+                    <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl" onClick={(event) => event.stopPropagation()}>
                         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
                             <div>
                                 <p className="text-sm font-medium text-accent-600">Detalhes do turno</p>
@@ -1879,8 +1903,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             )}
 
             {selectedAssignment && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedAssignmentId(null)}>
-                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setSelectedAssignmentId(null)}>
+                    <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
                         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
                             <div>
                                 <div className="flex items-center gap-2">
