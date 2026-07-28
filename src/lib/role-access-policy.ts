@@ -28,6 +28,22 @@ export function extractRoleNames(rawRoles: unknown, primaryRole?: string): Role[
   return [...roleSet];
 }
 
+export type ManagementRole = Exclude<Role, "INTERN">;
+
+const RETURN_AREA_PRIORITY: ManagementRole[] = ["COORDINATOR", "LEADER", "PRECEPTOR"];
+
+/**
+ * Dado o conjunto de roles do usuário, retorna a role de gestão (não-INTERN)
+ * de maior prioridade — usada pelo layout de intern para oferecer o caminho
+ * de volta à área correspondente. INTERN puro retorna null (sem chip).
+ */
+export function pickReturnRole(roleNames: readonly Role[]): ManagementRole | null {
+  for (const role of RETURN_AREA_PRIORITY) {
+    if (roleNames.includes(role)) return role;
+  }
+  return null;
+}
+
 export function canAccessPathWithRoles(pathname: string, primaryRole: string | undefined, roleNames: readonly Role[]): boolean {
   if (!primaryRole || !(primaryRole in ROLE_PREFIX)) return true;
 

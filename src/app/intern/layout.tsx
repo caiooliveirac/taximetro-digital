@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Ambulance, Camera, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays, Zap } from "lucide-react";
+import { Ambulance, Camera, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays, Zap, Shield, Users, type LucideIcon } from "lucide-react";
 import { InternPhotoChangeModal } from "@/components/intern-photo-change-modal";
+import { extractRoleNames, pickReturnRole, type ManagementRole } from "@/lib/role-access-policy";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -19,9 +20,19 @@ const NAV = [
   { href: "/intern/extras", label: "Extras", icon: Zap },
 ];
 
+const RETURN_AREA_META: Record<ManagementRole, { href: string; label: string; icon: LucideIcon }> = {
+  COORDINATOR: { href: "/admin", label: "Admin", icon: Shield },
+  LEADER: { href: "/leader", label: "Líder", icon: Users },
+  PRECEPTOR: { href: "/preceptor", label: "Preceptor", icon: Stethoscope },
+};
+
 export default function InternLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
+
+  const returnRole = pickReturnRole(extractRoleNames(session?.user?.roles, session?.user?.role));
+  const returnArea = returnRole ? RETURN_AREA_META[returnRole] : null;
 
   return (
     <div className="flex min-h-screen flex-col pb-24">
@@ -31,6 +42,15 @@ export default function InternLayout({ children }: { children: React.ReactNode }
           <h2 className="font-semibold text-slate-900 text-sm">Taxímetro</h2>
         </div>
         <div className="flex items-center gap-2">
+          {returnArea && (
+            <Link
+              href={returnArea.href}
+              className="inline-flex items-center gap-1.5 rounded-full bg-navy-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-navy-700"
+            >
+              <returnArea.icon className="h-3.5 w-3.5" strokeWidth={1.8} />
+              {returnArea.label}
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => setPhotoModalOpen(true)}
