@@ -26,6 +26,7 @@ sem scroll e não há o mínimo de boas práticas mobile.
 | `/leader/relatorios` | 5 KPI cards grandes (~1,5 tela até chegar no conteúdo); tabela "Por Interno" **cortada à direita sem `overflow-x`** (coluna "A..." truncada) | idem |
 | `/leader` (dashboard) | KPIs 2-col aceitáveis; cards de Pendências com 4-6 badges que quebram em 3-4 linhas cada, lista fica quilométrica | idem |
 | `/admin/*` (inspeção de código) | **Correção pós-auditoria:** as tabelas do admin usam o componente `ui/Table`, que já embute `overflow-auto` — rolam, mas sem indicação visual de que há mais conteúdo. KPI grids já são `grid-cols-2` no mobile; o problema pontual são grids de 5 cards com o 5º órfão (`presencas`, `leader/relatorios`) | grep em `src/app/admin` + `src/components/ui/table.tsx` |
+| `/admin/*` (auditoria live, 2ª rodada) | **Causa raiz do "tudo imenso" no admin:** `<main>` do layout admin era flex child sem `min-w-0` — a grade de escalas (min-width ~2100px) esticava a página inteira para 2133px e TODAS as telas ficavam mais largas que o viewport (conteúdo cortado à direita, fontes desproporcionais). Corrigido com `min-w-0` + quebras de linha nos headers do cockpit e presenças. Varredura pós-fix: todas as rotas `/admin` fecham em 375px | scrollWidth medido rota a rota no browser |
 
 ## Princípios propostos (regras de implementação)
 
