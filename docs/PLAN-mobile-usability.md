@@ -72,6 +72,11 @@ sem scroll e não há o mínimo de boas práticas mobile.
      (esquerda/direita conforme posição do scroll) em todas as tabelas do app.
   5. ✅ Default mobile da grade = dia de hoje (efeito na montagem; "Semana toda"
      volta à visão completa).
+- **Grade de regras (aba Grade)** ✅ 2026-07-28: filtro de base virou chips
+  visíveis (sem dropdown); com base filtrada, a grade transpõe para lista
+  vertical de dias (Seg→Dom, diurno/noturno por linha, chips maiores) — a base
+  inteira cabe no celular sem scroll horizontal; edição inline preservada nas
+  duas visões (chips extraídos em `renderPeriodChips`).
 - **Backlog restante** (baixa prioridade): variante em cards para tabelas densas
   (presencas, usuarios) no mobile.
 

@@ -110,6 +110,52 @@ export function AdminRulesBoard() {
     const sortedBases = (filterBase ? bases.filter((base) => base.id === filterBase) : bases)
         .sort((left, right) => baseViewIndex(left.code) - baseViewIndex(right.code));
 
+    // Chips de regra de um turno (diurno/noturno) + botão de adicionar.
+    // `large` = variante da visão vertical de base única (alvos de toque maiores).
+    function renderPeriodChips(base: Base, day: string, period: "DAY" | "NIGHT", large = false) {
+        const periodRules = getRules(base.id, day, period);
+        const Icon = period === "DAY" ? Sun : Moon;
+        const iconColor = period === "DAY" ? "text-amber-500" : "text-indigo-500";
+        const addCls = period === "DAY"
+            ? "border-amber-300/50 text-amber-400 hover:border-amber-400 hover:bg-amber-50"
+            : "border-indigo-300/50 text-indigo-400 hover:border-indigo-400 hover:bg-indigo-50";
+        const dimmed = hlPeriod && hlPeriod !== period;
+        const chipSize = large ? "gap-1 rounded-md px-1.5 py-1 text-[11px]" : "gap-0.5 rounded px-1 py-px text-[10px]";
+        const iconSize = large ? "h-3 w-3" : "h-2.5 w-2.5";
+
+        return (
+            <div className={`flex flex-wrap items-center ${large ? "gap-1" : "gap-0.5"} transition-opacity ${dimmed ? "opacity-15" : ""}`}>
+                {periodRules.map((rule) => {
+                    const style = getFacultyStyle(rule.facultyAbbr);
+                    const dim = hlFaculty && hlFaculty !== rule.facultyAbbr;
+                    return (
+                        <button
+                            key={rule.id}
+                            onClick={() => openEdit(rule)}
+                            title={`${rule.facultyAbbr} ×${rule.capacity}${rule.isExtraShift ? " (Extra)" : ""} — Clique para editar`}
+                            className={`inline-flex cursor-pointer items-center font-semibold transition-all hover:opacity-75 ${chipSize} ${style.pill} ${dim ? "opacity-15" : ""} ${rule.isExtraShift ? "ring-1 ring-amber-400" : ""}`}
+                        >
+                            <Icon className={`${iconSize} shrink-0 ${iconColor}`} strokeWidth={2} />
+                            <span className="truncate">{rule.facultyAbbr}</span>
+                            {rule.capacity > 1 && <span className="opacity-50">×{rule.capacity}</span>}
+                            {rule.isExtraShift && <span className="ml-0.5 rounded bg-amber-500 px-0.5 text-[8px] text-white leading-tight">EX</span>}
+                        </button>
+                    );
+                })}
+                <button
+                    onClick={() => openNew(base.id, base.code, day, period)}
+                    title={period === "DAY" ? "Adicionar turno diurno" : "Adicionar turno noturno"}
+                    className={`inline-flex items-center rounded border border-dashed transition-colors ${large ? "px-1.5 py-1" : "px-0.5 py-px"} ${addCls}`}
+                >
+                    <Icon className={iconSize} strokeWidth={2} />
+                    <Plus className={iconSize} />
+                </button>
+            </div>
+        );
+    }
+
+    const singleBase = filterBase ? sortedBases[0] ?? null : null;
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-20 text-slate-400">
@@ -127,19 +173,35 @@ export function AdminRulesBoard() {
                 <p className="text-sm text-slate-500">Gerencie regras de vagas por faculdade sem carregar a visão operacional preenchida.</p>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h2 className="text-2xl font-bold text-slate-900">Regras da Semana</h2>
-                    <p className="text-sm text-slate-500">{rules.length} regras · {totalSlots} vagas/semana · {bases.length} bases</p>
+            <div>
+                <h2 className="text-2xl font-bold text-slate-900">Regras da Semana</h2>
+                <p className="text-sm text-slate-500">{rules.length} regras · {totalSlots} vagas/semana · {bases.length} bases</p>
+            </div>
+
+            {/* Filtro de base como chips visíveis (sem dropdown) — 1 toque para focar a base */}
+            <div className="overflow-x-auto">
+                <div className="flex min-w-max items-center gap-2 pb-0.5 text-xs">
+                    <button
+                        type="button"
+                        onClick={() => setFilterBase("")}
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${!filterBase ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
+                    >
+                        Todas as bases
+                    </button>
+                    {[...bases].sort((left, right) => baseViewIndex(left.code) - baseViewIndex(right.code)).map((base) => {
+                        const active = filterBase === base.id;
+                        return (
+                            <button
+                                key={base.id}
+                                type="button"
+                                onClick={() => setFilterBase(active ? "" : base.id)}
+                                className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium transition-all ${active ? "bg-slate-900 text-white shadow-[0_10px_18px_rgba(15,23,42,0.18)] scale-[1.02]" : "bg-slate-100/90 text-slate-600 hover:bg-slate-200/80"}`}
+                            >
+                                {base.code}
+                            </button>
+                        );
+                    })}
                 </div>
-                <select
-                    value={filterBase}
-                    onChange={(event) => setFilterBase(event.target.value)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-                >
-                    <option value="">Todas as bases</option>
-                    {bases.map((base) => <option key={base.id} value={base.id}>{base.code} — {base.name}</option>)}
-                </select>
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -234,6 +296,29 @@ export function AdminRulesBoard() {
                 </div>
             )}
 
+            {/* Base filtrada: dias na vertical — a base inteira cabe na tela do celular */}
+            {singleBase ? (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+                        <span className="text-sm font-bold text-slate-900">{singleBase.code}</span>
+                        <span className="truncate text-xs text-slate-500">{singleBase.name}</span>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                        {DAYS.map((day) => {
+                            const isEditingDay = editing?.baseId === singleBase.id && editing?.dayOfWeek === day;
+                            return (
+                                <div key={day} className={`flex items-start gap-3 px-3 py-2.5 transition-colors ${isEditingDay ? "bg-accent-50/40" : ""}`}>
+                                    <span className="w-9 shrink-0 pt-1 text-xs font-semibold text-slate-700">{DAY_LABELS[day]}</span>
+                                    <div className="min-w-0 flex-1 space-y-1.5">
+                                        {renderPeriodChips(singleBase, day, "DAY", true)}
+                                        {renderPeriodChips(singleBase, day, "NIGHT", true)}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm" style={{ WebkitOverflowScrolling: "touch" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "72px repeat(7, minmax(76px, 1fr))", minWidth: "620px" }}>
                     <div className="sticky left-0 z-20 flex items-center justify-center border-b border-r border-slate-200 bg-slate-50 p-2">
@@ -254,67 +339,12 @@ export function AdminRulesBoard() {
                             </div>
 
                             {DAYS.map((day) => {
-                                const dayRules = getRules(base.id, day, "DAY");
-                                const nightRules = getRules(base.id, day, "NIGHT");
                                 const isEditing = editing?.baseId === base.id && editing?.dayOfWeek === day;
 
                                 return (
                                     <div key={`${base.id}-${day}`} className={`flex min-h-[56px] flex-col justify-center gap-0.5 border-b border-l border-slate-100 p-1 transition-colors ${isEditing ? "bg-accent-50/40" : "hover:bg-slate-50/50"}`}>
-                                        <div className={`flex flex-wrap items-center gap-0.5 transition-opacity ${hlPeriod === "NIGHT" ? "opacity-15" : ""}`}>
-                                            {dayRules.map((rule) => {
-                                                const style = getFacultyStyle(rule.facultyAbbr);
-                                                const dim = hlFaculty && hlFaculty !== rule.facultyAbbr;
-                                                return (
-                                                    <button
-                                                        key={rule.id}
-                                                        onClick={() => openEdit(rule)}
-                                                        title={`${rule.facultyAbbr} ×${rule.capacity}${rule.isExtraShift ? " (Extra)" : ""} — Clique para editar`}
-                                                        className={`inline-flex cursor-pointer items-center gap-0.5 rounded px-1 py-px text-[10px] font-semibold transition-all hover:opacity-75 ${style.pill} ${dim ? "opacity-15" : ""} ${rule.isExtraShift ? "ring-1 ring-amber-400" : ""}`}
-                                                    >
-                                                        <Sun className="h-2.5 w-2.5 shrink-0 text-amber-500" strokeWidth={2} />
-                                                        <span className="truncate">{rule.facultyAbbr}</span>
-                                                        {rule.capacity > 1 && <span className="opacity-50">×{rule.capacity}</span>}
-                                                        {rule.isExtraShift && <span className="ml-0.5 rounded bg-amber-500 px-0.5 text-[8px] text-white leading-tight">EX</span>}
-                                                    </button>
-                                                );
-                                            })}
-                                            <button
-                                                onClick={() => openNew(base.id, base.code, day, "DAY")}
-                                                title="Adicionar turno diurno"
-                                                className="inline-flex items-center rounded border border-dashed border-amber-300/50 px-0.5 py-px text-amber-400 transition-colors hover:border-amber-400 hover:bg-amber-50"
-                                            >
-                                                <Sun className="h-2.5 w-2.5" strokeWidth={2} />
-                                                <Plus className="h-2.5 w-2.5" />
-                                            </button>
-                                        </div>
-
-                                        <div className={`flex flex-wrap items-center gap-0.5 transition-opacity ${hlPeriod === "DAY" ? "opacity-15" : ""}`}>
-                                            {nightRules.map((rule) => {
-                                                const style = getFacultyStyle(rule.facultyAbbr);
-                                                const dim = hlFaculty && hlFaculty !== rule.facultyAbbr;
-                                                return (
-                                                    <button
-                                                        key={rule.id}
-                                                        onClick={() => openEdit(rule)}
-                                                        title={`${rule.facultyAbbr} ×${rule.capacity}${rule.isExtraShift ? " (Extra)" : ""} — Clique para editar`}
-                                                        className={`inline-flex cursor-pointer items-center gap-0.5 rounded px-1 py-px text-[10px] font-semibold transition-all hover:opacity-75 ${style.pill} ${dim ? "opacity-15" : ""} ${rule.isExtraShift ? "ring-1 ring-amber-400" : ""}`}
-                                                    >
-                                                        <Moon className="h-2.5 w-2.5 shrink-0 text-indigo-500" strokeWidth={2} />
-                                                        <span className="truncate">{rule.facultyAbbr}</span>
-                                                        {rule.capacity > 1 && <span className="opacity-50">×{rule.capacity}</span>}
-                                                        {rule.isExtraShift && <span className="ml-0.5 rounded bg-amber-500 px-0.5 text-[8px] text-white leading-tight">EX</span>}
-                                                    </button>
-                                                );
-                                            })}
-                                            <button
-                                                onClick={() => openNew(base.id, base.code, day, "NIGHT")}
-                                                title="Adicionar turno noturno"
-                                                className="inline-flex items-center rounded border border-dashed border-indigo-300/50 px-0.5 py-px text-indigo-400 transition-colors hover:border-indigo-400 hover:bg-indigo-50"
-                                            >
-                                                <Moon className="h-2.5 w-2.5" strokeWidth={2} />
-                                                <Plus className="h-2.5 w-2.5" />
-                                            </button>
-                                        </div>
+                                        {renderPeriodChips(base, day, "DAY")}
+                                        {renderPeriodChips(base, day, "NIGHT")}
                                     </div>
                                 );
                             })}
@@ -322,6 +352,7 @@ export function AdminRulesBoard() {
                     ))}
                 </div>
             </div>
+            )}
 
             {sortedBases.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Nenhuma base encontrada.</p>}
         </div>
