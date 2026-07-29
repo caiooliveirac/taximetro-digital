@@ -8,7 +8,15 @@
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import { internUnavailability, userRoles, users } from "@/shared/db/schema";
-import type { Indisponibilidade } from "@/shared/domain/policies/unavailability-policy";
+import {
+  ehDiaDeAulaFixa,
+  type Indisponibilidade,
+  type OrigemBloqueio,
+} from "@/shared/domain/policies/unavailability-policy";
+import {
+  canalDoSamuConfigurado,
+  lerPlantoesDoSamu,
+} from "./samu-schedule-repository";
 
 export type ItemPersistido = Indisponibilidade & {
   id: string;
@@ -77,6 +85,141 @@ export async function mapaDeBloqueioPorInterno(params: {
     mapa.get(linha.internId)!.add(`${linha.date}|${linha.period}`);
   }
   return mapa;
+}
+
+export type InternoParaBloqueio = {
+  id: string;
+  cpf: string | null;
+  facultyAbbr: string | null;
+};
+
+/**
+ * Monta a lista para `bloqueiosCompostos` a partir dos ids.
+ *
+ * O CPF é a única chave que atravessa as duas instâncias: os bancos são
+ * independentes, então os uuid de um não significam nada no outro.
+ */
+export async function internosParaBloqueio(params: {
+  internIds: string[];
+  facultyAbbr: string | null;
+}): Promise<InternoParaBloqueio[]> {
+  if (params.internIds.length === 0) return [];
+  const linhas = await db
+    .select({ id: users.id, cpf: users.cpf })
+    .from(users)
+    .where(inArray(users.id, params.internIds));
+
+  return linhas.map((linha) => ({
+    id: linha.id,
+    cpf: linha.cpf,
+    facultyAbbr: params.facultyAbbr,
+  }));
+}
+
+export type EstadoDoCanalSamu =
+  /** Leu a escala do SAMU com sucesso. */
+  | "ok"
+  /** Instância sem canal (SAMU, dev): ausência esperada. */
+  | "ausente"
+  /** Canal existe mas falhou — os avisos de SAMU estão incompletos. */
+  | "falhou";
+
+export type BloqueiosCompostos = {
+  /** internId → ("date|period" → por que está bloqueado). */
+  mapa: Map<string, Map<string, OrigemBloqueio>>;
+  samu: EstadoDoCanalSamu;
+};
+
+/**
+ * As três origens de bloqueio num mapa só.
+ *
+ * Ordem de precedência quando o mesmo turno é bloqueado por mais de uma origem:
+ * SAMU > AULA_FIXA > DECLARADA. É a ordem do mais externo para o mais escolhido —
+ * quem está de plantão no SAMU não está "indisponível por opção", está ocupado,
+ * e é isso que a tela precisa mostrar.
+ *
+ * Não lança se o SAMU falhar: devolve `samu: "falhou"` para quem chama decidir.
+ * Alocação manual pode seguir com aviso na tela; o sorteio, que decide em massa
+ * e sem ninguém olhando, recusa.
+ */
+export async function bloqueiosCompostos(params: {
+  internos: InternoParaBloqueio[];
+  dateFrom: string;
+  dateTo: string;
+}): Promise<BloqueiosCompostos> {
+  const mapa = new Map<string, Map<string, OrigemBloqueio>>();
+  const anotar = (internId: string, chave: string, origem: OrigemBloqueio) => {
+    if (!mapa.has(internId)) mapa.set(internId, new Map());
+    const doInterno = mapa.get(internId)!;
+    // Só sobrescreve com origem de maior precedência.
+    const atual = doInterno.get(chave);
+    if (atual === "SAMU") return;
+    if (atual === "AULA_FIXA" && origem === "DECLARADA") return;
+    doInterno.set(chave, origem);
+  };
+
+  if (params.internos.length === 0) return { mapa, samu: "ausente" };
+
+  // 1. Declarada pelo interno (banco da Vitalmed).
+  const declaradas = await mapaDeBloqueioPorInterno({
+    internIds: params.internos.map((interno) => interno.id),
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
+  });
+  for (const [internId, chaves] of declaradas) {
+    for (const chave of chaves) anotar(internId, chave, "DECLARADA");
+  }
+
+  // 2. Aula fixa da faculdade (hoje: segunda-feira da UNIFACS, dia inteiro).
+  for (const interno of params.internos) {
+    for (const data of datasNoIntervalo(params.dateFrom, params.dateTo)) {
+      if (!ehDiaDeAulaFixa(interno.facultyAbbr, data)) continue;
+      anotar(interno.id, `${data}|DAY`, "AULA_FIXA");
+      anotar(interno.id, `${data}|NIGHT`, "AULA_FIXA");
+    }
+  }
+
+  // 3. Escala do SAMU (banco de lá, leitura).
+  let samu: EstadoDoCanalSamu = canalDoSamuConfigurado() ? "ok" : "ausente";
+  if (samu === "ok") {
+    const porCpf = new Map<string, string[]>();
+    for (const interno of params.internos) {
+      const digitos = interno.cpf?.replace(/\D/g, "");
+      if (!digitos) continue;
+      if (!porCpf.has(digitos)) porCpf.set(digitos, []);
+      porCpf.get(digitos)!.push(interno.id);
+    }
+
+    try {
+      const leitura = await lerPlantoesDoSamu({
+        cpfs: [...porCpf.keys()],
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo,
+      });
+      for (const plantao of leitura.plantoes) {
+        for (const internId of porCpf.get(plantao.cpf) ?? []) {
+          anotar(internId, `${plantao.date}|${plantao.period}`, "SAMU");
+        }
+      }
+    } catch (erro) {
+      console.error("[indisponibilidade] leitura da escala do SAMU falhou:", erro);
+      samu = "falhou";
+    }
+  }
+
+  return { mapa, samu };
+}
+
+/** Datas ISO de `de` até `ate`, inclusive. */
+function datasNoIntervalo(de: string, ate: string): string[] {
+  const datas: string[] = [];
+  const cursor = new Date(`${de}T12:00:00Z`);
+  const fim = new Date(`${ate}T12:00:00Z`);
+  while (cursor <= fim) {
+    datas.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return datas;
 }
 
 /**

@@ -18,7 +18,39 @@
  * negócio, e precisa ser testável direto (tests/unavailability-policy.test.ts).
  */
 
-export const MOTIVOS_INDISPONIBILIDADE = ["CRU_SAMU", "USA_SAMU", "AULA"] as const;
+/**
+ * De onde vem um bloqueio. Só `DECLARADA` é digitada pelo interno; as outras
+ * duas o sistema deduz, e por isso não gastam a cota dele.
+ */
+export const ORIGENS_BLOQUEIO = ["SAMU", "AULA_FIXA", "DECLARADA"] as const;
+export type OrigemBloqueio = (typeof ORIGENS_BLOQUEIO)[number];
+
+export const ROTULO_ORIGEM: Record<OrigemBloqueio, string> = {
+  SAMU: "SAMU",
+  AULA_FIXA: "Aula",
+  DECLARADA: "Indisponível",
+};
+
+/**
+ * Faculdades com dia fixo de aula, e o dia da semana (0 = domingo).
+ *
+ * A UNIFACS tem aula às segundas, o dia inteiro — não adianta escalar de manhã
+ * nem à noite. Fica em tabela versionada, e não em banco, pela mesma razão de
+ * src/lib/instance.ts: a regra aparece no diff, e ninguém a muda calado.
+ */
+export const DIA_DE_AULA_POR_FACULDADE: Record<string, number> = {
+  UNIFACS: 1, // segunda-feira
+};
+
+/** A faculdade tem aula nesse dia? Bloqueia o dia inteiro (diurno e noturno). */
+export function ehDiaDeAulaFixa(facultyAbbr: string | null | undefined, dateStr: string): boolean {
+  if (!facultyAbbr) return false;
+  const diaDeAula = DIA_DE_AULA_POR_FACULDADE[facultyAbbr.toUpperCase()];
+  if (diaDeAula === undefined) return false;
+  return new Date(`${dateStr}T12:00:00Z`).getUTCDay() === diaDeAula;
+}
+
+export const MOTIVOS_INDISPONIBILIDADE = ["CRU_SAMU", "USA_SAMU", "AULA", "LIVRE"] as const;
 export type MotivoIndisponibilidade = (typeof MOTIVOS_INDISPONIBILIDADE)[number];
 
 export type ShiftPeriod = "DAY" | "NIGHT";
@@ -29,20 +61,45 @@ export type Indisponibilidade = {
   reason: MotivoIndisponibilidade;
 };
 
-/** Teto por motivo. A soma dos tetos (4) é o teto total — não é coincidência. */
+/**
+ * Teto por motivo.
+ *
+ * CRU_SAMU e USA_SAMU valem 0 porque **deixaram de ser digitados**: a escala do
+ * SAMU é lida direto do banco de lá (samu-schedule-repository.ts), então pedir
+ * ao interno que declare seria pedir de novo o que já se sabe — e aceitar que
+ * ele erre ou esqueça. Os dois nomes continuam no enum porque linhas antigas
+ * gravadas antes dessa mudança precisam continuar legíveis.
+ *
+ * AULA idem: a segunda-feira da UNIFACS sai de DIA_DE_AULA_POR_FACULDADE.
+ *
+ * Sobra LIVRE: os dois turnos que o interno escolhe pelo motivo que for.
+ */
 export const TETO_POR_MOTIVO: Record<MotivoIndisponibilidade, number> = {
-  CRU_SAMU: 1,
-  USA_SAMU: 1,
-  AULA: 2,
+  CRU_SAMU: 0,
+  USA_SAMU: 0,
+  AULA: 0,
+  LIVRE: 2,
 };
 
-export const TETO_TOTAL = 4;
+export const TETO_TOTAL = 2;
 
 export const ROTULO_MOTIVO: Record<MotivoIndisponibilidade, string> = {
   CRU_SAMU: "CRU SAMU",
   USA_SAMU: "USA SAMU",
   AULA: "Aula",
+  LIVRE: "Indisponibilidade",
 };
+
+/**
+ * Motivos que o interno ainda escolhe na tela — os de teto maior que zero.
+ *
+ * Derivado do teto, e não escrito à mão, para que zerar um motivo o tire do
+ * formulário sozinho: não dá para ficar oferecendo na tela algo que a validação
+ * vai recusar.
+ */
+export const MOTIVOS_DECLARAVEIS = MOTIVOS_INDISPONIBILIDADE.filter(
+  (motivo) => TETO_POR_MOTIVO[motivo] > 0,
+);
 
 export type ResultadoValidacao =
   | { ok: true }
