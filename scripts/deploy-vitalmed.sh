@@ -20,6 +20,10 @@ ENV_FILE="${ENV_FILE:-$DIR_APP/.env.vitalmed}"
 IMAGEM="vitalmed-digital:mvp"
 CONTAINER="vitalmed-digital"
 PORTA="${PORTA:-3010}"
+# Precisa bater com DB_BACKUP_DIR do .env.vitalmed. Sem este volume o backup
+# diário é gravado dentro do container e some na próxima recriação — sem erro
+# nenhum, porque o envio por e-mail e Telegram continua funcionando.
+DIR_BACKUP="${DIR_BACKUP:-/var/backups/vitalmed}"
 
 erro() { echo "❌ ABORTADO: $*" >&2; exit 1; }
 
@@ -70,6 +74,7 @@ docker build \
   -t "$IMAGEM" .
 
 echo "▶ Recriando o container..."
+mkdir -p "$DIR_BACKUP"
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 docker run -d \
   --name "$CONTAINER" \
@@ -77,6 +82,7 @@ docker run -d \
   --network host \
   --env-file "$ENV_FILE" \
   -e PORT="$PORTA" \
+  -v "$DIR_BACKUP:$DIR_BACKUP" \
   "$IMAGEM"
 
 echo "▶ Aguardando responder..."
