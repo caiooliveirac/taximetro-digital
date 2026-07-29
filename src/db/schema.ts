@@ -400,3 +400,32 @@ export const rotationTransitions = pgTable("rotation_transitions", {
   uniqueIndex("uq_rotation_per_faculty").on(t.facultyId, t.rotationNumber),
   index("idx_rotation_faculty").on(t.facultyId),
 ]);
+
+// ── Indisponibilidade declarada pelo interno ──────────────────────────────────
+// Exclusiva da instância Vitalmed (feature "internUnavailability", ver
+// src/lib/instance.ts). O interno avisa em quais turnos da semana não pode
+// pegar plantão, e o sorteio trata isso como bloqueio — não como preferência.
+//
+// O motivo é tipado porque a regra de teto é por motivo: o interno da Vitalmed
+// também faz internato no SAMU, então CRU_SAMU e USA_SAMU são plantões dele lá,
+// e AULA é compromisso da faculdade. Ver unavailability-policy.ts.
+export const unavailabilityReasonEnum = pgEnum("unavailability_reason", [
+  "CRU_SAMU", "USA_SAMU", "AULA",
+]);
+
+export const internUnavailability = pgTable("intern_unavailability", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  internId: uuid("intern_id").notNull().references(() => users.id),
+  date: date("date").notNull(),
+  period: shiftPeriodEnum("period").notNull(),
+  reason: unavailabilityReasonEnum("reason").notNull(),
+  notes: text("notes"),
+  // Quem registrou: o próprio interno, ou um admin corrigindo por ele.
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  // Um interno não pode ter dois motivos para o mesmo turno.
+  uniqueIndex("uq_unavailability_intern_slot").on(t.internId, t.date, t.period),
+  index("idx_unavailability_intern_date").on(t.internId, t.date),
+  index("idx_unavailability_date").on(t.date),
+]);
