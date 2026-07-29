@@ -1,4 +1,5 @@
 "use client";
+import { ORG_NAME } from "@/lib/branding";
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
@@ -54,7 +55,7 @@ export default function RedefinirSenhaPage() {
                             <Ambulance className="h-6 w-6 text-accent-600" strokeWidth={1.5} />
                         </div>
                         <h1 className="text-xl font-semibold text-slate-900">Redefinir Senha</h1>
-                        <p className="mt-1 text-sm text-slate-500">SAMU 192 Salvador</p>
+                        <p className="mt-1 text-sm text-slate-500">{ORG_NAME}</p>
                     </div>
 
                     {success ? (

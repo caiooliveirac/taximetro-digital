@@ -1,6 +1,10 @@
 import { AdminFilledSchedule } from "@/components/admin-filled-schedule";
+import { exigirEscala } from "@/lib/feature-gate";
 
 export default function AdminEscalasCrlPage() {
+    // A Vitalmed não tem CRL. Bloqueio no servidor: tirar do menu não impede
+    // quem digitar a URL na barra de endereço.
+    exigirEscala("crl");
     return (
         <div className="space-y-4">
             <div>

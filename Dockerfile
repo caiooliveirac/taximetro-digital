@@ -9,6 +9,14 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Chave única da instância — ver src/lib/instance.ts. Vazio = SAMU, então o
+# build oficial do GHA continua idêntico ao que sempre foi.
+ARG NEXT_PUBLIC_ORG=""
+# Override do link do grupo Telegram, para o dia em que o grupo for recriado
+# sem precisar de deploy de código. Vazio = o padrão da instância.
+ARG NEXT_PUBLIC_TELEGRAM_GROUP_LINK=""
+ENV NEXT_PUBLIC_ORG=${NEXT_PUBLIC_ORG} \
+    NEXT_PUBLIC_TELEGRAM_GROUP_LINK=${NEXT_PUBLIC_TELEGRAM_GROUP_LINK}
 RUN npx drizzle-kit generate
 RUN npm run build
 

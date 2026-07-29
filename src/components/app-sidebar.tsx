@@ -10,6 +10,7 @@ import { LogOut, Ambulance, Eye, Users, Stethoscope, GraduationCap, Menu, X, Key
 import { ImpersonateSelector } from "@/components/impersonate/impersonate-selector";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { RoleSwitcher } from "@/components/role-switcher";
+import { ORG_NAME_SHORT } from "@/lib/branding";
 
 export type NavItem = {
   href: string;
@@ -156,7 +157,7 @@ export function AppSidebar({
             <Ambulance className="h-5 w-5 text-accent-500" strokeWidth={1.5} />
             <div>
               <h2 className="font-semibold text-white text-[15px] leading-tight">Taxímetro</h2>
-              <p className="text-[10px] text-slate-400">SAMU Salvador</p>
+              <p className="text-[10px] text-slate-400">{ORG_NAME_SHORT}</p>
             </div>
           </div>
           <div className="mt-2">

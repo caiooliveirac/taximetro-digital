@@ -71,7 +71,7 @@ export default async function InternBasesPage() {
                             </span>
                         </div>
                         <p className="text-sm text-slate-500">
-                            Abra a rota direto no Maps, Waze ou Uber para qualquer base ativa do SAMU.
+                            Abra a rota direto no Maps, Waze ou Uber para qualquer base ativa.
                         </p>
                     </div>
                 </div>

@@ -7,6 +7,7 @@ import { Input as UIInput } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { baseViewIndex } from "@/lib/base-colors";
+import { ORG_NAME_SHORT } from "@/lib/branding";
 
 type Base = {
   id: string;
@@ -94,7 +95,7 @@ export default function AdminBases() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Bases SAMU</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Bases {ORG_NAME_SHORT}</h1>
         <Button onClick={() => setEditing({ ...EMPTY })} className="gap-1.5">
           <Plus className="h-4 w-4" strokeWidth={1.5} /> Nova Base
         </Button>

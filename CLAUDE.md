@@ -27,20 +27,28 @@ O fluxo nativo roda `npm run dev` diretamente no host e conecta a um Postgres lo
 docker compose -f docker-compose.dev.yml up -d db
 ```
 
-Isso sobe o Postgres na porta **5434** (não 5432, para evitar conflito com instâncias locais).
-- Host: `localhost:5434`
-- DB: `taximetro`
+Isso sobe o Postgres na porta **5436** (não 5432, para evitar conflito com instâncias locais).
+- Host: `localhost:5436`
+- DB: `taximetro` (SAMU) e `vitalmed` (Vitalmed) — bancos separados no mesmo Postgres
 - User: `taximetro`
 - Pass: `taximetro_dev`
 
-### 2. `.env.local`
+### 2. Arquivos de env — um por instância
 
-Crie `.env.local` na raiz do projeto (já está no `.gitignore`):
+Cada instância tem o seu, e o nome do banco precisa bater com a instância:
+`.env.samu.local` (banco com "taximetro") e `.env.vitalmed.local` (banco com
+"vitalmed"). Todo comando de banco passa por `scripts/db-run.mjs`, que recusa
+rodar se não bater — é a trava contra `db:reset` no banco errado.
+
+O `.env.local` genérico foi aposentado: servia para as duas e era o caminho mais
+curto para acertar o banco errado.
+
+Crie `.env.samu.local` na raiz do projeto (já está no `.gitignore`):
 
 ```env
 NODE_ENV=development
 
-DATABASE_URL=postgresql://taximetro:taximetro_dev@localhost:5434/taximetro
+DATABASE_URL=postgresql://taximetro:taximetro_dev@localhost:5436/taximetro
 
 AUTH_SECRET=dev-only-secret-change-me
 AUTH_URL=http://localhost:3000
@@ -68,9 +76,13 @@ npm install
 ### 4. Schema + seed
 
 ```bash
-npm run db:push      # aplica schema no banco local
+npm run db:push      # aplica schema no banco local (SAMU)
 npm run db:seed      # admin user + bases + faculdades
 npm run db:seed-dev  # ~50 interns/preceptors/líderes fake (usa @faker-js/faker com seed 42)
+
+# Vitalmed (banco separado):
+npm run db:push:vitalmed
+npm run db:seed:vitalmed
 ```
 
 Ou em um único comando:
@@ -180,9 +192,37 @@ npm run db:push && npm run db:demo
 | `src/lib/impersonate.ts`                            | Lógica de impersonação COORDINATOR→outros       |
 | `src/shared/domain/policies/attendance-window-policy.ts` | Janelas de check-in/checkout (fonte única) |
 | `src/shared/infra/rate-limit/index.ts`              | Rate limiter (in-memory, swappável por Redis)   |
-| `docker-compose.dev.yml`                            | Postgres local na porta 5434                    |
+| `docker-compose.dev.yml`                            | Postgres local na porta 5436                    |
 | `src/db/seed-dev.ts`                                | Seed fake com @faker-js/faker (seed 42)         |
 | `tests/`                                            | Suite de testes com node:test + tsx             |
 | `AGENTS.md`                                         | Regras operacionais para agentes                |
 | `docs/runtime-truth.md`                             | Verdade de produção                             |
 | `docs/dev-agent-macbook.md`                         | Fluxo alternativo via Docker Compose para o app |
+
+---
+
+## Instâncias: SAMU e Vitalmed no mesmo código
+
+Uma chave só decide quem é quem: `NEXT_PUBLIC_ORG` (`samu` — padrão — ou
+`vitalmed`), build arg do Docker. Tudo que difere sai de duas tabelas
+versionadas:
+
+| Arquivo | O que decide |
+|---|---|
+| `src/lib/instance.ts` | quais funcionalidades existem, quais escalas aparecem |
+| `src/lib/branding.ts` | nome, domínio, ícones, imagem OG, grupo do Telegram |
+
+**Funcionalidades exclusivas da Vitalmed:** sorteio de escala na tela do admin
+(`adminLottery`) e indisponibilidade do interno (`internUnavailability`). Elas
+são desligadas no SAMU por decisão de produto — `tests/instance-features.test.ts`
+quebra o `npm test` se alguém ligar sem querer.
+
+**Esconder o menu não é proteção.** Rota exclusiva de uma instância se bloqueia
+no servidor com `src/lib/feature-gate.ts` (`exigirFeature` em páginas,
+`bloqueioDeFeature` em route handlers), que responde 404 — quem digitar a URL
+não entra.
+
+**Deploy da Vitalmed:** `scripts/deploy-vitalmed.sh`, que aborta se o host tiver
+alteração não commitada ou commit que não subiu para o GitHub. Isso existe
+porque em 2026-07-28 o host estava 3 commits à frente e um deles só existia lá.
+Servidor não é lugar de escrever código.

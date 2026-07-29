@@ -20,26 +20,46 @@ import {
   Zap,
   BookOpen,
 } from "lucide-react";
+import { escalasDaInstancia } from "@/lib/instance";
 
-const NAV: NavItem[] = [
+// Ícone de cada escala por slug — o rótulo vem da instância (SAMU: USA/CRU/CRL,
+// Vitalmed: APH/CCO, sem CRL). Ver src/lib/instance.ts.
+const ICONE_ESCALA = { usa: Calendar, cru: TableProperties, crl: Building2 } as const;
+
+const ESCALAS_NAV: NavItem[] = escalasDaInstancia().map(({ slug, label }) => ({
+  href: `/admin/escalas/${slug}`,
+  label,
+  icon: ICONE_ESCALA[slug],
+}));
+
+// Grupos declarados explicitamente. Antes eram fatias por índice (slice(0,10)…),
+// o que quebraria silenciosamente agora que o número de escalas varia por
+// instância — item do grupo errado, sem erro nenhum aparecendo.
+const NAV_OPERACAO: NavItem[] = [
   { href: "/admin", label: "Cockpit", icon: LayoutDashboard },
   { href: "/admin/presencas", label: "Presenças", icon: CheckCircle },
   { href: "/admin/faltas", label: "Faltas", icon: XCircle },
   { href: "/admin/escalas/grade", label: "Grade", icon: LayoutGrid },
-  { href: "/admin/escalas/usa", label: "Escala USA", icon: Calendar },
-  { href: "/admin/escalas/cru", label: "Escala CRU", icon: TableProperties },
-  { href: "/admin/escalas/crl", label: "Escala CRL", icon: Building2 },
+  ...ESCALAS_NAV,
   { href: "/admin/remanejamento", label: "Remanejamento", icon: ArrowRightLeft },
   { href: "/admin/ver-interno", label: "Ver Interno", icon: Eye },
   { href: "/admin/relatorios", label: "Relatórios", icon: BarChart3 },
+];
+
+const NAV_ESTRUTURA: NavItem[] = [
   { href: "/admin/bases", label: "Bases", icon: Building2 },
   { href: "/admin/faculdades", label: "Faculdades", icon: GraduationCap },
   { href: "/admin/turmas", label: "Turmas", icon: BookOpen },
   { href: "/admin/usuarios", label: "Usuários", icon: Users },
   { href: "/admin/solicitacoes", label: "Solicitações", icon: ClipboardList },
+];
+
+const NAV_GOVERNANCA: NavItem[] = [
   { href: "/admin/audit", label: "Atividades", icon: FileSearch },
   { href: "/admin/plantoes-extras", label: "Extras", icon: Zap },
 ];
+
+const NAV: NavItem[] = [...NAV_OPERACAO, ...NAV_ESTRUTURA, ...NAV_GOVERNANCA];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -55,9 +75,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         nav={NAV}
         role="Coordenação"
         navGroups={[
-          { label: "Operação", items: NAV.slice(0, 10) },
-          { label: "Estrutura", items: NAV.slice(10, 15) },
-          { label: "Governança", items: NAV.slice(15) },
+          { label: "Operação", items: NAV_OPERACAO },
+          { label: "Estrutura", items: NAV_ESTRUTURA },
+          { label: "Governança", items: NAV_GOVERNANCA },
         ]}
       />
       {/* min-w-0: sem isso, conteúdo largo (grades) estica o main além do viewport
