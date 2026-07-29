@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ORG_TELEGRAM_GROUP_LINK } from "@/lib/branding";
 import { Suspense, useEffect, useState, useRef, useCallback, useOptimistic, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import { MapPin, Sun, Moon, CheckCircle, Clock, Loader2, AlertCircle, UserCircle, AlertTriangle, LogOut, Shield, Settings, RotateCcw, Smartphone } from "lucide-react";
@@ -86,7 +87,8 @@ type CurrentAttendancePayload = {
   };
 };
 
-const GROUP_NAME = "TaximetrosSAMUInternos";
+// Grupo do Telegram onde o interno valida o check-in — por instância (ver src/lib/branding.ts)
+const GROUP_LINK = ORG_TELEGRAM_GROUP_LINK;
 const TOTP_STEP = TOTP_STEP_SECONDS;
 
 function normalizeObservation(value: string) {
@@ -128,7 +130,7 @@ function InternCheckinContent() {
   const sseRef = useRef<EventSource>(null);
 
   // QR value — opens the Telegram group directly
-  const qrValue = `https://t.me/${GROUP_NAME}`;
+  const qrValue = GROUP_LINK;
   const normalizedInternObservations = normalizeObservation(internObservations);
   const normalizedOptimisticSavedObservations = normalizeObservation(optimisticSaved);
 

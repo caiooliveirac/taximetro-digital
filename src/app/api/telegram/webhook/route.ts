@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { telegramBindings, users, qrSessions, checkins, assignments, bases, faculties, userRoles } from "@/db/schema";
@@ -6,17 +8,26 @@ import { validateCode } from "@/lib/totp";
 import { bot, TELEGRAM_GROUP_ID } from "@/lib/telegram";
 import { logAudit } from "@/lib/audit";
 import { formatBrazilTime } from "@/lib/utils";
+import { ORG_PRECEPTOR_REGISTRATION_URL } from "@/lib/branding";
 import { canTriggerPendingReminderFromTelegram, sendPendingCheckinReminder } from "@/lib/telegram-checkin-pending-reminder";
 import { z } from "zod/v4";
 
-const PRECEPTOR_REGISTRATION_URL = "https://mnrs.com.br/taximetro/registro/9NPQUwOwats7IZDuLbpuUw";
-
-function formatValidationNudge() {
+/**
+ * Linhas da dica de cadastro que acompanham a confirmação de validação.
+ *
+ * Devolve lista (e não string) para poder sumir por completo — inclusive a linha
+ * em branco que a separa da confirmação — na instância que não tem link próprio.
+ * Mandar o preceptor da Vitalmed se cadastrar no SAMU seria pior que não dizer
+ * nada; o link sai de [branding.ts](@/lib/branding), não de env do servidor.
+ */
+function validationNudgeLines(): string[] {
+  if (!ORG_PRECEPTOR_REGISTRATION_URL) return [];
   return [
+    "",
     "💡 Dica para preceptor:",
     "Só digitar o código no grupo funciona, mas no site é mais fácil e permite avaliar o interno (NPS), não só registrar presença.",
-    `Cadastro: ${PRECEPTOR_REGISTRATION_URL}`,
-  ].join("\n");
+    `Cadastro: ${ORG_PRECEPTOR_REGISTRATION_URL}`,
+  ];
 }
 
 async function sendTelegramMessage(
@@ -118,20 +129,33 @@ export async function POST(req: NextRequest) {
         return await handleBinding(cpf, telegramUserId, message.from.first_name, chatId);
       }
 
+      // /relatorio — relatório de presenças em PDF (gestão vinculada)
+      if (command === "relatorio") {
+        return await handleReportCommand(telegramUserId, chatId);
+      }
+
       // /ajuda
-      if (text === "/ajuda" || text === "/help") {
-        await bot.api.sendMessage(chatId,
-          "🩺 *Taxímetro Bot*\n\n" +
-          "Comandos:\n" +
-          "• `/vincular 000.000.000-00` — vincular seu Telegram ao cadastro\n" +
-          "• Escaneie o QR Code do interno para abrir o grupo\n" +
-          "• No grupo: envie somente o código de 6 dígitos do interno\n" +
-          "• No grupo: `/pendencias` — avisar faltas de check-in do plantão diurno",
-          { parse_mode: "Markdown" }
-        );
+      if (command === "ajuda" || command === "help" || text === "/start") {
+        await bot.api.sendMessage(chatId, buildPrivateHelpMessage(), { parse_mode: "Markdown" });
         return NextResponse.json({ ok: true });
       }
 
+      return NextResponse.json({ ok: true });
+    }
+
+    if (command === "relatorio") {
+      await sendTelegramMessage(chatId, "🔒 O relatório contém dados dos internos — peça no privado do bot com /relatorio.", { messageThreadId });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (command === "ajuda" || command === "help") {
+      await sendTelegramMessage(chatId,
+        "🩺 Neste grupo:\n" +
+        "• Digite o código de 6 dígitos do interno para validar check-in/checkout\n" +
+        "• /pendencias — aviso de check-ins pendentes (gestão vinculada)\n" +
+        "Guia completo: mande /ajuda no privado do bot.",
+        { messageThreadId },
+      );
       return NextResponse.json({ ok: true });
     }
 
@@ -149,6 +173,67 @@ export async function POST(req: NextRequest) {
     console.error("Telegram webhook error:", err);
     return NextResponse.json({ ok: true });
   }
+}
+
+function buildPrivateHelpMessage() {
+  return [
+    "🩺 *Guia rápido do bot*",
+    "",
+    "*Validar presença do interno (preceptores):*",
+    "1️⃣ O interno abre a tela de check-in no celular dele e mostra o *QR Code*",
+    "2️⃣ Escaneie o QR — ele abre o *grupo de validação*",
+    "3️⃣ No grupo, digite o *código de 6 dígitos* que aparece na tela do interno",
+    "✅ Pronto, check-in registrado! No fim do plantão é igual: o interno gera novo código e você digita no grupo para registrar o *checkout*.",
+    "",
+    "*Comandos aqui no privado:*",
+    "• `/vincular 000.000.000-00` — conecta este Telegram ao seu cadastro (use seu CPF). Libera os comandos de gestão.",
+    "• `/relatorio` — recebe o relatório de presenças em PDF: internos em ordem alfabética, metas, plantões com check-in/checkout e ausências (gestão vinculada)",
+    "• `/ajuda` — mostra este guia",
+    "",
+    "*Comandos no grupo:*",
+    "• Código de 6 dígitos — valida check-in/checkout",
+    "• `/pendencias` — dispara o aviso de check-ins pendentes (gestão vinculada)",
+    "",
+    "🤖 *Automático:* lembrete de check-in pendente pela manhã e, à noite, backup do banco + relatório em PDF no privado da administração.",
+  ].join("\n");
+}
+
+/**
+ * Dispara scripts/telegram-send-attendance-report.mjs em processo separado.
+ *
+ * O relatório consulta o banco inteiro e converte HTML em PDF por chromium — é
+ * lento demais para caber na resposta do webhook, que o Telegram corta. Por isso
+ * o webhook só responde "estou gerando" e o processo filho entrega os PDFs.
+ */
+async function handleReportCommand(telegramUserId: string, chatId: string) {
+  const permission = await canTriggerPendingReminderFromTelegram(telegramUserId);
+
+  if (!permission.allowed) {
+    const message = permission.reason === "not-bound"
+      ? "Comando indisponível para este Telegram. Faça primeiro /vincular 000.000.000-00 aqui no privado."
+      : "Comando disponível apenas para coordenação, liderança ou preceptoria vinculadas.";
+    await bot.api.sendMessage(chatId, message);
+    return NextResponse.json({ ok: true });
+  }
+
+  await bot.api.sendMessage(chatId, "⏳ Gerando o relatório de presenças... os PDFs chegam em instantes.");
+
+  const scriptPath = path.join(process.cwd(), "scripts", "telegram-send-attendance-report.mjs");
+  const child = spawn(process.execPath, [scriptPath, chatId], {
+    detached: true,
+    stdio: "ignore",
+    env: process.env,
+  });
+  child.unref();
+
+  await logAudit({
+    userId: permission.userId,
+    action: "ATTENDANCE_REPORT_TELEGRAM_REQUESTED",
+    entity: "telegram",
+    payload: { telegramUserId },
+  });
+
+  return NextResponse.json({ ok: true });
 }
 
 async function handleManualPendingReminderCommand(
@@ -301,8 +386,7 @@ async function handleGroupCodeValidation(
       `Turno: ${period}`,
       `Hora: ${time}`,
       `Validação por: ${telegramName}`,
-      "",
-      formatValidationNudge(),
+      ...validationNudgeLines(),
     ].join("\n"),
     { messageThreadId },
   );
@@ -367,8 +451,7 @@ async function handleCheckoutViaCode(
         `Base: ${baseLabel}`,
         `Turno: ${period === "DIA" ? "Diurno" : "Noturno"}`,
         `Hora: ${time}`,
-        "",
-        formatValidationNudge(),
+        ...validationNudgeLines(),
       ].join("\n"),
     );
     if (TELEGRAM_GROUP_ID) {
@@ -382,8 +465,7 @@ async function handleCheckoutViaCode(
             `Turno: ${period}`,
             `Hora: ${time}`,
             `Validação por: ${telegramName}`,
-            "",
-            formatValidationNudge(),
+            ...validationNudgeLines(),
           ].join("\n"),
         );
       } catch { /* group may not be configured */ }
@@ -398,8 +480,7 @@ async function handleCheckoutViaCode(
         `Turno: ${period}`,
         `Hora: ${time}`,
         `Validação por: ${telegramName}`,
-        "",
-        formatValidationNudge(),
+        ...validationNudgeLines(),
       ].join("\n"),
       { messageThreadId },
     );
@@ -476,8 +557,7 @@ async function handlePrivateCodeValidation(code: string, telegramUserId: string,
       `Turno: ${period}`,
       `Data: ${assignment.date}`,
       `Hora: ${time}`,
-      "",
-      formatValidationNudge(),
+      ...validationNudgeLines(),
     ].join("\n")
   );
 
@@ -493,8 +573,7 @@ async function handlePrivateCodeValidation(code: string, telegramUserId: string,
           `Turno: ${periodShort}`,
           `Hora: ${time}`,
           `Validação por: ${telegramName}`,
-          "",
-          formatValidationNudge(),
+          ...validationNudgeLines(),
         ].join("\n")
       );
     } catch { /* group may not be configured yet */ }
