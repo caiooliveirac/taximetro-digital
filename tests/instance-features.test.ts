@@ -91,3 +91,13 @@ test("sem NEXT_PUBLIC_ORG, ou com valor inválido, a instância é SAMU", () => 
   assert.equal(resolverInstancia("Vitalmed"), "vitalmed");
   assert.equal(resolverInstancia(" vitalmed "), "vitalmed");
 });
+
+test("link de cadastro do preceptor não vaza de uma instância na outra", () => {
+  // O SAMU tem link próprio; a Vitalmed ainda não tem, e null suprime a dica.
+  // Mandar preceptor da Vitalmed se cadastrar no mnrs.com.br seria vazamento
+  // de instância — e foi o que aconteceria ao migrar a Vitalmed para o master
+  // sem esta tabela (a URL era constante hardcoded no webhook).
+  const samu = brandingDe("samu").preceptorRegistrationUrl;
+  assert.ok(samu && samu.includes("mnrs.com.br"));
+  assert.equal(brandingDe("vitalmed").preceptorRegistrationUrl, null);
+});

@@ -27,6 +27,12 @@ type Branding = {
    * o grupo for recriado sem precisar de deploy de código.
    */
   telegramGroupLink: string;
+  /**
+   * Link de cadastro oferecido ao preceptor depois que ele valida um check-in
+   * pelo grupo. `null` suprime a dica inteira: é melhor não dizer nada do que
+   * mandar o preceptor de uma instância se cadastrar na outra.
+   */
+  preceptorRegistrationUrl: string | null;
 };
 
 const BRANDING: Record<Instancia, Branding> = {
@@ -40,6 +46,7 @@ const BRANDING: Record<Instancia, Branding> = {
       i512: "/taximetro/icons/icon-512.png",
     },
     telegramGroupLink: "https://t.me/TaximetrosSAMUInternos",
+    preceptorRegistrationUrl: "https://mnrs.com.br/taximetro/registro/9NPQUwOwats7IZDuLbpuUw",
   },
   vitalmed: {
     nome: "Vitalmed",
@@ -51,6 +58,8 @@ const BRANDING: Record<Instancia, Branding> = {
       i512: "/taximetro/icons/icon-512-vitalmed.png",
     },
     telegramGroupLink: "https://t.me/+AMX6JIqps6o3YmUx",
+    // Sem link de convite próprio ainda — a dica fica suprimida até existir um.
+    preceptorRegistrationUrl: null,
   },
 };
 
@@ -61,6 +70,7 @@ export const ORG_NAME_SHORT = atual.nomeCurto;
 export const ORG_BASE_URL = atual.baseUrl;
 export const ORG_OG_IMAGE = atual.og;
 export const ORG_ICONS = atual.icones;
+export const ORG_PRECEPTOR_REGISTRATION_URL = atual.preceptorRegistrationUrl;
 export const ORG_TELEGRAM_GROUP_LINK =
   process.env.NEXT_PUBLIC_TELEGRAM_GROUP_LINK || atual.telegramGroupLink;
 
