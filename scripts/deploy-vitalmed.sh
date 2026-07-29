@@ -15,7 +15,7 @@
 set -euo pipefail
 
 DIR_APP="${DIR_APP:-$HOME/vitalmed-digital}"
-BRANCH="${BRANCH:-claude/vitalmed-og-image-2ecf2f}"
+BRANCH="${BRANCH:-master}"
 ENV_FILE="${ENV_FILE:-$DIR_APP/.env.vitalmed}"
 IMAGEM="vitalmed-digital:mvp"
 CONTAINER="vitalmed-digital"
@@ -60,17 +60,12 @@ echo "▶ Build da imagem em $COMMIT..."
 
 [ -f "$ENV_FILE" ] || erro "não achei o env da instância em $ENV_FILE"
 
-# Build args do branch atual da Vitalmed. Quando a migração para o master
-# terminar (falta portar o relatório em PDF, que hoje está entrelaçado com o
-# script de backup), estes cinco colapsam em `--build-arg NEXT_PUBLIC_ORG=vitalmed`
-# — a chave única de src/lib/instance.ts.
+# Uma chave só: NEXT_PUBLIC_ORG. Nome, nome curto, base URL, imagem OG, ícones e
+# link do grupo saem todos dela (src/lib/instance.ts + src/lib/branding.ts) — antes
+# eram cinco build args soltos que podiam se contradizer entre si.
 # INSTALL_CHROMIUM=1 é o que permite gerar o relatório de presenças em PDF.
 docker build \
-  --build-arg NEXT_PUBLIC_ORG_NAME="Vitalmed" \
-  --build-arg NEXT_PUBLIC_ORG_NAME_SHORT="Vitalmed" \
-  --build-arg NEXT_PUBLIC_ORG_BASE_URL="https://vitalmed.mnrs.com.br" \
-  --build-arg NEXT_PUBLIC_ORG_OG_IMAGE="vitalmed" \
-  --build-arg NEXT_PUBLIC_TELEGRAM_GROUP_LINK="https://t.me/+AMX6JIqps6o3YmUx" \
+  --build-arg NEXT_PUBLIC_ORG=vitalmed \
   --build-arg INSTALL_CHROMIUM=1 \
   -t "$IMAGEM" .
 
