@@ -54,9 +54,17 @@ test("a faculdade do líder vem do ator, nunca do corpo da requisição", () => 
 
 test("o sorteio consulta indisponibilidade antes de alocar", () => {
   // Sem esta chamada o mapa chegaria vazio ao alocador e a indisponibilidade
-  // declarada pelo interno seria silenciosamente ignorada — o pior tipo de
-  // falha, porque a tela continua mostrando que ele declarou.
-  assert.match(FONTE, /mapaDeBloqueioPorInterno/);
+  // seria silenciosamente ignorada — o pior tipo de falha, porque a tela
+  // continua mostrando que o interno está bloqueado.
+  assert.match(FONTE, /bloqueiosCompostos/);
   assert.match(FONTE, /temFeature\("internUnavailability"\)/);
   assert.match(FONTE, /unavailable,/, "o mapa precisa ser passado ao allocatePositions");
+});
+
+test("o sorteio recusa se não conseguir ler a escala do SAMU", () => {
+  // Sortear sem a escala do SAMU escala gente que já está de plantão lá. Como o
+  // sorteio roda em massa e sem ninguém conferindo, o certo é parar: um erro na
+  // tela custa um clique, um conflito de plantão custa uma pessoa faltando.
+  assert.match(FONTE, /samu === "falhou"/);
+  assert.match(FONTE, /success: false/);
 });

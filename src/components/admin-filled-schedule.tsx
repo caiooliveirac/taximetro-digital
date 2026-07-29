@@ -160,6 +160,35 @@ type VisiblePeriodSlots = {
     hiddenHasVacancy: boolean;
 };
 
+/**
+ * Como cada origem de bloqueio aparece na lista de alocação.
+ *
+ * Cores distintas de propósito: "está de plantão no SAMU" e "avisou que não
+ * pode" são coisas diferentes para quem escala — a primeira é fato externo, a
+ * segunda é escolha do interno, e a terceira é a grade da faculdade. Quem monta
+ * a escala decide diferente sabendo qual das três é.
+ */
+const ESTILO_BLOQUEIO: Record<string, { rotulo: string; linha: string; etiqueta: string; explicacao: string }> = {
+    SAMU: {
+        rotulo: "SAMU",
+        linha: "bg-sky-50 text-sky-900 opacity-90",
+        etiqueta: "bg-sky-100 text-sky-800",
+        explicacao: "Está escalado no SAMU neste turno.",
+    },
+    AULA_FIXA: {
+        rotulo: "Aula",
+        linha: "bg-violet-50 text-violet-900 opacity-90",
+        etiqueta: "bg-violet-100 text-violet-800",
+        explicacao: "Dia de aula da faculdade.",
+    },
+    DECLARADA: {
+        rotulo: "Indisponível",
+        linha: "bg-rose-50 text-rose-900 opacity-90",
+        etiqueta: "bg-rose-100 text-rose-800",
+        explicacao: "O interno declarou indisponibilidade neste turno.",
+    },
+};
+
 function normalizeDateKey(date: string) {
     return date.slice(0, 10);
 }
@@ -982,6 +1011,34 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const isRetroactiveAdminAllocation = Boolean(allocation && allocation.date < localDateStr());
     const isManualOpenAllocation = Boolean(allocation && allocation.facultyId === null);
 
+    // Bloqueios do dia da alocação: o que o interno declarou, o dia de aula da
+    // faculdade e os plantões dele no SAMU. Fora da Vitalmed a rota responde
+    // 404 e o mapa fica vazio — nada muda.
+    const [blocosPorInterno, setBlocosPorInterno] = useState<Record<string, Record<string, string>>>({});
+    const [samuIndisponivel, setSamuIndisponivel] = useState(false);
+
+    useEffect(() => {
+        if (!allocation) return;
+        let cancelado = false;
+        (async () => {
+            try {
+                const res = await fetch(
+                    `/taximetro/api/admin/unavailability/blocks?dateFrom=${allocation.date}&dateTo=${allocation.date}`,
+                    { cache: "no-store" },
+                );
+                if (!res.ok) return; // 404 = instância sem a feature
+                const json = await res.json();
+                if (cancelado || !json.success) return;
+                setBlocosPorInterno(json.data.blocks ?? {});
+                setSamuIndisponivel(json.data.samu === "falhou");
+            } catch {
+                // Falha de rede aqui não pode travar a alocação; o aviso na tela
+                // cobre o caso em que o SAMU não pôde ser consultado.
+            }
+        })();
+        return () => { cancelado = true; };
+    }, [allocation]);
+
     const allocationCandidates = useMemo(() => {
         if (!allocation) {
             return { eligibleInterns: [], blockedCount: 0, busyCount: 0 };
@@ -1023,6 +1080,13 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                 return true;
             })
+            // Indisponível continua na lista, marcado. Sumir com o nome faz
+            // quem escala procurar alguém que "desapareceu"; a etiqueta explica.
+            // Cópia, e não mutação: `users` é a lista compartilhada da tela.
+            .map((user) => ({
+                ...user,
+                bloqueio: blocosPorInterno[user.id]?.[`${allocation.date}|${allocation.period}`] ?? null,
+            }))
             .filter((user) => !query || user.name.toLowerCase().includes(query))
             .sort((left, right) => {
                 const preferredFacultyId = allocation.facultyId ?? activeCandidateFacultyFilter;
@@ -1042,7 +1106,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             });
 
         return { eligibleInterns, blockedCount, busyCount };
-    }, [activeCandidateFacultyFilter, allocSearch, allocShift, allocation, assignments, cruConflicts, isRetroactiveAdminAllocation, users]);
+    }, [activeCandidateFacultyFilter, allocSearch, allocShift, allocation, assignments, blocosPorInterno, cruConflicts, isRetroactiveAdminAllocation, users]);
 
     function openPublishExtra(slot: AllocationState) {
         setPublishExtraSlot(slot);
@@ -1739,6 +1803,17 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 </div>
                             )}
 
+                            {/* Sem este aviso, a ausência de etiqueta "SAMU" seria
+                                lida como "está livre" — quando na verdade é
+                                "não deu para perguntar". */}
+                            {samuIndisponivel && (
+                                <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                    Não consegui consultar a escala do SAMU agora. Quem estiver de
+                                    plantão lá pode aparecer sem a etiqueta <strong>SAMU</strong> —
+                                    confira antes de escalar.
+                                </div>
+                            )}
+
                             <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
                                 {loadingUsers ? (
                                     <div className="flex items-center justify-center py-8 text-sm text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando internos...</div>
@@ -1748,30 +1823,47 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                         {!isRetroactiveAdminAllocation && allocationCandidates.blockedCount > 0 ? ` ${allocationCandidates.blockedCount} bloqueado(s) por conflito CRU/CRL ±12h.` : ""}
                                     </p>
                                 ) : (
-                                    allocationCandidates.eligibleInterns.map((user) => (
-                                        <button
-                                            key={user.id}
-                                            type="button"
-                                            onClick={() => {
-                                                setAllocInternId(user.id);
-                                                const internFacultyId = getInternFacultyId(user);
-                                                if (!allocation.facultyId && internFacultyId) {
-                                                    setAllocFacultyId(internFacultyId);
-                                                }
-                                            }}
-                                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${allocInternId === user.id ? "bg-accent-50 text-accent-700 ring-1 ring-accent-300" : "bg-white text-slate-700 hover:bg-slate-100"}`}
-                                        >
-                                            <span className="min-w-0 flex-1 truncate">{user.name}</span>
-                                            <span className="ml-3 flex items-center gap-1.5">
-                                                {hasRole(user, "LEADER") && hasRole(user, "INTERN") && (
-                                                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">L+I</span>
-                                                )}
-                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getInternFacultyId(user) === allocation.facultyId ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                                                    {getInternFacultyAbbr(user) ?? "Sem faculdade"}
+                                    allocationCandidates.eligibleInterns.map((user) => {
+                                        const bloqueio = user.bloqueio;
+                                        const estilo = bloqueio ? ESTILO_BLOQUEIO[bloqueio] : null;
+                                        return (
+                                            <button
+                                                key={user.id}
+                                                type="button"
+                                                disabled={Boolean(bloqueio)}
+                                                title={estilo?.explicacao}
+                                                onClick={() => {
+                                                    setAllocInternId(user.id);
+                                                    const internFacultyId = getInternFacultyId(user);
+                                                    if (!allocation.facultyId && internFacultyId) {
+                                                        setAllocFacultyId(internFacultyId);
+                                                    }
+                                                }}
+                                                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
+                                                    estilo
+                                                        ? `${estilo.linha} cursor-not-allowed`
+                                                        : allocInternId === user.id
+                                                            ? "bg-accent-50 text-accent-700 ring-1 ring-accent-300"
+                                                            : "bg-white text-slate-700 hover:bg-slate-100"
+                                                }`}
+                                            >
+                                                <span className="min-w-0 flex-1 truncate">{user.name}</span>
+                                                <span className="ml-3 flex items-center gap-1.5">
+                                                    {estilo && (
+                                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${estilo.etiqueta}`}>
+                                                            {estilo.rotulo}
+                                                        </span>
+                                                    )}
+                                                    {hasRole(user, "LEADER") && hasRole(user, "INTERN") && (
+                                                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">L+I</span>
+                                                    )}
+                                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getInternFacultyId(user) === allocation.facultyId ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                                                        {getInternFacultyAbbr(user) ?? "Sem faculdade"}
+                                                    </span>
                                                 </span>
-                                            </span>
-                                        </button>
-                                    ))
+                                            </button>
+                                        );
+                                    })
                                 )}
                             </div>
 

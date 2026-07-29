@@ -9,6 +9,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   INSTANCIAS,
   featuresDe,
@@ -100,4 +102,18 @@ test("link de cadastro do preceptor não vaza de uma instância na outra", () =>
   const samu = brandingDe("samu").preceptorRegistrationUrl;
   assert.ok(samu && samu.includes("mnrs.com.br"));
   assert.equal(brandingDe("vitalmed").preceptorRegistrationUrl, null);
+});
+
+test("o canal de leitura do SAMU não existe fora da Vitalmed", () => {
+  // A leitura do banco do SAMU é a única exceção ao isolamento entre instâncias,
+  // e é de mão única. O que a garante não é disciplina: sem a env
+  // SAMU_READONLY_DATABASE_URL não há conexão nenhuma, e o build do SAMU não a
+  // recebe. Este teste trava o contrato de "sem env, sem canal".
+  const fonte = readFileSync(
+    path.join(process.cwd(), "src/features/scheduling/infra/repositories/samu-schedule-repository.ts"),
+    "utf8",
+  );
+  assert.match(fonte, /SAMU_READONLY_DATABASE_URL/);
+  assert.match(fonte, /if \(!url\) return null/, "sem env, nenhuma conexão pode ser aberta");
+  assert.match(fonte, /configurado: false/, "a ausência do canal não pode ser tratada como erro");
 });

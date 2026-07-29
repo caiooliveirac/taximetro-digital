@@ -10,7 +10,10 @@ import {
 } from "@/features/scheduling/infra/repositories/lottery-repository";
 import { allocatePositions, type AllocPos } from "./allocate-positions";
 import { temFeature } from "@/lib/instance";
-import { mapaDeBloqueioPorInterno } from "@/features/scheduling/infra/repositories/unavailability-repository";
+import {
+  bloqueiosCompostos,
+  internosParaBloqueio,
+} from "@/features/scheduling/infra/repositories/unavailability-repository";
 import { buildUnallocatedDiagnostics } from "./lottery-diagnostics";
 
 /**
@@ -188,15 +191,36 @@ export async function executeRunLeaderLottery(params: {
 
   const cruBlocked = await getCruBlockedSlots(safeIds, weekDates[0], weekDates[6]);
 
-  // Indisponibilidade declarada pelo interno (instância Vitalmed). Onde a
-  // feature não existe, o mapa volta vazio e nada muda no sorteio.
-  const unavailable = temFeature("internUnavailability")
-    ? await mapaDeBloqueioPorInterno({
+  // Indisponibilidade do interno (instância Vitalmed): o que ele declarou, o
+  // dia fixo de aula da faculdade e os plantões dele no SAMU. Onde a feature
+  // não existe, o mapa volta vazio e nada muda no sorteio.
+  const unavailable = new Map<string, Set<string>>();
+  if (temFeature("internUnavailability")) {
+    const compostos = await bloqueiosCompostos({
+      internos: await internosParaBloqueio({
         internIds: safeIds,
-        dateFrom: weekDates[0],
-        dateTo: weekDates[6],
-      })
-    : new Map<string, Set<string>>();
+        facultyAbbr: facultyAbbreviation,
+      }),
+      dateFrom: weekDates[0],
+      dateTo: weekDates[6],
+    });
+
+    // O sorteio decide em massa e sem ninguém olhando. Se a escala do SAMU não
+    // pôde ser lida, seguir significa escalar gente que está de plantão lá —
+    // melhor recusar e deixar quem opera decidir, do que criar conflito calado.
+    if (compostos.samu === "falhou") {
+      return {
+        success: false as const,
+        error:
+          "Não consegui consultar a escala do SAMU agora, e sortear sem ela pode escalar " +
+          "interno que já está de plantão lá. Tente de novo em alguns instantes.",
+      };
+    }
+
+    for (const [internId, porSlot] of compostos.mapa) {
+      unavailable.set(internId, new Set(porSlot.keys()));
+    }
+  }
 
   const existingShiftCount = new Map<string, number>();
   for (const id of safeIds) existingShiftCount.set(id, 0);

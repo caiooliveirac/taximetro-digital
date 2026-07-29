@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Check, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  MOTIVOS_INDISPONIBILIDADE,
+  MOTIVOS_DECLARAVEIS,
   ROTULO_MOTIVO,
   TETO_POR_MOTIVO,
   TETO_TOTAL,
@@ -39,9 +39,12 @@ const COR_MOTIVO: Record<MotivoIndisponibilidade, string> = {
   CRU_SAMU: "bg-sky-100 text-sky-800 border-sky-300",
   USA_SAMU: "bg-amber-100 text-amber-800 border-amber-300",
   AULA: "bg-violet-100 text-violet-800 border-violet-300",
+  LIVRE: "bg-rose-100 text-rose-800 border-rose-300",
 };
 
-const CICLO: Array<MotivoIndisponibilidade | null> = [null, ...MOTIVOS_INDISPONIBILIDADE];
+// Só os motivos que ainda se declara. Plantão no SAMU e dia de aula saíram
+// daqui: o sistema deduz os dois, e o interno não precisa mais digitá-los.
+const CICLO: Array<MotivoIndisponibilidade | null> = [null, ...MOTIVOS_DECLARAVEIS];
 
 function segundaDaSemana(): string {
   const hoje = new Date();
@@ -157,7 +160,7 @@ export function InternUnavailabilityForm() {
       {/* Saldo por motivo: o teto é por motivo, então mostrar só o total esconde
           metade da regra. */}
       <div className="flex flex-wrap gap-2">
-        {MOTIVOS_INDISPONIBILIDADE.map((motivo) => (
+        {MOTIVOS_DECLARAVEIS.map((motivo) => (
           <span
             key={motivo}
             className={`rounded-full border px-2.5 py-1 text-xs font-medium ${COR_MOTIVO[motivo]}`}
@@ -168,7 +171,12 @@ export function InternUnavailabilityForm() {
       </div>
 
       <p className="text-xs text-slate-500">
-        Toque numa célula para alternar entre livre → CRU SAMU → USA SAMU → Aula → livre.
+        Toque numa célula para marcar ou desmarcar. Você tem {TETO_TOTAL} turnos.
+      </p>
+      <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        Não precisa marcar seus plantões do SAMU nem o seu dia de aula — a escala
+        já sabe dos dois e bloqueia sozinha. Estes {TETO_TOTAL} turnos são para o
+        resto.
       </p>
 
       {carregando ? (

@@ -15,6 +15,7 @@ import path from "node:path";
 /** Arquivo → feature que ele precisa exigir. */
 const ROTAS_EXCLUSIVAS: Array<{ arquivo: string; feature: string }> = [
   { arquivo: "src/app/api/intern/unavailability/route.ts", feature: "internUnavailability" },
+  { arquivo: "src/app/api/admin/unavailability/blocks/route.ts", feature: "internUnavailability" },
   { arquivo: "src/app/intern/indisponibilidade/page.tsx", feature: "internUnavailability" },
   { arquivo: "src/app/api/admin/lottery/route.ts", feature: "adminLottery" },
 ];

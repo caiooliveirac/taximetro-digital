@@ -406,11 +406,14 @@ export const rotationTransitions = pgTable("rotation_transitions", {
 // src/lib/instance.ts). O interno avisa em quais turnos da semana não pode
 // pegar plantão, e o sorteio trata isso como bloqueio — não como preferência.
 //
-// O motivo é tipado porque a regra de teto é por motivo: o interno da Vitalmed
-// também faz internato no SAMU, então CRU_SAMU e USA_SAMU são plantões dele lá,
-// e AULA é compromisso da faculdade. Ver unavailability-policy.ts.
+// O que o interno declara hoje é só LIVRE: dois turnos, pelo motivo que for.
+// CRU_SAMU, USA_SAMU e AULA saíram do formulário porque o sistema passou a
+// deduzir os três — os plantões no SAMU vêm do banco de lá
+// (samu-schedule-repository.ts) e o dia de aula da faculdade sai de
+// DIA_DE_AULA_POR_FACULDADE. Continuam no enum para que linhas gravadas antes
+// dessa mudança sigam legíveis. Ver unavailability-policy.ts.
 export const unavailabilityReasonEnum = pgEnum("unavailability_reason", [
-  "CRU_SAMU", "USA_SAMU", "AULA",
+  "CRU_SAMU", "USA_SAMU", "AULA", "LIVRE",
 ]);
 
 export const internUnavailability = pgTable("intern_unavailability", {
