@@ -9,6 +9,8 @@ import {
   insertLotteryAssignments,
 } from "@/features/scheduling/infra/repositories/lottery-repository";
 import { allocatePositions, type AllocPos } from "./allocate-positions";
+import { temFeature } from "@/lib/instance";
+import { mapaDeBloqueioPorInterno } from "@/features/scheduling/infra/repositories/unavailability-repository";
 import { buildUnallocatedDiagnostics } from "./lottery-diagnostics";
 
 /**
@@ -28,6 +30,12 @@ export const runLeaderLotterySchema = z.object({
   weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   internIds: z.array(z.string().uuid()).min(1),
   maxShifts: z.number().int().min(1).max(7).default(1),
+  /**
+   * Faculdade alvo. O líder não manda (usa a dele); o COORDINATOR precisa
+   * mandar, porque não é vinculado a nenhuma e as regras de vaga são por
+   * faculdade. Ver run-admin-lottery.ts.
+   */
+  facultyId: z.string().uuid().optional(),
 });
 
 export type LeaderLotteryActor = {
@@ -56,13 +64,22 @@ export async function executeRunLeaderLottery(params: {
 }) {
   const { actor, input } = params;
 
-  if (actor.role !== "LEADER") {
+  const ehCoordenador = actor.role === "COORDINATOR";
+  if (actor.role !== "LEADER" && !ehCoordenador) {
     return { status: 403, body: { success: false, error: "Sem permissão" } } as const;
   }
 
-  const facultyId = actor.facultyId;
+  // O líder sorteia sempre a própria faculdade, independente do que mandar no
+  // corpo — aceitar facultyId dele seria deixar sortear a escala de outra.
+  const facultyId = ehCoordenador ? input.facultyId : actor.facultyId;
   if (!facultyId) {
-    return { status: 400, body: { success: false, error: "Líder sem faculdade vinculada" } } as const;
+    return {
+      status: 400,
+      body: {
+        success: false,
+        error: ehCoordenador ? "Selecione a faculdade" : "Líder sem faculdade vinculada",
+      },
+    } as const;
   }
 
   const validIds = await getValidInternIdsForFaculty({
@@ -171,6 +188,16 @@ export async function executeRunLeaderLottery(params: {
 
   const cruBlocked = await getCruBlockedSlots(safeIds, weekDates[0], weekDates[6]);
 
+  // Indisponibilidade declarada pelo interno (instância Vitalmed). Onde a
+  // feature não existe, o mapa volta vazio e nada muda no sorteio.
+  const unavailable = temFeature("internUnavailability")
+    ? await mapaDeBloqueioPorInterno({
+        internIds: safeIds,
+        dateFrom: weekDates[0],
+        dateTo: weekDates[6],
+      })
+    : new Map<string, Set<string>>();
+
   const existingShiftCount = new Map<string, number>();
   for (const id of safeIds) existingShiftCount.set(id, 0);
   for (const assignment of existing) {
@@ -187,6 +214,7 @@ export async function executeRunLeaderLottery(params: {
     existingUsaShiftCount: existingShiftCount,
     usedSlots,
     cruBlocked,
+    unavailable,
   });
 
   const toCreate = matches.map(({ internId, position: pos }) => ({

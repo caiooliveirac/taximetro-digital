@@ -30,6 +30,14 @@ export type AllocationInput = {
   usedSlots: Map<string, Set<string>>;
   /** Per-intern set of CRU/CRL ±12h blocked slot keys ("date|period"). */
   cruBlocked: Map<string, Set<string>>;
+  /**
+   * Indisponibilidade declarada pelo interno ("date|period"), instância Vitalmed.
+   *
+   * Diferente de `cruBlocked`, que só vale para alvo USA: aqui o interno disse
+   * que NÃO PODE naquele turno, então bloqueia qualquer base. Opcional para não
+   * quebrar chamadas existentes — ausente significa nenhuma indisponibilidade.
+   */
+  unavailable?: Map<string, Set<string>>;
 };
 
 export type AllocationMatch = {
@@ -53,9 +61,14 @@ function canAssign(
   usedSlots: Map<string, Set<string>>,
   cruBlocked: Map<string, Set<string>>,
   isEbmsp: boolean,
+  unavailable?: Map<string, Set<string>>,
 ): boolean {
   // Already at max USA shifts
   if (usaShiftCount >= maxShifts) return false;
+
+  // Interno declarou indisponibilidade neste turno — bloqueio duro, vale para
+  // qualquer tipo de base (ver unavailability-policy.ts).
+  if (unavailable?.get(internId)?.has(`${pos.date}|${pos.period}`)) return false;
 
   // Intern already occupies this exact slot
   const key = slotKey(pos, isEbmsp);
@@ -86,6 +99,7 @@ export function runMatchingRound(
   currentUsaShiftCount: Map<string, number>,
   usedSlots: Map<string, Set<string>>,
   cruBlocked: Map<string, Set<string>>,
+  unavailable?: Map<string, Set<string>>,
 ): AllocationMatch[] {
   const availableIdxs: number[] = [];
   for (let i = 0; i < positions.length; i++) {
@@ -97,7 +111,7 @@ export function runMatchingRound(
   for (const internId of eligibleInterns) {
     const usaCount = currentUsaShiftCount.get(internId) ?? 0;
     const choices = availableIdxs.filter((idx) =>
-      canAssign(internId, positions[idx], usaCount, maxShifts, usedSlots, cruBlocked, isEbmsp),
+      canAssign(internId, positions[idx], usaCount, maxShifts, usedSlots, cruBlocked, isEbmsp, unavailable),
     );
     if (choices.length > 0) preferences.set(internId, choices);
   }
@@ -151,6 +165,7 @@ export function allocatePositions(input: AllocationInput): {
     existingUsaShiftCount,
     usedSlots,
     cruBlocked,
+    unavailable,
   } = input;
 
   const positionTaken = new Array<boolean>(positions.length).fill(false);
@@ -182,6 +197,7 @@ export function allocatePositions(input: AllocationInput): {
       currentUsaShiftCount,
       workingUsedSlots,
       workingCruBlocked,
+      unavailable,
     );
     if (roundMatches.length === 0) break;
 

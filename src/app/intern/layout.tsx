@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Ambulance, Camera, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays, Zap, Shield, Users, type LucideIcon } from "lucide-react";
+import { Ambulance, Camera, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays, CalendarX, Zap, Shield, Users, type LucideIcon } from "lucide-react";
+import { temFeature } from "@/lib/instance";
 import { InternPhotoChangeModal } from "@/components/intern-photo-change-modal";
 import { extractRoleNames, pickReturnRole, type ManagementRole } from "@/lib/role-access-policy";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,10 @@ const NAV = [
   { href: "/intern", label: "Hoje", icon: ClipboardList },
   { href: "/intern/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/intern/checkin", label: "Check-in", icon: MapPin },
+  // Indisponibilidade só existe na Vitalmed — ver src/lib/instance.ts.
+  ...(temFeature("internUnavailability")
+    ? [{ href: "/intern/indisponibilidade", label: "Indisponibilidade", icon: CalendarX }]
+    : []),
   { href: "/intern/bases", label: "Bases", icon: Building2 },
   { href: "/intern/ocorrencias", label: "Ocorrências", icon: Stethoscope },
   { href: "/intern/trocas", label: "Trocas", icon: ArrowLeftRight },
