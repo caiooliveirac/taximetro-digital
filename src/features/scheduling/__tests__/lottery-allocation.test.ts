@@ -5,7 +5,12 @@
  */
 
 import assert from "node:assert/strict";
-import { allocatePositions, runMatchingRound, type AllocPos } from "../application/use-cases/allocate-positions";
+import {
+  allocatePositions,
+  applyMatchesToPeriodTally,
+  type AllocPos,
+  type PeriodTally,
+} from "../application/use-cases/allocate-positions";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -353,6 +358,218 @@ test("maxShifts=2 allocates up to 2 USA slots per intern", () => {
   const countB = matches.filter((m) => m.internId === "B").length;
   assert.equal(countA, 2, `A should have 2 shifts, got ${countA}`);
   assert.equal(countB, 2, `B should have 2 shifts, got ${countB}`);
+});
+
+// ── Section 6: fairness diurno/noturno (objetivo SOFT) ───────────────────────
+
+console.log("\n── Section 6: fairness diurno/noturno ─────────────────────");
+
+function tally(entries: Record<string, PeriodTally>): Map<string, PeriodTally> {
+  return new Map(Object.entries(entries));
+}
+
+test("interno 'devendo' diurno fura a fila e pega o DAY (independe da ordem de entrada)", () => {
+  // A está night-heavy (2 noturnos, 0 diurno); B está equilibrado. Mesmo com B
+  // entrando primeiro, A deve pegar o DAY por carência.
+  const interns = ["A", "B"];
+  const positions: AllocPos[] = [
+    makePos("P1", "2026-04-21", "DAY"),
+    makePos("P2", "2026-04-21", "NIGHT"),
+  ];
+
+  const { matches, unallocatedInterns } = allocatePositions({
+    positions,
+    internIds: ["B", "A"], // B primeiro de propósito
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 2 }, B: { day: 1, night: 1 } }),
+  });
+
+  assert.equal(unallocatedInterns.length, 0);
+  const aMatch = matches.find((m) => m.internId === "A");
+  assert.equal(aMatch?.position.period, "DAY", "A (night-heavy) deveria pegar DAY");
+});
+
+test("com 2 plantões, ninguém fica 100% de um período (balanceia dentro da semana)", () => {
+  const interns = ["A", "B"];
+  const positions: AllocPos[] = [
+    makePos("D1", "2026-04-21", "DAY"),
+    makePos("N1", "2026-04-21", "NIGHT"),
+    makePos("D2", "2026-04-22", "DAY"),
+    makePos("N2", "2026-04-22", "NIGHT"),
+  ];
+
+  const { matches } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 2,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 0 }, B: { day: 0, night: 0 } }),
+  });
+
+  for (const id of interns) {
+    const mine = matches.filter((m) => m.internId === id);
+    const days = mine.filter((m) => m.position.period === "DAY").length;
+    const nights = mine.filter((m) => m.position.period === "NIGHT").length;
+    assert.equal(mine.length, 2, `${id} deveria ter 2 plantões`);
+    assert.equal(days, 1, `${id} deveria ter 1 DAY, got ${days}`);
+    assert.equal(nights, 1, `${id} deveria ter 1 NIGHT, got ${nights}`);
+  }
+});
+
+test("tally equilibra ao longo de semanas: quem pegou NIGHT na 1ª pega DAY na 2ª", () => {
+  const interns = ["A"];
+  const periodTally = tally({ A: { day: 0, night: 0 } });
+
+  // Semana 1: só NIGHT disponível → A leva NIGHT.
+  const r1 = allocatePositions({
+    positions: [makePos("N1", "2026-04-21", "NIGHT")],
+    internIds: interns,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally,
+  });
+  assert.equal(r1.matches[0]?.position.period, "NIGHT");
+  applyMatchesToPeriodTally(periodTally, r1.matches);
+  assert.deepEqual(periodTally.get("A"), { day: 0, night: 1 });
+
+  // Semana 2: DAY e NIGHT disponíveis → A deve preferir DAY (reequilibrar).
+  const r2 = allocatePositions({
+    positions: [
+      makePos("D2", "2026-04-28", "DAY"),
+      makePos("N2", "2026-04-28", "NIGHT"),
+    ],
+    internIds: interns,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally,
+  });
+  assert.equal(r2.matches[0]?.position.period, "DAY", "semana 2 deveria compensar com DAY");
+});
+
+test("tendência a mais diurnos: interno equilibrado prefere DAY no empate", () => {
+  const interns = ["A"];
+  const positions: AllocPos[] = [
+    makePos("N1", "2026-04-21", "NIGHT"), // NIGHT listado primeiro de propósito
+    makePos("D1", "2026-04-21", "DAY"),
+  ];
+
+  const { matches } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 0 } }),
+  });
+
+  assert.equal(matches[0]?.position.period, "DAY", "empate (0x0) deve preferir DAY");
+});
+
+test("CRÍTICO: equidade nunca impede alocação — só sobrou NIGHT, interno leva NIGHT", () => {
+  // A prefere DAY pelo tally, mas está bloqueado de todo DAY (CRU). Tem que
+  // encaixar no NIGHT mesmo assim — 1 plantão garantido, sem erro.
+  const interns = ["A"];
+  const positions: AllocPos[] = [
+    makePos("D1", "2026-04-21", "DAY"),
+    makePos("N1", "2026-04-21", "NIGHT"),
+  ];
+  const cruBlocked = new Map<string, Set<string>>([
+    ["A", new Set(["2026-04-21|DAY"])],
+  ]);
+
+  const { matches, unallocatedInterns } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked,
+    periodTally: tally({ A: { day: 0, night: 0 } }),
+  });
+
+  assert.equal(unallocatedInterns.length, 0, "A deve ser alocado mesmo sem DAY disponível");
+  assert.equal(matches[0]?.position.period, "NIGHT");
+});
+
+test("CRÍTICO: só existem vagas NIGHT → todos alocados em NIGHT (cardinalidade máxima)", () => {
+  const interns = ["A", "B", "C"];
+  const positions: AllocPos[] = [
+    makePos("N1", "2026-04-21", "NIGHT"),
+    makePos("N2", "2026-04-22", "NIGHT"),
+    makePos("N3", "2026-04-23", "NIGHT"),
+  ];
+
+  const { matches, unallocatedInterns } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 0 }, B: { day: 0, night: 0 }, C: { day: 0, night: 0 } }),
+  });
+
+  assert.equal(matches.length, 3, "todos os 3 devem ser alocados");
+  assert.equal(unallocatedInterns.length, 0);
+});
+
+test("fairness não reduz cardinalidade: mesmo nº de alocados com e sem tally (cenário com CRU)", () => {
+  const interns = ["A", "B", "C", "D"];
+  const positions: AllocPos[] = [
+    makePos("D1", "2026-04-21", "DAY"),
+    makePos("N1", "2026-04-21", "NIGHT"),
+    makePos("D2", "2026-04-22", "DAY"),
+    makePos("N2", "2026-04-22", "NIGHT"),
+  ];
+  const cruBlocked = new Map<string, Set<string>>([
+    ["A", new Set(["2026-04-22|DAY", "2026-04-22|NIGHT"])],
+    ["B", new Set()],
+    ["C", new Set(["2026-04-21|DAY"])],
+    ["D", new Set()],
+  ]);
+
+  const base = {
+    positions,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked,
+  };
+
+  const semTally = allocatePositions({ ...base, internIds: interns });
+  const comTally = allocatePositions({
+    ...base,
+    internIds: interns,
+    periodTally: tally({
+      A: { day: 0, night: 3 }, B: { day: 2, night: 0 },
+      C: { day: 0, night: 1 }, D: { day: 1, night: 1 },
+    }),
+  });
+
+  assert.equal(
+    comTally.matches.length,
+    semTally.matches.length,
+    `tally não pode reduzir alocações: com=${comTally.matches.length} sem=${semTally.matches.length}`,
+  );
+  assert.equal(comTally.unallocatedInterns.length, semTally.unallocatedInterns.length);
 });
 
 // ── Results ───────────────────────────────────────────────────────────────────

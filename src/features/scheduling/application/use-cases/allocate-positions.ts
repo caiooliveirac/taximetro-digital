@@ -4,7 +4,22 @@
  * Algorithm: bipartite maximum matching via Hopcroft-Karp augmenting paths
  * so that the maximum number of interns get assigned even when CRU/CRL
  * constraints force some interns to compete for the same limited set of slots.
+ *
+ * Equidade diurno/noturno (opcional, via `periodTally`): é um objetivo SOFT.
+ * Ela apenas REORDENA quem escolhe primeiro e qual período cada interno tenta
+ * primeiro — nunca remove uma vaga viável. Por isso não reduz a cardinalidade
+ * do emparelhamento nem fura CRU/CRL/maxShifts: quando não dá para equilibrar,
+ * o interno simplesmente leva a vaga que sobrar (garantindo 1 plantão).
  */
+
+/**
+ * Alvo de proporção diurno:noturno por interno. `day = RATIO * night` é o
+ * ponto de equilíbrio; abaixo disso o interno prefere DAY, acima prefere NIGHT.
+ * RATIO=2 tende a ~2 diurnos para cada noturno quando há vagas diurnas sobrando.
+ */
+const DAY_NIGHT_TARGET_RATIO = 2;
+
+export type PeriodTally = { day: number; night: number };
 
 export type AllocPos = {
   baseId: string;
@@ -38,6 +53,13 @@ export type AllocationInput = {
    * quebrar chamadas existentes — ausente significa nenhuma indisponibilidade.
    */
   unavailable?: Map<string, Set<string>>;
+  /**
+   * Contagem acumulada de plantões por período (DAY/NIGHT) por interno — usada
+   * para equilibrar diurnos/noturnos ao longo de várias semanas (e entre turnos
+   * de uma mesma semana quando maxShifts>1). SOFT: só reordena preferências.
+   * Opcional — ausente reproduz o comportamento antigo (sem viés de período).
+   */
+  periodTally?: Map<string, PeriodTally>;
 };
 
 export type AllocationMatch = {
@@ -51,6 +73,42 @@ function slotKey(pos: AllocPos, isEbmsp: boolean): string {
   return isEbmsp && pos.shift
     ? `${pos.date}|${pos.period}|${pos.shift}`
     : `${pos.date}|${pos.period}`;
+}
+
+/**
+ * Score de "carência de diurno": quanto mais noturnos que diurnos o interno tem,
+ * maior o score → ele escolhe primeiro, para alcançar os diurnos antes de acabarem.
+ */
+function nightNeedScore(tally: PeriodTally | undefined): number {
+  if (!tally) return 0;
+  return tally.night - tally.day;
+}
+
+/**
+ * Período que reequilibra o interno rumo ao alvo (DAY_NIGHT_TARGET_RATIO).
+ * Enquanto `day <= RATIO * night` ele "deve" diurno → prefere DAY (empate cai em
+ * DAY, o que dá a tendência de mais diurnos). Acima disso já está day-heavy →
+ * prefere NIGHT, aliviando os diurnos para quem precisa.
+ */
+function preferredPeriod(tally: PeriodTally | undefined): "DAY" | "NIGHT" {
+  if (!tally) return "DAY";
+  return tally.day <= DAY_NIGHT_TARGET_RATIO * tally.night ? "DAY" : "NIGHT";
+}
+
+/**
+ * Atualiza o tally acumulando os períodos dos plantões sorteados. Usado pelo
+ * use-case para carregar a equidade entre semanas do mesmo lote.
+ */
+export function applyMatchesToPeriodTally(
+  tally: Map<string, PeriodTally>,
+  matches: Array<{ internId: string; position: AllocPos }>,
+): void {
+  for (const match of matches) {
+    const current = tally.get(match.internId) ?? { day: 0, night: 0 };
+    if (match.position.period === "DAY") current.day += 1;
+    else current.night += 1;
+    tally.set(match.internId, current);
+  }
 }
 
 function canAssign(
@@ -100,20 +158,48 @@ export function runMatchingRound(
   usedSlots: Map<string, Set<string>>,
   cruBlocked: Map<string, Set<string>>,
   unavailable?: Map<string, Set<string>>,
+  periodTally?: Map<string, PeriodTally>,
 ): AllocationMatch[] {
   const availableIdxs: number[] = [];
   for (let i = 0; i < positions.length; i++) {
     if (!positionTaken[i]) availableIdxs.push(i);
   }
 
+  // Equidade (soft): no Kuhn, quem é processado POR ÚLTIMO consegue deslocar os
+  // anteriores via caminho de aumento e ficar com a vaga disputada. Por isso os
+  // internos mais "devendo" diurno vão por último — assim eles tomam o DAY de quem
+  // pode absorver um NIGHT. Sem tally, a ordem é a recebida (shuffle) — comportamento
+  // antigo. Array.sort é estável (ES2019+), então empates preservam a ordem de origem.
+  const orderedEligible = periodTally
+    ? [...eligibleInterns].sort(
+        (a, b) => nightNeedScore(periodTally.get(a)) - nightNeedScore(periodTally.get(b)),
+      )
+    : eligibleInterns;
+
   // Build preference lists for each eligible intern
   const preferences = new Map<string, number[]>();
-  for (const internId of eligibleInterns) {
+  for (const internId of orderedEligible) {
     const usaCount = currentUsaShiftCount.get(internId) ?? 0;
     const choices = availableIdxs.filter((idx) =>
       canAssign(internId, positions[idx], usaCount, maxShifts, usedSlots, cruBlocked, isEbmsp, unavailable),
     );
-    if (choices.length > 0) preferences.set(internId, choices);
+    if (choices.length === 0) continue;
+
+    // Equidade (soft): tenta primeiro o período que reequilibra o interno. Só
+    // reordena — todas as vagas viáveis continuam na lista, então a cardinalidade
+    // do emparelhamento não muda. Sem tally, mantém a ordem de prioridade original.
+    if (periodTally && choices.length > 1) {
+      const wantDay = preferredPeriod(periodTally.get(internId)) === "DAY";
+      choices.sort((leftIdx, rightIdx) => {
+        const leftIsDay = positions[leftIdx].period === "DAY" ? 0 : 1;
+        const rightIsDay = positions[rightIdx].period === "DAY" ? 0 : 1;
+        const leftWeight = wantDay ? leftIsDay : 1 - leftIsDay;
+        const rightWeight = wantDay ? rightIsDay : 1 - rightIsDay;
+        return leftWeight - rightWeight || leftIdx - rightIdx;
+      });
+    }
+
+    preferences.set(internId, choices);
   }
 
   // Kuhn's augmenting-path matching
@@ -135,7 +221,7 @@ export function runMatchingRound(
     return false;
   }
 
-  for (const internId of eligibleInterns) {
+  for (const internId of orderedEligible) {
     if (!preferences.has(internId)) continue;
     tryMatch(internId, new Set<number>());
   }
@@ -166,6 +252,7 @@ export function allocatePositions(input: AllocationInput): {
     usedSlots,
     cruBlocked,
     unavailable,
+    periodTally,
   } = input;
 
   const positionTaken = new Array<boolean>(positions.length).fill(false);
@@ -178,6 +265,11 @@ export function allocatePositions(input: AllocationInput): {
   const workingCruBlocked = new Map(
     [...cruBlocked.entries()].map(([k, v]) => [k, new Set(v)]),
   );
+  // Tally de trabalho (não muta o do caller): vai acumulando os plantões deste
+  // lote para equilibrar também entre rodadas quando maxShifts>1.
+  const workingTally = periodTally
+    ? new Map([...periodTally.entries()].map(([k, v]) => [k, { ...v }]))
+    : undefined;
 
   const allMatches: Array<{ internId: string; position: AllocPos }> = [];
 
@@ -198,6 +290,7 @@ export function allocatePositions(input: AllocationInput): {
       workingUsedSlots,
       workingCruBlocked,
       unavailable,
+      workingTally,
     );
     if (roundMatches.length === 0) break;
 
@@ -209,6 +302,14 @@ export function allocatePositions(input: AllocationInput): {
       const key = slotKey(pos, isEbmsp);
       if (!workingUsedSlots.has(m.internId)) workingUsedSlots.set(m.internId, new Set());
       workingUsedSlots.get(m.internId)!.add(key);
+
+      // Acumula no tally de trabalho para a próxima rodada ver o período sorteado.
+      if (workingTally) {
+        const current = workingTally.get(m.internId) ?? { day: 0, night: 0 };
+        if (pos.period === "DAY") current.day += 1;
+        else current.night += 1;
+        workingTally.set(m.internId, current);
+      }
 
       // Update USA shift count
       if (pos.baseType === "USA") {

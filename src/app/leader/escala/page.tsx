@@ -153,6 +153,7 @@ export default function LeaderEscala() {
   const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
   const [lotteryMsg, setLotteryMsg] = useState("");
   const [maxShifts, setMaxShifts] = useState(1);
+  const [numWeeks, setNumWeeks] = useState(1);
 
   /* ── Manual allocation modal ── */
   const [allocSlot, setAllocSlot] = useState<{ baseId: string; baseCode: string; baseType: string; date: string; period: "DAY" | "NIGHT" } | null>(null);
@@ -405,7 +406,7 @@ export default function LeaderEscala() {
     const res = await fetch("/taximetro/api/leader/lottery", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ weekStart, internIds: ids, maxShifts }),
+      body: JSON.stringify({ weekStart, internIds: ids, maxShifts, numWeeks }),
     });
     const json = await res.json();
     if (json.success) {
@@ -418,8 +419,9 @@ export default function LeaderEscala() {
           .map((item) => `${internNameById.get(item.internId) ?? item.internId} (${item.reasonLabel})`)
           .join(", ")}${unallocatedList.length > 5 ? " ..." : ""}`
         : "";
+      const weeksLabel = (d.numWeeks ?? 1) > 1 ? ` (${d.numWeeks} semanas)` : "";
       setLotteryMsg(
-        `✅ ${d.total} alocações criadas — ${d.internsAllocated}/${d.internsTotal} internos alocados` +
+        `✅ ${d.total} alocações criadas${weeksLabel} — ${d.internsAllocated}/${d.internsTotal} internos alocados` +
         (d.remainingPositions > 0 ? ` · ${d.remainingPositions} vagas remanescentes` : " · Sem vagas remanescentes") +
         unallocatedMsg
       );
@@ -1437,6 +1439,27 @@ export default function LeaderEscala() {
                   </button>
                 ))}
               </div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-medium text-slate-600">Semanas:</span>
+                {[1, 2, 3, 4].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setNumWeeks(n)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${numWeeks === n
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              {numWeeks > 1 && (
+                <p className="mb-3 text-xs text-slate-500">
+                  Sorteia {numWeeks} semanas seguidas a partir desta. O equilíbrio diurno/noturno é
+                  considerado ao longo de todas elas (1 plantão por interno por semana continua valendo).
+                </p>
+              )}
               {selectedCount > 0 && (
                 <p className="mb-3 text-xs text-slate-500">
                   {selectedAtCapCount} de {selectedCount} selecionados já têm {maxShifts} ou mais plantões em USA nesta semana.

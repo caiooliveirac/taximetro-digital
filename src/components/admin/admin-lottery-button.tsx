@@ -30,6 +30,7 @@ type Resultado = {
   internsAllocated: number;
   internsTotal: number;
   remainingPositions: number;
+  numWeeks?: number;
   unallocatedInterns?: Array<{ internId: string; reasonLabel: string }>;
 };
 
@@ -49,6 +50,7 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
   const [faculdadeId, setFaculdadeId] = useState("");
   const [weekStart, setWeekStart] = useState(segundaDaSemana);
   const [maxShifts, setMaxShifts] = useState(1);
+  const [numWeeks, setNumWeeks] = useState(1);
   const [carregando, setCarregando] = useState(false);
   const [rodando, setRodando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -91,6 +93,7 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
           facultyId: faculdadeId,
           internIds: elegiveis.map((i) => i.id),
           maxShifts,
+          numWeeks,
         }),
       });
       const json = await res.json();
@@ -102,7 +105,7 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
     } finally {
       setRodando(false);
     }
-  }, [weekStart, faculdadeId, elegiveis, maxShifts, onDone]);
+  }, [weekStart, faculdadeId, elegiveis, maxShifts, numWeeks, onDone]);
 
   if (!aberto) {
     return (
@@ -130,7 +133,7 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
         </p>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <label className="text-xs font-medium text-slate-600">
               Faculdade
               <select
@@ -166,6 +169,18 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
                 className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
               />
             </label>
+
+            <label className="text-xs font-medium text-slate-600">
+              Semanas
+              <input
+                type="number"
+                min={1}
+                max={8}
+                value={numWeeks}
+                onChange={(e) => setNumWeeks(Math.min(8, Math.max(1, Number(e.target.value) || 1)))}
+                className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+              />
+            </label>
           </div>
 
           <p className="text-xs text-slate-500">
@@ -194,7 +209,9 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
       {resultado && (
         <div className="rounded-md bg-emerald-50 p-2 text-xs text-emerald-800">
           <p>
-            {resultado.total} alocação(ões) criada(s) — {resultado.internsAllocated}/{resultado.internsTotal} internos alocados
+            {resultado.total} alocação(ões) criada(s)
+            {(resultado.numWeeks ?? 1) > 1 ? ` (${resultado.numWeeks} semanas)` : ""} —{" "}
+            {resultado.internsAllocated}/{resultado.internsTotal} internos alocados
             {resultado.remainingPositions > 0
               ? ` · ${resultado.remainingPositions} vaga(s) sem preencher`
               : " · sem vagas remanescentes"}
