@@ -198,6 +198,7 @@ export async function executeSwapPeerAction(params: {
       baseId: targetAssignment.baseId,
       date: targetAssignment.date,
       period: targetAssignment.period,
+      shift: targetAssignment.shift,
       createdBy: actor.realUserId ?? actor.id,
     });
 
@@ -207,6 +208,7 @@ export async function executeSwapPeerAction(params: {
       baseId: origAssignment.baseId,
       date: origAssignment.date,
       period: origAssignment.period,
+      shift: origAssignment.shift,
       createdBy: actor.realUserId ?? actor.id,
     });
 
