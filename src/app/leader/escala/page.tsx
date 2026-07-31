@@ -1439,13 +1439,13 @@ export default function LeaderEscala() {
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <span className="text-xs font-medium text-slate-600">Semanas:</span>
-                {[1, 2, 3, 4].map((n) => (
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
                   <button
                     key={n}
                     onClick={() => setNumWeeks(n)}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${numWeeks === n
+                    className={`rounded-lg px-2.5 py-1.5 text-sm font-bold transition ${numWeeks === n
                       ? "bg-emerald-600 text-white shadow-sm"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                       }`}
