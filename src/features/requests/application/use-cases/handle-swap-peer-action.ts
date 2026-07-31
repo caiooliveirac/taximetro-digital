@@ -6,17 +6,20 @@ import {
   cancelOpenSwapRequest,
   completeSwapRequest,
   createSwapAssignment,
+  findActiveCruRotationWindow,
   findAssignmentBaseType,
   findAssignmentById,
   findAssignmentWithOwnership,
+  findCompletedCruSwapDates,
   findInternFacultiesByUserId,
   findPendingRequestByAssignment,
   findRequestById,
+  findUserNameById,
   hasCheckinRecord,
   reopenSwapRequest,
-  setSwapAwaitingAuth,
   updateRequestProposal,
 } from "@/features/requests/infra/repositories/request-repository";
+import { hasUsedCruSwapQuota, resolveCruSwapWindow } from "@/shared/domain/policies/cru-swap-quota-policy";
 
 export const swapPeerActionSchema = z.discriminatedUnion("action", [
   z.object({ id: z.string().uuid(), action: z.literal("propose"), assignmentId: z.string().uuid() }),
@@ -30,6 +33,34 @@ type SwapActor = {
   id: string;
   realUserId: string | null;
 };
+
+/**
+ * Cota de CRU: um interno troca o dia de CRU dele uma vez por rodízio. Vale
+ * para os dois lados — quem ofertou e quem propôs estão ambos trocando o
+ * próprio plantão. Devolve o nome de quem já gastou a cota, ou null se a troca
+ * pode seguir.
+ */
+async function findInternOverCruQuota(internIds: string[], today: string): Promise<string | null> {
+  for (const internId of internIds) {
+    const rotation = await findActiveCruRotationWindow({ internId, today });
+    const window = resolveCruSwapWindow({ today, rotation });
+    const swapDates = await findCompletedCruSwapDates(internId);
+    if (hasUsedCruSwapQuota({ window, swapDates })) {
+      return (await findUserNameById(internId)) ?? "Um dos internos";
+    }
+  }
+  return null;
+}
+
+function cruQuotaError(internName: string) {
+  return {
+    status: 409,
+    body: {
+      success: false,
+      error: `${internName} já trocou um plantão de CRU neste rodízio. Cada interno pode trocar o CRU uma vez por rodízio.`,
+    },
+  } as const;
+}
 
 export async function executeSwapPeerAction(params: {
   actor: SwapActor;
@@ -80,6 +111,14 @@ export async function executeSwapPeerAction(params: {
           status: 400,
           body: { success: false, error: "Troca só é permitida entre plantões do mesmo tipo (CRU↔CRU, CRL↔CRL, USA↔USA)" },
         } as const;
+      }
+
+      // Cota checada já aqui para não deixar o colega esperando por uma proposta
+      // que seria recusada na confirmação. O confirm checa de novo — entre uma
+      // coisa e outra o interno pode ter fechado outra troca.
+      if (offeredType === "CENTRAL") {
+        const overQuota = await findInternOverCruQuota([request.requesterId, userId], todayStr);
+        if (overQuota) return cruQuotaError(overQuota);
       }
     }
 
@@ -135,31 +174,21 @@ export async function executeSwapPeerAction(params: {
       return { status: 409, body: { success: false, error: "Um dos plantões já possui check-in" } } as const;
     }
 
-    // Apenas trocas de CRU (base.type === "CENTRAL") exigem autorização de um
-    // preceptor. Os dois plantões têm o mesmo tipo (validado no propose), então
-    // basta checar um lado. CRL e USA são efetivados imediatamente.
+    // Trocas de CRU (base.type === "CENTRAL") não passam mais por autorização de
+    // preceptor: a única regra que ele checava — e que na prática deixava passar —
+    // é a cota de uma troca por rodízio, que o sistema mede sozinho. Os dois
+    // plantões têm o mesmo tipo (validado no propose), então basta olhar um lado.
     const baseType = await findAssignmentBaseType(origAssignment.id);
 
     if (baseType === "CENTRAL") {
-      // Não executa a troca aqui: aguarda autorização do preceptor (ver authorize-swap.ts).
-      await setSwapAwaitingAuth(input.id);
-
-      await logAudit({
-        userId: actor.realUserId ?? actor.id,
-        action: "CONFIRM_SWAP",
-        entity: "request",
-        entityId: input.id,
-        payload: {
-          origAssignmentId: origAssignment.id,
-          targetAssignmentId: targetAssignment.id,
-          awaitingPreceptorAuth: true,
-        },
-      });
-
-      return { status: 200, body: { success: true } } as const;
+      const overQuota = await findInternOverCruQuota(
+        [request.requesterId, request.targetInternId],
+        operationalDateStr(),
+      );
+      if (overQuota) return cruQuotaError(overQuota);
     }
 
-    // CRL / USA: troca efetivada na hora
+    // Troca efetivada na hora
     await cancelAssignmentForSwap(origAssignment.id);
     await cancelAssignmentForSwap(targetAssignment.id);
 
@@ -191,7 +220,7 @@ export async function executeSwapPeerAction(params: {
       payload: {
         origAssignmentId: origAssignment.id,
         targetAssignmentId: targetAssignment.id,
-        awaitingPreceptorAuth: false,
+        baseType,
       },
     });
 

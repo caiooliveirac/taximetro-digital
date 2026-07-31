@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Ambulance, CheckCircle, Stethoscope, LogOut, MapPin, Sun, Moon, RefreshCw, ArrowLeftRight } from "lucide-react";
+import { Ambulance, CheckCircle, Stethoscope, LogOut, MapPin, Sun, Moon, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PreceptorProvider, usePreceptor, type PreceptorBase, type PreceptorShift } from "./preceptor-context";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,6 @@ import { baseViewIndex } from "@/lib/base-colors";
 const NAV = [
   { href: "/preceptor", label: "Validar", icon: CheckCircle },
   { href: "/preceptor/plantao", label: "Plantão", icon: Stethoscope },
-  { href: "/preceptor/trocas", label: "Trocas", icon: ArrowLeftRight },
 ];
 
 function BaseDeclaration() {

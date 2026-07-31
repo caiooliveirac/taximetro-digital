@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, bases, checkins, requests, userRoles, users } from "@/shared/db/schema";
+import { assignments, bases, checkins, cruFixedAssignments, requests, userRoles, users } from "@/shared/db/schema";
 import { alias } from "drizzle-orm/pg-core";
+import type { CruSwapWindow } from "@/shared/domain/policies/cru-swap-quota-policy";
 
 export async function listRequestsRows() {
   const targetUser = alias(users, "target_user");
@@ -98,6 +99,67 @@ export async function listCompletedSwapRows() {
     .orderBy(desc(requests.reviewedAt));
 
   return rows;
+}
+
+/**
+ * Vigência do rodízio de CRU do interno, tirada do CRU fixo ativo dele. Quando
+ * há mais de um template ativo (dois dias fixos na semana), vale o que termina
+ * mais tarde — é o rodízio corrente.
+ */
+export async function findActiveCruRotationWindow(params: {
+  internId: string;
+  today: string;
+}): Promise<CruSwapWindow | null> {
+  const [rotation] = await db
+    .select({ from: cruFixedAssignments.validFrom, to: cruFixedAssignments.validUntil })
+    .from(cruFixedAssignments)
+    .where(and(
+      eq(cruFixedAssignments.internId, params.internId),
+      eq(cruFixedAssignments.isActive, true),
+      gte(cruFixedAssignments.validUntil, params.today),
+    ))
+    .orderBy(desc(cruFixedAssignments.validUntil))
+    .limit(1);
+
+  return rotation ?? null;
+}
+
+/**
+ * Datas dos plantões de CRU que o interno já trocou (trocas concluídas). Conta
+ * o plantão que era dele — o que ele deu — dos dois lados da troca, porque
+ * ofertante e proponente estão ambos trocando o próprio dia de CRU.
+ */
+export async function findCompletedCruSwapDates(internId: string): Promise<string[]> {
+  const origAssign = alias(assignments, "orig_assign");
+  const origBase = alias(bases, "orig_base");
+  const targetAssign = alias(assignments, "target_assign");
+  const targetBase = alias(bases, "target_base");
+
+  const rows = await db
+    .select({
+      requesterId: requests.requesterId,
+      targetInternId: requests.targetInternId,
+      origDate: origAssign.date,
+      origBaseType: origBase.type,
+      targetDate: targetAssign.date,
+      targetBaseType: targetBase.type,
+    })
+    .from(requests)
+    .leftJoin(origAssign, eq(origAssign.id, requests.assignmentId))
+    .leftJoin(origBase, eq(origBase.id, origAssign.baseId))
+    .leftJoin(targetAssign, eq(targetAssign.id, requests.targetAssignmentId))
+    .leftJoin(targetBase, eq(targetBase.id, targetAssign.baseId))
+    .where(and(
+      eq(requests.type, "SWAP"),
+      eq(requests.status, "COMPLETED"),
+      or(eq(requests.requesterId, internId), eq(requests.targetInternId, internId)),
+    ));
+
+  return rows.flatMap((r) => {
+    if (r.requesterId === internId && r.origBaseType === "CENTRAL" && r.origDate) return [r.origDate];
+    if (r.targetInternId === internId && r.targetBaseType === "CENTRAL" && r.targetDate) return [r.targetDate];
+    return [];
+  });
 }
 
 export async function findFacultyInternIds(facultyId: string) {
@@ -265,10 +327,6 @@ export async function findUserNameById(userId: string) {
     .limit(1);
 
   return row?.name ?? null;
-}
-
-export async function setSwapAwaitingAuth(requestId: string) {
-  await db.update(requests).set({ status: "AWAITING_AUTH" }).where(eq(requests.id, requestId));
 }
 
 export async function hasCheckinRecord(assignmentId: string) {
