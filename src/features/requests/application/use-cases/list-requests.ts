@@ -2,6 +2,19 @@ import {
   findFacultyInternIds,
   listRequestsRows,
 } from "@/features/requests/infra/repositories/request-repository";
+import { localDateStr } from "@/lib/utils";
+
+// Troca em aberto (ou proposta ainda não confirmada) cujo plantão já passou não
+// serve mais para ninguém: some da lista em vez de ficar eternamente visível.
+const SWAP_STALE_STATUSES = ["OPEN", "PENDING"];
+
+export function isStaleSwap(r: { type: string; status: string; assignmentDate: string | null; targetAssignmentDate: string | null }, today: string) {
+  if (r.type !== "SWAP" || !SWAP_STALE_STATUSES.includes(r.status)) return false;
+  return (
+    (!!r.assignmentDate && r.assignmentDate < today) ||
+    (!!r.targetAssignmentDate && r.targetAssignmentDate < today)
+  );
+}
 
 type ListRequestsActor = {
   id: string;
@@ -17,7 +30,8 @@ export async function executeListRequests(params: {
 }) {
   const { actor, scope, selfOnly = false, internId } = params;
 
-  const rows = await listRequestsRows();
+  const today = localDateStr();
+  const rows = (await listRequestsRows()).filter((r) => !isStaleSwap(r, today));
 
   // Preceptor (ou coordenador) vê todas as trocas aguardando autorização
   if (scope === "awaiting-auth" && (actor.role === "PRECEPTOR" || actor.role === "COORDINATOR")) {

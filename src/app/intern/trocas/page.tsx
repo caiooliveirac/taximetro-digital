@@ -103,9 +103,9 @@ export default function InternTrocas() {
   const load = useCallback(async () => {
     try {
       const from = localDateStr();
-      const to = localDateStr(new Date(Date.now() + 30 * 86400000));
       const [aRes, sRes, rRes, osRes, shRes] = await Promise.all([
-        fetch(`/taximetro/api/assignments?from=${from}&to=${to}&selfOnly=true`),
+        // sem `to`: todos os plantões futuros entram no dropdown, não só os 30 dias
+        fetch(`/taximetro/api/assignments?from=${from}&selfOnly=true`),
         fetch("/taximetro/api/slots/available?selfOnly=true"),
         fetch("/taximetro/api/requests?selfOnly=true"),
         fetch("/taximetro/api/requests?scope=open-swaps&selfOnly=true"),
