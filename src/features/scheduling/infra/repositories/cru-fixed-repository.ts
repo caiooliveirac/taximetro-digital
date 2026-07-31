@@ -62,14 +62,18 @@ export async function upsertCruFixedTemplate(params: {
   dayOfWeek: "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN";
   period: "DAY" | "NIGHT";
   createdBy: string;
+  validFrom: string;
   validUntil: string;
 }) {
   if (params.existingId) {
+    // Renovar o template abre um rodízio novo: validFrom também é reescrito,
+    // senão a cota de troca de CRU continuaria contando o rodízio anterior.
     await db
       .update(cruFixedAssignments)
       .set({
         facultyId: params.facultyId,
         createdBy: params.createdBy,
+        validFrom: params.validFrom,
         validUntil: params.validUntil,
         isActive: true,
       })
@@ -86,6 +90,7 @@ export async function upsertCruFixedTemplate(params: {
       dayOfWeek: params.dayOfWeek,
       period: params.period,
       createdBy: params.createdBy,
+      validFrom: params.validFrom,
       validUntil: params.validUntil,
     })
     .returning({ id: cruFixedAssignments.id });

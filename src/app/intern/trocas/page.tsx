@@ -45,7 +45,7 @@ type Request = {
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "Pendente", APPROVED: "Aprovado", COMPLETED: "Concluído",
   REJECTED: "Rejeitado", ESCALATED: "Escalado", OPEN: "Aberta",
-  CANCELLED: "Cancelada", AWAITING_AUTH: "Aguardando preceptor",
+  CANCELLED: "Cancelada",
 };
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
@@ -55,7 +55,6 @@ const STATUS_COLOR: Record<string, string> = {
   REJECTED: "bg-red-50 text-red-700 ring-1 ring-red-200",
   ESCALATED: "bg-orange-50 text-orange-700 ring-1 ring-orange-200",
   CANCELLED: "bg-slate-100 text-slate-500 ring-1 ring-slate-200",
-  AWAITING_AUTH: "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
 };
 const DAY_LABEL: Record<string, string> = { MON: "Seg", TUE: "Ter", WED: "Qua", THU: "Qui", FRI: "Sex", SAT: "Sáb", SUN: "Dom" };
 
@@ -163,14 +162,14 @@ export default function InternTrocas() {
   function cancelRequest(id: string) { apiPatch({ id, action: "cancel" }); }
 
   /* ── Derived ── */
-  const activeSwaps = myRequests.filter((r) => r.type === "SWAP" && ["OPEN", "PENDING", "AWAITING_AUTH"].includes(r.status));
+  const activeSwaps = myRequests.filter((r) => r.type === "SWAP" && ["OPEN", "PENDING"].includes(r.status));
   const activeExtras = myRequests.filter((r) => r.type === "EXTRA_SHIFT" && ["PENDING"].includes(r.status));
   const history = myRequests.filter((r) => ["COMPLETED", "REJECTED", "CANCELLED"].includes(r.status));
 
   // Assignments not already involved in a pending/open request
   const usedAssignmentIds = new Set(
     myRequests.flatMap((r) => {
-      if (!["OPEN", "PENDING", "AWAITING_AUTH"].includes(r.status)) return [];
+      if (!["OPEN", "PENDING"].includes(r.status)) return [];
 
       const ids: string[] = [];
       if (r.requesterId === userId && r.assignmentId) ids.push(r.assignmentId);
@@ -224,7 +223,7 @@ export default function InternTrocas() {
             </p>
             <div className="flex items-start gap-2 rounded-lg bg-violet-50 px-3 py-2 text-[11px] text-violet-700 ring-1 ring-violet-100">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-              <span>Trocas de <strong>CRU</strong> só se completam após a <strong>autorização de um preceptor</strong> — até lá, ambos os plantões permanecem na escala original. Trocas de CRL e USA são efetivadas assim que ambos confirmam.</span>
+              <span>Você pode trocar seu plantão de <strong>CRU</strong> <strong>uma vez por rodízio</strong> — vale para os dois lados da troca. CRL e USA não têm limite. Toda troca é efetivada assim que ambos confirmam.</span>
             </div>
             <select value={swapAssignmentId} onChange={(e) => setSwapAssignmentId(e.target.value)} className={selectClass}>
               <option value="">Selecionar plantão...</option>
@@ -271,14 +270,6 @@ export default function InternTrocas() {
                       <p className="text-[11px] text-slate-500">Seu plantão continua na sua escala até você cancelar ou confirmar uma troca.</p>
                     </div>
                   )}
-                  {r.status === "AWAITING_AUTH" && (
-                    <div className="flex items-start gap-2 rounded-lg bg-violet-50 p-2.5 text-[11px] text-violet-700">
-                      <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-                      <span>
-                        Troca acordada com <strong>{r.targetInternName}</strong>. Aguardando <strong>autorização de um preceptor</strong> para se concretizar. Os plantões permanecem na escala original até lá.
-                      </span>
-                    </div>
-                  )}
                   <button onClick={() => cancelRequest(r.id)} disabled={submitting} className="text-xs text-red-500 hover:text-red-600">
                     Cancelar oferta e manter plantão
                   </button>
@@ -298,21 +289,12 @@ export default function InternTrocas() {
                     <ArrowLeftRight className="h-3 w-3 text-slate-400" />
                     <span>Dele: <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} shift={r.assignmentShift} inline /></span>
                   </div>
-                  {r.status === "PENDING" ? (
-                    <>
-                      <p className="text-[11px] text-slate-500">Seu plantão continua mantido na escala enquanto {r.requesterName} não confirmar.</p>
-                      <div className="pt-1">
-                        <Button size="sm" variant="outline" onClick={() => withdrawProposal(r.id)} disabled={submitting} className="gap-1.5 text-xs h-7 px-3">
-                          <X className="h-3 w-3" /> Desistir da proposta
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-start gap-2 rounded-lg bg-violet-50 p-2 text-[11px] text-violet-700">
-                      <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-                      <span>Troca acordada. Aguardando <strong>autorização de um preceptor</strong> para se concretizar.</span>
-                    </div>
-                  )}
+                  <p className="text-[11px] text-slate-500">Seu plantão continua mantido na escala enquanto {r.requesterName} não confirmar.</p>
+                  <div className="pt-1">
+                    <Button size="sm" variant="outline" onClick={() => withdrawProposal(r.id)} disabled={submitting} className="gap-1.5 text-xs h-7 px-3">
+                      <X className="h-3 w-3" /> Desistir da proposta
+                    </Button>
+                  </div>
                 </div>
               ))}
             </section>

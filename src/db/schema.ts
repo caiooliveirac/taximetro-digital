@@ -35,7 +35,10 @@ export const requestTypeEnum = pgEnum("request_type", [
 
 export const requestStatusEnum = pgEnum("request_status", [
   "PENDING", "APPROVED", "REJECTED", "ESCALATED", "COMPLETED", "OPEN", "CANCELLED",
-  // AWAITING_AUTH: troca acordada entre os dois internos, aguardando autorização de um preceptor
+  // AWAITING_AUTH: aposentado em 2026-07-30, quando a autorização do preceptor
+  // deu lugar à cota de uma troca de CRU por rodízio. Fica no enum porque
+  // remover valor de enum no Postgres exige recriar o tipo, e o histórico de
+  // audit_log ainda cita o status.
   "AWAITING_AUTH",
 ]);
 
@@ -323,6 +326,9 @@ export const cruFixedAssignments = pgTable("cru_fixed_assignments", {
   dayOfWeek: dayOfWeekEnum("day_of_week").notNull(),
   period: shiftPeriodEnum("period").notNull(),
   createdBy: uuid("created_by").notNull().references(() => users.id),
+  // Vigência do rodízio. validFrom existe para a cota de troca de CRU saber
+  // quais trocas contam no rodízio corrente do interno.
+  validFrom: date("valid_from").notNull(),
   validUntil: date("valid_until").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),

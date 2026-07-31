@@ -40,7 +40,7 @@ export async function executeAddCruFixed(params: {
     return { status: 400, body: { success: false, error: "Interno não pertence à sua faculdade" } } as const;
   }
 
-  const { startDate, validUntil } = computeCruFixedWeeksWindow({
+  const { startDate, weekStart, validUntil } = computeCruFixedWeeksWindow({
     today: localDateStr(),
     weeks: input.weeks,
   });
@@ -61,6 +61,9 @@ export async function executeAddCruFixed(params: {
       dayOfWeek: input.dayOfWeek,
       period: input.period,
       createdBy: actorUserId,
+      // rodízio começa na segunda da semana corrente, não no dia em que o líder
+      // montou a escala — é essa a janela que a cota de troca de CRU enxerga
+      validFrom: weekStart,
       validUntil,
     });
 

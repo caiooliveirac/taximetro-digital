@@ -33,11 +33,6 @@ export async function executeListRequests(params: {
   const today = localDateStr();
   const rows = (await listRequestsRows()).filter((r) => !isStaleSwap(r, today));
 
-  // Preceptor (ou coordenador) vê todas as trocas aguardando autorização
-  if (scope === "awaiting-auth" && (actor.role === "PRECEPTOR" || actor.role === "COORDINATOR")) {
-    return rows.filter((r) => r.type === "SWAP" && r.status === "AWAITING_AUTH");
-  }
-
   if (scope === "open-swaps" && (actor.role === "INTERN" || actor.role === "LEADER") && actor.facultyId) {
     const facultyInternIds = await findFacultyInternIds(actor.facultyId);
     const filtered = rows.filter((r) =>
