@@ -20,8 +20,18 @@ import postgres from "postgres";
 
 const DRY_RUN = !process.argv.includes("--apply");
 
-function fmtDate(d: string) {
-  const [y, m, day] = d.slice(0, 10).split("-");
+/** postgres.js devolve coluna DATE como Date; o resto do código fala YYYY-MM-DD. */
+function toDateStr(d: string | Date) {
+  if (typeof d === "string") return d.slice(0, 10);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function fmtDate(d: string | Date) {
+  const [y, m, day] = toDateStr(d).split("-");
   return `${day}/${m}/${y}`;
 }
 
@@ -89,8 +99,8 @@ async function main() {
       await run`
         INSERT INTO assignments (intern_id, faculty_id, base_id, date, period, created_by, notes)
         VALUES
-          (${row.requester_id}, ${row.orig_faculty_id}, ${row.target_base_id}, ${row.target_date}, ${row.target_period}, ${row.requester_id}, ${requesterNote}),
-          (${row.target_intern_id}, ${row.target_faculty_id}, ${row.orig_base_id}, ${row.orig_date}, ${row.orig_period}, ${row.target_intern_id}, ${targetNote})
+          (${row.requester_id}, ${row.orig_faculty_id}, ${row.target_base_id}, ${toDateStr(row.target_date)}, ${row.target_period}, ${row.requester_id}, ${requesterNote}),
+          (${row.target_intern_id}, ${row.target_faculty_id}, ${row.orig_base_id}, ${toDateStr(row.orig_date)}, ${row.orig_period}, ${row.target_intern_id}, ${targetNote})
       `;
       await run`
         UPDATE requests
