@@ -349,6 +349,10 @@ export async function createSwapAssignment(params: {
   baseId: string;
   date: string;
   period: "DAY" | "NIGHT";
+  /** MORNING/AFTERNOON na EBMSP; null nas demais. Tem que vir do plantão de
+   * origem: o índice único trata shift nulo como 'FULL', então perder o turno
+   * aqui deixa o interno com dois plantões no mesmo dia sem o banco reclamar. */
+  shift: string | null;
   createdBy: string;
   notes?: string;
 }) {
@@ -358,6 +362,7 @@ export async function createSwapAssignment(params: {
     baseId: params.baseId,
     date: params.date,
     period: params.period,
+    shift: params.shift,
     createdBy: params.createdBy,
     notes: params.notes ?? "Troca entre internos",
   });

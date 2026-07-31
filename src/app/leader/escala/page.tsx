@@ -1676,7 +1676,7 @@ export default function LeaderEscala() {
               </p>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Duração (semanas):</label>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {[1, 2, 3, 4, 6, 8, 12].map((n) => (
                     <button
                       key={n}
@@ -1689,6 +1689,20 @@ export default function LeaderEscala() {
                       {n}
                     </button>
                   ))}
+                  {/* Atalhos não cobrem 5, 7, 9... e rodízio dessas durações existe */}
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={cruFixedWeeks ?? ""}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      setCruFixedWeeks(Number.isInteger(n) && n >= 1 && n <= 24 ? n : null);
+                    }}
+                    placeholder="outra"
+                    aria-label="Outra duração em semanas"
+                    className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                  />
                 </div>
                 {!cruFixedWeeks && (
                   <p className="mt-1 text-xs text-amber-700">Selecione quantas semanas devem ser ocupadas a partir da semana atual.</p>
