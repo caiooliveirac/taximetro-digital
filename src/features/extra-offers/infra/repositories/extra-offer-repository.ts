@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
+import { hasShiftStarted } from "@/lib/utils";
 import {
   assignments,
   bases,
@@ -9,6 +10,15 @@ import {
 } from "@/shared/db/schema";
 
 /* ═══════════ Read ═══════════ */
+
+// Plantão extra é oferta viva: nada que já passou aparece em lugar nenhum
+// (board, histórico do admin, analytics). `fromToday` é o corte grosso no
+// banco; `stillUpcoming` remove também o extra de hoje cujo turno já começou.
+const fromToday = sql`${extraShiftOffers.date} >= CURRENT_DATE`;
+
+function stillUpcoming(offer: { date: string; period: string; shift: string | null }): boolean {
+  return !hasShiftStarted(offer.date, offer.period === "NIGHT" ? "NIGHT" : "DAY", offer.shift);
+}
 
 export async function listExtraOffers(opts: { includeUnavailable?: boolean } = {}) {
   const rows = await db
@@ -37,13 +47,14 @@ export async function listExtraOffers(opts: { includeUnavailable?: boolean } = {
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .innerJoin(users, eq(users.id, extraShiftOffers.publishedBy))
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.facultyId))
-    .where(opts.includeUnavailable ? undefined : and(
+    .where(opts.includeUnavailable ? fromToday : and(
+      fromToday,
       isNull(extraShiftOffers.claimedBy),
       isNull(extraShiftOffers.cancelledAt),
     ))
     .orderBy(desc(extraShiftOffers.publishedAt));
 
-  return rows;
+  return rows.filter(stillUpcoming);
 }
 
 export async function listExtraOffersForAdmin() {
@@ -78,9 +89,10 @@ export async function listExtraOffersForAdmin() {
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .innerJoin(users, eq(users.id, extraShiftOffers.publishedBy))
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.facultyId))
+    .where(fromToday)
     .orderBy(desc(extraShiftOffers.publishedAt));
 
-  return rows;
+  return rows.filter(stillUpcoming);
 }
 
 export async function getExtraOfferById(id: string) {
@@ -97,11 +109,12 @@ export async function getExtraOfferById(id: string) {
 export async function getExtraOffersAnalytics(fromDate?: string, toDate?: string) {
   const dateFilter = fromDate && toDate
     ? and(
+        fromToday,
         sql`${extraShiftOffers.date} >= ${fromDate}`,
         sql`${extraShiftOffers.date} <= ${toDate}`,
         isNull(extraShiftOffers.cancelledAt),
       )
-    : isNull(extraShiftOffers.cancelledAt);
+    : and(fromToday, isNull(extraShiftOffers.cancelledAt));
 
   // By faculty
   const byFaculty = await db
