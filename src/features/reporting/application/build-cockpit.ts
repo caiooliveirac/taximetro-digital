@@ -114,6 +114,9 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
 // houver, faculties.rotation_start_date como fallback). Plantões anteriores
 // à rotação corrente não aparecem — são histórico de outra turma.
 //
+// Teto duplo: falta some da fila após 60 dias, ou assim que a turma é
+// arquivada (o que vier primeiro).
+//
 // Ordenação inicial irrelevante (o consumer agrupa/ordena na UI).
 export async function fetchAbsenceAlerts(): Promise<AbsenceAlertRow[]> {
   const rows = await db.execute(sql`
@@ -145,7 +148,17 @@ export async function fetchAbsenceAlerts(): Promise<AbsenceAlertRow[]> {
       AND a.is_extra_shift = false
       AND a.absence_alert_dismissed_at IS NULL
       AND a.date >= COALESCE(c.start_date, f.rotation_start_date)
+      AND a.date >= CURRENT_DATE - INTERVAL '60 days'
       AND a.date <= CURRENT_DATE
+      -- Turma arquivada (cohort CLOSED arquiva o vínculo do interno) sai da
+      -- fila: falta de turma encerrada é histórico, não pendência do coordenador.
+      AND NOT EXISTS (
+        SELECT 1 FROM user_roles ura
+        WHERE ura.user_id = a.intern_id
+          AND ura.faculty_id = a.faculty_id
+          AND ura.role = 'INTERN'
+          AND ura.is_archived = true
+      )
   `);
 
   return (rows as Record<string, unknown>[]).map((r) => {

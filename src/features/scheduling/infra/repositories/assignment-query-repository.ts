@@ -1,6 +1,6 @@
 import { and, eq, gte, lte } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, bases, checkins, faculties, users } from "@/shared/db/schema";
+import { assignments, bases, checkins, faculties, userRoles, users } from "@/shared/db/schema";
 
 export async function listAssignmentsWithRelations(params: {
   dateFrom?: string;
@@ -48,12 +48,20 @@ export async function listAssignmentsWithRelations(params: {
       checkoutNotes: checkins.checkoutNotes,
       internObservations: checkins.internObservations,
       preceptorObservations: checkins.preceptorObservations,
+      // true quando a turma do interno já foi arquivada (cohort CLOSED).
+      // Consumidores que mostram pendência operacional (faltas) filtram por isso.
+      internArchived: userRoles.isArchived,
     })
     .from(assignments)
     .innerJoin(users, eq(users.id, assignments.internId))
     .innerJoin(bases, eq(bases.id, assignments.baseId))
     .innerJoin(faculties, eq(faculties.id, assignments.facultyId))
     .leftJoin(checkins, eq(checkins.assignmentId, assignments.id))
+    .leftJoin(userRoles, and(
+      eq(userRoles.userId, assignments.internId),
+      eq(userRoles.facultyId, assignments.facultyId),
+      eq(userRoles.role, "INTERN"),
+    ))
     .orderBy(assignments.date, assignments.period)
     .$dynamic();
 

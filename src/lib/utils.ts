@@ -12,6 +12,7 @@ const SHIFT_CHECKOUT_GRACE_HOURS = 6;
 //   Diurno / EBMSP manhã → 11:00 (mesmo dia)
 //   EBMSP tarde          → 17:00 (mesmo dia)
 //   Noturno              → 23:00 (mesmo dia)
+const AFTERNOON_SHIFT_START_HOUR = 13;
 const DAY_SHIFT_CHECKOUT_START_HOUR = 11;
 const AFTERNOON_SHIFT_CHECKOUT_START_HOUR = 17;
 const NIGHT_SHIFT_CHECKOUT_START_HOUR = 23;
@@ -101,12 +102,28 @@ function currentLocalPoint(date: Date = new Date()): LocalDateTimePoint {
   };
 }
 
-function shiftStartPoint(dateStr: string, period: ShiftPeriod): LocalDateTimePoint {
+function shiftStartPoint(dateStr: string, period: ShiftPeriod, shift?: string | null): LocalDateTimePoint {
+  // EBMSP tarde começa às 13:00; os demais seguem o início do período.
+  if (period === "DAY" && shift === "AFTERNOON") {
+    return { dateStr, hour: AFTERNOON_SHIFT_START_HOUR, minute: 0 };
+  }
   return {
     dateStr,
     hour: period === "DAY" ? OPERATIONAL_DAY_START_HOUR : OPERATIONAL_NIGHT_START_HOUR,
     minute: 0,
   };
+}
+
+// Plantão já começou? Usado por ofertas (extra e troca) que só fazem sentido
+// enquanto ninguém entrou no turno — passou do início, some da lista, mesmo
+// que ainda seja hoje.
+export function hasShiftStarted(
+  dateStr: string,
+  period: ShiftPeriod,
+  shift?: string | null,
+  date: Date = new Date(),
+): boolean {
+  return compareLocalDateTime(currentLocalPoint(date), shiftStartPoint(dateStr, period, shift)) >= 0;
 }
 
 function shiftCheckoutDeadlinePoint(dateStr: string, period: ShiftPeriod): LocalDateTimePoint {

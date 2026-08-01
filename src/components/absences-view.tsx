@@ -26,7 +26,12 @@ type Assignment = {
     absenceJustification?: string | null;
     absenceJustificationActor?: string | null;
     absenceJustificationAt?: string | null;
+    internArchived?: boolean | null;
 };
+
+// Falta é pendência operacional, não histórico: some da aba após 60 dias
+// ou assim que a turma do interno é arquivada (o que vier primeiro).
+const MAX_ABSENCE_AGE_DAYS = 60;
 
 type AbsencesViewProps = {
     scope: "admin" | "leader";
@@ -141,7 +146,8 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
     const [complianceRows, setComplianceRows] = useState<ComplianceRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [fromDate, setFromDate] = useState(() => localDateStr(new Date(Date.now() - 90 * 86400000)));
+    const [minFromDate] = useState(() => localDateStr(new Date(Date.now() - MAX_ABSENCE_AGE_DAYS * 86400000)));
+    const [fromDate, setFromDate] = useState(minFromDate);
     const [toDate, setToDate] = useState(() => localDateStr());
     const [search, setSearch] = useState("");
     const [filterBase, setFilterBase] = useState("");
@@ -153,8 +159,9 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
     const load = useCallback(async () => {
         setLoading(true);
         try {
+            const from = fromDate < minFromDate ? minFromDate : fromDate;
             const [assignmentsRes, complianceRes] = await Promise.all([
-                fetch(`/taximetro/api/assignments?from=${fromDate}&to=${toDate}`),
+                fetch(`/taximetro/api/assignments?from=${from}&to=${toDate}`),
                 fetch("/taximetro/api/compliance"),
             ]);
             const [assignmentsJson, complianceJson] = await Promise.all([assignmentsRes.json(), complianceRes.json()]);
@@ -165,7 +172,9 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                 return;
             }
 
-            setAssignments((assignmentsJson.data as Assignment[]).filter((assignment) => assignment.status === "ABSENT"));
+            setAssignments((assignmentsJson.data as Assignment[]).filter(
+                (assignment) => assignment.status === "ABSENT" && !assignment.internArchived,
+            ));
             setComplianceRows(complianceJson.success ? complianceJson.data : []);
             setError("");
         } catch {
@@ -175,7 +184,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
         } finally {
             setLoading(false);
         }
-    }, [fromDate, toDate]);
+    }, [fromDate, toDate, minFromDate]);
 
     useEffect(() => {
         load();
@@ -267,7 +276,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
 
                     <div className="grid gap-2 lg:grid-cols-[minmax(0,1.2fr)_repeat(5,minmax(0,0.8fr))]">
                         <Input placeholder="Buscar interno ou base..." value={search} onChange={(event) => setSearch(event.target.value)} />
-                        <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className={selectCls} />
+                        <input type="date" min={minFromDate} value={fromDate} onChange={(event) => setFromDate(event.target.value)} className={selectCls} />
                         <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className={selectCls} />
                         <select value={filterBase} onChange={(event) => setFilterBase(event.target.value)} className={selectCls}>
                             <option value="">Todas as bases</option>
