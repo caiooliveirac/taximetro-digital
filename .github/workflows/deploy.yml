@@ -162,6 +162,7 @@ jobs:
               -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
               -e DB_BACKUP_EMAIL_TO="${{ secrets.DB_BACKUP_EMAIL_TO }}" \
               -e DB_BACKUP_ENABLED=false \
+              -e CROSS_APP_IMPORT_SECRET="${{ secrets.CROSS_APP_IMPORT_SECRET }}" \
               "$IMAGE_CANDIDATE"
 
             echo "=== Validating canary health ==="
@@ -203,6 +204,7 @@ jobs:
               -e SMTP_PASS="${{ secrets.SMTP_PASS }}" \
               -e SMTP_FROM="${{ secrets.SMTP_FROM }}" \
               -e DB_BACKUP_EMAIL_TO="${{ secrets.DB_BACKUP_EMAIL_TO }}" \
+              -e CROSS_APP_IMPORT_SECRET="${{ secrets.CROSS_APP_IMPORT_SECRET }}" \
               "$IMAGE_CANDIDATE"
 
             echo "=== Waiting for production healthcheck ==="
