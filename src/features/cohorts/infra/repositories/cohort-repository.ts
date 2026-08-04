@@ -210,3 +210,43 @@ export async function closeCohortAndArchiveInterns(params: {
 
   return archived.length;
 }
+
+export async function findUserByCpfOrEmail(cpf: string | null, email: string) {
+  if (cpf) {
+    const [byCpf] = await db.select().from(users).where(eq(users.cpf, cpf)).limit(1);
+    if (byCpf) return byCpf;
+  }
+  const [byEmail] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return byEmail ?? null;
+}
+
+export async function createUserFromImport(input: {
+  name: string;
+  cpf: string | null;
+  email: string;
+  phone: string | null;
+  passwordHash: string;
+  forcePasswordChange: boolean;
+}) {
+  const [created] = await db.insert(users).values(input).returning();
+  return created;
+}
+
+export async function findUserRole(userId: string, role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN", facultyId: string) {
+  const [found] = await db
+    .select()
+    .from(userRoles)
+    .where(and(eq(userRoles.userId, userId), eq(userRoles.role, role), eq(userRoles.facultyId, facultyId)))
+    .limit(1);
+  return found ?? null;
+}
+
+export async function createUserRoleForCohort(input: {
+  userId: string;
+  role: "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN";
+  facultyId: string;
+  cohortId: string;
+}) {
+  const [created] = await db.insert(userRoles).values({ ...input, isActive: true }).returning();
+  return created;
+}

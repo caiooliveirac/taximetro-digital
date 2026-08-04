@@ -20,6 +20,15 @@ type Cohort = {
 
 type Faculty = { id: string; name: string; abbreviation: string };
 
+type SamuCohort = {
+  id: string;
+  label: string;
+  rotationNumber: number;
+  startDate: string;
+  endDate: string;
+  status: string;
+};
+
 const STATUS_LABEL: Record<Cohort["status"], string> = {
   PLANNED: "Planejada",
   ACTIVE: "Ativa",
@@ -41,6 +50,13 @@ export default function AdminTurmas() {
   const [loading, setLoading] = useState(true);
   const [filterFaculty, setFilterFaculty] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+
+  const [importingCohort, setImportingCohort] = useState<Cohort | null>(null);
+  const [samuCohorts, setSamuCohorts] = useState<SamuCohort[]>([]);
+  const [samuCohortId, setSamuCohortId] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState<{ created: number; linked: number; errors: { name: string; error: string }[] } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -115,6 +131,42 @@ export default function AdminTurmas() {
     } catch {
       setError("Erro de conexão. Tente novamente.");
     }
+  }
+
+  async function openImport(c: Cohort) {
+    setImportingCohort(c);
+    setSamuCohortId("");
+    setImportError("");
+    setImportResult(null);
+    setImportBusy(false);
+    setSamuCohorts([]);
+    try {
+      const res = await fetch("/taximetro/api/admin/turmas/samu-cohorts");
+      const json = await res.json();
+      if (!json.success) { setImportError(json.error); return; }
+      setSamuCohorts(json.data);
+    } catch {
+      setImportError("Erro de conexão com o SAMU.");
+    }
+  }
+
+  async function runImport() {
+    if (!importingCohort || !samuCohortId) return;
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const res = await fetch(`/taximetro/api/admin/turmas/${importingCohort.id}/import-samu`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ samuCohortId }),
+      });
+      const json = await res.json();
+      if (!json.success) { setImportError(json.error); setImportBusy(false); return; }
+      setImportResult(json.data);
+    } catch {
+      setImportError("Erro de conexão com o SAMU.");
+    }
+    setImportBusy(false);
   }
 
   async function remove(id: string) {
@@ -256,6 +308,9 @@ export default function AdminTurmas() {
                   {c.status !== "CLOSED" && (
                     <button onClick={() => openEdit(c)} className="text-accent-600 hover:text-accent-500">Editar</button>
                   )}
+                  {c.facultyAbbreviation === "UNIFACS" && c.status !== "CLOSED" && (
+                    <button onClick={() => openImport(c)} className="text-accent-600 hover:text-accent-500">Importar do SAMU</button>
+                  )}
                   {c.status === "PLANNED" && (
                     <button onClick={() => remove(c.id)} className="text-red-500 hover:text-red-700">Excluir</button>
                   )}
@@ -265,6 +320,73 @@ export default function AdminTurmas() {
           </tbody>
         </table>
       </div>
+
+      {importingCohort && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-lg space-y-4">
+            <h2 className="font-semibold text-slate-900">
+              Importar do SAMU — {importingCohort.name ?? importingCohort.label}
+            </h2>
+
+            {!importResult && (
+              <>
+                <label className="block">
+                  <span className="text-xs text-slate-400">Turma UNIFACS no SAMU</span>
+                  <select
+                    value={samuCohortId}
+                    onChange={(e) => setSamuCohortId(e.target.value)}
+                    className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="">Selecione...</option>
+                    {samuCohorts.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label} — rodízio {s.rotationNumber} ({fmtDate(s.startDate)} a {fmtDate(s.endDate)})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {importError && <p className="text-sm text-red-600">{importError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={runImport}
+                    disabled={!samuCohortId || importBusy}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {importBusy ? "Importando..." : "Importar"}
+                  </button>
+                  <button onClick={() => setImportingCohort(null)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            )}
+
+            {importResult && (
+              <>
+                <p className="text-sm text-slate-700">
+                  {importResult.created} usuário(s) novo(s) criado(s), {importResult.linked} vínculo(s) na turma.
+                </p>
+                {importResult.errors.length > 0 && (
+                  <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                    <p className="font-medium">{importResult.errors.length} com erro:</p>
+                    <ul className="mt-1 list-disc pl-4">
+                      {importResult.errors.map((e, i) => (
+                        <li key={i}>{e.name}: {e.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <button
+                  onClick={() => { setImportingCohort(null); load(); }}
+                  className="rounded-lg bg-accent-500 px-4 py-2 text-sm text-white hover:bg-accent-600"
+                >
+                  Fechar
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
