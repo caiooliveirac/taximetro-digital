@@ -8,6 +8,7 @@ import {
   updateRequestReview,
 } from "@/features/requests/infra/repositories/request-repository";
 import { logAudit } from "@/shared/infra/logger/audit";
+import { checkPeriodOccupancy } from "@/lib/slots";
 
 type ReviewActor = {
   id: string;
@@ -75,6 +76,24 @@ export async function executeReviewRequest(params: {
         const reqRole = await findRequesterFacultyRole(request.requesterId);
         if (!reqRole?.facultyId) {
           return { status: 400, body: { success: false, error: "Usuário sem faculdade vinculada" } } as const;
+        }
+
+        // A vaga foi checada quando o interno pediu; entre pedido e aprovação a
+        // base pode ter lotado. O plantão gravado aqui conta como plantão normal,
+        // então tem que respeitar o mesmo teto.
+        const load = await checkPeriodOccupancy(
+          request.extraBaseId,
+          request.extraDate,
+          request.extraPeriod as "DAY" | "NIGHT",
+        );
+        if (load.full) {
+          return {
+            status: 409,
+            body: {
+              success: false,
+              error: `Base lotada neste turno (${load.occupied}/${load.capacity}). Não dá para aprovar o extra.`,
+            },
+          } as const;
         }
 
         const existingAssignment = await findExistingAssignmentForInternSlot({

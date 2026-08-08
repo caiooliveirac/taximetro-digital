@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { slotRules, assignments, bases, faculties, requests } from "@/db/schema";
 import { eq, and, sql, ne, gte, lte, inArray } from "drizzle-orm";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
+import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
 
 function normalizeDateKey(date: string): string {
   return date.slice(0, 10);
@@ -243,6 +244,72 @@ export async function checkSlotAvailability(
 
   const assigned = Number(result?.count ?? 0);
   return { available: assigned < rule.capacity, capacity: rule.capacity, assigned };
+}
+
+/**
+ * Quantos internos já estão na base naquele turno, contra a soma das vagas da
+ * grade (todas as faculdades). É o teto duro: nenhum caminho de alocação —
+ * grade, alocação livre do admin, remanejamento ou sorteio — pode furar.
+ *
+ * Plantão extra não conta: é vaga publicada por fora da grade, com autorização
+ * explícita, e a grade dele já é validada em outro lugar.
+ */
+export async function checkPeriodOccupancy(
+  baseId: string,
+  date: string,
+  period: "DAY" | "NIGHT",
+  shift?: string | null,
+  excludeAssignmentId?: string,
+): Promise<{ full: boolean; overcrowded: boolean; capacity: number; occupied: number }> {
+  const dayOfWeek = getDayOfWeek(date);
+
+  const [capacityRow] = await db
+    .select({ total: sql<number>`COALESCE(SUM(${slotRules.capacity}), 0)` })
+    .from(slotRules)
+    .where(
+      and(
+        eq(slotRules.baseId, baseId),
+        eq(slotRules.dayOfWeek, dayOfWeek),
+        eq(slotRules.period, period),
+        eq(slotRules.isActive, true),
+        eq(slotRules.isBlocked, false),
+        eq(slotRules.isExtraShift, false),
+      ),
+    );
+
+  const conditions = [
+    eq(assignments.baseId, baseId),
+    eq(assignments.date, date),
+    eq(assignments.period, period),
+    ne(assignments.status, "CANCELLED"),
+    ne(assignments.status, "ABSENT"),
+    eq(assignments.isExtraShift, false),
+  ];
+  if (excludeAssignmentId) conditions.push(ne(assignments.id, excludeAssignmentId));
+
+  // Na EBMSP o mesmo slot vale manhã E tarde (capacity 1 = 1 de cada). Quem
+  // entra de manhã disputa com a manhã; quem entra sem turno partido disputa
+  // com o pico do período.
+  const [occupiedRow] = await db
+    .select({
+      fullDay: sql<number>`COUNT(*) FILTER (WHERE ${assignments.shift} IS NULL)`,
+      morning: sql<number>`COUNT(*) FILTER (WHERE ${assignments.shift} = 'MORNING')`,
+      afternoon: sql<number>`COUNT(*) FILTER (WHERE ${assignments.shift} = 'AFTERNOON')`,
+    })
+    .from(assignments)
+    .where(and(...conditions));
+
+  const fullDay = Number(occupiedRow?.fullDay ?? 0);
+  const morning = Number(occupiedRow?.morning ?? 0);
+  const afternoon = Number(occupiedRow?.afternoon ?? 0);
+  const occupied = shift === "MORNING" ? fullDay + morning
+    : shift === "AFTERNOON" ? fullDay + afternoon
+    : fullDay + Math.max(morning, afternoon);
+
+  return computePeriodLoad({
+    capacity: Number(capacityRow?.total ?? 0),
+    occupied,
+  });
 }
 
 function getDayOfWeek(dateStr: string): "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN" {
