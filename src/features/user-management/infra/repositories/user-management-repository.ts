@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { bases, faculties, inviteLinks, userPhotoChangeRequests, userRoles, users } from "@/shared/db/schema";
+import { bases, cohorts, faculties, inviteLinks, userPhotoChangeRequests, userRoles, users } from "@/shared/db/schema";
 
 export async function listFacultyInternRows(facultyId: string, cohortId?: string | null) {
   const conditions = [
@@ -15,12 +15,18 @@ export async function listFacultyInternRows(facultyId: string, cohortId?: string
       userActive: users.isActive,
       roleActive: userRoles.isActive,
       isArchived: userRoles.isArchived,
+      // datas da turma: a tela do líder usa para mostrar só quem está na turma
+      // vigente naquele intervalo (CRU fixo semanal)
+      cohortName: cohorts.name,
+      cohortStart: cohorts.startDate,
+      cohortEnd: cohorts.endDate,
     })
     .from(users)
     .innerJoin(
       userRoles,
       and(eq(userRoles.userId, users.id), eq(userRoles.role, "INTERN")),
     )
+    .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
     .where(and(...conditions))
     .orderBy(users.name);
 
