@@ -251,6 +251,10 @@ export async function checkSlotAvailability(
  * grade (todas as faculdades). É o teto duro: nenhum caminho de alocação —
  * grade, alocação livre do admin, remanejamento ou sorteio — pode furar.
  *
+ * Só vale para base USA, onde o teto é físico (uma viatura, dois internos).
+ * CRU e CRL se limitam pela grade e às vezes abrem mais de dez vagas por
+ * faculdade — lá não há teto a aplicar.
+ *
  * Plantão extra não conta: é vaga publicada por fora da grade, com autorização
  * explícita, e a grade dele já é validada em outro lugar.
  */
@@ -258,10 +262,18 @@ export async function checkPeriodOccupancy(
   baseId: string,
   date: string,
   period: "DAY" | "NIGHT",
-  shift?: string | null,
   excludeAssignmentId?: string,
-): Promise<{ full: boolean; overcrowded: boolean; capacity: number; occupied: number }> {
+): Promise<ReturnType<typeof computePeriodLoad>> {
   const dayOfWeek = getDayOfWeek(date);
+
+  const [base] = await db
+    .select({ type: bases.type })
+    .from(bases)
+    .where(eq(bases.id, baseId))
+    .limit(1);
+
+  // capacity 0 = sem teto a aplicar.
+  if (base?.type !== "USA") return computePeriodLoad({ capacity: 0, occupied: 0 });
 
   const [capacityRow] = await db
     .select({ total: sql<number>`COALESCE(SUM(${slotRules.capacity}), 0)` })
@@ -287,28 +299,15 @@ export async function checkPeriodOccupancy(
   ];
   if (excludeAssignmentId) conditions.push(ne(assignments.id, excludeAssignmentId));
 
-  // Na EBMSP o mesmo slot vale manhã E tarde (capacity 1 = 1 de cada). Quem
-  // entra de manhã disputa com a manhã; quem entra sem turno partido disputa
-  // com o pico do período.
+  // Turno partido (manhã/tarde) é coisa da EBMSP no CRU, que nem chega aqui.
   const [occupiedRow] = await db
-    .select({
-      fullDay: sql<number>`COUNT(*) FILTER (WHERE ${assignments.shift} IS NULL)`,
-      morning: sql<number>`COUNT(*) FILTER (WHERE ${assignments.shift} = 'MORNING')`,
-      afternoon: sql<number>`COUNT(*) FILTER (WHERE ${assignments.shift} = 'AFTERNOON')`,
-    })
+    .select({ count: sql<number>`COUNT(*)` })
     .from(assignments)
     .where(and(...conditions));
 
-  const fullDay = Number(occupiedRow?.fullDay ?? 0);
-  const morning = Number(occupiedRow?.morning ?? 0);
-  const afternoon = Number(occupiedRow?.afternoon ?? 0);
-  const occupied = shift === "MORNING" ? fullDay + morning
-    : shift === "AFTERNOON" ? fullDay + afternoon
-    : fullDay + Math.max(morning, afternoon);
-
   return computePeriodLoad({
     capacity: Number(capacityRow?.total ?? 0),
-    occupied,
+    occupied: Number(occupiedRow?.count ?? 0),
   });
 }
 

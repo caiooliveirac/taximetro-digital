@@ -575,7 +575,7 @@ function BlockedSlotCard({ facultyAbbr, period }: { facultyAbbr: string; period:
     return (
         <div
             className={`flex min-h-[56px] w-full min-w-0 cursor-not-allowed items-center gap-2 rounded-xl border border-dashed px-2.5 py-2 ${isNight ? "border-rose-300/50 bg-rose-950/40 text-rose-100" : "border-rose-300 bg-rose-50 text-rose-900"}`}
-            title={`Vaga ${facultyAbbr} bloqueada: a base já atingiu o limite de internos neste turno. Remova um interno para liberar.`}
+            title={`Vaga ${facultyAbbr} bloqueada: a base já atingiu o limite físico de internos neste turno. Remova um interno para liberar.`}
         >
             <span className="min-w-0 flex-1">
                 <span className="block text-[12px] font-black uppercase tracking-[0.16em]">Vaga bloqueada</span>
@@ -942,8 +942,14 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
      * olhar, não muda quantos internos estão de fato na base. Serve para pintar
      * o alerta e para travar a vaga que sobrou (ex.: vaga ZARNS depois de dois
      * internos UNIFACS já ocuparem o turno).
+     *
+     * Só base USA tem teto: é uma viatura, cabem dois. CRU e CRL se organizam
+     * pela grade, que às vezes abre mais de dez vagas por faculdade — lá não há
+     * alerta nem bloqueio (capacity 0).
      */
     const getPeriodLoad = useCallback((base: Base, date: string, period: "DAY" | "NIGHT"): PeriodLoad => {
+        if (base.type !== "USA") return computePeriodLoad({ capacity: 0, occupied: 0 });
+
         const dayKey = getDayKey(date);
         const dateKey = normalizeDateKey(date);
 
@@ -959,13 +965,6 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             && assignment.status !== "CANCELLED"
             && assignment.status !== "ABSENT"
         ));
-
-        // Turno partido (EBMSP no CRU) tem contagem por faixa — manhã e tarde
-        // dividem a mesma vaga. Aí a conta simples de cabeças mentiria, então a
-        // célula fica fora do alerta e do bloqueio; o teto continua no servidor.
-        if (active.some((assignment) => assignment.shift)) {
-            return computePeriodLoad({ capacity: 0, occupied: active.length });
-        }
 
         return computePeriodLoad({ capacity, occupied: active.length });
     }, [assignments, rules]);
@@ -1005,9 +1004,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 }
 
                 if (facultyRule) {
-                    // Turno já lotado: a vaga que sobrou continua visível (quem
-                    // escala precisa saber que existe uma vaga ZARNS ali), mas
-                    // não dá para alocar até liberarem um interno.
+                    // Turno no teto físico: a vaga que sobrou continua visível
+                    // (quem escala precisa saber que existe uma vaga ZARNS ali),
+                    // mas não dá para alocar até liberarem um interno.
                     if (isFull && !facultyRule.isExtraShift) {
                         flattenedSlots.push({
                             kind: "blocked",
@@ -1033,9 +1032,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const buildVisiblePeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT", limit = SLOT_LIMIT_PER_PERIOD): VisiblePeriodSlots => {
         const allSlots = getPeriodSlots(base, date, period);
         const load = getPeriodLoad(base, date, period);
-        // Base lotada não pode esconder ninguém atrás de "ver mais um item": o
-        // terceiro interno é justamente o que precisa saltar aos olhos.
-        const visibleLimit = load.full ? Math.max(limit, allSlots.length) : limit;
+        // Turno em aviso não pode esconder ninguém atrás de "ver mais um item":
+        // o interno a mais é justamente o que precisa saltar aos olhos.
+        const visibleLimit = load.full || load.aboveGrade ? Math.max(limit, allSlots.length) : limit;
         const visibleSlots: ActualPeriodGridSlot[] = visibleLimit >= allSlots.length ? [...allSlots] : allSlots.slice(0, visibleLimit);
         const hiddenSlots = visibleLimit >= allSlots.length ? [] : allSlots.slice(visibleLimit);
 
@@ -1239,7 +1238,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             if (load.full) {
                 setMessage({
                     type: "error",
-                    text: `${slot.baseCode} já está com ${load.occupied}/${load.capacity} internos neste turno. Remova alguém antes de alocar.`,
+                    text: `${slot.baseCode} já está com ${load.occupied} internos neste turno (limite ${load.limit}). Remova alguém antes de alocar.`,
                 });
                 return;
             }
@@ -1334,24 +1333,33 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     {periods.map((period) => {
                         const tone = getPeriodTone(period);
                         const { slots, overflowCount, hiddenHasVacancy, load } = buildVisiblePeriodSlots(base, date, period);
-                        // Excesso de interno na base é erro operacional, não
-                        // detalhe: o turno inteiro muda de cor.
+                        // Dois avisos diferentes: âmbar = passou da grade (dois
+                        // internos numa vaga só), decisão de quem escala, segue
+                        // clicável. Vermelho = passou do que cabe na viatura.
                         const shellClass = load.overcrowded
                             ? "border-rose-500 bg-[linear-gradient(180deg,rgba(254,226,226,0.98),rgba(252,165,165,0.92))] shadow-[0_12px_24px_rgba(190,18,60,0.22)] ring-2 ring-rose-500"
-                            : tone.shell;
-                        const metaClass = load.overcrowded ? "text-rose-900" : tone.meta;
+                            : load.aboveGrade
+                                ? "border-amber-400 bg-[linear-gradient(180deg,rgba(254,243,199,0.96),rgba(253,230,138,0.9))] shadow-[0_12px_24px_rgba(180,83,9,0.16)] ring-1 ring-amber-400"
+                                : tone.shell;
+                        const metaClass = load.overcrowded ? "text-rose-900" : load.aboveGrade ? "text-amber-900" : tone.meta;
 
                         return (
                             <div key={`${base.id}|${date}|${period}`} className={`rounded-xl border p-1.5 ${shellClass}`}>
                                 <div className={`mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${metaClass}`}>
                                     <span>{formatPeriod(period)}</span>
                                     {load.overcrowded && (
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white" title={`${load.occupied} internos para ${load.capacity} vagas neste turno`}>
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white" title={`${load.occupied} internos onde cabem ${load.limit} neste turno`}>
                                             <AlertTriangle className="h-3 w-3" strokeWidth={2.4} />
                                             Excesso {load.occupied}/{load.capacity}
                                         </span>
                                     )}
-                                    {!load.overcrowded && overflowCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${tone.overflow}`}>+{overflowCount}</span>}
+                                    {!load.overcrowded && load.aboveGrade && (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white" title={`${load.occupied} internos para ${load.capacity} vaga(s) na grade fixa deste turno. Permitido, mas fora da grade.`}>
+                                            <AlertTriangle className="h-3 w-3" strokeWidth={2.4} />
+                                            Superlotado {load.occupied}/{load.capacity}
+                                        </span>
+                                    )}
+                                    {!load.overcrowded && !load.aboveGrade && overflowCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${tone.overflow}`}>+{overflowCount}</span>}
                                 </div>
 
                                 <div className="grid gap-1">
