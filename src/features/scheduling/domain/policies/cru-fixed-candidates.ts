@@ -5,13 +5,10 @@
  * 1. mesmo dia+período que o interno já tem: nunca aparece (é duplicata, o banco recusa)
  * 2. com busca por nome: qualquer interno da faculdade que casar com o texto — é assim
  *    que se escala um segundo fixo, que é exceção e não deve estar na lista padrão
- * 3. sem busca: só a turma que ainda alcança a janela do rodízio, e só quem ainda
- *    não tem nenhum fixo. Interno sem turma cadastrada aparece (não dá para julgar).
- *
- * Sobre `mustReach`: a janela do servidor começa na segunda da semana corrente, então
- * uma turma que termina no meio dela ainda "cruza" a janela e reaparecia na lista dias
- * antes de acabar. A turma precisa alcançar o fim da janela — ou, quando a janela é
- * curta, pelo menos a semana seguinte. Quem chama passa esse limite pronto.
+ * 3. sem busca: some a turma que já acabou (não chega a `mustReach`, na prática a
+ *    segunda que vem) e quem já tem fixo. Turma que ainda vai começar continua na
+ *    lista: a janela do rodízio é a dela, e a materialização respeita o valid_from.
+ *    Interno sem turma cadastrada aparece (não dá para julgar).
  */
 
 export type CandidateIntern = {
@@ -34,8 +31,6 @@ export function filterCruFixedCandidates<T extends CandidateIntern>(params: {
   period: "DAY" | "NIGHT";
   /** data que a turma precisa alcançar para ainda valer o rodízio */
   mustReach: string;
-  /** último dia da janela (segunda da semana corrente + semanas * 7 - 1) */
-  windowEnd: string;
   search: string;
 }): { list: T[]; hiddenWithFixed: number; hiddenOtherCohort: number } {
   const query = params.search.trim().toLowerCase();
@@ -54,8 +49,7 @@ export function filterCruFixedCandidates<T extends CandidateIntern>(params: {
 
       if (query) return intern.name.toLowerCase().includes(query);
 
-      if (intern.cohortStart && intern.cohortEnd
-        && (intern.cohortEnd < params.mustReach || intern.cohortStart > params.windowEnd)) {
+      if (intern.cohortEnd && intern.cohortEnd < params.mustReach) {
         hiddenOtherCohort += 1;
         return false;
       }
