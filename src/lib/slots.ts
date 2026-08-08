@@ -260,7 +260,7 @@ export async function checkPeriodOccupancy(
   period: "DAY" | "NIGHT",
   shift?: string | null,
   excludeAssignmentId?: string,
-): Promise<{ full: boolean; overcrowded: boolean; capacity: number; occupied: number }> {
+): Promise<ReturnType<typeof computePeriodLoad>> {
   const dayOfWeek = getDayOfWeek(date);
 
   const [capacityRow] = await db

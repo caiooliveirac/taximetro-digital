@@ -91,7 +91,7 @@ export async function executeReviewRequest(params: {
             status: 409,
             body: {
               success: false,
-              error: `Base lotada neste turno (${load.occupied}/${load.capacity}). Não dá para aprovar o extra.`,
+              error: `Base já está com ${load.occupied} internos neste turno (limite ${load.limit}). Não dá para aprovar o extra.`,
             },
           } as const;
         }

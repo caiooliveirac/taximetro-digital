@@ -71,7 +71,7 @@ export async function executeReassignAssignmentBase(params: {
         status: 409,
         body: {
           success: false,
-          error: `Base de destino lotada neste turno (${load.occupied}/${load.capacity}). Libere uma vaga antes de remanejar.`,
+          error: `Base de destino já está com ${load.occupied} internos neste turno (limite ${load.limit}). Libere lugar antes de remanejar.`,
         },
       } as const;
     }
