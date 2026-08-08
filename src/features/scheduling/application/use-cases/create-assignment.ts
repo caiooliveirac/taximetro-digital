@@ -79,18 +79,19 @@ export async function executeCreateAssignment(params: {
     && existingAssignment.facultyId === resolvedFacultyId;
 
   if (!isCancelledSameSlot) {
-    // Teto duro da base no turno: vale para grade, alocação livre do admin e
-    // sorteio. Sem isso, dois internos da mesma faculdade em vagas de
+    // Teto físico da base USA no turno: vale para grade, alocação livre do
+    // admin e sorteio. Sem isso, dois internos da mesma faculdade em vagas de
     // faculdades diferentes deixam a checagem por faculdade cega e um terceiro
-    // interno entra na base.
+    // interno entra na base. Passar da grade (2 numa vaga só) continua liberado
+    // — quem trava é o que cabe na viatura. CRU/CRL passam batido.
     if (!isExtra) {
-      const load = await checkPeriodOccupancy(input.baseId, input.date, input.period, shiftValue);
+      const load = await checkPeriodOccupancy(input.baseId, input.date, input.period);
       if (load.full) {
         return {
           status: 409,
           body: {
             success: false,
-            error: `Base lotada neste turno (${load.occupied}/${load.capacity}). Remova um interno antes de alocar outro.`,
+            error: `Base já está com ${load.occupied} internos neste turno (limite ${load.limit}). Remova um interno antes de alocar outro.`,
           },
         } as const;
       }
