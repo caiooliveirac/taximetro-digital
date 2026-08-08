@@ -28,6 +28,11 @@ export async function executeListAssignments(params: {
     period: filters.period === "DAY" || filters.period === "NIGHT" ? filters.period : undefined,
     internId: undefined as string | undefined,
     selfOnlyUserId: filters.selfOnly ? actor.id : undefined,
+    // Plantão cancelado é registro administrativo: quem cancelou, quando e por quê
+    // interessa a quem monta escala, não a quem cumpre. O interno via o cancelado
+    // no histórico dele sem ter o que fazer com aquilo. COORDINATOR e LEADER
+    // continuam vendo (inclusive o do interno, via internId).
+    excludeCancelled: actor.role === "INTERN",
   };
 
   if (actor.role === "LEADER" && actor.facultyId) {
