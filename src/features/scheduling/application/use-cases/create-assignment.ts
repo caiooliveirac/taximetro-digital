@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { checkCruConflict, checkSlotAvailability } from "@/lib/slots";
+import { checkCruConflict, checkPeriodOccupancy, checkSlotAvailability } from "@/lib/slots";
 import { localDateStr } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { canLeaderManageFaculty } from "@/features/scheduling/domain/policies/assignment-policy";
@@ -79,6 +79,23 @@ export async function executeCreateAssignment(params: {
     && existingAssignment.facultyId === resolvedFacultyId;
 
   if (!isCancelledSameSlot) {
+    // Teto duro da base no turno: vale para grade, alocação livre do admin e
+    // sorteio. Sem isso, dois internos da mesma faculdade em vagas de
+    // faculdades diferentes deixam a checagem por faculdade cega e um terceiro
+    // interno entra na base.
+    if (!isExtra) {
+      const load = await checkPeriodOccupancy(input.baseId, input.date, input.period, shiftValue);
+      if (load.full) {
+        return {
+          status: 409,
+          body: {
+            success: false,
+            error: `Base lotada neste turno (${load.occupied}/${load.capacity}). Remova um interno antes de alocar outro.`,
+          },
+        } as const;
+      }
+    }
+
     if (!isExtra && !allowCoordinatorOpenAllocation) {
       const slot = await checkSlotAvailability(
         input.baseId,

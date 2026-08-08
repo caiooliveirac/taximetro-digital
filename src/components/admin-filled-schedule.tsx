@@ -7,6 +7,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Cl
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
+import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
 import { addDaysToDateStr, checkinMethodLabel, checkinStatusLabel, formatBrazilTime, formatValidatorName, localDateStr } from "@/lib/utils";
 
 type Rule = {
@@ -150,14 +151,19 @@ const STATUS_FILTER_OPTIONS: Array<{
 
 type ActualPeriodGridSlot =
     | { kind: "assignment"; key: string; assignment: AssignmentDetail }
-    | { kind: "vacancy"; key: string; allocation: AllocationState; facultyAbbr: string };
+    | { kind: "vacancy"; key: string; allocation: AllocationState; facultyAbbr: string }
+    | { kind: "blocked"; key: string; facultyAbbr: string };
 
 type VisiblePeriodGridSlot = ActualPeriodGridSlot | { kind: "open"; key: string; allocation: AllocationState };
+
+/** Lotação do turno: gente na base contra a soma das vagas da grade. */
+type PeriodLoad = ReturnType<typeof computePeriodLoad>;
 
 type VisiblePeriodSlots = {
     slots: VisiblePeriodGridSlot[];
     overflowCount: number;
     hiddenHasVacancy: boolean;
+    load: PeriodLoad;
 };
 
 /**
@@ -558,7 +564,36 @@ function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, onPublishExt
     );
 }
 
-function OpenSlotCard({ allocation, period, onOpen, onPublishExtra }: { allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; onPublishExtra?: (slot: AllocationState) => void }) {
+/**
+ * Vaga que existe na grade mas está inutilizável: o turno já bateu o teto de
+ * internos da base. Some do fluxo de clique de propósito — quem escala precisa
+ * ver que a vaga existe e que ela só volta se alguém sair.
+ */
+function BlockedSlotCard({ facultyAbbr, period }: { facultyAbbr: string; period: "DAY" | "NIGHT" }) {
+    const isNight = period === "NIGHT";
+
+    return (
+        <div
+            className={`flex min-h-[56px] w-full min-w-0 cursor-not-allowed items-center gap-2 rounded-xl border border-dashed px-2.5 py-2 ${isNight ? "border-rose-300/50 bg-rose-950/40 text-rose-100" : "border-rose-300 bg-rose-50 text-rose-900"}`}
+            title={`Vaga ${facultyAbbr} bloqueada: a base já atingiu o limite de internos neste turno. Remova um interno para liberar.`}
+        >
+            <span className="min-w-0 flex-1">
+                <span className="block text-[12px] font-black uppercase tracking-[0.16em]">Vaga bloqueada</span>
+                <span className="mt-1 flex items-center gap-2">
+                    <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${isNight ? "border border-rose-200/30 bg-rose-100/15 text-rose-100" : "border border-rose-300 bg-white/70 text-rose-800"}`}>
+                        <span className="truncate">{facultyAbbr}</span>
+                    </span>
+                    <span className={`truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${isNight ? "text-rose-200/85" : "text-rose-700"}`}>Base lotada</span>
+                </span>
+            </span>
+            <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${isNight ? "bg-rose-100/15 text-rose-100" : "bg-rose-200 text-rose-800"}`}>
+                <X className="h-4 w-4" strokeWidth={2.4} />
+            </span>
+        </div>
+    );
+}
+
+function OpenSlotCard({ allocation, period, onOpen, onPublishExtra }:{ allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; onPublishExtra?: (slot: AllocationState) => void }) {
     const tone = getPeriodTone(period);
 
     return (
@@ -902,6 +937,39 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         [assignments, selectedAssignmentId],
     );
 
+    /**
+     * Lotação real do turno, sem passar pelos filtros da tela: filtro é jeito de
+     * olhar, não muda quantos internos estão de fato na base. Serve para pintar
+     * o alerta e para travar a vaga que sobrou (ex.: vaga ZARNS depois de dois
+     * internos UNIFACS já ocuparem o turno).
+     */
+    const getPeriodLoad = useCallback((base: Base, date: string, period: "DAY" | "NIGHT"): PeriodLoad => {
+        const dayKey = getDayKey(date);
+        const dateKey = normalizeDateKey(date);
+
+        const capacity = rules
+            .filter((rule) => rule.baseId === base.id && rule.dayOfWeek === dayKey && rule.period === period && rule.isActive && !rule.isExtraShift)
+            .reduce((total, rule) => total + rule.capacity, 0);
+
+        const active = assignments.filter((assignment) => (
+            assignment.base_id === base.id
+            && normalizeDateKey(assignment.date) === dateKey
+            && assignment.period === period
+            && !assignment.is_extra_shift
+            && assignment.status !== "CANCELLED"
+            && assignment.status !== "ABSENT"
+        ));
+
+        // Turno partido (EBMSP no CRU) tem contagem por faixa — manhã e tarde
+        // dividem a mesma vaga. Aí a conta simples de cabeças mentiria, então a
+        // célula fica fora do alerta e do bloqueio; o teto continua no servidor.
+        if (active.some((assignment) => assignment.shift)) {
+            return computePeriodLoad({ capacity: 0, occupied: active.length });
+        }
+
+        return computePeriodLoad({ capacity, occupied: active.length });
+    }, [assignments, rules]);
+
     const getPeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT") => {
         const dayKey = getDayKey(date);
         const cellAssignments = assignmentsByBaseDate.get(`${base.id}|${normalizeDateKey(date)}`) ?? [];
@@ -921,6 +989,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             });
 
         const flattenedSlots: ActualPeriodGridSlot[] = [];
+        const isFull = getPeriodLoad(base, date, period).full;
 
         for (const facultyId of facultyIds) {
             const facultyRule = periodRules.find((rule) => rule.facultyId === facultyId);
@@ -936,6 +1005,18 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 }
 
                 if (facultyRule) {
+                    // Turno já lotado: a vaga que sobrou continua visível (quem
+                    // escala precisa saber que existe uma vaga ZARNS ali), mas
+                    // não dá para alocar até liberarem um interno.
+                    if (isFull && !facultyRule.isExtraShift) {
+                        flattenedSlots.push({
+                            kind: "blocked",
+                            key: `${base.id}|${date}|${period}|${facultyId}|blocked-${index + 1}`,
+                            facultyAbbr,
+                        });
+                        continue;
+                    }
+
                     flattenedSlots.push({
                         kind: "vacancy",
                         key: `${base.id}|${date}|${period}|${facultyId}|vacancy-${index + 1}`,
@@ -947,10 +1028,14 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         }
 
         return flattenedSlots;
-    }, [assignmentsByBaseDate, facultyById, filterFaculty, filteredRules]);
+    }, [assignmentsByBaseDate, facultyById, filterFaculty, filteredRules, getPeriodLoad]);
 
-    const buildVisiblePeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT", visibleLimit = SLOT_LIMIT_PER_PERIOD): VisiblePeriodSlots => {
+    const buildVisiblePeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT", limit = SLOT_LIMIT_PER_PERIOD): VisiblePeriodSlots => {
         const allSlots = getPeriodSlots(base, date, period);
+        const load = getPeriodLoad(base, date, period);
+        // Base lotada não pode esconder ninguém atrás de "ver mais um item": o
+        // terceiro interno é justamente o que precisa saltar aos olhos.
+        const visibleLimit = load.full ? Math.max(limit, allSlots.length) : limit;
         const visibleSlots: ActualPeriodGridSlot[] = visibleLimit >= allSlots.length ? [...allSlots] : allSlots.slice(0, visibleLimit);
         const hiddenSlots = visibleLimit >= allSlots.length ? [] : allSlots.slice(visibleLimit);
 
@@ -967,7 +1052,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
         const paddedSlots: VisiblePeriodGridSlot[] = [...visibleSlots];
 
-        while (!hasStrictContentFilter && paddedSlots.length < visibleLimit) {
+        // Base lotada não ganha slot "Livre" de enfeite: alocação livre também
+        // esbarra no teto no servidor.
+        while (!hasStrictContentFilter && !load.full && paddedSlots.length < visibleLimit) {
             paddedSlots.push({
                 kind: "open",
                 key: `${base.id}|${date}|${period}|open-${paddedSlots.length + 1}`,
@@ -988,8 +1075,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             slots: paddedSlots,
             overflowCount: hiddenSlots.length,
             hiddenHasVacancy: hiddenSlots.some((slot) => slot.kind === "vacancy"),
+            load,
         };
-    }, [getPeriodSlots, hasStrictContentFilter]);
+    }, [getPeriodLoad, getPeriodSlots, hasStrictContentFilter]);
 
     const focusedPeriodBase = useMemo(
         () => (focusedPeriod ? bases.find((base) => base.id === focusedPeriod.baseId) ?? null : null),
@@ -1145,6 +1233,18 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     }
 
     async function openAllocation(slot: AllocationState) {
+        const slotBase = bases.find((base) => base.id === slot.baseId);
+        if (slotBase && !slot.isExtraShift) {
+            const load = getPeriodLoad(slotBase, slot.date, slot.period);
+            if (load.full) {
+                setMessage({
+                    type: "error",
+                    text: `${slot.baseCode} já está com ${load.occupied}/${load.capacity} internos neste turno. Remova alguém antes de alocar.`,
+                });
+                return;
+            }
+        }
+
         await loadUsers();
         setAllocation(slot);
         setAllocFacultyId(slot.facultyId ?? "");
@@ -1233,13 +1333,25 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 <div className="grid gap-1.5">
                     {periods.map((period) => {
                         const tone = getPeriodTone(period);
-                        const { slots, overflowCount, hiddenHasVacancy } = buildVisiblePeriodSlots(base, date, period);
+                        const { slots, overflowCount, hiddenHasVacancy, load } = buildVisiblePeriodSlots(base, date, period);
+                        // Excesso de interno na base é erro operacional, não
+                        // detalhe: o turno inteiro muda de cor.
+                        const shellClass = load.overcrowded
+                            ? "border-rose-500 bg-[linear-gradient(180deg,rgba(254,226,226,0.98),rgba(252,165,165,0.92))] shadow-[0_12px_24px_rgba(190,18,60,0.22)] ring-2 ring-rose-500"
+                            : tone.shell;
+                        const metaClass = load.overcrowded ? "text-rose-900" : tone.meta;
 
                         return (
-                            <div key={`${base.id}|${date}|${period}`} className={`rounded-xl border p-1.5 ${tone.shell}`}>
-                                <div className={`mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${tone.meta}`}>
+                            <div key={`${base.id}|${date}|${period}`} className={`rounded-xl border p-1.5 ${shellClass}`}>
+                                <div className={`mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${metaClass}`}>
                                     <span>{formatPeriod(period)}</span>
-                                    {overflowCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${tone.overflow}`}>+{overflowCount}</span>}
+                                    {load.overcrowded && (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white" title={`${load.occupied} internos para ${load.capacity} vagas neste turno`}>
+                                            <AlertTriangle className="h-3 w-3" strokeWidth={2.4} />
+                                            Excesso {load.occupied}/{load.capacity}
+                                        </span>
+                                    )}
+                                    {!load.overcrowded && overflowCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${tone.overflow}`}>+{overflowCount}</span>}
                                 </div>
 
                                 <div className="grid gap-1">
@@ -1250,6 +1362,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                                         if (slot.kind === "vacancy") {
                                             return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
+                                        }
+
+                                        if (slot.kind === "blocked") {
+                                            return <BlockedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={period} />;
                                         }
 
                                         return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} />;
@@ -1449,6 +1565,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                 return collapsed.map(({ slot, count }) => {
                                                     if (slot.kind === "assignment") {
                                                         return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
+                                                    }
+                                                    if (slot.kind === "blocked") {
+                                                        return <BlockedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={period} />;
                                                     }
                                                     return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} facultyBadgeMode="faculty" showBaseCode={showBaseCode} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} count={count} />;
                                                 });
@@ -1971,6 +2090,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                             }}
                                         />
                                     );
+                                }
+
+                                if (slot.kind === "blocked") {
+                                    return <BlockedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={focusedPeriod.period} />;
                                 }
 
                                 return (

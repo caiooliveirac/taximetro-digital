@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import { logAudit } from "@/shared/infra/logger/audit";
-import { checkCruConflict } from "@/lib/slots";
+import { checkCruConflict, checkPeriodOccupancy } from "@/lib/slots";
 import {
   findAssignmentForReassign,
   findBaseForReassign,
@@ -54,6 +54,27 @@ export async function executeReassignAssignmentBase(params: {
   const targetBase = await findBaseForReassign(newBaseId);
   if (!targetBase || !targetBase.isActive) {
     return { status: 404, body: { success: false, error: "Base de destino inválida" } } as const;
+  }
+
+  // Remanejar não podia estourar a base de destino: era o caminho mais curto
+  // para três internos no mesmo turno.
+  if (!assignment.isExtraShift) {
+    const load = await checkPeriodOccupancy(
+      targetBase.id,
+      assignment.date,
+      assignment.period as "DAY" | "NIGHT",
+      assignment.shift,
+      assignment.id,
+    );
+    if (load.full) {
+      return {
+        status: 409,
+        body: {
+          success: false,
+          error: `Base de destino lotada neste turno (${load.occupied}/${load.capacity}). Libere uma vaga antes de remanejar.`,
+        },
+      } as const;
+    }
   }
 
   if (["CENTRAL", "CRL"].includes(targetBase.type)) {

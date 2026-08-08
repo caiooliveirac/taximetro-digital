@@ -90,6 +90,8 @@ export async function findAssignmentForReassign(assignmentId: string) {
       baseId: assignments.baseId,
       date: assignments.date,
       period: assignments.period,
+      shift: assignments.shift,
+      isExtraShift: assignments.isExtraShift,
       status: assignments.status,
       notes: assignments.notes,
       currentBaseCode: bases.code,
