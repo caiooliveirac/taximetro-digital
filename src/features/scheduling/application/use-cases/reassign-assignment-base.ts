@@ -57,13 +57,12 @@ export async function executeReassignAssignmentBase(params: {
   }
 
   // Remanejar não podia estourar a base de destino: era o caminho mais curto
-  // para três internos no mesmo turno.
+  // para três internos no mesmo turno. Só vale para USA (ver checkPeriodOccupancy).
   if (!assignment.isExtraShift) {
     const load = await checkPeriodOccupancy(
       targetBase.id,
       assignment.date,
       assignment.period as "DAY" | "NIGHT",
-      assignment.shift,
       assignment.id,
     );
     if (load.full) {

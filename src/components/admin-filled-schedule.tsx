@@ -942,8 +942,14 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
      * olhar, não muda quantos internos estão de fato na base. Serve para pintar
      * o alerta e para travar a vaga que sobrou (ex.: vaga ZARNS depois de dois
      * internos UNIFACS já ocuparem o turno).
+     *
+     * Só base USA tem teto: é uma viatura, cabem dois. CRU e CRL se organizam
+     * pela grade, que às vezes abre mais de dez vagas por faculdade — lá não há
+     * alerta nem bloqueio (capacity 0).
      */
     const getPeriodLoad = useCallback((base: Base, date: string, period: "DAY" | "NIGHT"): PeriodLoad => {
+        if (base.type !== "USA") return computePeriodLoad({ capacity: 0, occupied: 0 });
+
         const dayKey = getDayKey(date);
         const dateKey = normalizeDateKey(date);
 
@@ -959,13 +965,6 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             && assignment.status !== "CANCELLED"
             && assignment.status !== "ABSENT"
         ));
-
-        // Turno partido (EBMSP no CRU) tem contagem por faixa — manhã e tarde
-        // dividem a mesma vaga. Aí a conta simples de cabeças mentiria, então a
-        // célula fica fora do alerta e do bloqueio; o teto continua no servidor.
-        if (active.some((assignment) => assignment.shift)) {
-            return computePeriodLoad({ capacity: 0, occupied: active.length });
-        }
 
         return computePeriodLoad({ capacity, occupied: active.length });
     }, [assignments, rules]);

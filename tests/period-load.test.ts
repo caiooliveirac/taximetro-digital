@@ -35,13 +35,16 @@ test("três internos numa vaga só também é excesso", () => {
   assert.equal(load.overcrowded, true);
 });
 
-test("grade maior que o limite físico manda (CRU com três vagas)", () => {
+// Base USA com três vagas na grade não é o normal, mas se alguém montar assim
+// a grade manda — o teto físico é piso, não teto do teto.
+test("grade maior que o limite físico manda", () => {
   assert.equal(computePeriodLoad({ capacity: 3, occupied: 3 }).full, true);
   assert.equal(computePeriodLoad({ capacity: 3, occupied: 2 }).full, false);
   assert.equal(computePeriodLoad({ capacity: 3, occupied: 4 }).overcrowded, true);
 });
 
-test("base sem grade no turno não tem teto a aplicar", () => {
+// capacity 0 é como CRU/CRL e base sem grade entram aqui: sem teto, sem alerta.
+test("sem grade no turno não tem teto a aplicar", () => {
   const load = computePeriodLoad({ capacity: 0, occupied: 2 });
   assert.equal(load.full, false);
   assert.equal(load.overcrowded, false);
