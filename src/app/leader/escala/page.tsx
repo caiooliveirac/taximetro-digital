@@ -9,10 +9,14 @@ import { useSession } from "next-auth/react";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { addDaysToDateStr, localDateStr, startOfWeekDateStr } from "@/lib/utils";
+import { filterCruFixedCandidates } from "@/features/scheduling/domain/policies/cru-fixed-candidates";
 
 /* ────────── Types ────────── */
 
-type InternRole = { id: string; name: string; userActive: boolean; roleActive: boolean; isArchived: boolean };
+type InternRole = {
+  id: string; name: string; userActive: boolean; roleActive: boolean; isArchived: boolean;
+  cohortName?: string | null; cohortStart?: string | null; cohortEnd?: string | null;
+};
 type Base = { id: string; code: string; name: string; type: string };
 type Assignment = {
   id: string; internId: string; internName: string;
@@ -174,6 +178,7 @@ export default function LeaderEscala() {
   const [cruFixed, setCruFixed] = useState<CruFixed[]>([]);
   const [cruFixedAdd, setCruFixedAdd] = useState<{ dayOfWeek: string; period: "DAY" | "NIGHT" } | null>(null);
   const [cruFixedInternId, setCruFixedInternId] = useState("");
+  const [cruFixedSearch, setCruFixedSearch] = useState("");
   const [cruFixedWeeks, setCruFixedWeeks] = useState<number | null>(null);
   const [cruFixedLoading, setCruFixedLoading] = useState(false);
   const [cruFixedMsg, setCruFixedMsg] = useState("");
@@ -520,6 +525,13 @@ export default function LeaderEscala() {
   }
 
   /* ── CRU fixed handlers ── */
+  function closeCruFixedModal() {
+    setCruFixedAdd(null);
+    setCruFixedInternId("");
+    setCruFixedSearch("");
+    setCruFixedMsg("");
+  }
+
   async function addCruFixed() {
     if (!cruFixedAdd || !cruFixedInternId || !cruFixedWeeks) return;
     const selectedWeeks = cruFixedWeeks;
@@ -562,8 +574,11 @@ export default function LeaderEscala() {
           });
         } else {
           const changed = (sync?.createdCount ?? 0) + (sync?.updatedCount ?? 0) + (sync?.reactivatedCount ?? 0);
-          setCruFixedMsg(`✅ Salvo e sincronizado (${changed}/${sync?.plannedCount ?? 0})`);
-          setTimeout(() => { setCruFixedAdd(null); setCruFixedMsg(""); }, 600);
+          const nome = activeInterns.find((i) => i.id === cruFixedInternId)?.name ?? "Interno";
+          // modal segue aberto: o líder escala vários seguidos no mesmo dia/turno
+          setCruFixedMsg(`✅ ${nome} — ${changed}/${sync?.plannedCount ?? 0} plantões`);
+          setCruFixedInternId("");
+          setCruFixedSearch("");
         }
       } else {
         setCruFixedMsg(`❌ ${json.error}`);
@@ -592,8 +607,9 @@ export default function LeaderEscala() {
       const json = await res.json();
       if (json.success) {
         setCruConflictPending(null);
-        setCruFixedAdd(null);
-        setCruFixedMsg("");
+        setCruFixedInternId("");
+        setCruFixedSearch("");
+        setCruFixedMsg("✅ Conflitos substituídos pelo CRU fixo");
         await load();
       } else {
         setCruFixedMsg(`❌ ${json.error}`);
@@ -706,6 +722,26 @@ export default function LeaderEscala() {
 
     return { eligibleInterns, blockedCount, busyCount };
   }, [activeInterns, allocSearch, allocShift, allocSlot, assignmentsByInternDate, cruConflicts, isEbmsp]);
+
+  /* ── Candidatos do CRU fixo semanal ──
+   * Janela real do rodízio: começa na segunda da semana corrente e dura `weeks`
+   * (mesma conta de computeCruFixedWeeksWindow no servidor).
+   * Lista padrão = turma que cobre essa janela e ainda sem fixo. Quem já tem fixo
+   * some da lista, mas continua achável pela busca (2º fixo é exceção, não regra). */
+  const cruFixedCandidates = useMemo(() => {
+    if (!cruFixedAdd) return { list: [] as InternRole[], hiddenWithFixed: 0, hiddenOtherCohort: 0 };
+
+    const windowStart = startOfWeekDateStr(localDateStr());
+    return filterCruFixedCandidates({
+      interns: activeInterns,
+      cruFixed,
+      dayOfWeek: cruFixedAdd.dayOfWeek,
+      period: cruFixedAdd.period,
+      windowStart,
+      windowEnd: addDaysToDateStr(windowStart, (cruFixedWeeks ?? 1) * 7 - 1),
+      search: cruFixedSearch,
+    });
+  }, [activeInterns, cruFixed, cruFixedAdd, cruFixedSearch, cruFixedWeeks]);
 
   const today = localDateStr();
   const selectedLotteryIds = [...lotterySelected].filter((id) => !lotteryExcluded.has(id));
@@ -1665,37 +1701,51 @@ export default function LeaderEscala() {
                   {getDayLabel(cruFixedAdd.dayOfWeek)} · {cruFixedAdd.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
                 </p>
               </div>
-              <button onClick={() => setCruFixedAdd(null)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
+              <button onClick={closeCruFixedModal} className="rounded-lg p-1.5 hover:bg-white/20 transition">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="px-6 py-4 space-y-3">
               <label className="block text-sm font-medium text-slate-700">Selecionar interno:</label>
-              <select
-                value={cruFixedInternId}
-                onChange={(e) => setCruFixedInternId(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
-              >
-                <option value="">— Escolher —</option>
-                {activeInterns
-                  .filter((intern) => {
-                    // Exclude interns already fixed for this day+period
-                    return !cruFixed.some(
-                      (c) =>
-                        c.intern_id === intern.id &&
-                        c.day_of_week === cruFixedAdd.dayOfWeek &&
-                        c.period === cruFixedAdd.period,
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={cruFixedSearch}
+                  onChange={(e) => setCruFixedSearch(e.target.value)}
+                  placeholder="Buscar pelo nome (inclui quem já tem fixo)"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                />
+              </div>
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+                {cruFixedCandidates.list.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-slate-400">
+                    Nenhum interno disponível. Busque pelo nome para escalar quem já tem fixo.
+                  </p>
+                ) : (
+                  cruFixedCandidates.list.map((intern) => {
+                    const jaTemFixo = cruFixed.filter((c) => c.intern_id === intern.id);
+                    return (
+                      <button
+                        key={intern.id}
+                        type="button"
+                        onClick={() => setCruFixedInternId(intern.id)}
+                        className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${cruFixedInternId === intern.id ? "bg-violet-50 text-violet-700 ring-1 ring-violet-300" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+                      >
+                        <span>{intern.name}</span>
+                        {jaTemFixo.length > 0 && (
+                          <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                            já tem {jaTemFixo.map((c) => `${getDayLabel(c.day_of_week)} ${c.period === "DAY" ? "☀️" : "🌙"}`).join(", ")}
+                          </span>
+                        )}
+                      </button>
                     );
                   })
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((intern) => (
-                    <option key={intern.id} value={intern.id}>
-                      {intern.name}
-                    </option>
-                  ))}
-              </select>
+                )}
+              </div>
               <p className="text-xs text-slate-500">
                 O interno será fixo na CRU toda {getDayLabel(cruFixedAdd.dayOfWeek)} ({cruFixedAdd.period === "DAY" ? "Diurno" : "Noturno"}).
+                {cruFixedCandidates.hiddenOtherCohort > 0 && ` ${cruFixedCandidates.hiddenOtherCohort} fora da turma deste período.`}
+                {cruFixedCandidates.hiddenWithFixed > 0 && ` ${cruFixedCandidates.hiddenWithFixed} já com fixo (busque pelo nome).`}
               </p>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Duração (semanas):</label>
@@ -1735,10 +1785,10 @@ export default function LeaderEscala() {
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
               <button
-                onClick={() => setCruFixedAdd(null)}
+                onClick={closeCruFixedModal}
                 className="flex-1 rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 transition"
               >
-                Cancelar
+                Fechar
               </button>
               <button
                 onClick={addCruFixed}
