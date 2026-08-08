@@ -1,4 +1,4 @@
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte, ne } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import { assignments, bases, checkins, faculties, userRoles, users } from "@/shared/db/schema";
 
@@ -10,6 +10,8 @@ export async function listAssignmentsWithRelations(params: {
   period?: "DAY" | "NIGHT";
   internId?: string;
   selfOnlyUserId?: string;
+  /** esconde plantões cancelados — plantão cancelado é ruído para quem só cumpre escala */
+  excludeCancelled?: boolean;
 }) {
   let query = db
     .select({
@@ -73,6 +75,7 @@ export async function listAssignmentsWithRelations(params: {
   if (params.period) conditions.push(eq(assignments.period, params.period));
   if (params.internId) conditions.push(eq(assignments.internId, params.internId));
   if (params.selfOnlyUserId) conditions.push(eq(assignments.internId, params.selfOnlyUserId));
+  if (params.excludeCancelled) conditions.push(ne(assignments.status, "CANCELLED"));
 
   if (conditions.length > 0) {
     query = query.where(and(...conditions));
