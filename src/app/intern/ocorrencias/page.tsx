@@ -15,11 +15,13 @@ export default function InternOcorrencias() {
   const [form, setForm] = useState({ assignmentId: "", nickname: "", description: "" });
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const today = localDateStr();
-  // Janela retroativa: permite registrar ocorrências de plantões passados (até 90 dias atrás).
-  const from = localDateStr(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
-
   useEffect(() => {
+    // Datas ficam dentro do efeito: ler o relógio durante o render é impuro
+    // (react-hooks/purity) e a janela só é usada aqui.
+    const today = localDateStr();
+    // Janela retroativa: permite registrar ocorrências de plantões passados (até 90 dias atrás).
+    const from = localDateStr(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
+
     fetch(`/taximetro/api/assignments?from=${from}&to=${today}`)
       .then((r) => r.json())
       .then((json) => {
