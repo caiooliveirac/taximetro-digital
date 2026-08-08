@@ -10,6 +10,23 @@ type AssignmentActor = {
   realUserId: string | null;
 };
 
+const PAPEL_NA_NOTA: Record<string, string> = {
+  COORDINATOR: "pelo admin",
+  LEADER: "pelo líder",
+  PRECEPTOR: "pelo preceptor",
+};
+
+/**
+ * Cancelar sem deixar nota fazia o plantão de CRU fixo voltar sozinho: a nota
+ * seguia sendo "CRU fixo semanal", que a materialização lê como cancelamento do
+ * próprio fluxo e reativa (ver isCruFixedReactivatableNote). Cancelamento humano
+ * agora sempre assina, então a materialização o respeita.
+ */
+export function removalNote(role: string, today = new Date()): string {
+  const quando = today.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  return `Removido da escala ${PAPEL_NA_NOTA[role] ?? "manualmente"} em ${quando}`;
+}
+
 export async function executeUpdateAssignmentStatus(params: {
   actor: AssignmentActor;
   input: {
@@ -42,7 +59,9 @@ export async function executeUpdateAssignmentStatus(params: {
   const updated = await updateAssignmentStatus({
     id: input.id,
     status: input.status,
-    notes: input.notes,
+    notes: input.status === "CANCELLED"
+      ? (input.notes ?? removalNote(actor.role))
+      : input.notes,
   });
 
   if (!updated) {
