@@ -33,6 +33,7 @@ type CruFixedTemplate = {
     facultyId: string;
     dayOfWeek: string;
     period: "DAY" | "NIGHT";
+    validFrom: string;
     validUntil: string;
 };
 
@@ -147,6 +148,7 @@ export async function getActiveCruFixedTemplates(params: {
             facultyId: cruFixedAssignments.facultyId,
             dayOfWeek: cruFixedAssignments.dayOfWeek,
             period: cruFixedAssignments.period,
+            validFrom: cruFixedAssignments.validFrom,
             validUntil: cruFixedAssignments.validUntil,
         })
         .from(cruFixedAssignments)
@@ -234,8 +236,14 @@ export async function materializeCruFixedAssignments(params: {
     };
 
     for (const template of templates) {
+        // A vigência do template manda: nada é criado antes de validFrom nem depois
+        // de validUntil, venha a chamada de onde vier (add, geração semanal, cron).
+        // Sem isso um template que começa na turma que vem materializava plantão na
+        // semana em curso só porque alguém abriu a tela da escala.
+        const firstDate = template.validFrom > normalizedStart ? template.validFrom : normalizedStart;
         const lastDate = template.validUntil < normalizedEnd ? template.validUntil : normalizedEnd;
-        const matchingDates = getMatchingDates(template.dayOfWeek, normalizedStart, lastDate);
+        if (firstDate > lastDate) continue;
+        const matchingDates = getMatchingDates(template.dayOfWeek, firstDate, lastDate);
 
         for (const date of matchingDates) {
             result.plannedCount += 1;

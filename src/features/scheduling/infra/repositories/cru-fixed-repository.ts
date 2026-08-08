@@ -1,6 +1,33 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { cruFixedAssignments, userRoles } from "@/shared/db/schema";
+import { cohorts, cruFixedAssignments, userRoles } from "@/shared/db/schema";
+
+/**
+ * Janela da turma do interno — é ela que define o rodízio do CRU fixo.
+ * Interno com mais de um vínculo fica com a turma que termina por último.
+ */
+export async function findInternCohortWindow(params: {
+  internId: string;
+  facultyId: string;
+}) {
+  const [cohort] = await db
+    .select({
+      name: cohorts.name,
+      startDate: cohorts.startDate,
+      endDate: cohorts.endDate,
+    })
+    .from(userRoles)
+    .innerJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
+    .where(and(
+      eq(userRoles.userId, params.internId),
+      eq(userRoles.facultyId, params.facultyId),
+      eq(userRoles.role, "INTERN"),
+    ))
+    .orderBy(desc(cohorts.endDate))
+    .limit(1);
+
+  return cohort ?? null;
+}
 
 export async function listActiveCruFixedByFaculty(facultyId: string) {
   return db.execute(sql`

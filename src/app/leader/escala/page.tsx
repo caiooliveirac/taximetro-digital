@@ -10,6 +10,7 @@ import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { addDaysToDateStr, localDateStr, startOfWeekDateStr } from "@/lib/utils";
 import { filterCruFixedCandidates } from "@/features/scheduling/domain/policies/cru-fixed-candidates";
+import { contarSemanas } from "@/features/scheduling/domain/policies/cru-fixed-window";
 
 /* ────────── Types ────────── */
 
@@ -47,7 +48,7 @@ type CruConflictPending = {
   internId: string;
   dayOfWeek: string;
   period: "DAY" | "NIGHT";
-  weeks: number;
+  weeks: number | null;
   conflicts: CruConflictItem[];
 };
 
@@ -533,8 +534,11 @@ export default function LeaderEscala() {
   }
 
   async function addCruFixed() {
-    if (!cruFixedAdd || !cruFixedInternId || !cruFixedWeeks) return;
-    const selectedWeeks = cruFixedWeeks;
+    if (!cruFixedAdd || !cruFixedInternId) return;
+    // Com turma, a janela vem dela e `weeks` é ignorado pelo servidor.
+    const temTurma = Boolean(internoDoCruFixed?.cohortEnd);
+    if (!temTurma && !cruFixedWeeks) return;
+    const selectedWeeks = temTurma ? null : cruFixedWeeks;
     setCruFixedLoading(true);
     setCruFixedMsg("");
     try {
@@ -724,30 +728,25 @@ export default function LeaderEscala() {
   }, [activeInterns, allocSearch, allocShift, allocSlot, assignmentsByInternDate, cruConflicts, isEbmsp]);
 
   /* ── Candidatos do CRU fixo semanal ──
-   * Janela real do rodízio: começa na segunda da semana corrente e dura `weeks`
-   * (mesma conta de computeCruFixedWeeksWindow no servidor).
-   * Lista padrão = turma que ainda alcança essa janela e quem não tem fixo. Quem já
-   * tem fixo some da lista, mas continua achável pela busca (2º fixo é exceção).
-   * `mustReach`: a turma precisa chegar ao fim da janela — ou, quando a janela é de
-   * uma semana só, pelo menos à semana seguinte. Sem isso a turma que está acabando
-   * reaparece na lista, porque a janela do servidor inclui a semana já em curso. */
+   * Cada interno traz a própria janela (a da turma dele), então a lista só precisa
+   * cortar quem já acabou: turma que não chega à semana que vem não tem rodízio a
+   * receber. Turma que ainda vai começar aparece — a materialização respeita o
+   * valid_from e não cria nada antes da hora.
+   * Quem já tem fixo some da lista, mas continua achável pela busca (2º fixo é exceção). */
   const cruFixedCandidates = useMemo(() => {
     if (!cruFixedAdd) return { list: [] as InternRole[], hiddenWithFixed: 0, hiddenOtherCohort: 0 };
-
-    const windowStart = startOfWeekDateStr(localDateStr());
-    const windowEnd = addDaysToDateStr(windowStart, (cruFixedWeeks ?? 1) * 7 - 1);
-    const proximaSegunda = addDaysToDateStr(windowStart, 7);
 
     return filterCruFixedCandidates({
       interns: activeInterns,
       cruFixed,
       dayOfWeek: cruFixedAdd.dayOfWeek,
       period: cruFixedAdd.period,
-      mustReach: windowEnd < proximaSegunda ? windowEnd : proximaSegunda,
-      windowEnd,
+      mustReach: addDaysToDateStr(startOfWeekDateStr(localDateStr()), 7),
       search: cruFixedSearch,
     });
-  }, [activeInterns, cruFixed, cruFixedAdd, cruFixedSearch, cruFixedWeeks]);
+  }, [activeInterns, cruFixed, cruFixedAdd, cruFixedSearch]);
+
+  const internoDoCruFixed = activeInterns.find((intern) => intern.id === cruFixedInternId);
 
   const today = localDateStr();
   const selectedLotteryIds = [...lotterySelected].filter((id) => !lotteryExcluded.has(id));
@@ -1753,40 +1752,53 @@ export default function LeaderEscala() {
                 {cruFixedCandidates.hiddenOtherCohort > 0 && ` ${cruFixedCandidates.hiddenOtherCohort} fora da turma deste período.`}
                 {cruFixedCandidates.hiddenWithFixed > 0 && ` ${cruFixedCandidates.hiddenWithFixed} já com fixo (busque pelo nome).`}
               </p>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Duração (semanas):</label>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {[1, 2, 3, 4, 6, 8, 12].map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => setCruFixedWeeks(n)}
-                      className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${cruFixedWeeks === n
-                        ? "bg-violet-600 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                  {/* Atalhos não cobrem 5, 7, 9... e rodízio dessas durações existe */}
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={cruFixedWeeks ?? ""}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      setCruFixedWeeks(Number.isInteger(n) && n >= 1 && n <= 24 ? n : null);
-                    }}
-                    placeholder="outra"
-                    aria-label="Outra duração em semanas"
-                    className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
-                  />
+              {/* A duração vem da turma. O seletor de semanas só aparece para interno
+                  sem turma cadastrada, único caso em que não há data de onde partir. */}
+              {internoDoCruFixed?.cohortStart && internoDoCruFixed.cohortEnd ? (
+                <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5">
+                  <p className="text-sm font-semibold text-violet-900">
+                    {internoDoCruFixed.cohortName ?? "Turma"} · {formatDateLabel(internoDoCruFixed.cohortStart)} a {formatDateLabel(internoDoCruFixed.cohortEnd)}
+                  </p>
+                  <p className="mt-0.5 text-xs text-violet-700">
+                    {contarSemanas(internoDoCruFixed.cohortStart, internoDoCruFixed.cohortEnd)} semanas — o rodízio segue o início e o fim da turma.
+                  </p>
                 </div>
-                {!cruFixedWeeks && (
-                  <p className="mt-1 text-xs text-amber-700">Selecione quantas semanas devem ser ocupadas a partir da semana atual.</p>
-                )}
-              </div>
+              ) : internoDoCruFixed ? (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Duração (semanas):</label>
+                  <p className="mb-1.5 text-xs text-amber-700">
+                    {internoDoCruFixed.name} não tem turma cadastrada — sem datas de onde partir, informe a duração.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[1, 2, 3, 4, 6, 8, 12].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setCruFixedWeeks(n)}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${cruFixedWeeks === n
+                          ? "bg-violet-600 text-white shadow-sm"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    {/* Atalhos não cobrem 5, 7, 9... e rodízio dessas durações existe */}
+                    <input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={cruFixedWeeks ?? ""}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        setCruFixedWeeks(Number.isInteger(n) && n >= 1 && n <= 24 ? n : null);
+                      }}
+                      placeholder="outra"
+                      aria-label="Outra duração em semanas"
+                      className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    />
+                  </div>
+                </div>
+              ) : null}
               {cruFixedMsg && <p className="text-sm">{cruFixedMsg}</p>}
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
@@ -1798,7 +1810,7 @@ export default function LeaderEscala() {
               </button>
               <button
                 onClick={addCruFixed}
-                disabled={cruFixedLoading || !cruFixedInternId || !cruFixedWeeks}
+                disabled={cruFixedLoading || !cruFixedInternId || (!internoDoCruFixed?.cohortEnd && !cruFixedWeeks)}
                 className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-bold text-white hover:bg-violet-700 transition disabled:opacity-50"
               >
                 {cruFixedLoading ? "Salvando..." : "Confirmar"}

@@ -3,11 +3,12 @@ import { cancelCruFixedAssignments, materializeCruFixedAssignments } from "@/lib
 import { localDateStr } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { DOW, canManageCruFixed, type SchedulingActor } from "@/features/scheduling/application/use-cases/cru-fixed-shared";
-import { computeCruFixedWeeksWindow } from "@/features/scheduling/application/use-cases/cru-fixed-weeks-window";
+import { computeCruFixedWindow } from "@/features/scheduling/domain/policies/cru-fixed-window";
 import {
   deactivateCruFixedTemplateForFaculty,
   findCruFixedTemplate,
   findCruFixedTemplateByIdForFaculty,
+  findInternCohortWindow,
   internBelongsToFaculty,
   upsertCruFixedTemplate,
 } from "@/features/scheduling/infra/repositories/cru-fixed-repository";
@@ -16,7 +17,8 @@ export const addCruFixedSchema = z.object({
   internId: z.string().uuid(),
   dayOfWeek: z.enum(DOW),
   period: z.enum(["DAY", "NIGHT"]),
-  weeks: z.number().int().min(1).max(24),
+  /** só usado para interno sem turma cadastrada — com turma, a janela vem dela */
+  weeks: z.number().int().min(1).max(24).nullish(),
   /** IDs dos assignments conflitantes que o líder autorizou cancelar para liberar a CRU */
   forceConflictIds: z.array(z.string().uuid()).optional(),
 });
@@ -40,10 +42,30 @@ export async function executeAddCruFixed(params: {
     return { status: 400, body: { success: false, error: "Interno não pertence à sua faculdade" } } as const;
   }
 
-  const { startDate, weekStart, validUntil } = computeCruFixedWeeksWindow({
+  const cohort = await findInternCohortWindow({
+    internId: input.internId,
+    facultyId: actor.facultyId!,
+  });
+
+  if (!cohort && !input.weeks) {
+    return {
+      status: 400,
+      body: { success: false, error: "Interno sem turma cadastrada — informe a duração em semanas ou cadastre a turma dele" },
+    } as const;
+  }
+
+  const janela = computeCruFixedWindow({
     today: localDateStr(),
+    cohort,
     weeks: input.weeks,
   });
+
+  if (janela.validUntil < localDateStr()) {
+    return {
+      status: 400,
+      body: { success: false, error: `A turma ${cohort?.name ?? ""} terminou em ${janela.validUntil} — não há rodízio a criar` },
+    } as const;
+  }
 
   try {
     const actorUserId = actor.realUserId ?? actor.id;
@@ -61,16 +83,15 @@ export async function executeAddCruFixed(params: {
       dayOfWeek: input.dayOfWeek,
       period: input.period,
       createdBy: actorUserId,
-      // rodízio começa na segunda da semana corrente, não no dia em que o líder
-      // montou a escala — é essa a janela que a cota de troca de CRU enxerga
-      validFrom: weekStart,
-      validUntil,
+      // janela da turma do interno — é ela que a cota de troca de CRU enxerga
+      validFrom: janela.validFrom,
+      validUntil: janela.validUntil,
     });
 
     const sync = await materializeCruFixedAssignments({
       facultyId: actor.facultyId!,
-      startDate,
-      endDate: validUntil,
+      startDate: janela.materializeFrom,
+      endDate: janela.validUntil,
       actorUserId,
       templateIds: templateId ? [templateId] : undefined,
       forceConflictIds: input.forceConflictIds,
@@ -86,6 +107,9 @@ export async function executeAddCruFixed(params: {
         dayOfWeek: input.dayOfWeek,
         period: input.period,
         weeks: input.weeks,
+        turma: cohort?.name ?? null,
+        janela: `${janela.validFrom}..${janela.validUntil}`,
+        janelaSource: janela.source,
         materialized: sync,
         ...(actor.isImpersonating ? { impersonating: actor.id, impersonateRole: actor.role } : {}),
       },
