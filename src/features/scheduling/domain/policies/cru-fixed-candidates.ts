@@ -5,8 +5,13 @@
  * 1. mesmo dia+período que o interno já tem: nunca aparece (é duplicata, o banco recusa)
  * 2. com busca por nome: qualquer interno da faculdade que casar com o texto — é assim
  *    que se escala um segundo fixo, que é exceção e não deve estar na lista padrão
- * 3. sem busca: só a turma cujas datas cobrem a janela do rodízio, e só quem ainda
+ * 3. sem busca: só a turma que ainda alcança a janela do rodízio, e só quem ainda
  *    não tem nenhum fixo. Interno sem turma cadastrada aparece (não dá para julgar).
+ *
+ * Sobre `mustReach`: a janela do servidor começa na segunda da semana corrente, então
+ * uma turma que termina no meio dela ainda "cruza" a janela e reaparecia na lista dias
+ * antes de acabar. A turma precisa alcançar o fim da janela — ou, quando a janela é
+ * curta, pelo menos a semana seguinte. Quem chama passa esse limite pronto.
  */
 
 export type CandidateIntern = {
@@ -27,9 +32,9 @@ export function filterCruFixedCandidates<T extends CandidateIntern>(params: {
   cruFixed: CandidateFixed[];
   dayOfWeek: string;
   period: "DAY" | "NIGHT";
-  /** primeiro dia da janela do rodízio (segunda da semana corrente) */
-  windowStart: string;
-  /** último dia da janela (windowStart + semanas * 7 - 1) */
+  /** data que a turma precisa alcançar para ainda valer o rodízio */
+  mustReach: string;
+  /** último dia da janela (segunda da semana corrente + semanas * 7 - 1) */
   windowEnd: string;
   search: string;
 }): { list: T[]; hiddenWithFixed: number; hiddenOtherCohort: number } {
@@ -50,7 +55,7 @@ export function filterCruFixedCandidates<T extends CandidateIntern>(params: {
       if (query) return intern.name.toLowerCase().includes(query);
 
       if (intern.cohortStart && intern.cohortEnd
-        && (intern.cohortEnd < params.windowStart || intern.cohortStart > params.windowEnd)) {
+        && (intern.cohortEnd < params.mustReach || intern.cohortStart > params.windowEnd)) {
         hiddenOtherCohort += 1;
         return false;
       }

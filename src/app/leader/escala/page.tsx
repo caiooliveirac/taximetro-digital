@@ -726,19 +726,25 @@ export default function LeaderEscala() {
   /* ── Candidatos do CRU fixo semanal ──
    * Janela real do rodízio: começa na segunda da semana corrente e dura `weeks`
    * (mesma conta de computeCruFixedWeeksWindow no servidor).
-   * Lista padrão = turma que cobre essa janela e ainda sem fixo. Quem já tem fixo
-   * some da lista, mas continua achável pela busca (2º fixo é exceção, não regra). */
+   * Lista padrão = turma que ainda alcança essa janela e quem não tem fixo. Quem já
+   * tem fixo some da lista, mas continua achável pela busca (2º fixo é exceção).
+   * `mustReach`: a turma precisa chegar ao fim da janela — ou, quando a janela é de
+   * uma semana só, pelo menos à semana seguinte. Sem isso a turma que está acabando
+   * reaparece na lista, porque a janela do servidor inclui a semana já em curso. */
   const cruFixedCandidates = useMemo(() => {
     if (!cruFixedAdd) return { list: [] as InternRole[], hiddenWithFixed: 0, hiddenOtherCohort: 0 };
 
     const windowStart = startOfWeekDateStr(localDateStr());
+    const windowEnd = addDaysToDateStr(windowStart, (cruFixedWeeks ?? 1) * 7 - 1);
+    const proximaSegunda = addDaysToDateStr(windowStart, 7);
+
     return filterCruFixedCandidates({
       interns: activeInterns,
       cruFixed,
       dayOfWeek: cruFixedAdd.dayOfWeek,
       period: cruFixedAdd.period,
-      windowStart,
-      windowEnd: addDaysToDateStr(windowStart, (cruFixedWeeks ?? 1) * 7 - 1),
+      mustReach: windowEnd < proximaSegunda ? windowEnd : proximaSegunda,
+      windowEnd,
       search: cruFixedSearch,
     });
   }, [activeInterns, cruFixed, cruFixedAdd, cruFixedSearch, cruFixedWeeks]);
