@@ -232,6 +232,7 @@ Rotas protegidas por prefixo no middleware:
 | `/admin/bases`         | Gerenciamento de bases SAMU               |
 | `/admin/faculdades`    | Gerenciamento de faculdades               |
 | `/admin/escalas`       | Visualização/criação de escala            |
+| `/admin/montar-escala` | CRU fixo semanal + sorteio (mesma tela do líder, com seletor de faculdade) |
 | `/admin/presencas`     | Registros de presença                     |
 | `/admin/solicitacoes`  | Aprovação de solicitações                 |
 | `/admin/audit`         | Log de auditoria do sistema               |

@@ -29,7 +29,8 @@ Este documento descreve como os dados percorrem o sistema em produção e como e
 
 ## 1) Escala e alocação
 Entrada:
-- src/app/leader/escala/page.tsx chama endpoints de assignments e slots.
+- src/components/scheduling/montar-escala.tsx chama endpoints de assignments e slots.
+  Serve /leader/escala (faculdade do vínculo) e /admin/montar-escala (faculdade escolhida).
 
 Processamento:
 - src/app/api/assignments/route.ts

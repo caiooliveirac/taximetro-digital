@@ -15,9 +15,12 @@ export async function listFacultyInternRows(facultyId: string, cohortId?: string
       userActive: users.isActive,
       roleActive: userRoles.isActive,
       isArchived: userRoles.isArchived,
-      // datas da turma: a tela do líder usa para mostrar só quem está na turma
-      // vigente naquele intervalo (CRU fixo semanal)
+      // turma do vínculo: a tela do líder usa para mostrar só quem está na turma
+      // vigente naquele intervalo (CRU fixo semanal) e para recortar o sorteio
+      // por turma. `name` é apelido opcional; `label` é o nome cheio e sempre existe.
+      cohortId: userRoles.cohortId,
       cohortName: cohorts.name,
+      cohortLabel: cohorts.label,
       cohortStart: cohorts.startDate,
       cohortEnd: cohorts.endDate,
     })

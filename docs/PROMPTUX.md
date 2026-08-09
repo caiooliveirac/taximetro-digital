@@ -77,7 +77,7 @@ Não existe um único "doc técnico". Sintetize a partir de:
 - `src/lib/totp.ts`, `src/lib/geo.ts` — anti-fraude
 
 **Tela mais crítica (entenda o que existe hoje)**
-- `src/app/leader/escala/page.tsx` (~1800 linhas) — esta É a grade do
+- `src/components/scheduling/montar-escala.tsx` (~1900 linhas) — esta É a grade do
   líder hoje. Antes de propor 3 designs novos, **leia esta tela e me
   diga o que ela já faz / o que dói**.
 - `src/app/intern/checkin/page.tsx` (~980 linhas) — o fluxo de check-in
@@ -182,7 +182,7 @@ Sem paleta de cor genérica. Quero:
 
 ### Etapa 3 — A grade do líder (sob demanda, peça mais difícil)
 **Pré-requisito**: respostas aos constraints duros acima + sua leitura
-de `src/app/leader/escala/page.tsx` (o que existe hoje).
+de `src/components/scheduling/montar-escala.tsx` (o que existe hoje).
 
 3 designs DIFERENTES (princípios organizadores distintos, não 3 skins):
 - Princípio organizador (ex: "tempo no eixo X, bases no Y" vs "interno
