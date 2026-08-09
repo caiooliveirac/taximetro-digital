@@ -8,6 +8,7 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 ## [Unreleased]
 
 ### Adicionado
+- **Sorteio por turma na tela do líder** — o modal "Sortear Internos" (`/leader/escala`) passou a ter um seletor de turma. O líder com turma vinculada continua vendo só a dele; quem entra por impersonate de líder sem turma (o caso do COORDINATOR) recebia a faculdade inteira e agora abre o modal já recortado na turma que cruza a semana sorteada — em semana de virada vale a que começou depois. O recorte vale para o que vai ao servidor: interno de outra turma não entra no sorteio nem por seleção remanescente. Sem turma cruzando a semana (ou faculdade sem turma cadastrada), cai em "Todas as turmas" e nada muda em relação ao comportamento anterior. Regras em `src/features/scheduling/domain/policies/lottery-cohorts.ts` (`tests/lottery-cohorts.test.ts`); `/api/leader/interns` agora devolve também `cohortId` e `cohortLabel`.
 - **Heatmap de presença para líderes** — a visão heatmap (antes exclusiva do admin/relatórios) agora está disponível na página `/leader/relatorios` para o líder autenticado. Exibe somente os internos da turma do líder (`cohortId` do token), é totalmente clicável (abre modal com detalhes do plantão) e respeita o mesmo período configurado pelos filtros de data. Novas rotas:
   - `GET /api/leader/heatmap?from=&to=` — gera o `ReportDocument` escopado à faculdade + turma do líder.
   - `GET /api/leader/assignments/[id]` — retorna detalhes do plantão; rejeita IDs fora da faculdade do líder (403).

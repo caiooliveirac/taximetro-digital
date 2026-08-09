@@ -18,7 +18,13 @@ export async function executeListFacultyInterns(facultyId: string, cohortId?: st
       isArchived: existing.isArchived && row.isArchived,
       // interno com mais de um vínculo: fica com a turma que termina por último
       ...((row.cohortEnd ?? "") > (existing.cohortEnd ?? "")
-        ? { cohortName: row.cohortName, cohortStart: row.cohortStart, cohortEnd: row.cohortEnd }
+        ? {
+          cohortId: row.cohortId,
+          cohortName: row.cohortName,
+          cohortLabel: row.cohortLabel,
+          cohortStart: row.cohortStart,
+          cohortEnd: row.cohortEnd,
+        }
         : {}),
     });
   }

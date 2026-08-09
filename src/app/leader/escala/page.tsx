@@ -11,12 +11,19 @@ import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { addDaysToDateStr, localDateStr, startOfWeekDateStr } from "@/lib/utils";
 import { filterCruFixedCandidates } from "@/features/scheduling/domain/policies/cru-fixed-candidates";
 import { contarSemanas } from "@/features/scheduling/domain/policies/cru-fixed-window";
+import {
+  internosDaTurma,
+  turmaPadraoDoSorteio,
+  turmasDoSorteio,
+  TODAS_AS_TURMAS,
+} from "@/features/scheduling/domain/policies/lottery-cohorts";
 
 /* ────────── Types ────────── */
 
 type InternRole = {
   id: string; name: string; userActive: boolean; roleActive: boolean; isArchived: boolean;
-  cohortName?: string | null; cohortStart?: string | null; cohortEnd?: string | null;
+  cohortId?: string | null; cohortName?: string | null; cohortLabel?: string | null;
+  cohortStart?: string | null; cohortEnd?: string | null;
 };
 type Base = { id: string; code: string; name: string; type: string };
 type Assignment = {
@@ -103,6 +110,11 @@ function getStatusRing(a: { status: string; checkinGeoValid?: boolean | null }):
   return "";
 }
 
+// Turma atravessa o ano (ex.: 01/08/26 a 31/01/27), então o ano entra no rótulo.
+function formatTurmaDate(dateStr: string) {
+  return formatDateLabel(dateStr, { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
 function formatDateLabel(
   dateStr: string,
   options: Intl.DateTimeFormatOptions = { day: "2-digit", month: "2-digit" },
@@ -152,6 +164,7 @@ export default function LeaderEscala() {
   /* ── Lottery modal ── */
   const [showLottery, setShowLottery] = useState(false);
   const [lotteryInterns, setLotteryInterns] = useState<InternRole[]>([]);
+  const [lotteryTurma, setLotteryTurma] = useState<string>(TODAS_AS_TURMAS);
   const [lotterySelected, setLotterySelected] = useState<Set<string>>(new Set());
   const [lotteryExcluded, setLotteryExcluded] = useState<Set<string>>(new Set());
   const [lotteryLoading, setLotteryLoading] = useState(false);
@@ -338,13 +351,32 @@ export default function LeaderEscala() {
     const res = await fetch("/taximetro/api/leader/interns");
     const json = await res.json();
     if (json.success) {
-      setLotteryInterns(json.data.filter((i: InternRole) => !i.isArchived));
-      const sel = new Set<string>();
-      (json.data as InternRole[]).filter((i) => !i.isArchived).forEach((i) => { if (i.roleActive) sel.add(i.id); });
-      setLotterySelected(sel);
+      const disponiveis = (json.data as InternRole[]).filter((i) => !i.isArchived);
+      setLotteryInterns(disponiveis);
+      // Sorteia-se a turma da semana, não a faculdade inteira: quem entra por
+      // impersonate de um líder sem turma recebe todas e escolheria à mão.
+      const turma = turmaPadraoDoSorteio(turmasDoSorteio(disponiveis), weekStart);
+      setLotteryTurma(turma);
+      setLotterySelected(selecionaveisDaTurma(disponiveis, turma));
       setLotteryExcluded(new Set());
     }
     setLotteryLoading(false);
+  }
+
+  /** Ativos da turma — os únicos que entram pré-marcados no sorteio. */
+  function selecionaveisDaTurma(interns: InternRole[], turma: string) {
+    const ids = new Set<string>();
+    for (const intern of internosDaTurma(interns, turma)) {
+      if (intern.roleActive) ids.add(intern.id);
+    }
+    return ids;
+  }
+
+  function trocarTurmaDoSorteio(turma: string) {
+    setLotteryTurma(turma);
+    setLotterySelected(selecionaveisDaTurma(lotteryInterns, turma));
+    setConfirmRemove(null);
+    setLotteryMsg("");
   }
 
   function toggleLotteryIntern(id: string) {
@@ -395,7 +427,7 @@ export default function LeaderEscala() {
   async function runLottery() {
     setLotteryLoading(true);
     setLotteryMsg("");
-    const ids = [...lotterySelected].filter((id) => !lotteryExcluded.has(id));
+    const ids = selectedLotteryIds;
 
     const atCapCount = ids.filter((id) => (lotteryShiftsByIntern.get(id) ?? 0) >= maxShifts).length;
     if (atCapCount === ids.length) {
@@ -748,8 +780,27 @@ export default function LeaderEscala() {
 
   const internoDoCruFixed = activeInterns.find((intern) => intern.id === cruFixedInternId);
 
+  /* ── Turmas do sorteio ──
+   * O recorte por turma vale para a lista E para o que vai ao servidor: interno
+   * escondido não pode entrar no sorteio por ter sobrado marcado de outra turma. */
+  const lotteryTurmas = useMemo(() => turmasDoSorteio(lotteryInterns), [lotteryInterns]);
+  const lotteryTurmaInterns = useMemo(
+    () => internosDaTurma(lotteryInterns, lotteryTurma),
+    [lotteryInterns, lotteryTurma],
+  );
+  const lotteryVisibleIds = useMemo(
+    () => new Set(lotteryTurmaInterns.map((intern) => intern.id)),
+    [lotteryTurmaInterns],
+  );
+  const lotteryTurmaAtual = lotteryTurmas.find((turma) => turma.key === lotteryTurma) ?? null;
+  const lotteryHiddenCount = lotteryInterns.filter(
+    (intern) => intern.roleActive && !lotteryVisibleIds.has(intern.id),
+  ).length;
+
   const today = localDateStr();
-  const selectedLotteryIds = [...lotterySelected].filter((id) => !lotteryExcluded.has(id));
+  const selectedLotteryIds = [...lotterySelected].filter(
+    (id) => !lotteryExcluded.has(id) && lotteryVisibleIds.has(id),
+  );
   const selectedCount = selectedLotteryIds.length;
   const lotteryShiftsByIntern = assignments.reduce((acc, assignment) => {
     if (assignment.status === "CANCELLED") return acc;
@@ -1366,13 +1417,56 @@ export default function LeaderEscala() {
               </button>
             </div>
 
+            {/* Turma — recorte de quem participa do sorteio */}
+            {!lotteryLoading && lotteryTurmas.length > 1 && (
+              <div className="border-b border-slate-200 bg-slate-50/60 px-6 py-3 space-y-1.5">
+                <label htmlFor="lottery-turma" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Turma
+                </label>
+                <select
+                  id="lottery-turma"
+                  value={lotteryTurma}
+                  onChange={(e) => trocarTurmaDoSorteio(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value={TODAS_AS_TURMAS}>
+                    Todas as turmas ({lotteryInterns.filter((i) => i.roleActive).length} ativos)
+                  </option>
+                  {lotteryTurmas.map((turma) => (
+                    <option key={turma.key} value={turma.key}>
+                      {turma.label}
+                      {turma.start && turma.end
+                        ? ` · ${formatTurmaDate(turma.start)} a ${formatTurmaDate(turma.end)}`
+                        : ""}
+                      {` (${turma.ativos} ativos)`}
+                    </option>
+                  ))}
+                </select>
+                {lotteryHiddenCount > 0 && (
+                  <p className="text-[11px] text-slate-500">
+                    {lotteryHiddenCount} interno(s) ativo(s) de outras turmas estão fora deste sorteio.
+                  </p>
+                )}
+                {lotteryTurma === TODAS_AS_TURMAS && (
+                  <p className="text-[11px] text-amber-700">
+                    Sem recorte: internos de todas as turmas entram no sorteio.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Intern list */}
             <div className="px-6 py-4 max-h-[400px] overflow-y-auto space-y-1">
               {lotteryLoading ? (
                 <p className="text-slate-400 text-sm py-4 text-center">Carregando internos...</p>
               ) : (
                 <>
-                  {lotteryInterns.filter((i) => i.roleActive).map((intern) => {
+                  {lotteryTurmaInterns.filter((i) => i.roleActive).length === 0 && (
+                    <p className="py-4 text-center text-sm text-slate-400">
+                      Nenhum interno ativo nesta turma.
+                    </p>
+                  )}
+                  {lotteryTurmaInterns.filter((i) => i.roleActive).map((intern) => {
                     const selected = lotterySelected.has(intern.id);
                     const excluded = lotteryExcluded.has(intern.id);
                     return (
@@ -1407,12 +1501,12 @@ export default function LeaderEscala() {
                   })}
 
                   {/* Inactive interns */}
-                  {lotteryInterns.some((i) => !i.roleActive) && (
+                  {lotteryTurmaInterns.some((i) => !i.roleActive) && (
                     <>
                       <div className="border-t border-slate-200 mt-3 pt-3">
                         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Inativos</p>
                       </div>
-                      {lotteryInterns.filter((i) => !i.roleActive).map((intern) => (
+                      {lotteryTurmaInterns.filter((i) => !i.roleActive).map((intern) => (
                         <div key={intern.id} className="flex items-center gap-3 rounded-lg px-3 py-2 bg-slate-50/50 opacity-60">
                           <UserX className="h-4 w-4 text-slate-400" />
                           <span className="flex-1 text-sm text-slate-500 line-through">{intern.name}</span>
@@ -1462,8 +1556,11 @@ export default function LeaderEscala() {
 
             {/* Footer */}
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50">
-              <div className="flex items-center justify-between mb-3 text-xs text-slate-500">
+              <div className="flex items-center justify-between gap-2 mb-3 text-xs text-slate-500">
                 <span>Selecionados: <strong className="text-slate-700">{selectedCount}</strong></span>
+                <span className="truncate">
+                  {lotteryTurmaAtual ? `Turma: ${lotteryTurmaAtual.label}` : "Todas as turmas"}
+                </span>
               </div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-xs font-medium text-slate-600">Plantões por interno:</span>
