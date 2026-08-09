@@ -212,10 +212,15 @@ versionadas:
 | `src/lib/instance.ts` | quais funcionalidades existem, quais escalas aparecem |
 | `src/lib/branding.ts` | nome, domínio, ícones, imagem OG, grupo do Telegram |
 
-**Funcionalidades exclusivas da Vitalmed:** sorteio de escala na tela do admin
-(`adminLottery`) e indisponibilidade do interno (`internUnavailability`). Elas
-são desligadas no SAMU por decisão de produto — `tests/instance-features.test.ts`
-quebra o `npm test` se alguém ligar sem querer.
+**Funcionalidades exclusivas da Vitalmed:** botão de sortear escala na tela de
+Escala USA do admin (`adminLottery`) e indisponibilidade do interno
+(`internUnavailability`). Elas são desligadas no SAMU por decisão de produto —
+`tests/instance-features.test.ts` quebra o `npm test` se alguém ligar sem querer.
+
+`adminLottery` é só aquele botão (um clique, faculdade inteira, sem escolher quem
+entra). A tela `/admin/montar-escala` é outra coisa e existe nas duas instâncias:
+é a tela do líder (CRU fixo semanal + sorteio recortado por turma) com seletor de
+faculdade, para o coordenador não precisar de impersonate.
 
 **Esconder o menu não é proteção.** Rota exclusiva de uma instância se bloqueia
 no servidor com `src/lib/feature-gate.ts` (`exigirFeature` em páginas,

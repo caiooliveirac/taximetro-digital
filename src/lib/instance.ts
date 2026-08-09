@@ -29,7 +29,14 @@ export const ORG: Instancia = resolverInstancia(process.env.NEXT_PUBLIC_ORG);
 
 /** Funcionalidades que existem em uma instância e não na outra. */
 export type Feature =
-  /** Botão de sortear escala na tela do admin (hoje o sorteio só existe para o líder). */
+  /**
+   * Botão "Sortear escala" na tela de Escala USA do admin: um clique, faculdade
+   * inteira, sem escolher quem entra.
+   *
+   * Não confundir com `/admin/montar-escala`, que existe nas duas instâncias: lá
+   * o coordenador tem a tela completa do líder (CRU fixo + sorteio recortado por
+   * turma). Esta feature é só o atalho da Vitalmed.
+   */
   | "adminLottery"
   /** Interno marca indisponibilidade num plantão, e o sorteio respeita isso. */
   | "internUnavailability";

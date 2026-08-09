@@ -19,6 +19,7 @@ import {
   BarChart3,
   Zap,
   BookOpen,
+  CalendarPlus,
 } from "lucide-react";
 import { escalasDaInstancia } from "@/lib/instance";
 
@@ -40,6 +41,8 @@ const NAV_OPERACAO: NavItem[] = [
   { href: "/admin/presencas", label: "Presenças", icon: CheckCircle },
   { href: "/admin/faltas", label: "Faltas", icon: XCircle },
   { href: "/admin/escalas/grade", label: "Grade", icon: LayoutGrid },
+  // Mesma tela do líder (CRU fixo semanal + sorteio), com seletor de faculdade.
+  { href: "/admin/montar-escala", label: "Montar Escala", icon: CalendarPlus },
   ...ESCALAS_NAV,
   { href: "/admin/remanejamento", label: "Remanejamento", icon: ArrowRightLeft },
   { href: "/admin/ver-interno", label: "Ver Interno", icon: Eye },
