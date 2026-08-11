@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MapPin, Sun, Moon, Calendar, ArrowRight, Clock, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut } from "lucide-react";
+import { MapPin, Sun, Moon, Calendar, ArrowRight, Clock, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut, FileText, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
@@ -20,6 +21,9 @@ type Assignment = {
   period: string;
   shift?: string | null;
   status: string;
+  absenceJustification?: string | null;
+  absenceJustificationActor?: string | null;
+  absenceJustificationAt?: string | null;
 };
 
 type Slot = {
@@ -89,6 +93,8 @@ function isDayShiftVisibleNow(assignment: Assignment, nowDate: string, nowHour: 
 export default function InternHoje() {
   const [todayAssignments, setTodayAssignments] = useState<Assignment[]>([]);
   const [upcoming, setUpcoming] = useState<Assignment[]>([]);
+  const [absences, setAbsences] = useState<Assignment[]>([]);
+  const [justifyingAbsence, setJustifyingAbsence] = useState<Assignment | null>(null);
   const [vacantSlots, setVacantSlots] = useState<Slot[]>([]);
   const [weekly, setWeekly] = useState<WeeklyCompliance | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus | null>(null);
@@ -100,7 +106,8 @@ export default function InternHoje() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${today}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      // Busca também os últimos 60 dias para exibir faltas pendentes de justificativa
+      fetch(`/taximetro/api/assignments?from=${localDateStr(new Date(Date.now() - 60 * 86400000))}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/slots/available?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/attendance/current").then((r) => r.json()).catch(() => ({ success: false, data: null })),
@@ -128,6 +135,11 @@ export default function InternHoje() {
           });
 
         setTodayAssignments(actionableToday);
+        setAbsences(
+          active
+            .filter((a: Assignment) => a.status === "ABSENT")
+            .sort((a: Assignment, b: Assignment) => b.date.localeCompare(a.date)),
+        );
         const actionableIds = new Set(actionableToday.map((a: Assignment) => a.id));
         setUpcoming(
           active
@@ -291,6 +303,52 @@ export default function InternHoje() {
         </div>
       )}
 
+      {/* Faltas — pendências que o interno pode justificar */}
+      {absences.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-4 w-4 text-red-500" strokeWidth={1.5} />
+            <h2 className="text-sm font-semibold text-slate-900">Faltas registradas</h2>
+          </div>
+          <div className="space-y-2">
+            {absences.map((a) => {
+              const justified = Boolean(a.absenceJustification?.trim());
+              return (
+                <div key={a.id} className="rounded-xl border border-red-200 bg-red-50/60 p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{a.baseCode} — {a.baseName}</p>
+                      <p className="text-xs text-slate-500">
+                        {new Date(`${a.date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                        {" · "}
+                        {a.shift ? getShiftShortLabel(a.shift) : a.period === "DAY" ? "Diurno" : "Noturno"}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${justified ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      {justified ? "Justificada" : "Sem justificativa"}
+                    </span>
+                  </div>
+                  {justified && (
+                    <p className="line-clamp-2 text-xs text-slate-600">{a.absenceJustification}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setJustifyingAbsence(a)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-600 underline underline-offset-2 hover:text-accent-500"
+                  >
+                    <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    {justified ? "Ver ou editar justificativa" : "Justificar falta"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <p className="px-1 text-xs text-slate-500">
+            A justificativa é avaliada pela coordenação, que pode abonar a falta e convertê-la em presença.
+          </p>
+        </div>
+      )}
+
       {/* Today's assignments */}
       {todayAssignments.length > 0 ? (
         <div className="space-y-3">
@@ -422,6 +480,24 @@ export default function InternHoje() {
           </div>
         </div>
       )}
+
+      <AbsenceJustificationDialog
+        assignment={justifyingAbsence ? {
+          id: justifyingAbsence.id,
+          date: justifyingAbsence.date,
+          period: justifyingAbsence.period,
+          baseCode: justifyingAbsence.baseCode,
+          baseName: justifyingAbsence.baseName,
+          absenceJustification: justifyingAbsence.absenceJustification,
+          absenceJustificationActor: justifyingAbsence.absenceJustificationActor,
+          absenceJustificationAt: justifyingAbsence.absenceJustificationAt,
+        } : null}
+        title="Justificar falta"
+        onClose={() => setJustifyingAbsence(null)}
+        onSaved={(assignmentId, data) => {
+          setAbsences((current) => current.map((a) => a.id === assignmentId ? { ...a, ...data } : a));
+        }}
+      />
     </div>
   );
 }

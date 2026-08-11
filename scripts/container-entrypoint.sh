@@ -44,6 +44,13 @@ append_cohort_lifecycle_cron() {
   echo "[entrypoint] lifecycle de turmas habilitado em ${schedule} (${TZ})"
 }
 
+append_absence_sweep_cron() {
+  schedule="${ABSENCE_SWEEP_CRON:-40 12 * * *}"
+
+  printf "%s\n" "${schedule} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-absence-sweep.mjs' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  echo "[entrypoint] varredura de faltas habilitada em ${schedule} (${TZ})"
+}
+
 start_cron_daemon() {
   crond -l 2 -L /dev/stdout
 }
@@ -70,6 +77,14 @@ elif [ -z "${AUTH_SECRET:-}" ]; then
   echo "[entrypoint] lifecycle de turmas desabilitado por configuração incompleta (AUTH_SECRET)"
 else
   append_cohort_lifecycle_cron
+fi
+
+if [ "${ABSENCE_SWEEP_ENABLED:-true}" = "false" ]; then
+  echo "[entrypoint] varredura de faltas desabilitada por ABSENCE_SWEEP_ENABLED=false"
+elif [ -z "${AUTH_SECRET:-}" ]; then
+  echo "[entrypoint] varredura de faltas desabilitada por configuração incompleta (AUTH_SECRET)"
+else
+  append_absence_sweep_cron
 fi
 
 start_cron_daemon

@@ -26,7 +26,7 @@ export const checkinStatusEnum = pgEnum("checkin_status", [
 ]);
 
 export const checkinMethodEnum = pgEnum("checkin_method", [
-  "TELEGRAM_QR", "TELEGRAM_CODE", "APP_DIRECT",
+  "TELEGRAM_QR", "TELEGRAM_CODE", "APP_DIRECT", "GEO",
 ]);
 
 export const requestTypeEnum = pgEnum("request_type", [

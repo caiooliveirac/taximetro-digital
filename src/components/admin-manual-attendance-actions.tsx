@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, Loader2, LogOut, UserX } from "lucide-react";
+import { CheckCircle2, Loader2, LogOut, ShieldCheck, UserX } from "lucide-react";
 import { manualAttendanceAction } from "@/app/admin/actions";
 
-type ManualAction = "CONFIRM_PRESENT" | "CONFIRM_CHECKOUT" | "MARK_ABSENT";
+type ManualAction = "CONFIRM_PRESENT" | "CONFIRM_CHECKOUT" | "MARK_ABSENT" | "EXCUSE_ABSENCE";
 
 const CONFIRMABLE_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "ABSENT"]);
 const CHECKOUTABLE_STATUSES = new Set(["CHECKED_IN"]);
 const ABSENCEABLE_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN"]);
+const EXCUSABLE_STATUSES = new Set(["ABSENT"]);
 
 export function AdminManualAttendanceActions({
     assignmentId,
@@ -28,8 +29,9 @@ export function AdminManualAttendanceActions({
     const canConfirm = CONFIRMABLE_STATUSES.has(status);
     const canCheckout = CHECKOUTABLE_STATUSES.has(status);
     const canMarkAbsent = ABSENCEABLE_STATUSES.has(status);
+    const canExcuse = EXCUSABLE_STATUSES.has(status);
 
-    if (!canConfirm && !canCheckout && !canMarkAbsent) return null;
+    if (!canConfirm && !canCheckout && !canMarkAbsent && !canExcuse) return null;
 
     function runAction(action: ManualAction) {
         setPendingAction(action);
@@ -52,9 +54,11 @@ export function AdminManualAttendanceActions({
                             ? "Presença confirmada manualmente."
                             : action === "CONFIRM_CHECKOUT"
                                 ? "Checkout confirmado manualmente."
-                                : notifications > 0
-                                    ? `Falta lançada. ${notifications} líder(es) avisado(s).`
-                                    : "Falta lançada manualmente.",
+                                : action === "EXCUSE_ABSENCE"
+                                    ? "Falta abonada: plantão convertido em presença."
+                                    : notifications > 0
+                                        ? `Falta lançada. ${notifications} líder(es) avisado(s).`
+                                        : "Falta lançada manualmente.",
                 });
 
                 await onUpdated?.();
@@ -96,6 +100,17 @@ export function AdminManualAttendanceActions({
                     >
                         {pendingAction === "CONFIRM_CHECKOUT" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
                         Confirmar checkout
+                    </button>
+                )}
+                {canExcuse && (
+                    <button
+                        type="button"
+                        onClick={() => runAction("EXCUSE_ABSENCE")}
+                        disabled={pendingAction !== null}
+                        className={`${buttonClass} bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60`}
+                    >
+                        {pendingAction === "EXCUSE_ABSENCE" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                        Abonar falta
                     </button>
                 )}
                 {canMarkAbsent && (
