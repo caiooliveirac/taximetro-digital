@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { ChevronDown, ChevronUp, ChevronRight, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronRight, RotateCcw, SlidersHorizontal, List, LayoutGrid } from "lucide-react";
 import { InviteButton } from "@/components/invite-button";
+import { PhotoLightbox } from "@/components/photo-lightbox";
 import { formatBrazilTime } from "@/lib/utils";
 import { filterUsers, countActiveFilters, EMPTY_FILTERS, type UserFilters } from "./filter-users";
 import { ROLES, ROLE_LABEL, ROLE_BADGE_CLASS, type User, type Faculty, type Base, type Cohort } from "./user-meta";
@@ -67,6 +68,11 @@ export default function AdminUsuarios() {
     };
   });
   const [showFilters, setShowFilters] = useState(false);
+  const [view, setView] = useState<"list" | "grid">(() => {
+    if (typeof window === "undefined") return "list";
+    return new URLSearchParams(window.location.search).get("view") === "grid" ? "grid" : "list";
+  });
+  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
   const [drawerUserId, setDrawerUserId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("u");
@@ -125,9 +131,11 @@ export default function AdminUsuarios() {
       if (v) p.set(k, v);
       else p.delete(k);
     }
+    if (view === "grid") p.set("view", "grid");
+    else p.delete("view");
     const qs = p.toString();
     window.history.replaceState(window.history.state, "", qs ? `?${qs}` : window.location.pathname);
-  }, [filters]);
+  }, [filters, view]);
 
   // Botão voltar do navegador fecha (ou reabre) o drawer.
   useEffect(() => {
@@ -384,13 +392,33 @@ export default function AdminUsuarios() {
             onChange={(v) => setFilters((f) => ({ ...f, sort: v as UserFilters["sort"] }))}
           />
         </div>
-        <div className="flex items-center justify-between text-xs text-slate-500">
+        <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
           <span>{filtered.length === users.length ? `${users.length} usuários` : `${filtered.length} de ${users.length} usuários`}</span>
-          {(activeFilterCount > 0 || filters.q || filters.sort) && (
-            <button onClick={() => setFilters(EMPTY_FILTERS)} className="font-medium text-accent-600 hover:text-accent-500">
-              Limpar filtros
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {(activeFilterCount > 0 || filters.q || filters.sort) && (
+              <button onClick={() => setFilters(EMPTY_FILTERS)} className="font-medium text-accent-600 hover:text-accent-500">
+                Limpar filtros
+              </button>
+            )}
+            <div className="flex rounded-lg border border-slate-200 p-0.5" role="group" aria-label="Modo de exibição">
+              <button
+                onClick={() => setView("list")}
+                aria-pressed={view === "list"}
+                title="Lista"
+                className={`rounded-md p-1.5 ${view === "list" ? "bg-slate-100 text-slate-800" : "text-slate-400 hover:text-slate-600"}`}
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setView("grid")}
+                aria-pressed={view === "grid"}
+                title="Galeria de fotos"
+                className={`rounded-md p-1.5 ${view === "grid" ? "bg-slate-100 text-slate-800" : "text-slate-400 hover:text-slate-600"}`}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -484,6 +512,36 @@ export default function AdminUsuarios() {
         </div>
       )}
 
+      {view === "grid" && (
+        <div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {filtered.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => openDrawer(u.id)}
+                className={`group overflow-hidden rounded-xl border text-left shadow-sm transition-shadow hover:shadow-md ${!u.isActive ? "border-amber-200 bg-amber-50/50" : "border-slate-200 bg-white"}`}
+              >
+                <Avatar
+                  userId={u.id}
+                  name={u.name}
+                  className="aspect-square w-full rounded-none text-4xl"
+                />
+                <div className="space-y-0.5 p-2">
+                  <p className="truncate text-sm font-medium text-slate-900">{u.name}</p>
+                  <p className="truncate text-xs text-slate-500">
+                    {[u.facultyAbbr, u.allRoles?.find((r) => r.role === "INTERN")?.cohortName].filter(Boolean).join(" · ") || ROLE_LABEL[u.role ?? ""] || "—"}
+                  </p>
+                  {!u.isActive && <p className="text-[10px] font-medium text-amber-700">Pendente</p>}
+                  {u.isActive && u.isArchived && <p className="text-[10px] font-medium text-slate-500">Arquivado</p>}
+                </div>
+              </button>
+            ))}
+          </div>
+          {filtered.length === 0 && <p className="py-8 text-center text-slate-500">Nenhum usuário encontrado.</p>}
+        </div>
+      )}
+
+      {view === "list" && (
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -506,9 +564,12 @@ export default function AdminUsuarios() {
                 className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 ${!u.isActive ? "bg-amber-50/50" : ""}`}
               >
                 <td className="py-2 pr-2">
-                  <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-xs font-medium">
-                    {u.name.charAt(0)}
-                  </div>
+                  <Avatar
+                    userId={u.id}
+                    name={u.name}
+                    className="h-8 w-8 rounded-full text-xs"
+                    onZoom={(src) => setZoom({ src, alt: `Foto de ${u.name}` })}
+                  />
                 </td>
                 <td className="py-2 pr-4">{u.name}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{u.cpf}</td>
@@ -605,6 +666,9 @@ export default function AdminUsuarios() {
         </table>
         {filtered.length === 0 && <p className="py-8 text-center text-slate-500">Nenhum usuário encontrado.</p>}
       </div>
+      )}
+
+      {zoom && <PhotoLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
 
       {drawerUserId && (
         <UserDrawer
@@ -621,6 +685,28 @@ export default function AdminUsuarios() {
         />
       )}
     </div>
+  );
+}
+
+function Avatar({ userId, name, className, onZoom }: { userId: string; name: string; className: string; onZoom?: (src: string) => void }) {
+  const [failed, setFailed] = useState(false);
+  const src = `/taximetro/api/admin/users/${userId}/selfie`;
+  if (failed) {
+    return (
+      <div className={`flex items-center justify-center bg-slate-100 font-medium text-slate-400 ${className}`}>
+        {name.charAt(0)}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={`Foto de ${name}`}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      onClick={onZoom ? (e) => { e.stopPropagation(); onZoom(src); } : undefined}
+      className={`object-cover ${onZoom ? "cursor-zoom-in" : ""} ${className}`}
+    />
   );
 }
 
