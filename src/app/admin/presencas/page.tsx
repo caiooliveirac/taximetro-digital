@@ -176,17 +176,12 @@ export default function AdminPresencas() {
                             ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) ? "bg-emerald-50" :
                               "";
                   return (
-                    <TableRow key={a.id} className={rowBg}>
-                      <TableCell className="font-medium">
-                        <button
-                          type="button"
-                          onClick={() => setInternDrawer({ id: a.internId, name: a.internName, facultyAbbr: a.facultyAbbr })}
-                          className="text-left underline-offset-2 hover:underline"
-                          title={`Ver interno: ${a.internName}`}
-                        >
-                          {a.internName}
-                        </button>
-                      </TableCell>
+                    <TableRow
+                      key={a.id}
+                      onClick={() => setInternDrawer({ id: a.internId, name: a.internName, facultyAbbr: a.facultyAbbr })}
+                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${rowBg}`}
+                    >
+                      <TableCell className="font-medium">{a.internName}</TableCell>
                       <TableCell className="text-xs text-slate-500">{a.facultyAbbr}</TableCell>
                       <TableCell>
                         <span className="flex items-center gap-1.5">

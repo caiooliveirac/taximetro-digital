@@ -323,18 +323,13 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                     const baseStyle = getBaseStyle(assignment.baseType);
                                     const periodStyle = getPeriodStyle(assignment.period);
                                     return (
-                                        <TableRow key={assignment.id} className="bg-red-50/60">
+                                        <TableRow
+                                            key={assignment.id}
+                                            onClick={() => setInternDrawer({ id: assignment.internId, name: assignment.internName, facultyAbbr: assignment.facultyAbbr })}
+                                            className="cursor-pointer bg-red-50/60 transition-colors hover:bg-red-100/60"
+                                        >
                                             <TableCell className="text-slate-900">{new Date(`${assignment.date}T12:00:00`).toLocaleDateString("pt-BR")}</TableCell>
-                                            <TableCell className="font-medium text-slate-900">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setInternDrawer({ id: assignment.internId, name: assignment.internName, facultyAbbr: assignment.facultyAbbr })}
-                                                    className="text-left underline-offset-2 hover:underline"
-                                                    title={`Ver interno: ${assignment.internName}`}
-                                                >
-                                                    {assignment.internName}
-                                                </button>
-                                            </TableCell>
+                                            <TableCell className="font-medium text-slate-900">{assignment.internName}</TableCell>
                                             <TableCell className="text-xs text-slate-500">{assignment.facultyAbbr}</TableCell>
                                             <TableCell>
                                                 <span className="flex items-center gap-1.5 text-slate-900">
@@ -364,7 +359,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                                     )}
                                                     <button
                                                         type="button"
-                                                        onClick={() => setJustificationAssignment(assignment)}
+                                                        onClick={(e) => { e.stopPropagation(); setJustificationAssignment(assignment); }}
                                                         className="text-xs font-medium text-accent-600 hover:text-accent-500"
                                                     >
                                                         {assignment.absenceJustification ? "Ver ou editar" : "Justificar falta"}
@@ -378,7 +373,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                                     </span>
                                                     <p className="max-w-[320px] text-xs text-slate-600">{actionPlan.detail}</p>
                                                     {actionPlan.href && actionPlan.hrefLabel && (
-                                                        <Link href={actionPlan.href} className="inline-flex items-center gap-1 text-xs font-medium text-accent-600 hover:text-accent-500">
+                                                        <Link href={actionPlan.href} onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs font-medium text-accent-600 hover:text-accent-500">
                                                             {actionPlan.hrefLabel}
                                                             <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.8} />
                                                         </Link>

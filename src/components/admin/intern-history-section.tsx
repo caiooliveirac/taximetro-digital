@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Calendar, CheckCircle2, XCircle, Clock, Target, Activity, FileText, AlertCircle } from "lucide-react";
 import { operationalDateStr } from "@/lib/utils";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
+import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import {
   RealizedByTypeBoxes,
   ShiftListByKind,
@@ -35,7 +36,11 @@ type Compliance = ComplianceWeekFields & {
   rotationEndDate: string | null;
 };
 
-type Assignment = ShiftAssignment & Partial<Omit<AssignmentDetail, keyof ShiftAssignment>>;
+type Assignment = ShiftAssignment & Partial<Omit<AssignmentDetail, keyof ShiftAssignment>> & {
+  absenceJustification?: string | null;
+  absenceJustificationActor?: string | null;
+  absenceJustificationAt?: string | null;
+};
 
 type CaseRecord = {
   id: string;
@@ -66,6 +71,7 @@ export function useInternHistory(internId: string) {
   const [compliance, setCompliance] = useState<Compliance | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [caseRecords, setCaseRecords] = useState<CaseRecord[]>([]);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     if (!internId) {
@@ -94,9 +100,11 @@ export function useInternHistory(internId: string) {
       .finally(() => setLoading(false));
 
     return () => ac.abort();
-  }, [internId]);
+  }, [internId, reloadTick]);
 
-  return { loading, compliance, assignments, caseRecords };
+  const reload = () => setReloadTick((t) => t + 1);
+
+  return { loading, compliance, assignments, caseRecords, reload };
 }
 
 type SectionProps =
@@ -105,8 +113,9 @@ type SectionProps =
 
 export function InternHistorySection(props: SectionProps) {
   const fetched = useInternHistory(props.internId ?? "");
-  const { loading, compliance, assignments, caseRecords } = props.data ?? fetched;
+  const { loading, compliance, assignments, caseRecords, reload } = props.data ?? fetched;
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [justifyAssignment, setJustifyAssignment] = useState<Assignment | null>(null);
 
   const today = operationalDateStr();
   const pastAll = assignments.filter((a) => a.date <= today);
@@ -127,12 +136,35 @@ export function InternHistorySection(props: SectionProps) {
     caseRecordsByAssignment.set(cr.assignmentId, list);
   }
 
-  const renderShiftDetail = (a: ShiftAssignment) => (
-    <AssignmentDetailPanel
-      assignment={a as AssignmentDetail}
-      caseRecords={caseRecordsByAssignment.get(a.id) ?? []}
-    />
-  );
+  const renderShiftDetail = (a: ShiftAssignment) => {
+    const full = a as Assignment;
+    return (
+      <div className="space-y-2">
+        <AssignmentDetailPanel
+          assignment={a as AssignmentDetail}
+          caseRecords={caseRecordsByAssignment.get(a.id) ?? []}
+        />
+        {full.status === "ABSENT" && (
+          <div className="rounded-lg border border-red-200 bg-red-50/60 p-2.5 space-y-2">
+            {full.absenceJustification ? (
+              <p className="text-xs text-slate-700">
+                <span className="font-semibold text-red-800">Falta justificada:</span> {full.absenceJustification}
+              </p>
+            ) : (
+              <p className="text-xs font-medium text-red-800">Falta sem justificativa.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => setJustifyAssignment(full)}
+              className="w-full rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700"
+            >
+              {full.absenceJustification ? "Editar justificativa / abono" : "Justificar / abonar falta"}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -208,7 +240,7 @@ export function InternHistorySection(props: SectionProps) {
           items={upcomingAll}
           emptyMessage="Nenhum plantão agendado."
           showStatus={false}
-          initialLimit={10}
+          initialLimit={Infinity}
           expandedId={expandedId}
           onToggleExpand={setExpandedId}
           renderDetail={renderShiftDetail}
@@ -259,6 +291,16 @@ export function InternHistorySection(props: SectionProps) {
           <span>Sem dados de cumprimento ainda — interno pode estar fora de turma ativa.</span>
         </div>
       )}
+
+      <AbsenceJustificationDialog
+        assignment={justifyAssignment}
+        title="Justificar / abonar falta"
+        onClose={() => setJustifyAssignment(null)}
+        onSaved={() => {
+          setJustifyAssignment(null);
+          reload?.();
+        }}
+      />
     </div>
   );
 }

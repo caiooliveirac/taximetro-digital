@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, X, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, User, X, Zap } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { StatusBadge } from "@/components/status-badge";
@@ -459,7 +459,7 @@ function getAssignmentCardTitle(assignment: AssignmentDetail) {
     return `${assignment.intern_name} • ${assignment.base_code} • ${formatPeriod(assignment.period, assignment.shift)} • check-in ${checkinText} • checkout ${checkoutText}`;
 }
 
-function AssignmentSlotCard({ assignment, period, onSelect, onSelectIntern, facultyBadgeMode = "neutral", showBaseCode = false }: { assignment: AssignmentDetail; period: "DAY" | "NIGHT"; onSelect: (id: string) => void; onSelectIntern?: (assignment: AssignmentDetail) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean }) {
+function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "neutral", showBaseCode = false }: { assignment: AssignmentDetail; period: "DAY" | "NIGHT"; onSelect: (id: string) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean }) {
     const visual = getAssignmentVisualState(assignment, period);
     const Icon = visual.icon;
     const facultyTone = getFacultyBadgeClass(assignment.faculty_abbr, facultyBadgeMode, visual.darkSurface ? "NIGHT" : undefined);
@@ -479,13 +479,7 @@ function AssignmentSlotCard({ assignment, period, onSelect, onSelectIntern, facu
                 <span className="absolute right-1 top-1 z-10 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">EXTRA</span>
             )}
             <span className="min-w-0 flex-1">
-                <span
-                    className={`block truncate text-[13px] font-semibold leading-tight ${onSelectIntern ? "underline-offset-2 hover:underline" : ""}`}
-                    onClick={onSelectIntern ? (e) => { e.stopPropagation(); onSelectIntern(assignment); } : undefined}
-                    title={onSelectIntern ? `Ver interno: ${assignment.intern_name}` : undefined}
-                >
-                    {formatAssignmentCardName(assignment.intern_name)}
-                </span>
+                <span className="block truncate text-[13px] font-semibold leading-tight">{formatAssignmentCardName(assignment.intern_name)}</span>
                 <span className="mt-1 flex items-center gap-2">
                     <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${facultyTone.pill}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${facultyTone.dot}`} />
@@ -1373,7 +1367,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 <div className="grid gap-1">
                                     {slots.map((slot) => {
                                         if (slot.kind === "assignment") {
-                                            return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} onSelectIntern={(a) => setInternDrawer({ id: a.intern_id, name: a.intern_name, facultyAbbr: a.faculty_abbr })} />;
+                                            return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} />;
                                         }
 
                                         if (slot.kind === "vacancy") {
@@ -1580,7 +1574,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                 }
                                                 return collapsed.map(({ slot, count }) => {
                                                     if (slot.kind === "assignment") {
-                                                        return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} onSelectIntern={(a) => setInternDrawer({ id: a.intern_id, name: a.intern_name, facultyAbbr: a.faculty_abbr })} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
+                                                        return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
                                                     }
                                                     if (slot.kind === "blocked") {
                                                         return <BlockedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={period} />;
@@ -2139,19 +2133,20 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
                             <div>
                                 <div className="flex items-center gap-2">
-                                    <h3
-                                        className="cursor-pointer text-xl font-semibold text-slate-900 underline-offset-2 hover:underline"
-                                        onClick={() => setInternDrawer({ id: selectedAssignment.intern_id, name: selectedAssignment.intern_name, facultyAbbr: selectedAssignment.faculty_abbr })}
-                                        title={`Ver interno: ${selectedAssignment.intern_name}`}
-                                    >
-                                        {selectedAssignment.intern_name}
-                                    </h3>
+                                    <h3 className="text-xl font-semibold text-slate-900">{selectedAssignment.intern_name}</h3>
                                     <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                                         <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
                                         {selectedAssignment.faculty_abbr}
                                     </span>
                                 </div>
                                 <p className="mt-1 text-sm text-slate-500">{selectedAssignment.base_code} — {selectedAssignment.base_name} · {formatDayMonth(selectedAssignment.date)} · {formatPeriod(selectedAssignment.period, selectedAssignment.shift)}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => setInternDrawer({ id: selectedAssignment.intern_id, name: selectedAssignment.intern_name, facultyAbbr: selectedAssignment.faculty_abbr })}
+                                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
+                                >
+                                    <User className="h-3.5 w-3.5" /> Ver interno
+                                </button>
                             </div>
                             <button type="button" onClick={() => setSelectedAssignmentId(null)} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
                         </div>
