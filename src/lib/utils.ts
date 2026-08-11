@@ -315,6 +315,7 @@ export function checkinMethodLabel(method: string | null | undefined): string {
   if (method === "TELEGRAM_QR") return "Telegram (QR)";
   if (method === "TELEGRAM_CODE") return "Telegram (código)";
   if (method === "APP_DIRECT") return "App";
+  if (method === "GEO") return "Georreferenciamento";
   return "—";
 }
 
