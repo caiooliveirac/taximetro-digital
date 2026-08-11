@@ -12,6 +12,9 @@ import { UserDrawer } from "@/components/admin/user-drawer";
 
 const MERGE_ROLLBACK_WINDOW_DAYS = 7;
 
+// Basal da página: só ativos. "Todos" é escolha explícita (vira ?status=all na URL).
+const DEFAULT_FILTERS: UserFilters = { ...EMPTY_FILTERS, status: "active" };
+
 type DuplicateGroup = {
   key: string;
   users: User[];
@@ -56,11 +59,12 @@ export default function AdminUsuarios() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<UserFilters>(() => {
-    if (typeof window === "undefined") return EMPTY_FILTERS;
+    if (typeof window === "undefined") return DEFAULT_FILTERS;
     const p = new URLSearchParams(window.location.search);
+    const rawStatus = p.get("status");
     return {
       q: p.get("q") ?? "",
-      status: (p.get("status") as UserFilters["status"]) ?? "",
+      status: rawStatus === "all" ? "" : ((rawStatus as UserFilters["status"]) ?? "active"),
       fac: p.get("fac") ?? "",
       turma: p.get("turma") ?? "",
       papel: p.get("papel") ?? "",
@@ -128,6 +132,12 @@ export default function AdminUsuarios() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(filters)) {
+      if (k === "status") {
+        // "active" é o basal (URL limpa); "" (todos) vira ?status=all
+        if (v === "active") p.delete(k);
+        else p.set(k, v || "all");
+        continue;
+      }
       if (v) p.set(k, v);
       else p.delete(k);
     }
@@ -189,7 +199,8 @@ export default function AdminUsuarios() {
   const pendingCount = users.filter((u) => !u.isActive).length;
 
   const filtered = filterUsers(users, filters);
-  const activeFilterCount = countActiveFilters(filters);
+  // "ativos" é o basal — só conta como filtro o que desvia do padrão
+  const activeFilterCount = countActiveFilters({ ...filters, status: filters.status === "active" ? "" : filters.status });
   const facultyAbbrById = new Map(faculties.map((f) => [f.id, f.abbreviation]));
   const turmaOptions = filters.fac ? allCohorts.filter((c) => c.facultyId === filters.fac) : allCohorts;
 
@@ -330,7 +341,7 @@ export default function AdminUsuarios() {
           <InviteButton />
           {pendingCount > 0 && (
             <button
-              onClick={() => setFilters((f) => ({ ...f, status: f.status === "pending" ? "" : "pending" }))}
+              onClick={() => setFilters((f) => ({ ...f, status: f.status === "pending" ? "active" : "pending" }))}
               className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${filters.status === "pending"
                 ? "bg-amber-500 text-white hover:bg-amber-600"
                 : "bg-amber-50 text-amber-700 hover:bg-amber-100"
@@ -412,8 +423,8 @@ export default function AdminUsuarios() {
         <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
           <span>{filtered.length === users.length ? `${users.length} usuários` : `${filtered.length} de ${users.length} usuários`}</span>
           <div className="flex items-center gap-3">
-            {(activeFilterCount > 0 || filters.q || filters.sort) && (
-              <button onClick={() => setFilters(EMPTY_FILTERS)} className="font-medium text-accent-600 hover:text-accent-500">
+            {(activeFilterCount > 0 || filters.q || filters.sort || filters.status !== "active") && (
+              <button onClick={() => setFilters(DEFAULT_FILTERS)} className="font-medium text-accent-600 hover:text-accent-500">
                 Limpar filtros
               </button>
             )}
