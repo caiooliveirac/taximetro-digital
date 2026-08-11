@@ -1,6 +1,9 @@
 # PLAN — Review da aba Usuários (admin)
 
-> Status: **aguardando revisão do Caio** · Branch: `claude/aba-users-interface-review-e4ac96`
+> Status: **fases 1–4 implementadas em 2026-08-11, aguardando validação do Caio**
+> Branch: `claude/aba-users-interface-review-e4ac96` (1 commit por fase)
+> Fase 5 (higiene) parcialmente feita de carona: user-meta.ts + filter-users.ts
+> extraídos com teste; extração de merge/duplicates-panel fica para depois.
 > Disparador: aba péssima no celular e ruim no desktop — sem filtros, edição joga
 > o usuário para o topo da página, fotos invisíveis na lista.
 
