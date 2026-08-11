@@ -9,9 +9,11 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
 import { localDateStr } from "@/lib/utils";
+import { InternDrawer } from "@/components/admin/intern-drawer";
 
 type Assignment = {
   id: string;
+  internId: string;
   internName: string;
   facultyAbbr: string;
   baseCode: string;
@@ -30,6 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function AdminPresencas() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [internDrawer, setInternDrawer] = useState<{ id: string; name: string; facultyAbbr?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterBase, setFilterBase] = useState("");
   const [filterFaculty, setFilterFaculty] = useState("");
@@ -174,7 +177,16 @@ export default function AdminPresencas() {
                               "";
                   return (
                     <TableRow key={a.id} className={rowBg}>
-                      <TableCell className="font-medium">{a.internName}</TableCell>
+                      <TableCell className="font-medium">
+                        <button
+                          type="button"
+                          onClick={() => setInternDrawer({ id: a.internId, name: a.internName, facultyAbbr: a.facultyAbbr })}
+                          className="text-left underline-offset-2 hover:underline"
+                          title={`Ver interno: ${a.internName}`}
+                        >
+                          {a.internName}
+                        </button>
+                      </TableCell>
                       <TableCell className="text-xs text-slate-500">{a.facultyAbbr}</TableCell>
                       <TableCell>
                         <span className="flex items-center gap-1.5">
@@ -207,6 +219,15 @@ export default function AdminPresencas() {
             </div>
           </div>
         </>
+      )}
+
+      {internDrawer && (
+        <InternDrawer
+          internId={internDrawer.id}
+          internName={internDrawer.name}
+          facultyAbbr={internDrawer.facultyAbbr}
+          onClose={() => setInternDrawer(null)}
+        />
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, FileText, RefreshCw, Sun, Users, XCircle, Moon, ArrowRight, ClipboardCheck } from "lucide-react";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
+import { InternDrawer } from "@/components/admin/intern-drawer";
 import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
@@ -143,6 +144,7 @@ function buildActionPlan(scope: "admin" | "leader", assignment: Assignment, comp
 
 export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
     const [assignments, setAssignments] = useState<Assignment[]>([]);
+    const [internDrawer, setInternDrawer] = useState<{ id: string; name: string; facultyAbbr?: string } | null>(null);
     const [complianceRows, setComplianceRows] = useState<ComplianceRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -323,7 +325,16 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                     return (
                                         <TableRow key={assignment.id} className="bg-red-50/60">
                                             <TableCell className="text-slate-900">{new Date(`${assignment.date}T12:00:00`).toLocaleDateString("pt-BR")}</TableCell>
-                                            <TableCell className="font-medium text-slate-900">{assignment.internName}</TableCell>
+                                            <TableCell className="font-medium text-slate-900">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setInternDrawer({ id: assignment.internId, name: assignment.internName, facultyAbbr: assignment.facultyAbbr })}
+                                                    className="text-left underline-offset-2 hover:underline"
+                                                    title={`Ver interno: ${assignment.internName}`}
+                                                >
+                                                    {assignment.internName}
+                                                </button>
+                                            </TableCell>
                                             <TableCell className="text-xs text-slate-500">{assignment.facultyAbbr}</TableCell>
                                             <TableCell>
                                                 <span className="flex items-center gap-1.5 text-slate-900">
@@ -400,6 +411,15 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                 onClose={() => setJustificationAssignment(null)}
                 onSaved={handleJustificationSaved}
             />
+
+            {internDrawer && (
+                <InternDrawer
+                    internId={internDrawer.id}
+                    internName={internDrawer.name}
+                    facultyAbbr={internDrawer.facultyAbbr}
+                    onClose={() => setInternDrawer(null)}
+                />
+            )}
         </div>
     );
 }
