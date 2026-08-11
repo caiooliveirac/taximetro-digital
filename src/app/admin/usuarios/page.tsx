@@ -542,7 +542,35 @@ export default function AdminUsuarios() {
       )}
 
       {view === "list" && (
-      <div className="overflow-x-auto">
+        <div className="space-y-2 md:hidden">
+          {filtered.map((u) => (
+            <button
+              key={u.id}
+              onClick={() => openDrawer(u.id)}
+              className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left shadow-sm ${!u.isActive ? "border-amber-200 bg-amber-50/50" : "border-slate-200 bg-white"}`}
+            >
+              <Avatar userId={u.id} name={u.name} className="h-12 w-12 shrink-0 rounded-full text-base" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-slate-900">{u.name}</p>
+                <p className="truncate text-xs text-slate-500">
+                  {[u.facultyAbbr, u.allRoles?.find((r) => r.role === "INTERN")?.cohortName].filter(Boolean).join(" · ") || ROLE_LABEL[u.role ?? ""] || "—"}
+                </p>
+              </div>
+              {!u.isActive && (
+                <span className="shrink-0 rounded px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700">Pendente</span>
+              )}
+              {u.isActive && u.isArchived && (
+                <span className="shrink-0 rounded px-2 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600">Arquivado</span>
+              )}
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" aria-hidden="true" />
+            </button>
+          ))}
+          {filtered.length === 0 && <p className="py-8 text-center text-slate-500">Nenhum usuário encontrado.</p>}
+        </div>
+      )}
+
+      {view === "list" && (
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-slate-500">
