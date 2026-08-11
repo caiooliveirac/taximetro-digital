@@ -8,6 +8,7 @@ import {
 import { useSession } from "next-auth/react";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { InternDrawer } from "@/components/admin/intern-drawer";
 import { addDaysToDateStr, localDateStr, startOfWeekDateStr } from "@/lib/utils";
 import { filterCruFixedCandidates } from "@/features/scheduling/domain/policies/cru-fixed-candidates";
 import { contarSemanas } from "@/features/scheduling/domain/policies/cru-fixed-window";
@@ -231,12 +232,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   const [cruGenMsg, setCruGenMsg] = useState("");
   const [cruConflictPending, setCruConflictPending] = useState<CruConflictPending | null>(null);
 
-  /* ── Intern detail modal ── */
+  /* ── Intern detail drawer ── */
   const [internDetail, setInternDetail] = useState<{ id: string; name: string } | null>(null);
-  const internWeekAssignments = useMemo(() => {
-    if (!internDetail) return [];
-    return assignments.filter(a => a.internId === internDetail.id && a.status !== "CANCELLED");
-  }, [internDetail, assignments]);
 
   /* ── Load data ── */
   const load = useCallback(async () => {
@@ -1966,49 +1963,13 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
         </div>
       )}
 
-      {/* ═══════════ Intern Detail Modal ═══════════ */}
+      {/* ═══════════ Intern Detail Drawer ═══════════ */}
       {internDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setInternDetail(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">👤 {internDetail.name}</h3>
-              <button onClick={() => setInternDetail(null)} className="rounded-full p-1 hover:bg-slate-100 transition"><X className="h-4 w-4 text-slate-400" /></button>
-            </div>
-            <div className="px-6 py-4 space-y-3">
-              <div className="flex items-center gap-4 text-sm">
-                <span className="bg-amber-50 text-amber-700 px-2 py-1 rounded-lg font-medium">☀️ {internWeekAssignments.filter(a => a.period === "DAY").length} diurnos</span>
-                <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg font-medium">🌙 {internWeekAssignments.filter(a => a.period === "NIGHT").length} noturnos</span>
-                <span className="text-slate-500 ml-auto">{internWeekAssignments.length} total</span>
-              </div>
-              {internWeekAssignments.length > 0 ? (
-                <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
-                  {internWeekAssignments
-                    .sort((a, b) => a.date.localeCompare(b.date))
-                    .map((a) => {
-                      const ps = getPeriodStyle(a.period);
-                      const bs = getBaseStyle(a.baseType as "USA" | "CENTRAL" | "CRL");
-                      return (
-                        <div key={a.id} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${ps.bg}`}>
-                          <span className="text-sm">{ps.emoji}</span>
-                          <span className={`text-xs font-bold ${ps.text}`}>{a.date.slice(5)}</span>
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${bs.pill}`}>{a.baseCode}</span>
-                          <span className={`ml-auto text-[10px] font-medium ${a.status === "CHECKED_IN" ? "text-emerald-600" : a.status === "ABSENT" ? "text-red-600" : "text-slate-400"}`}>{a.status}</span>
-                        </div>
-                      );
-                    })}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-400 text-center py-4">Nenhum plantão nesta semana</p>
-              )}
-              <a
-                href={`/taximetro/leader/internos`}
-                className="block w-full text-center rounded-lg bg-slate-900 py-2.5 text-sm font-bold text-white hover:bg-slate-800 transition mt-2"
-              >
-                Ver perfil completo →
-              </a>
-            </div>
-          </div>
-        </div>
+        <InternDrawer
+          internId={internDetail.id}
+          internName={internDetail.name}
+          onClose={() => setInternDetail(null)}
+        />
       )}
     </div>
   );

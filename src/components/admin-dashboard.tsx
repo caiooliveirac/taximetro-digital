@@ -7,7 +7,7 @@ import { MetricCard } from "@/components/metric-card";
 import { InviteButton } from "@/components/invite-button";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { CockpitAlarms, type CockpitData } from "@/components/admin/cockpit-alarms";
-import { InternQuickModal } from "@/components/admin/intern-quick-modal";
+import { InternDrawer } from "@/components/admin/intern-drawer";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 import { formatBrazilTime, localDateStr } from "@/lib/utils";
 
@@ -793,7 +793,7 @@ export function AdminDashboardClient({
 
       {/* Intern Quick Modal — opened by clicking an intern name in any KPI list */}
       {internModal && (
-        <InternQuickModal
+        <InternDrawer
           internId={internModal.id}
           internName={internModal.name}
           facultyAbbr={internModal.faculty}

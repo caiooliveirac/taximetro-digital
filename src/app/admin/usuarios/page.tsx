@@ -355,20 +355,37 @@ export default function AdminUsuarios() {
           Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
           {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
-        <div className={`${showFilters ? "grid" : "hidden"} grid-cols-2 gap-2 sm:grid sm:grid-cols-3 lg:grid-cols-5`}>
+        <div className={`${showFilters ? "flex" : "hidden"} flex-wrap items-center gap-1.5 sm:flex`}>
+          <span className="text-xs text-slate-400">Faculdade:</span>
+          <button
+            onClick={() => setFilters((f) => ({ ...f, fac: "", turma: "" }))}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${!filters.fac ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          >
+            Todas
+          </button>
+          {faculties.map((f) => {
+            const fst = getFacultyStyle(f.abbreviation);
+            const active = filters.fac === f.id;
+            return (
+              <button
+                key={f.id}
+                onClick={() => setFilters((fl) => ({ ...fl, fac: active ? "" : f.id, turma: "" }))}
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-shadow ${fst.pill} ${active ? "ring-2 ring-slate-900" : "hover:ring-1 hover:ring-slate-300"}`}
+                aria-pressed={active}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${fst.dot}`} />
+                {f.abbreviation}
+              </button>
+            );
+          })}
+        </div>
+        <div className={`${showFilters ? "grid" : "hidden"} grid-cols-2 gap-2 sm:grid sm:grid-cols-4`}>
           <Sel
             label="Status"
             value={filters.status}
             options={["", "active", "pending", "archived"]}
             labels={["Todos", "Ativos", "Pendentes", "Arquivados"]}
             onChange={(v) => setFilters((f) => ({ ...f, status: v as UserFilters["status"] }))}
-          />
-          <Sel
-            label="Faculdade"
-            value={filters.fac}
-            options={["", ...faculties.map((f) => f.id)]}
-            labels={["Todas", ...faculties.map((f) => f.abbreviation)]}
-            onChange={(v) => setFilters((f) => ({ ...f, fac: v, turma: "" }))}
           />
           <Sel
             label="Turma"

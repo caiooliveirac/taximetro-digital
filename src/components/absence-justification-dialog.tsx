@@ -82,7 +82,17 @@ export function AbsenceJustificationDialog({ assignment, title, onClose, onSaved
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={onClose}
+            onKeyDown={(e) => {
+                // Esc fecha só o diálogo — não o drawer que pode estar por baixo.
+                if (e.key === "Escape") {
+                    e.stopPropagation();
+                    onClose();
+                }
+            }}
+        >
             <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
                 <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
                     <div>

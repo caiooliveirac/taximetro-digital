@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, FileText, Loader2, RefreshCw, ShieldCheck, Sun, Users, XCircle, Moon, ArrowRight, ClipboardCheck } from "lucide-react";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
+import { InternDrawer } from "@/components/admin/intern-drawer";
 import { manualAttendanceAction } from "@/app/admin/actions";
 import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
@@ -144,6 +145,7 @@ function buildActionPlan(scope: "admin" | "leader", assignment: Assignment, comp
 
 export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
     const [assignments, setAssignments] = useState<Assignment[]>([]);
+    const [internDrawer, setInternDrawer] = useState<{ id: string; name: string; facultyAbbr?: string } | null>(null);
     const [complianceRows, setComplianceRows] = useState<ComplianceRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -342,7 +344,11 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                     const baseStyle = getBaseStyle(assignment.baseType);
                                     const periodStyle = getPeriodStyle(assignment.period);
                                     return (
-                                        <TableRow key={assignment.id} className="bg-red-50/60">
+                                        <TableRow
+                                            key={assignment.id}
+                                            onClick={() => setInternDrawer({ id: assignment.internId, name: assignment.internName, facultyAbbr: assignment.facultyAbbr })}
+                                            className="cursor-pointer bg-red-50/60 transition-colors hover:bg-red-100/60"
+                                        >
                                             <TableCell className="text-slate-900">{new Date(`${assignment.date}T12:00:00`).toLocaleDateString("pt-BR")}</TableCell>
                                             <TableCell className="font-medium text-slate-900">{assignment.internName}</TableCell>
                                             <TableCell className="text-xs text-slate-500">{assignment.facultyAbbr}</TableCell>
@@ -374,7 +380,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                                     )}
                                                     <button
                                                         type="button"
-                                                        onClick={() => setJustificationAssignment(assignment)}
+                                                        onClick={(e) => { e.stopPropagation(); setJustificationAssignment(assignment); }}
                                                         className="text-xs font-medium text-accent-600 hover:text-accent-500"
                                                     >
                                                         {assignment.absenceJustification ? "Ver ou editar" : "Justificar falta"}
@@ -388,7 +394,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                                     </span>
                                                     <p className="max-w-[320px] text-xs text-slate-600">{actionPlan.detail}</p>
                                                     {actionPlan.href && actionPlan.hrefLabel && (
-                                                        <Link href={actionPlan.href} className="inline-flex items-center gap-1 text-xs font-medium text-accent-600 hover:text-accent-500">
+                                                        <Link href={actionPlan.href} onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs font-medium text-accent-600 hover:text-accent-500">
                                                             {actionPlan.hrefLabel}
                                                             <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.8} />
                                                         </Link>
@@ -396,7 +402,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                                     {scope === "admin" && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => excuseAbsence(assignment.id)}
+                                                            onClick={(e) => { e.stopPropagation(); excuseAbsence(assignment.id); }}
                                                             disabled={excusingId !== null}
                                                             className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
                                                         >
@@ -432,6 +438,15 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                 onClose={() => setJustificationAssignment(null)}
                 onSaved={handleJustificationSaved}
             />
+
+            {internDrawer && (
+                <InternDrawer
+                    internId={internDrawer.id}
+                    internName={internDrawer.name}
+                    facultyAbbr={internDrawer.facultyAbbr}
+                    onClose={() => setInternDrawer(null)}
+                />
+            )}
         </div>
     );
 }

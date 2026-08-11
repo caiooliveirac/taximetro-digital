@@ -9,9 +9,11 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
 import { localDateStr } from "@/lib/utils";
+import { InternDrawer } from "@/components/admin/intern-drawer";
 
 type Assignment = {
   id: string;
+  internId: string;
   internName: string;
   facultyAbbr: string;
   baseCode: string;
@@ -30,6 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function AdminPresencas() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [internDrawer, setInternDrawer] = useState<{ id: string; name: string; facultyAbbr?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterBase, setFilterBase] = useState("");
   const [filterFaculty, setFilterFaculty] = useState("");
@@ -173,7 +176,11 @@ export default function AdminPresencas() {
                             ["CHECKED_IN", "CHECKED_OUT"].includes(a.status) ? "bg-emerald-50" :
                               "";
                   return (
-                    <TableRow key={a.id} className={rowBg}>
+                    <TableRow
+                      key={a.id}
+                      onClick={() => setInternDrawer({ id: a.internId, name: a.internName, facultyAbbr: a.facultyAbbr })}
+                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${rowBg}`}
+                    >
                       <TableCell className="font-medium">{a.internName}</TableCell>
                       <TableCell className="text-xs text-slate-500">{a.facultyAbbr}</TableCell>
                       <TableCell>
@@ -207,6 +214,15 @@ export default function AdminPresencas() {
             </div>
           </div>
         </>
+      )}
+
+      {internDrawer && (
+        <InternDrawer
+          internId={internDrawer.id}
+          internName={internDrawer.name}
+          facultyAbbr={internDrawer.facultyAbbr}
+          onClose={() => setInternDrawer(null)}
+        />
       )}
     </div>
   );

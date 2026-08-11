@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Info, AlertCircle, ClipboardList, Clock, CheckCircle2 } from "lucide-react";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { InternQuickModal } from "@/components/admin/intern-quick-modal";
+import { InternDrawer } from "@/components/admin/intern-drawer";
 import { AbsenceQuickModal } from "@/components/admin/absence-quick-modal";
 
 export type WeekBreakdown = {
@@ -528,7 +528,7 @@ export function CockpitAlarms({
       </div>
 
       {modalIntern && (
-        <InternQuickModal
+        <InternDrawer
           internId={modalIntern.internId}
           internName={modalIntern.internName}
           facultyAbbr={modalIntern.facultyAbbr}

@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, X, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, User, X, Zap } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
+import { InternDrawer } from "@/components/admin/intern-drawer";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
@@ -657,6 +658,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setFilterDayKey(getDayKey(localDateStr()));
     }, []);
     const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
+    const [internDrawer, setInternDrawer] = useState<{ id: string; name: string; facultyAbbr?: string } | null>(null);
     const [allocation, setAllocation] = useState<AllocationState | null>(null);
     const [focusedPeriod, setFocusedPeriod] = useState<PeriodFocusState | null>(null);
     const [allocFacultyId, setAllocFacultyId] = useState("");
@@ -2138,6 +2140,13 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                     </span>
                                 </div>
                                 <p className="mt-1 text-sm text-slate-500">{selectedAssignment.base_code} — {selectedAssignment.base_name} · {formatDayMonth(selectedAssignment.date)} · {formatPeriod(selectedAssignment.period, selectedAssignment.shift)}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => setInternDrawer({ id: selectedAssignment.intern_id, name: selectedAssignment.intern_name, facultyAbbr: selectedAssignment.faculty_abbr })}
+                                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
+                                >
+                                    <User className="h-3.5 w-3.5" /> Ver interno
+                                </button>
                             </div>
                             <button type="button" onClick={() => setSelectedAssignmentId(null)} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
                         </div>
@@ -2226,6 +2235,15 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         </div>
                     </div>
                 </div>
+            )}
+
+            {internDrawer && (
+                <InternDrawer
+                    internId={internDrawer.id}
+                    internName={internDrawer.name}
+                    facultyAbbr={internDrawer.facultyAbbr}
+                    onClose={() => setInternDrawer(null)}
+                />
             )}
         </div>
     );

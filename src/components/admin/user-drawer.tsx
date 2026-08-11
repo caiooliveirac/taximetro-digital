@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, FileDown, Mail, X, Archive, ArchiveRestore, Pencil } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileDown, Mail, X, Archive, ArchiveRestore, Pencil, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { formatBrazilTime } from "@/lib/utils";
 import { PhotoLightbox } from "@/components/photo-lightbox";
+import { InternHistorySection } from "@/components/admin/intern-history-section";
 import {
-  ROLES, ROLE_LABEL, ROLE_BADGE_CLASS, getRowOutcome,
-  REQ_TYPE_LABEL, REQ_STATUS_LABEL, REQ_STATUS_COLOR, formatCpf,
-  type User, type Faculty, type Base, type HistoryAssignment, type HistoryRequest,
+  ROLES, ROLE_LABEL, ROLE_BADGE_CLASS, formatCpf,
+  type User, type Faculty, type Base,
 } from "@/app/admin/usuarios/user-meta";
 
 type RoleName = "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN";
@@ -29,13 +29,12 @@ type UserDrawerProps = {
 const EMPTY_FORM = { name: "", cpf: "", email: "", phone: "", password: "", selectedRoles: ["INTERN"], facultyId: "", baseId: null, registrationCode: "" };
 
 export function UserDrawer({ userId, initialUser, faculties, bases, prevId, nextId, position, onNavigate, onClose, onChanged }: UserDrawerProps) {
+  const router = useRouter();
   const isCreate = userId === "new";
   const [detail, setDetail] = useState<User | null>(initialUser ?? null);
   const [mode, setMode] = useState<"view" | "edit">(isCreate ? "edit" : "view");
   const [form, setForm] = useState<Record<string, unknown> | null>(isCreate ? { ...EMPTY_FORM } : null);
   const [error, setError] = useState("");
-  const [history, setHistory] = useState<{ assignments: HistoryAssignment[]; requests: HistoryRequest[] } | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const [accessEmail, setAccessEmail] = useState("");
   const [accessSaving, setAccessSaving] = useState(false);
@@ -61,7 +60,6 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
     setMode(isCreate ? "edit" : "view");
     setForm(isCreate ? { ...EMPTY_FORM } : null);
     setError("");
-    setHistory(null);
     setAccessMessage(null);
     setLightbox(false);
     if (isCreate) { setDetail(null); return; }
@@ -70,19 +68,6 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
     fetchDetail(userId).then((d) => { if (d) setAccessEmail(d.email ?? ""); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
-
-  useEffect(() => {
-    if (isCreate || !isIntern) return;
-    let cancelled = false;
-    setHistoryLoading(true);
-    fetch(`/taximetro/api/admin/users/${userId}/history`)
-      .then((r) => r.json())
-      .then((json) => { if (!cancelled && json.success) setHistory(json.data); })
-      .catch(() => { if (!cancelled) setHistory(null); })
-      .finally(() => { if (!cancelled) setHistoryLoading(false); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, isIntern]);
 
   // Trava o scroll da lista enquanto o drawer está aberto.
   useEffect(() => {
@@ -447,12 +432,12 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
                 </div>
               </details>
 
-              {/* Histórico (interno) */}
+              {/* Acompanhamento (interno) — mesmo miolo do drawer universal / ver-interno */}
               {isIntern && (
                 <div ref={historyRef} className="rounded-xl border border-slate-200 bg-white p-3 space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-slate-900">
-                      Histórico
+                      Acompanhamento
                       {!!detail.facultyAbbr && (() => {
                         const fst = getFacultyStyle(detail.facultyAbbr);
                         return (
@@ -463,101 +448,18 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
                         );
                       })()}
                     </h3>
-                    {history && (
-                      <button onClick={exportPdf} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 transition-colors">
-                        <FileDown className="h-3.5 w-3.5" /> Exportar PDF
-                      </button>
-                    )}
+                    <button onClick={exportPdf} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 transition-colors">
+                      <FileDown className="h-3.5 w-3.5" /> Exportar PDF
+                    </button>
                   </div>
-
-                  {historyLoading ? (
-                    <p className="py-6 text-center text-sm text-slate-400">Carregando histórico...</p>
-                  ) : history ? (
-                    <>
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Plantões ({history.assignments.length})</h4>
-                        {history.assignments.length === 0 ? (
-                          <p className="py-4 text-center text-sm text-slate-400">Nenhum plantão registrado.</p>
-                        ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
-                                  <th className="pb-2 pr-3">Data</th>
-                                  <th className="pb-2 pr-3">Base</th>
-                                  <th className="pb-2 pr-3">Turno</th>
-                                  <th className="pb-2 pr-3">Resultado</th>
-                                  <th className="pb-2 pr-3">Check-in</th>
-                                  <th className="pb-2">Check-out</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {history.assignments.map((a) => {
-                                  const outcome = getRowOutcome(a);
-                                  return (
-                                    <tr key={a.id} className={`border-b border-slate-50 ${outcome.bg}`}>
-                                      <td className="py-1.5 pr-3 text-xs">{new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR")}</td>
-                                      <td className="py-1.5 pr-3 text-xs font-medium">{a.base_code}</td>
-                                      <td className="py-1.5 pr-3 text-xs">{a.period === "DAY" ? "Diurno" : "Noturno"}</td>
-                                      <td className="py-1.5 pr-3"><span className="text-xs font-medium">{outcome.label}</span></td>
-                                      <td className="py-1.5 pr-3 text-xs text-slate-500">{a.checkin_at ? formatBrazilTime(a.checkin_at) : "—"}</td>
-                                      <td className="py-1.5 text-xs text-slate-500">{a.checkout_at ? formatBrazilTime(a.checkout_at) : "—"}</td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-
-                      {history.requests.length > 0 && (
-                        <div>
-                          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Solicitações ({history.requests.length})</h4>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
-                                  <th className="pb-2 pr-3">Data</th>
-                                  <th className="pb-2 pr-3">Tipo</th>
-                                  <th className="pb-2 pr-3">Base</th>
-                                  <th className="pb-2 pr-3">Status</th>
-                                  <th className="pb-2">Observação</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {history.requests.map((r) => (
-                                  <tr key={r.id} className="border-b border-slate-50">
-                                    <td className="py-1.5 pr-3 text-xs">{new Date(r.created_at).toLocaleDateString("pt-BR")}</td>
-                                    <td className="py-1.5 pr-3 text-xs font-medium">{REQ_TYPE_LABEL[r.type] ?? r.type}</td>
-                                    <td className="py-1.5 pr-3 text-xs">
-                                      {r.type === "EXTRA_SHIFT"
-                                        ? [r.extra_base_code, r.extra_date].filter(Boolean).join(" · ") || "—"
-                                        : r.base_code ?? "—"}
-                                    </td>
-                                    <td className="py-1.5 pr-3">
-                                      <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-medium ${REQ_STATUS_COLOR[r.status] ?? ""}`}>
-                                        {REQ_STATUS_LABEL[r.status] ?? r.status}
-                                      </span>
-                                    </td>
-                                    <td className="py-1.5 text-xs text-slate-500">{r.review_notes ?? "—"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 text-[10px] text-slate-500">
-                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-5 rounded bg-emerald-50 border border-emerald-200" /> Presente/Finalizado</span>
-                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-5 rounded bg-red-50 border border-red-200" /> Ausente</span>
-                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-5 rounded bg-purple-50 border border-purple-200" /> Erro geo</span>
-                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-5 rounded bg-violet-50 border border-violet-200" /> TOTP expirado</span>
-                        <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-5 rounded bg-fuchsia-50 border border-fuchsia-200" /> Erro QR</span>
-                      </div>
-                    </>
-                  ) : null}
+                  <InternHistorySection internId={userId} />
+                  <button
+                    onClick={() => router.push(`/admin/ver-interno?internId=${userId}`)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+                  >
+                    Abrir no Ver Interno (ações e solicitações)
+                    <ArrowRight className="h-4 w-4" strokeWidth={2} />
+                  </button>
                 </div>
               )}
             </>
