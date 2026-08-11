@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   const parsed = checkinSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ success: false, error: "Dados inválidos: " + parsed.error.issues.map(i => i.message).join(", ") }, { status: 400 });
 
-  const { assignmentId, latitude, longitude, geoValid: clientGeoValid } = parsed.data;
+  const { assignmentId, latitude, longitude } = parsed.data;
 
   // Fetch assignment + base
   const [assignment] = await db
@@ -87,6 +87,10 @@ export async function POST(req: NextRequest) {
     geo = isWithinGeofence(latitude, longitude, base.latitude, base.longitude, base.geoFenceMeters);
   }
 
+  // Dentro da cerca (recalculada no servidor, nunca confiando no cliente):
+  // check-in validado na hora, sem preceptor. Fora/sem GPS: fluxo TOTP.
+  const geoAutoValidate = !impersonating && hasGps && geo.valid;
+
   // Generate TOTP secret for code rotation (5-min step, 15-min session)
   const totpSecret = generateTotpSecret();
   const currentCode = getCurrentCode(totpSecret);
@@ -100,17 +104,27 @@ export async function POST(req: NextRequest) {
 
   let checkinId: string;
 
+  const checkinValues = {
+    checkinLat: hasGps ? latitude : null,
+    checkinLng: hasGps ? longitude : null,
+    geoDistanceMeters: hasGps ? geo.distance : null,
+    geoValid: impersonating ? true : (hasGps ? geo.valid : false),
+    checkinAt: now,
+    totpSecret,
+    ...(geoAutoValidate
+      ? {
+        status: "VALIDATED" as const,
+        method: "GEO" as const,
+        totpValidatedAt: now,
+        validatedBy: null,
+        validatedByName: "Georreferenciamento",
+      }
+      : { status: "PENDING" as const }),
+  };
+
   if (existingCheckin && existingCheckin.status === "PENDING") {
     // Reuse existing checkin: update with new geo + TOTP data
-    await db.update(checkins).set({
-      checkinLat: hasGps ? latitude : null,
-      checkinLng: hasGps ? longitude : null,
-      geoDistanceMeters: hasGps ? geo.distance : null,
-      geoValid: impersonating ? true : (hasGps ? (clientGeoValid || geo.valid) : false),
-      checkinAt: now,
-      totpSecret,
-      status: "PENDING",
-    }).where(eq(checkins.id, existingCheckin.id));
+    await db.update(checkins).set(checkinValues).where(eq(checkins.id, existingCheckin.id));
     checkinId = existingCheckin.id;
 
     // Expire old qr_sessions for this checkin
@@ -129,26 +143,25 @@ export async function POST(req: NextRequest) {
     const [newCheckin] = await db.insert(checkins).values({
       assignmentId,
       internId: effectiveInternId,
-      checkinLat: hasGps ? latitude : null,
-      checkinLng: hasGps ? longitude : null,
-      geoDistanceMeters: hasGps ? geo.distance : null,
-      geoValid: impersonating ? true : (hasGps ? (clientGeoValid || geo.valid) : false),
-      checkinAt: now,
-      totpSecret,
-      status: "PENDING",
+      ...checkinValues,
     }).returning();
     checkinId = newCheckin.id;
   }
 
-  // Create new QR session
-  await db.insert(qrSessions).values({
-    checkinId,
-    internId: effectiveInternId,
-    totpSecret,
-    activeCode: currentCode,
-    codeExpiresAt: sessionExpiresAt,
-    expiresAt: sessionExpiresAt,
-  });
+  if (geoAutoValidate) {
+    await db.update(assignments).set({ status: "CHECKED_IN", updatedAt: now })
+      .where(eq(assignments.id, assignmentId));
+  } else {
+    // Create new QR session (fluxo de validação por preceptor)
+    await db.insert(qrSessions).values({
+      checkinId,
+      internId: effectiveInternId,
+      totpSecret,
+      activeCode: currentCode,
+      codeExpiresAt: sessionExpiresAt,
+      expiresAt: sessionExpiresAt,
+    });
+  }
 
   // Get intern selfie for display
   const [intern] = await db.select({ selfie: users.selfie, name: users.name })
@@ -157,7 +170,7 @@ export async function POST(req: NextRequest) {
   after(() =>
     logAudit({
       userId: effectiveInternId,
-      action: "CHECKIN_INITIATED",
+      action: geoAutoValidate ? "CHECKIN_GEO_VALIDATED" : "CHECKIN_INITIATED",
       entity: "checkin",
       entityId: checkinId,
       realUserId: impersonating ? (token.id as string) : undefined,
@@ -169,6 +182,8 @@ export async function POST(req: NextRequest) {
     success: true,
     data: {
       checkinId,
+      autoValidated: geoAutoValidate,
+      checkinAt: now.toISOString(),
       currentCode,
       expiresAt: sessionExpiresAt.toISOString(),
       assignmentId,
