@@ -9,7 +9,7 @@ import { pickPlausibleShiftTimes } from "@/features/admin-attendance/application
 
 export const manualAttendanceSchema = z.object({
   assignmentId: z.string().uuid(),
-  action: z.enum(["CONFIRM_PRESENT", "CONFIRM_CHECKOUT", "MARK_ABSENT"]),
+  action: z.enum(["CONFIRM_PRESENT", "CONFIRM_CHECKOUT", "MARK_ABSENT", "EXCUSE_ABSENCE"]),
 });
 
 function formatShiftPeriod(period: string) {
@@ -77,6 +77,7 @@ export async function executeManualAttendance(params: {
       date: assignments.date,
       period: assignments.period,
       status: assignments.status,
+      absenceJustification: assignments.absenceJustification,
       internName: users.name,
       baseCode: bases.code,
       facultyAbbr: faculties.abbreviation,
@@ -214,6 +215,61 @@ export async function executeManualAttendance(params: {
         facultyId: assignment.facultyId,
         retroactive: isRetroactive,
         syntheticCheckoutAt: syntheticCheckoutAt.toISOString(),
+      },
+    });
+
+    return { status: 200, body: { success: true, data: { status: "CHECKED_OUT", leaderNotificationsSent: 0 } } } as const;
+  }
+
+  if (action === "EXCUSE_ABSENCE") {
+    if (assignment.status !== "ABSENT") {
+      return { status: 409, body: { success: false, error: "Só é possível abonar um plantão em falta" } } as const;
+    }
+
+    // Abono: a falta justificada vira presença completa (check-in + checkout
+    // sintéticos), com a justificativa preservada no plantão e no audit.
+    const plausible = pickPlausibleShiftTimes({ date: assignment.date, period: assignment.period });
+    const excusedFields = {
+      checkinAt: plausible.checkinAt,
+      geoValid: true,
+      status: "VALIDATED" as const,
+      validatedBy: params.actor.id,
+      totpValidatedAt: plausible.checkinAt,
+      method: "APP_DIRECT" as const,
+      checkoutAt: plausible.checkoutAt,
+      checkoutConfirmedBy: params.actor.id,
+      checkoutNotes: "Falta abonada pela coordenação",
+    };
+
+    await db.transaction(async (tx) => {
+      if (existingCheckin) {
+        await tx.update(checkins).set(excusedFields).where(eq(checkins.id, existingCheckin.id));
+        await tx.update(qrSessions).set({ consumedAt: now, consumedBy: params.actor.id })
+          .where(and(eq(qrSessions.checkinId, existingCheckin.id), isNull(qrSessions.consumedAt)));
+      } else {
+        await tx.insert(checkins).values({
+          assignmentId,
+          internId: assignment.internId,
+          ...excusedFields,
+        });
+      }
+
+      await tx.update(assignments).set({ status: "CHECKED_OUT", updatedAt: now })
+        .where(eq(assignments.id, assignmentId));
+    });
+
+    await logAudit({
+      userId: params.actor.id,
+      action: "ABSENCE_EXCUSED",
+      entity: "assignment",
+      entityId: assignmentId,
+      payload: {
+        previousStatus: assignment.status,
+        previousCheckinStatus: existingCheckin?.status ?? null,
+        internId: assignment.internId,
+        facultyId: assignment.facultyId,
+        absenceJustification: assignment.absenceJustification,
+        retroactive: isRetroactive,
       },
     });
 

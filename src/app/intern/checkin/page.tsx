@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ORG_TELEGRAM_GROUP_LINK } from "@/lib/branding";
 import { Suspense, useEffect, useState, useRef, useCallback, useOptimistic, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
-import { MapPin, Sun, Moon, CheckCircle, Clock, Loader2, AlertCircle, UserCircle, AlertTriangle, LogOut, Shield, Settings, RotateCcw, Smartphone } from "lucide-react";
+import { MapPin, Sun, Moon, CheckCircle, Clock, Loader2, AlertCircle, UserCircle, AlertTriangle, LogOut, Shield, Settings, RotateCcw } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,7 @@ type CheckoutData = {
 };
 
 type Step =
-  | "IDLE" | "CHECKING_GEO" | "GPS_DENIED" | "GEO_WARNING" | "GENERATING" | "AWAITING"
+  | "IDLE" | "CHECKING_GEO" | "GENERATING" | "AWAITING"
   | "VALIDATED" | "CHECKOUT_GENERATING" | "CHECKOUT_AWAITING" | "CHECKED_OUT" | "ERROR";
 
 type CurrentAttendancePayload = {
@@ -117,7 +117,7 @@ function InternCheckinContent() {
   const [countdown, setCountdown] = useState(TOTP_STEP);
   const [geoDistance, setGeoDistance] = useState<number | null>(null);
   const [geoFenceMeters, setGeoFenceMeters] = useState(200);
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoNotice, setGeoNotice] = useState<"GPS_OFF" | "OUT_OF_FENCE" | null>(null);
   const [errorText, setErrorText] = useState("");
   const [checkinAt, setCheckinAt] = useState<string | null>(null);
   const [canRequestCheckout, setCanRequestCheckout] = useState(false);
@@ -238,6 +238,14 @@ function InternCheckinContent() {
         return;
       }
 
+      // Dentro da cerca geográfica: servidor já validou o check-in sozinho
+      if (data.data.autoValidated) {
+        setCheckinAt(data.data.checkinAt ?? new Date().toISOString());
+        setGeoNotice(null);
+        setStep("VALIDATED");
+        return;
+      }
+
       setCheckinData(data.data);
       setCurrentCode(data.data.currentCode);
       setCountdown(TOTP_STEP);
@@ -257,16 +265,18 @@ function InternCheckinContent() {
     setStep("CHECKING_GEO");
     setErrorText("");
 
+    setGeoNotice(null);
+
     if (!navigator.geolocation) {
-      setUserCoords(null);
-      setStep("GPS_DENIED");
+      // Sem GPS: cai direto no fluxo de validação por preceptor (QR + código)
+      setGeoNotice("GPS_OFF");
+      await generateTotp(0, 0, false);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        setUserCoords({ lat: latitude, lng: longitude });
 
         try {
           const res = await fetch("/taximetro/api/attendance/checkin/geo-check", {
@@ -276,31 +286,28 @@ function InternCheckinContent() {
           });
           const data = await res.json();
 
-          if (!data.success) {
+          if (data.success) {
+            setGeoDistance(data.distanceMeters);
+            setGeoFenceMeters(data.geoFenceMeters);
+          } else {
             setGeoDistance(null);
             setGeoFenceMeters(200);
-            setErrorText(data.error || "Erro ao verificar localização.");
-            setStep("GEO_WARNING");
-            return;
           }
 
-          setGeoDistance(data.distanceMeters);
-          setGeoFenceMeters(data.geoFenceMeters);
-
-          if (data.withinFence) {
-            await generateTotp(latitude, longitude, true);
-          } else {
-            setStep("GEO_WARNING");
-          }
+          // Dentro ou fora da cerca, o servidor decide: dentro valida na hora,
+          // fora gera código para validação por preceptor.
+          if (!data.success || !data.withinFence) setGeoNotice("OUT_OF_FENCE");
+          await generateTotp(latitude, longitude, Boolean(data.success && data.withinFence));
         } catch {
           setGeoDistance(null);
-          setStep("GEO_WARNING");
+          setGeoNotice("OUT_OF_FENCE");
+          await generateTotp(latitude, longitude, false);
         }
       },
-      (err) => {
-        // GPS denied or unavailable — show instructional screen
-        setUserCoords(null);
-        setStep("GPS_DENIED");
+      async () => {
+        // GPS negado ou indisponível — segue para validação por preceptor
+        setGeoNotice("GPS_OFF");
+        await generateTotp(0, 0, false);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
@@ -721,94 +728,6 @@ function InternCheckinContent() {
           <p className="text-slate-600">Verificando sua localização...</p>
         </div>
 
-        /* GPS Denied — instructional screen */
-      ) : step === "GPS_DENIED" ? (
-        <div className="space-y-4">
-          <div className="rounded-xl border-2 border-orange-300 bg-orange-50 p-6 space-y-4">
-            <div className="flex items-center justify-center gap-2">
-              <MapPin className="h-8 w-8 text-orange-600" strokeWidth={1.5} />
-              <p className="text-lg font-bold text-orange-800">GPS Desativado</p>
-            </div>
-
-            <p className="text-sm text-orange-700 text-center">
-              Precisamos da sua localização para registrar o check-in na base.
-              Por favor, ative o GPS e permita o acesso:
-            </p>
-
-            <div className="rounded-lg bg-white p-4 space-y-3 text-sm text-slate-700">
-              <div className="flex items-start gap-3">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-700">1</div>
-                <p>Toque no <strong>cadeado</strong> (🔒) ou <strong>ícone ⓘ</strong> na barra de endereço do navegador</p>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-700">2</div>
-                <p>Em <strong>Localização</strong>, altere para <strong>Permitir</strong></p>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-700">3</div>
-                <p>Verifique se o <strong>GPS do celular</strong> está ligado (Configurações → Localização)</p>
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-orange-100/50 p-3 text-xs text-orange-700 text-center">
-              <Smartphone className="inline h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
-              No iPhone: Ajustes → Privacidade → Serviços de Localização → Safari → &quot;Durante o Uso&quot;
-            </div>
-          </div>
-
-          <Button onClick={startCheckin} className="w-full gap-2" size="lg">
-            <RotateCcw className="h-4 w-4" strokeWidth={2} />
-            Tentar novamente
-          </Button>
-
-          <button
-            onClick={() => generateTotp(0, 0, false)}
-            className="w-full text-center text-sm text-slate-400 underline underline-offset-2 hover:text-slate-600"
-          >
-            Continuar sem localização
-          </button>
-        </div>
-
-        /* Geo warning — outside fence */
-      ) : step === "GEO_WARNING" ? (
-        <div className="space-y-4">
-          <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-6 text-center space-y-3">
-            <AlertTriangle className="mx-auto h-10 w-10 text-amber-600" strokeWidth={1.5} />
-            {geoDistance != null ? (
-              <>
-                <p className="text-lg font-bold text-amber-800">Fora do raio da base</p>
-                <p className="text-amber-700">
-                  Você está a <strong>{geoDistance.toFixed(0)}m</strong> da base.
-                  O raio permitido é <strong>{geoFenceMeters}m</strong>.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-lg font-bold text-amber-800">Localização indisponível</p>
-                <p className="text-amber-700">
-                  {errorText || "Não foi possível verificar sua localização."}
-                </p>
-              </>
-            )}
-          </div>
-          <p className="text-sm text-slate-500 text-center">
-            {geoDistance != null
-              ? "Sua localização pode estar imprecisa. Deseja continuar? O check-in ficará registrado como fora do raio."
-              : "Você pode continuar sem verificação de localização."}
-          </p>
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setStep("IDLE")} className="flex-1">
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => generateTotp(userCoords?.lat ?? 0, userCoords?.lng ?? 0, false)}
-              className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
-            >
-              Continuar mesmo assim
-            </Button>
-          </div>
-        </div>
-
         /* Generating TOTP */
       ) : step === "GENERATING" ? (
         <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-[0_1px_3px_rgba(0,0,0,0.04)] text-center space-y-4">
@@ -819,6 +738,28 @@ function InternCheckinContent() {
         /* Awaiting preceptor — QR + TOTP */
       ) : step === "AWAITING" && checkinData ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-5 text-center">
+
+          {geoNotice && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-left space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" strokeWidth={1.8} />
+                <p className="text-sm text-amber-800">
+                  {geoNotice === "GPS_OFF"
+                    ? "Sem localização, o check-in precisa ser validado pelo preceptor. Se preferir, ative o GPS e tente de novo para validar automaticamente."
+                    : geoDistance != null
+                      ? `Você está a ${geoDistance.toFixed(0)}m da base (raio de ${geoFenceMeters}m), então o check-in precisa ser validado pelo preceptor.`
+                      : "Não foi possível confirmar sua localização, então o check-in precisa ser validado pelo preceptor."}
+                </p>
+              </div>
+              <button
+                onClick={startCheckin}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-700 underline underline-offset-2 hover:text-amber-900"
+              >
+                <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
+                Tentar novamente com GPS
+              </button>
+            </div>
+          )}
 
           <div className="rounded-3xl border-2 border-accent-400 bg-accent-50 px-5 py-5 text-center shadow-sm">
             <p className="text-base font-black uppercase tracking-[0.22em] text-accent-950">Preceptor</p>
