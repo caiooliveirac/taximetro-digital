@@ -2,9 +2,10 @@
 
 import { Fragment, useEffect, useState, useRef } from "react";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { FileDown, KeyRound, Mail, ChevronDown, ChevronUp, RotateCcw, Archive, ArchiveRestore } from "lucide-react";
+import { FileDown, KeyRound, Mail, ChevronDown, ChevronUp, RotateCcw, Archive, ArchiveRestore, SlidersHorizontal } from "lucide-react";
 import { InviteButton } from "@/components/invite-button";
 import { formatBrazilTime } from "@/lib/utils";
+import { filterUsers, countActiveFilters, EMPTY_FILTERS, type UserFilters } from "./filter-users";
 
 const MERGE_ROLLBACK_WINDOW_DAYS = 7;
 
@@ -160,8 +161,19 @@ export default function AdminUsuarios() {
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [showPending, setShowPending] = useState(false);
+  const [filters, setFilters] = useState<UserFilters>(() => {
+    if (typeof window === "undefined") return EMPTY_FILTERS;
+    const p = new URLSearchParams(window.location.search);
+    return {
+      q: p.get("q") ?? "",
+      status: (p.get("status") as UserFilters["status"]) ?? "",
+      fac: p.get("fac") ?? "",
+      turma: p.get("turma") ?? "",
+      papel: p.get("papel") ?? "",
+      sort: (p.get("sort") as UserFilters["sort"]) ?? "",
+    };
+  });
+  const [showFilters, setShowFilters] = useState(false);
   const [history, setHistory] = useState<{ assignments: HistoryAssignment[]; requests: HistoryRequest[] } | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [accessRowUserId, setAccessRowUserId] = useState<string | null>(null);
@@ -259,6 +271,17 @@ export default function AdminUsuarios() {
   }
 
   useEffect(() => { load(); }, []);
+
+  // Espelha filtros na URL (replaceState = sem reload, sobrevive a refresh/voltar).
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    for (const [k, v] of Object.entries(filters)) {
+      if (v) p.set(k, v);
+      else p.delete(k);
+    }
+    const qs = p.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [filters]);
 
   async function loadHistory(userId: string) {
     setHistoryLoading(true);
@@ -505,24 +528,10 @@ export default function AdminUsuarios() {
 
   const pendingCount = users.filter((u) => !u.isActive).length;
 
-  const searchTerm = search.trim().toLowerCase();
-  const filtered = users.filter((u) => {
-    if (showPending && u.isActive) return false;
-    if (!searchTerm) return true;
-
-    const haystack = [
-      u.name,
-      u.cpf ?? "",
-      u.email,
-      u.phone ?? "",
-      u.registrationCode ?? "",
-      u.role ?? "",
-      u.facultyAbbr ?? "",
-      u.baseCode ?? "",
-    ].map((value) => value.toLowerCase());
-
-    return haystack.some((value) => value.includes(searchTerm));
-  });
+  const filtered = filterUsers(users, filters);
+  const activeFilterCount = countActiveFilters(filters);
+  const facultyAbbrById = new Map(faculties.map((f) => [f.id, f.abbreviation]));
+  const turmaOptions = filters.fac ? allCohorts.filter((c) => c.facultyId === filters.fac) : allCohorts;
 
   const duplicateGroups = users.reduce<DuplicateGroup[]>((groups, user) => {
     const key = normalizeDuplicateKey(user.name);
@@ -656,8 +665,8 @@ export default function AdminUsuarios() {
           <InviteButton />
           {pendingCount > 0 && (
             <button
-              onClick={() => setShowPending(!showPending)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${showPending
+              onClick={() => setFilters((f) => ({ ...f, status: f.status === "pending" ? "" : "pending" }))}
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${filters.status === "pending"
                 ? "bg-amber-500 text-white hover:bg-amber-600"
                 : "bg-amber-50 text-amber-700 hover:bg-amber-100"
                 }`}
@@ -665,10 +674,66 @@ export default function AdminUsuarios() {
               Pendentes ({pendingCount})
             </button>
           )}
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar..." className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" />
+          <input value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} placeholder="Buscar..." className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" />
           <button onClick={() => { setEditing({ name: "", cpf: "", email: "", phone: "", password: "", selectedRoles: ["INTERN"], facultyId: "", baseId: null, registrationCode: "" }); setHistory(null); }} className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white hover:bg-accent-600 whitespace-nowrap">
             + Novo
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm space-y-2">
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="flex items-center gap-2 text-sm font-medium text-slate-700 sm:hidden"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+          {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        <div className={`${showFilters ? "grid" : "hidden"} grid-cols-2 gap-2 sm:grid sm:grid-cols-3 lg:grid-cols-5`}>
+          <Sel
+            label="Status"
+            value={filters.status}
+            options={["", "active", "pending", "archived"]}
+            labels={["Todos", "Ativos", "Pendentes", "Arquivados"]}
+            onChange={(v) => setFilters((f) => ({ ...f, status: v as UserFilters["status"] }))}
+          />
+          <Sel
+            label="Faculdade"
+            value={filters.fac}
+            options={["", ...faculties.map((f) => f.id)]}
+            labels={["Todas", ...faculties.map((f) => f.abbreviation)]}
+            onChange={(v) => setFilters((f) => ({ ...f, fac: v, turma: "" }))}
+          />
+          <Sel
+            label="Turma"
+            value={filters.turma}
+            options={["", ...turmaOptions.map((c) => c.id)]}
+            labels={["Todas", ...turmaOptions.map((c) => filters.fac ? (c.name ?? c.label) : `${facultyAbbrById.get(c.facultyId) ?? "?"} · ${c.name ?? c.label}`)]}
+            onChange={(v) => setFilters((f) => ({ ...f, turma: v }))}
+          />
+          <Sel
+            label="Papel"
+            value={filters.papel}
+            options={["", ...ROLES]}
+            labels={["Todos", ...ROLES.map((r) => ROLE_LABEL[r])]}
+            onChange={(v) => setFilters((f) => ({ ...f, papel: v }))}
+          />
+          <Sel
+            label="Ordenar por"
+            value={filters.sort}
+            options={["", "newest", "oldest"]}
+            labels={["Nome A–Z", "Cadastro mais recente", "Cadastro mais antigo"]}
+            onChange={(v) => setFilters((f) => ({ ...f, sort: v as UserFilters["sort"] }))}
+          />
+        </div>
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>{filtered.length === users.length ? `${users.length} usuários` : `${filtered.length} de ${users.length} usuários`}</span>
+          {(activeFilterCount > 0 || filters.q || filters.sort) && (
+            <button onClick={() => setFilters(EMPTY_FILTERS)} className="font-medium text-accent-600 hover:text-accent-500">
+              Limpar filtros
+            </button>
+          )}
         </div>
       </div>
 
