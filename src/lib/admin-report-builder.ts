@@ -174,6 +174,7 @@ export type ReportHeatmapCellState =
   | "doneUsa"
   | "scheduled"
   | "absentConfirmed"
+  | "excused"
   | "noCheckin"
   | "extra";
 
@@ -260,7 +261,8 @@ export function classifyReportAssignment(
   hourNow: number
 ): ReportAssignmentGroup {
   if (assignment.status === "CHECKED_IN" || assignment.status === "CHECKED_OUT") return "done";
-  if (assignment.status === "ABSENT") return "absent";
+  // Abonada continua listada entre as faltas do relatório — nunca como presença.
+  if (assignment.status === "ABSENT" || assignment.status === "EXCUSED") return "absent";
 
   if (assignment.status === "SCHEDULED" || assignment.status === "CONFIRMED") {
     let isPast = false;
@@ -289,6 +291,7 @@ export function classifyHeatmapCell(
     return assignment.baseType === "CRL" ? "doneCrl" : assignment.baseType === "USA" ? "doneUsa" : "doneCru";
   }
   if (assignment.status === "ABSENT") return "absentConfirmed";
+  if (assignment.status === "EXCUSED") return "excused";
 
   if (assignment.status === "SCHEDULED" || assignment.status === "CONFIRMED") {
     let isPast = false;

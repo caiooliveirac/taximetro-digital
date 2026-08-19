@@ -120,9 +120,15 @@ function AssignmentCard({
         </div>
       ) : null}
       {group === "absent" && !assignment.isJustified ? (
-        <div className="mt-2 rounded border-l-2 border-rose-400 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-          {assignment.status === "ABSENT" ? "⚠ Não justificada" : "⚠ Não compareceu"}
-        </div>
+        assignment.status === "EXCUSED" ? (
+          <div className="mt-2 rounded border-l-2 border-fuchsia-400 bg-fuchsia-50 px-3 py-2 text-xs text-fuchsia-800">
+            ✓ Falta abonada pela coordenação
+          </div>
+        ) : (
+          <div className="mt-2 rounded border-l-2 border-rose-400 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            {assignment.status === "ABSENT" ? "⚠ Não justificada" : "⚠ Não compareceu"}
+          </div>
+        )
       ) : null}
     </div>
   );
@@ -397,6 +403,7 @@ const HEATMAP_COLORS: Record<ReportHeatmapCellState, string> = {
   doneUsa: "#15803d",         // green-700 — USA cumprido
   scheduled: "#cbd5e1",       // slate-300 — agendado futuro
   absentConfirmed: "#dc2626", // red-600 — falta lançada
+  excused: "#d946ef",         // fuchsia-500 — falta abonada
   noCheckin: "#fb923c",       // orange-400 — sem check-in
   extra: "#8b5cf6",           // violet-500 — plantão extra
 };
@@ -407,6 +414,7 @@ const HEATMAP_LEGEND: Array<{ state: ReportHeatmapCellState; label: string }> = 
   { state: "doneUsa", label: "USA cumprido" },
   { state: "scheduled", label: "Agendado" },
   { state: "absentConfirmed", label: "Falta lançada" },
+  { state: "excused", label: "Falta abonada" },
   { state: "noCheckin", label: "Sem check-in" },
   { state: "extra", label: "Plantão extra" },
 ];
@@ -425,6 +433,7 @@ const STATE_LABELS: Record<ReportHeatmapCellState, string> = {
   doneUsa: "USA cumprido",
   scheduled: "agendado",
   absentConfirmed: "falta lançada",
+  excused: "falta abonada",
   noCheckin: "sem check-in",
   extra: "plantão extra",
 };

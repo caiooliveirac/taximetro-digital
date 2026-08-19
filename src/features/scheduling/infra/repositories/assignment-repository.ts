@@ -111,7 +111,7 @@ export async function updateAssignmentStatus(params: {
   const [updated] = await db
     .update(assignments)
     .set({
-      status: params.status as "SCHEDULED" | "CONFIRMED" | "CHECKED_IN" | "CHECKED_OUT" | "ABSENT" | "CANCELLED",
+      status: params.status as "SCHEDULED" | "CONFIRMED" | "CHECKED_IN" | "CHECKED_OUT" | "ABSENT" | "CANCELLED" | "EXCUSED",
       notes: params.notes,
       updatedAt: new Date(),
     })

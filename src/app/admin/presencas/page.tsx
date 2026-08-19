@@ -28,6 +28,7 @@ type Assignment = {
 const STATUS_LABEL: Record<string, string> = {
   SCHEDULED: "Agendado", CONFIRMED: "Confirmado", CHECKED_IN: "Check-in",
   CHECKED_OUT: "Check-out", ABSENT: "Ausente", CANCELLED: "Cancelado",
+  EXCUSED: "Falta abonada",
 };
 
 export default function AdminPresencas() {

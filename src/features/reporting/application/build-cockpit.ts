@@ -67,7 +67,7 @@ export async function fetchNoCheckinNow(): Promise<NoCheckinRow[]> {
     JOIN bases b ON b.id = a.base_id
     JOIN faculties f ON f.id = a.faculty_id
     WHERE a.is_extra_shift = false
-      AND a.status NOT IN ('CHECKED_IN','CHECKED_OUT','ABSENT','CANCELLED')
+      AND a.status NOT IN ('CHECKED_IN','CHECKED_OUT','ABSENT','CANCELLED','EXCUSED')
       AND a.date >= CURRENT_DATE - INTERVAL '1 day'
       AND a.date <= CURRENT_DATE
     ORDER BY a.date, u.name

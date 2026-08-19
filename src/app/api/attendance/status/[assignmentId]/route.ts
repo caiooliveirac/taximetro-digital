@@ -24,9 +24,9 @@ export async function GET(
       const isTerminal = (status: string) => {
         if (after === "CHECKED_IN") {
           // Checkout listener: skip CHECKED_IN, close on CHECKED_OUT or other terminal
-          return ["CHECKED_OUT", "ABSENT", "CANCELLED"].includes(status);
+          return ["CHECKED_OUT", "ABSENT", "CANCELLED", "EXCUSED"].includes(status);
         }
-        return ["CHECKED_IN", "CHECKED_OUT", "ABSENT", "CANCELLED"].includes(status);
+        return ["CHECKED_IN", "CHECKED_OUT", "ABSENT", "CANCELLED", "EXCUSED"].includes(status);
       };
 
       // Send initial status

@@ -1,4 +1,4 @@
-import { and, eq, gte, lte, ne } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import { assignments, bases, checkins, faculties, userRoles, users } from "@/shared/db/schema";
 
@@ -170,7 +170,7 @@ export async function saveAbsenceJustification(params: {
       absenceJustificationAt: now,
       updatedAt: now,
     })
-    .where(and(eq(assignments.id, params.assignmentId), eq(assignments.status, "ABSENT")))
+    .where(and(eq(assignments.id, params.assignmentId), inArray(assignments.status, ["ABSENT", "EXCUSED"])))
     .returning({
       id: assignments.id,
       absenceJustification: assignments.absenceJustification,

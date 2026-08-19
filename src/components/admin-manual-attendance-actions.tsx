@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { CheckCircle2, Loader2, LogOut, ShieldCheck, UserX } from "lucide-react";
 import { manualAttendanceAction } from "@/app/admin/actions";
+import { ExcuseAbsenceDialog } from "@/components/excuse-absence-dialog";
 
 type ManualAction = "CONFIRM_PRESENT" | "CONFIRM_CHECKOUT" | "MARK_ABSENT" | "EXCUSE_ABSENCE";
 
@@ -24,6 +25,7 @@ export function AdminManualAttendanceActions({
 }) {
     const [pendingAction, setPendingAction] = useState<ManualAction | null>(null);
     const [feedback, setFeedback] = useState<{ type: "error" | "success"; text: string } | null>(null);
+    const [excuseDialogOpen, setExcuseDialogOpen] = useState(false);
     const [, startTransition] = useTransition();
 
     const canConfirm = CONFIRMABLE_STATUSES.has(status);
@@ -55,7 +57,7 @@ export function AdminManualAttendanceActions({
                             : action === "CONFIRM_CHECKOUT"
                                 ? "Checkout confirmado manualmente."
                                 : action === "EXCUSE_ABSENCE"
-                                    ? "Falta abonada: plantão convertido em presença."
+                                    ? "Falta abonada."
                                     : notifications > 0
                                         ? `Falta lançada. ${notifications} líder(es) avisado(s).`
                                         : "Falta lançada manualmente.",
@@ -105,11 +107,11 @@ export function AdminManualAttendanceActions({
                 {canExcuse && (
                     <button
                         type="button"
-                        onClick={() => runAction("EXCUSE_ABSENCE")}
+                        onClick={() => setExcuseDialogOpen(true)}
                         disabled={pendingAction !== null}
-                        className={`${buttonClass} bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60`}
+                        className={`${buttonClass} bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:cursor-wait disabled:opacity-60`}
                     >
-                        {pendingAction === "EXCUSE_ABSENCE" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                        <ShieldCheck className="h-3.5 w-3.5" />
                         Abonar falta
                     </button>
                 )}
@@ -129,6 +131,16 @@ export function AdminManualAttendanceActions({
                 <p className={`text-[11px] ${feedback.type === "error" ? "text-red-600" : "text-emerald-600"}`}>
                     {feedback.text}
                 </p>
+            )}
+            {excuseDialogOpen && (
+                <ExcuseAbsenceDialog
+                    assignment={{ id: assignmentId }}
+                    onClose={() => setExcuseDialogOpen(false)}
+                    onDone={async () => {
+                        setFeedback({ type: "success", text: "Falta abonada." });
+                        await onUpdated?.();
+                    }}
+                />
             )}
         </div>
     );

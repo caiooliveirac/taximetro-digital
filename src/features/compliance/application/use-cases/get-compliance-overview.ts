@@ -11,7 +11,8 @@ import {
   listNonCancelledAssignmentsForInterns,
 } from "@/features/compliance/infra/repositories/compliance-repository";
 
-const COMPLETED = ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"] as const;
+// EXCUSED conta como cumprido: abono libera o interno da reposição.
+const COMPLETED = ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"] as const;
 
 function weekBounds(offset: number) {
   const operationalToday = operationalDateStr();
