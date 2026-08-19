@@ -144,6 +144,7 @@ export async function fetchDashboardData(
   const STATUS_LABEL: Record<string, string> = {
     SCHEDULED: "Escalado", CONFIRMED: "Confirmado", CHECKED_IN: "Presente",
     CHECKED_OUT: "Finalizado", ABSENT: "Ausente", CANCELLED: "Cancelado",
+    EXCUSED: "Falta abonada",
   };
 
   const weekDaysTyped = weekDayRows as unknown as Array<{ date: string; total: number; present: number; absent: number }>;

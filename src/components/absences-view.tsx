@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { CalendarDays, FileText, Loader2, RefreshCw, ShieldCheck, Sun, Users, XCircle, Moon, ArrowRight, ClipboardCheck } from "lucide-react";
+import { CalendarDays, FileText, RefreshCw, ShieldCheck, Sun, Users, XCircle, Moon, ArrowRight, ClipboardCheck } from "lucide-react";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
+import { ExcuseAbsenceDialog } from "@/components/excuse-absence-dialog";
 import { InternDrawer } from "@/components/admin/intern-drawer";
-import { manualAttendanceAction } from "@/app/admin/actions";
 import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
@@ -158,8 +158,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
     const [filterPeriod, setFilterPeriod] = useState("");
     const [filterJustification, setFilterJustification] = useState<"ALL" | "JUSTIFIED" | "PENDING">("ALL");
     const [justificationAssignment, setJustificationAssignment] = useState<Assignment | null>(null);
-    const [excusingId, setExcusingId] = useState<string | null>(null);
-    const [excuseError, setExcuseError] = useState("");
+    const [excusingAssignment, setExcusingAssignment] = useState<Assignment | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -196,23 +195,6 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
         const interval = setInterval(load, 30000);
         return () => clearInterval(interval);
     }, [load]);
-
-    async function excuseAbsence(assignmentId: string) {
-        setExcusingId(assignmentId);
-        setExcuseError("");
-        try {
-            const result = await manualAttendanceAction({ assignmentId, action: "EXCUSE_ABSENCE" });
-            if (!result.success) {
-                setExcuseError(result.error);
-                return;
-            }
-            await load();
-        } catch {
-            setExcuseError("Erro ao abonar a falta. Tente novamente.");
-        } finally {
-            setExcusingId(null);
-        }
-    }
 
     function handleJustificationSaved(assignmentId: string, data: {
         absenceJustification: string | null;
@@ -323,7 +305,6 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                     </div>
 
                     {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-                    {excuseError && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{excuseError}</div>}
 
                     <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
                         <Table>
@@ -402,12 +383,11 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                                     {scope === "admin" && (
                                                         <button
                                                             type="button"
-                                                            onClick={(e) => { e.stopPropagation(); excuseAbsence(assignment.id); }}
-                                                            disabled={excusingId !== null}
-                                                            className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
+                                                            onClick={(e) => { e.stopPropagation(); setExcusingAssignment(assignment); }}
+                                                            className="inline-flex items-center gap-1 rounded-md bg-violet-50 px-2 py-1 text-xs font-medium text-violet-700 transition hover:bg-violet-100"
                                                         >
-                                                            {excusingId === assignment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" strokeWidth={1.8} />}
-                                                            Abonar (vira presença)
+                                                            <ShieldCheck className="h-3.5 w-3.5" strokeWidth={1.8} />
+                                                            Abonar falta
                                                         </button>
                                                     )}
                                                 </div>
@@ -422,6 +402,12 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                     </div>
                 </>
             )}
+
+            <ExcuseAbsenceDialog
+                assignment={excusingAssignment}
+                onClose={() => setExcusingAssignment(null)}
+                onDone={load}
+            />
 
             <AbsenceJustificationDialog
                 assignment={justificationAssignment ? {

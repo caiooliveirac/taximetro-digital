@@ -48,7 +48,7 @@ const deletedAssignmentSnapshotSchema = z.object({
     baseId: z.string().uuid(),
     date: z.string(),
     period: z.enum(["DAY", "NIGHT"]),
-    status: z.enum(["SCHEDULED", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "ABSENT", "CANCELLED"]),
+    status: z.enum(["SCHEDULED", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "ABSENT", "CANCELLED", "EXCUSED"]),
     createdBy: z.string().uuid(),
     notes: z.string().nullable(),
     absenceJustification: z.string().nullable(),

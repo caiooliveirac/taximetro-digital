@@ -107,7 +107,7 @@ const CATEGORY_CONFIG: Record<WeeklyCategory, { label: string; border: string; b
 
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 const CHECKIN_DONE = new Set(["CHECKED_IN", "CHECKED_OUT"]);
-const COMPLETED_STATUSES = new Set(["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"]);
+const COMPLETED_STATUSES = new Set(["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"]);
 const PROJECTABLE_FUTURE_STATUSES = new Set(["SCHEDULED", "CONFIRMED"]);
 
 function dayLabel(date: string) {

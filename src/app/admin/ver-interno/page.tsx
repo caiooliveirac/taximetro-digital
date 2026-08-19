@@ -322,7 +322,7 @@ function AdminVerComoInterno() {
   const todayAssignment = assignments.find((a) => a.date === today);
   const upcoming = assignments.filter((a) => a.date > today);
   const pastAssignments = assignments.filter((a) => a.date <= today);
-  const present = pastAssignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status)).length;
+  const present = pastAssignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"].includes(a.status)).length;
   const absent = pastAssignments.filter((a) => a.status === "ABSENT").length;
 
   const weeklyEffective = compliance ? compliance.thisWeekScheduled - (compliance.thisWeekAbsent ?? 0) : 0;

@@ -411,7 +411,7 @@ export function AdminDashboardClient({
         const rows = todayRoster;
         const allFaculties = [...new Set(rows.map(r => r.faculty).filter(Boolean))].sort();
         const allBases = [...new Set(rows.map(r => r.baseCode).filter(Boolean))].sort((a, b) => baseViewIndex(a) - baseViewIndex(b));
-        const STATUS_LABEL: Record<string, string> = { SCHEDULED: "Escalado", CONFIRMED: "Confirmado", CHECKED_IN: "Presente", CHECKED_OUT: "Finalizado", ABSENT: "Ausente" };
+        const STATUS_LABEL: Record<string, string> = { SCHEDULED: "Escalado", CONFIRMED: "Confirmado", CHECKED_IN: "Presente", CHECKED_OUT: "Finalizado", ABSENT: "Ausente", EXCUSED: "Falta abonada" };
 
         const filtered = rows.filter(r => {
           if (todaySearch && !r.name.toLowerCase().includes(todaySearch.toLowerCase())) return false;
@@ -429,7 +429,7 @@ export function AdminDashboardClient({
         function renderRosterRow(r: typeof rows[0], i: number) {
           const fst = getFacultyStyle(r.faculty);
           const statusLabel = STATUS_LABEL[r.status] ?? r.status;
-          const statusColor = r.status === "ABSENT" ? "text-red-600 font-medium" : r.status === "CHECKED_IN" || r.status === "CHECKED_OUT" ? "text-emerald-600" : "text-slate-400";
+          const statusColor = r.status === "ABSENT" ? "text-red-600 font-medium" : r.status === "EXCUSED" ? "text-violet-600 font-medium" : r.status === "CHECKED_IN" || r.status === "CHECKED_OUT" ? "text-emerald-600" : "text-slate-400";
           return (
             <li key={i} className="flex items-center justify-between py-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -548,7 +548,7 @@ export function AdminDashboardClient({
         const allFaculties = [...new Set(rows.map(r => r.faculty).filter(Boolean))].sort();
         const allBases = [...new Set(rows.map(r => r.baseCode).filter(Boolean))].sort((a, b) => baseViewIndex(a) - baseViewIndex(b));
         const CHECKED_STATUSES = new Set(["CHECKED_IN", "CHECKED_OUT"]);
-        const STATUS_LABEL: Record<string, string> = { SCHEDULED: "Escalado", CONFIRMED: "Confirmado", CHECKED_IN: "Check-in feito", CHECKED_OUT: "Finalizado", ABSENT: "Ausente" };
+        const STATUS_LABEL: Record<string, string> = { SCHEDULED: "Escalado", CONFIRMED: "Confirmado", CHECKED_IN: "Check-in feito", CHECKED_OUT: "Finalizado", ABSENT: "Ausente", EXCUSED: "Falta abonada" };
 
         const filtered = rows.filter(r => {
           if (checkinSearch && !r.name.toLowerCase().includes(checkinSearch.toLowerCase())) return false;
@@ -558,7 +558,7 @@ export function AdminDashboardClient({
         });
 
         const checkedIn = filtered.filter(r => CHECKED_STATUSES.has(r.status)).sort((a, b) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode));
-        const notCheckedIn = filtered.filter(r => !CHECKED_STATUSES.has(r.status) && r.status !== "ABSENT" && r.status !== "CANCELLED").sort((a, b) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode));
+        const notCheckedIn = filtered.filter(r => !CHECKED_STATUSES.has(r.status) && r.status !== "ABSENT" && r.status !== "CANCELLED" && r.status !== "EXCUSED").sort((a, b) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode));
         const absent = filtered.filter(r => r.status === "ABSENT").sort((a, b) => baseViewIndex(a.baseCode) - baseViewIndex(b.baseCode));
 
         // Group by period when showing both
@@ -749,7 +749,7 @@ export function AdminDashboardClient({
                 .sort((a, b) => (a.period === b.period ? a.internName.localeCompare(b.internName) : a.period === "DAY" ? -1 : 1))
                 .map((item, i) => {
                   const fst = getFacultyStyle(item.faculty);
-                  const STATUS_MAP: Record<string, string> = { SCHEDULED: "Escalado", CONFIRMED: "Confirmado", CHECKED_IN: "Presente", CHECKED_OUT: "Finalizado", ABSENT: "Ausente" };
+                  const STATUS_MAP: Record<string, string> = { SCHEDULED: "Escalado", CONFIRMED: "Confirmado", CHECKED_IN: "Presente", CHECKED_OUT: "Finalizado", ABSENT: "Ausente", EXCUSED: "Falta abonada" };
                   const checkinTime = item.checkinAt ? formatBrazilTime(item.checkinAt) : null;
                   return (
                     <div key={i} className="flex items-center justify-between py-2.5 border-b border-slate-50 last:border-0">
@@ -781,7 +781,7 @@ export function AdminDashboardClient({
                       <div className="flex items-center gap-2 text-xs text-slate-500 shrink-0 ml-2">
                         {checkinTime && <span className="text-emerald-600">{checkinTime}</span>}
                         {item.validatedBy && <span className="text-slate-400 truncate max-w-[100px]" title={item.validatedBy}>✓ {item.validatedBy.split(" ")[0]}</span>}
-                        <span className={item.status === "ABSENT" ? "text-red-600 font-medium" : "text-slate-400"}>{STATUS_MAP[item.status] ?? item.status}</span>
+                        <span className={item.status === "ABSENT" ? "text-red-600 font-medium" : item.status === "EXCUSED" ? "text-violet-600 font-medium" : "text-slate-400"}>{STATUS_MAP[item.status] ?? item.status}</span>
                       </div>
                     </div>
                   );

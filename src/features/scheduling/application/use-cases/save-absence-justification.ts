@@ -26,7 +26,7 @@ export async function executeSaveAbsenceJustification(params: {
 
   const assignment = await findAssignmentForAbsenceJustification(assignmentId);
   if (!assignment) return { status: 404, body: { success: false, error: "Plantão não encontrado" } } as const;
-  if (assignment.status !== "ABSENT") {
+  if (assignment.status !== "ABSENT" && assignment.status !== "EXCUSED") {
     return {
       status: 409,
       body: { success: false, error: "Só é possível justificar plantões marcados como falta" },

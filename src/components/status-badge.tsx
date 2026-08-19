@@ -8,6 +8,7 @@ const STATUS_MAP: Record<string, { label: string; variant: VariantProps<typeof b
   CHECKED_IN: { label: "Check-in", variant: "checkedin" },
   CHECKED_OUT: { label: "Check-out", variant: "checkedout" },
   ABSENT: { label: "Ausente", variant: "absent" },
+  EXCUSED: { label: "Falta abonada", variant: "excused" },
   CANCELLED: { label: "Cancelado", variant: "cancelled" },
   PENDING: { label: "Pendente", variant: "pending" },
   APPROVED: { label: "Aprovado", variant: "confirmed" },

@@ -59,7 +59,7 @@ export default function InternHistorico() {
     });
   }, []);
 
-  const completed = assignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status) && !a.isExtraShift);
+  const completed = assignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"].includes(a.status) && !a.isExtraShift);
   const totalHours = sumAssignmentHours(completed);
 
   function handleJustificationSaved(assignmentId: string, data: {

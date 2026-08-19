@@ -45,7 +45,7 @@ type ExistingAssignment = {
     baseCode: string;
     date: string;
     period: "DAY" | "NIGHT";
-    status: "SCHEDULED" | "CONFIRMED" | "CHECKED_IN" | "CHECKED_OUT" | "ABSENT" | "CANCELLED";
+    status: "SCHEDULED" | "CONFIRMED" | "CHECKED_IN" | "CHECKED_OUT" | "ABSENT" | "CANCELLED" | "EXCUSED";
     notes: string | null;
 };
 

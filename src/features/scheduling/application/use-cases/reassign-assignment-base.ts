@@ -36,7 +36,7 @@ export async function executeReassignAssignmentBase(params: {
     return { status: 403, body: { success: false, error: "Plantão não pertence à sua faculdade" } } as const;
   }
 
-  if (["CHECKED_OUT", "ABSENT", "CANCELLED"].includes(assignment.status)) {
+  if (["CHECKED_OUT", "ABSENT", "CANCELLED", "EXCUSED"].includes(assignment.status)) {
     return { status: 409, body: { success: false, error: "Este plantão não pode mais ser remanejado" } } as const;
   }
 

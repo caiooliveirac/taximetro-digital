@@ -5,6 +5,7 @@ import { Calendar, CheckCircle2, XCircle, Clock, Target, Activity, FileText, Ale
 import { operationalDateStr } from "@/lib/utils";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
+import { ExcuseAbsenceDialog } from "@/components/excuse-absence-dialog";
 import {
   RealizedByTypeBoxes,
   ShiftListByKind,
@@ -116,6 +117,7 @@ export function InternHistorySection(props: SectionProps) {
   const { loading, compliance, assignments, caseRecords, reload } = props.data ?? fetched;
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [justifyAssignment, setJustifyAssignment] = useState<Assignment | null>(null);
+  const [excuseAssignment, setExcuseAssignment] = useState<Assignment | null>(null);
 
   const today = operationalDateStr();
   const pastAll = assignments.filter((a) => a.date <= today);
@@ -153,13 +155,30 @@ export function InternHistorySection(props: SectionProps) {
             ) : (
               <p className="text-xs font-medium text-red-800">Falta sem justificativa.</p>
             )}
-            <button
-              type="button"
-              onClick={() => setJustifyAssignment(full)}
-              className="w-full rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700"
-            >
-              {full.absenceJustification ? "Editar justificativa / abono" : "Justificar / abonar falta"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setJustifyAssignment(full)}
+                className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700"
+              >
+                {full.absenceJustification ? "Editar justificativa" : "Justificar falta"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setExcuseAssignment(full)}
+                className="flex-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white hover:bg-violet-700"
+              >
+                Abonar falta
+              </button>
+            </div>
+          </div>
+        )}
+        {full.status === "EXCUSED" && (
+          <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-2.5">
+            <p className="text-xs text-slate-700">
+              <span className="font-semibold text-violet-800">Falta abonada:</span>{" "}
+              {full.absenceJustification ?? "sem justificativa registrada."}
+            </p>
           </div>
         )}
       </div>
@@ -294,12 +313,18 @@ export function InternHistorySection(props: SectionProps) {
 
       <AbsenceJustificationDialog
         assignment={justifyAssignment}
-        title="Justificar / abonar falta"
+        title="Justificar falta"
         onClose={() => setJustifyAssignment(null)}
         onSaved={() => {
           setJustifyAssignment(null);
           reload?.();
         }}
+      />
+
+      <ExcuseAbsenceDialog
+        assignment={excuseAssignment}
+        onClose={() => setExcuseAssignment(null)}
+        onDone={() => reload?.()}
       />
     </div>
   );

@@ -19,6 +19,9 @@ export const baseTypeEnum = pgEnum("base_type", ["USA", "CENTRAL", "CRL"]);
 
 export const assignmentStatusEnum = pgEnum("assignment_status", [
   "SCHEDULED", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "ABSENT", "CANCELLED",
+  // EXCUSED: falta abonada pela coordenação. Conta para a meta do interno,
+  // mas nunca vira presença sintética — o histórico mostra que foi abono.
+  "EXCUSED",
 ]);
 
 export const checkinStatusEnum = pgEnum("checkin_status", [

@@ -57,7 +57,7 @@ export const KIND_STYLE: Record<ShiftKind, { tile: string; num: string; label: s
   },
 };
 
-const REALIZED_STATUSES = new Set(["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"]);
+const REALIZED_STATUSES = new Set(["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"]);
 
 export function isRealized(status: string): boolean {
   return REALIZED_STATUSES.has(status);
