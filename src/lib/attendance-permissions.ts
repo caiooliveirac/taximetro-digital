@@ -24,3 +24,9 @@ export function canValidateCheckin(session: Session | null | undefined): boolean
 export function canConfirmCheckout(session: Session | null | undefined): boolean {
   return sessionHasAnyRole(session, ["COORDINATOR", "PRECEPTOR"]);
 }
+
+// Lançar falta / abonar / confirmar presença: mesma dupla que já valida check-in.
+// O preceptor decide isso na base, na hora — não faz sentido depender do admin.
+export function canRecordManualAttendance(session: Session | null | undefined): boolean {
+  return sessionHasAnyRole(session, ["COORDINATOR", "PRECEPTOR"]);
+}

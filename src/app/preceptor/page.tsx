@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
+import { StatusBadge } from "@/components/status-badge";
+import { AttendanceQuickActions } from "@/components/attendance-quick-actions";
 import { usePreceptor } from "./preceptor-context";
 import { baseViewIndex } from "@/lib/base-colors";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
@@ -216,7 +218,9 @@ export default function PreceptorValidar() {
     return a.facultyAbbr === facultyFilter;
   });
 
-  const checkinQueue = scoped.filter((a) => a.status === "SCHEDULED");
+  // A fila mantém o plantão em tela depois da falta/abono: sem isso, um clique
+  // errado some da lista e o preceptor não tem como voltar atrás.
+  const checkinQueue = scoped.filter((a) => ["SCHEDULED", "CONFIRMED", "ABSENT", "EXCUSED"].includes(a.status));
   const checkoutQueue = scoped.filter((a) =>
     a.status === "CHECKED_IN"
     || (a.checkinStatus === "VALIDATED" && a.status !== "CHECKED_OUT" && a.status !== "CANCELLED"),
@@ -473,18 +477,32 @@ export default function PreceptorValidar() {
                         <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno</Badge>
                       )}
                       <Badge variant="outline" className="text-[11px]">{shiftLabel(a.shift)} ({getShiftPosition(a)})</Badge>
+                      {a.status !== "SCHEDULED" && <StatusBadge status={a.status} />}
                     </div>
                     <p className="text-xs text-slate-500">{a.facultyAbbr || "Sem faculdade"}</p>
                   </div>
                   <div className="shrink-0">
-                    <Button
-                      size="sm"
-                      onClick={() => validateDirect(a.id)}
-                    >
-                      <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      {shiftActionLabel(a.shift)}
-                    </Button>
+                    {a.status !== "ABSENT" && a.status !== "EXCUSED" && (
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 text-white hover:bg-emerald-700"
+                        onClick={() => validateDirect(a.id)}
+                      >
+                        <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        {shiftActionLabel(a.shift)}
+                      </Button>
+                    )}
                   </div>
+                </div>
+
+                <div className="mt-2">
+                  <AttendanceQuickActions
+                    assignmentId={a.id}
+                    status={a.status}
+                    assignment={{ date: a.date, period: a.period, baseCode: a.baseCode }}
+                    actions={a.status === "ABSENT" || a.status === "EXCUSED" ? ["present", "excuse", "absent"] : ["excuse", "absent"]}
+                    onUpdated={load}
+                  />
                 </div>
 
                 <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
@@ -521,17 +539,29 @@ export default function PreceptorValidar() {
                         <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno</Badge>
                       )}
                       <Badge variant="outline" className="text-[11px]">{getShiftPosition(a)}</Badge>
+                      {a.status !== "SCHEDULED" && <StatusBadge status={a.status} />}
                     </span>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      size="sm"
-                      variant="default"
-                      onClick={() => validateDirect(a.id)}
-                    >
-                      <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      {shiftActionLabel(a.shift)}
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {a.status !== "ABSENT" && a.status !== "EXCUSED" && (
+                        <Button
+                          size="sm"
+                          className="bg-emerald-600 text-white hover:bg-emerald-700"
+                          onClick={() => validateDirect(a.id)}
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          {shiftActionLabel(a.shift)}
+                        </Button>
+                      )}
+                      <AttendanceQuickActions
+                        assignmentId={a.id}
+                        status={a.status}
+                        assignment={{ date: a.date, period: a.period, baseCode: a.baseCode }}
+                        actions={a.status === "ABSENT" || a.status === "EXCUSED" ? ["present", "excuse", "absent"] : ["excuse", "absent"]}
+                        onUpdated={load}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

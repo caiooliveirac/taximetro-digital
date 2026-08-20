@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, Sun, Trash2, User, X, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, User, X, Zap } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
+import { AttendanceQuickActions, attendanceQuickActionsAvailable } from "@/components/attendance-quick-actions";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
@@ -325,6 +326,7 @@ function getMutedSlotClass(date: string, kind: "assignment" | "vacancy" | "open"
         const isCheckinWithoutCheckout = status === "CHECKED_IN" && date < localDateStr();
         const isIssue = status === "ABSENT" || isCheckinWithoutCheckout || (date <= localDateStr() && isPendingStatus(status ?? ""));
         if (status === "ABSENT" || isCheckinWithoutCheckout) return "opacity-100";
+        if (status === "EXCUSED") return "opacity-90";
         if (phase === "past") {
             return isIssue
                 ? "opacity-80 saturate-[0.88]"
@@ -355,6 +357,20 @@ function getAssignmentVisualState(assignment: AssignmentDetail, period: "DAY" | 
             icon: AlertTriangle as LucideIcon,
             darkSurface: true,
             animationClass: "animate-[pulse_0.9s_ease-out_1]",
+        };
+    }
+
+    if (assignment.status === "EXCUSED") {
+        return {
+            cardClass: "border-[2.5px] border-violet-600 bg-[linear-gradient(135deg,rgba(245,243,255,0.99),rgba(216,205,255,0.96))] text-violet-950 shadow-[0_0_0_1px_rgba(124,58,237,0.3),0_16px_30px_rgba(124,58,237,0.18)]",
+            iconWrapClass: "border border-violet-300/80 bg-white/70",
+            iconClass: "text-violet-700",
+            dotClass: "bg-violet-600 shadow-[0_0_0_5px_rgba(139,92,246,0.22)]",
+            metaLabel: "Falta abonada",
+            metaClass: "text-violet-700/80",
+            icon: ShieldCheck as LucideIcon,
+            darkSurface: false,
+            animationClass: "",
         };
     }
 
@@ -459,14 +475,20 @@ function getAssignmentCardTitle(assignment: AssignmentDetail) {
     return `${assignment.intern_name} • ${assignment.base_code} • ${formatPeriod(assignment.period, assignment.shift)} • check-in ${checkinText} • checkout ${checkoutText}`;
 }
 
-function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "neutral", showBaseCode = false }: { assignment: AssignmentDetail; period: "DAY" | "NIGHT"; onSelect: (id: string) => void; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean }) {
+function AssignmentSlotCard({ assignment, period, onSelect, onUpdated, facultyBadgeMode = "neutral", showBaseCode = false }: { assignment: AssignmentDetail; period: "DAY" | "NIGHT"; onSelect: (id: string) => void; onUpdated?: () => void | Promise<void>; facultyBadgeMode?: FacultyBadgeMode; showBaseCode?: boolean }) {
     const visual = getAssignmentVisualState(assignment, period);
     const Icon = visual.icon;
     const facultyTone = getFacultyBadgeClass(assignment.faculty_abbr, facultyBadgeMode, visual.darkSurface ? "NIGHT" : undefined);
     const isExtra = assignment.is_extra_shift;
     const extraGlowStyle = isExtra ? getFacultyStyle(assignment.faculty_abbr) : null;
+    // Presença/abono/falta só fazem sentido em plantão que já começou. Em plantão
+    // futuro os botões seriam ruído — e um clique errado vira falta inventada.
+    const showQuickActions = Boolean(onUpdated)
+        && assignment.date <= localDateStr()
+        && attendanceQuickActionsAvailable(assignment.status);
 
     return (
+        <div className="relative">
         <button
             type="button"
             onClick={() => onSelect(assignment.id)}
@@ -499,9 +521,21 @@ function AssignmentSlotCard({ assignment, period, onSelect, facultyBadgeMode = "
                 <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${visual.iconWrapClass}`}>
                     <Icon className={`h-4 w-4 ${visual.iconClass}`} strokeWidth={2.2} />
                 </span>
-                <span className={`h-2.5 w-2.5 rounded-full ${visual.dotClass}`} />
+                <span className={`h-2.5 w-2.5 rounded-full ${visual.dotClass} ${showQuickActions ? "opacity-0" : ""}`} />
             </span>
         </button>
+        {showQuickActions && (
+            <div className="absolute bottom-1 right-1 z-20">
+                <AttendanceQuickActions
+                    assignmentId={assignment.id}
+                    status={assignment.status}
+                    assignment={{ date: assignment.date, period: assignment.period, baseCode: assignment.base_code }}
+                    variant="icon"
+                    onUpdated={onUpdated}
+                />
+            </div>
+        )}
+        </div>
     );
 }
 
@@ -1367,7 +1401,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 <div className="grid gap-1">
                                     {slots.map((slot) => {
                                         if (slot.kind === "assignment") {
-                                            return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} />;
+                                            return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} onUpdated={loadAssignments} />;
                                         }
 
                                         if (slot.kind === "vacancy") {
@@ -1574,7 +1608,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                 }
                                                 return collapsed.map(({ slot, count }) => {
                                                     if (slot.kind === "assignment") {
-                                                        return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
+                                                        return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} onUpdated={loadAssignments} facultyBadgeMode="faculty" showBaseCode={showBaseCode} />;
                                                     }
                                                     if (slot.kind === "blocked") {
                                                         return <BlockedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={period} />;
@@ -2098,6 +2132,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                 setFocusedPeriod(null);
                                                 setSelectedAssignmentId(assignmentId);
                                             }}
+                                            onUpdated={loadAssignments}
                                         />
                                     );
                                 }

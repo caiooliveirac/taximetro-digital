@@ -11,7 +11,10 @@ export const manualAttendanceSchema = z.object({
   assignmentId: z.string().uuid(),
   action: z.enum(["CONFIRM_PRESENT", "CONFIRM_CHECKOUT", "MARK_ABSENT", "EXCUSE_ABSENCE"]),
   justification: z.string().trim().max(2000).optional(),
-});
+}).refine(
+  (value) => value.action !== "EXCUSE_ABSENCE" || Boolean(value.justification),
+  { message: "Abono exige motivo", path: ["justification"] },
+);
 
 function formatShiftPeriod(period: string) {
   return period === "DAY" ? "Diurno" : "Noturno";
@@ -65,7 +68,7 @@ async function notifyFacultyLeadersAbsence(params: {
 }
 
 export async function executeManualAttendance(params: {
-  actor: { id: string; name?: string | null };
+  actor: { id: string; name?: string | null; role?: "COORDINATOR" | "PRECEPTOR" };
   input: z.infer<typeof manualAttendanceSchema>;
 }) {
   const { assignmentId, action } = params.input;
@@ -223,25 +226,43 @@ export async function executeManualAttendance(params: {
   }
 
   if (action === "EXCUSE_ABSENCE") {
-    if (assignment.status !== "ABSENT") {
-      return { status: 409, body: { success: false, error: "Só é possível abonar um plantão em falta" } } as const;
+    if (!["SCHEDULED", "CONFIRMED", "CHECKED_IN", "ABSENT", "EXCUSED"].includes(assignment.status)) {
+      return { status: 409, body: { success: false, error: "Este plantão não pode mais ser abonado" } } as const;
     }
 
     // Abono: a falta ganha status próprio (EXCUSED). Nada de check-in/checkout
     // sintéticos — o histórico deve mostrar que foi abono, não presença.
     const justification = params.input.justification?.trim() || null;
 
-    await db.update(assignments).set({
-      status: "EXCUSED",
-      ...(justification
-        ? {
-          absenceJustification: justification,
-          absenceJustificationActor: "COORDINATOR",
-          absenceJustificationAt: now,
-        }
-        : {}),
-      updatedAt: now,
-    }).where(eq(assignments.id, assignmentId));
+    await db.transaction(async (tx) => {
+      await tx.update(assignments).set({
+        status: "EXCUSED",
+        ...(justification
+          ? {
+            absenceJustification: justification,
+            absenceJustificationActor: params.actor.role ?? "COORDINATOR",
+            absenceJustificationAt: now,
+          }
+          : {}),
+        updatedAt: now,
+      }).where(eq(assignments.id, assignmentId));
+
+      // Abono direto de um plantão com check-in: o check-in deixa de valer,
+      // senão o plantão fica meio presença, meio abono.
+      if (existingCheckin && assignment.status === "CHECKED_IN") {
+        await tx.update(checkins).set({
+          status: "REJECTED",
+          validatedBy: null,
+          totpValidatedAt: null,
+          checkoutAt: null,
+          checkoutConfirmedBy: null,
+          checkoutNotes: "Plantão abonado",
+        }).where(eq(checkins.id, existingCheckin.id));
+
+        await tx.update(qrSessions).set({ consumedAt: now, consumedBy: params.actor.id })
+          .where(and(eq(qrSessions.checkinId, existingCheckin.id), isNull(qrSessions.consumedAt)));
+      }
+    });
 
     await logAudit({
       userId: params.actor.id,
@@ -280,7 +301,15 @@ export async function executeManualAttendance(params: {
         .where(and(eq(qrSessions.checkinId, existingCheckin.id), isNull(qrSessions.consumedAt)));
     }
 
-    await tx.update(assignments).set({ status: "ABSENT", updatedAt: now }).where(eq(assignments.id, assignmentId));
+    // Limpa o texto do abono: voltar atrás em EXCUSED não pode deixar a falta
+    // com "✓ Justificada — <motivo do abono>" no relatório.
+    await tx.update(assignments).set({
+      status: "ABSENT",
+      absenceJustification: null,
+      absenceJustificationActor: null,
+      absenceJustificationAt: null,
+      updatedAt: now,
+    }).where(eq(assignments.id, assignmentId));
   });
 
   const leaderNotificationsSent = await notifyFacultyLeadersAbsence({

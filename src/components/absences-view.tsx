@@ -63,6 +63,7 @@ function formatJustificationActor(actor: string | null | undefined) {
     if (actor === "INTERN") return "Aluno";
     if (actor === "LEADER") return "Líder";
     if (actor === "COORDINATOR") return "Coordenação";
+    if (actor === "PRECEPTOR") return "Preceptor";
     return "";
 }
 

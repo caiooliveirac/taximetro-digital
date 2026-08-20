@@ -261,8 +261,11 @@ export function classifyReportAssignment(
   hourNow: number
 ): ReportAssignmentGroup {
   if (assignment.status === "CHECKED_IN" || assignment.status === "CHECKED_OUT") return "done";
-  // Abonada continua listada entre as faltas do relatório — nunca como presença.
-  if (assignment.status === "ABSENT" || assignment.status === "EXCUSED") return "absent";
+  // Abonada conta como carga horária cumprida — um admin ou preceptor deu esse
+  // ok. Não vira presença: o card sai marcado como abono, com o motivo por
+  // extenso, e o heatmap mantém a cor própria (classifyHeatmapCell).
+  if (assignment.status === "EXCUSED") return "done";
+  if (assignment.status === "ABSENT") return "absent";
 
   if (assignment.status === "SCHEDULED" || assignment.status === "CONFIRMED") {
     let isPast = false;
@@ -868,9 +871,15 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     const pendingRequestCount = (requestsByIntern.get(intern.internId) ?? []).filter((row) => row.status === "PENDING" || row.status === "ESCALATED").length;
     const rejectedRequestCount = (requestsByIntern.get(intern.internId) ?? []).filter((row) => row.status === "REJECTED").length;
     const completedHours = Object.values(typeSections).reduce((total, section) => total + sumAssignmentHours(section.done), 0);
+    // O abono entra em `done` (carga horária cumprida), mas não é comparecimento:
+    // quem só tem abono continua sendo "sem check-in no período".
+    const excusedCount = Object.values(typeSections).reduce(
+      (total, section) => total + section.done.filter((card) => card.status === "EXCUSED").length,
+      0,
+    );
     const percentHours = intern.targetHours > 0 ? Math.round((completedHours / intern.targetHours) * 100) : null;
     const percentShifts = intern.targetShifts > 0 ? Math.round((completedCount / intern.targetShifts) * 100) : null;
-    const noCheckinInPeriod = completedCount === 0;
+    const noCheckinInPeriod = completedCount - excusedCount === 0;
 
     if (filters.scopeMode === "PERFORMANCE") {
       const checks: boolean[] = [];
@@ -909,6 +918,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
 
     const statusSummaryChips = [
       completedCount > 0 ? `✅ ${completedCount} cumprido${completedCount !== 1 ? "s" : ""}` : "",
+      excusedCount > 0 ? `🟣 ${excusedCount} abonado${excusedCount !== 1 ? "s" : ""}` : "",
       scheduledCount > 0 ? `📅 ${scheduledCount} agendado${scheduledCount !== 1 ? "s" : ""}` : "",
       absences.length > 0 ? `⚠️ ${absences.length} ausência${absences.length !== 1 ? "s" : ""}` : "",
     ].filter(Boolean);
