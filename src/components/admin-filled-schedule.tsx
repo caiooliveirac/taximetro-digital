@@ -488,7 +488,9 @@ function AssignmentSlotCard({ assignment, period, onSelect, onUpdated, facultyBa
         && attendanceQuickActionsAvailable(assignment.status);
 
     return (
-        <div className="relative">
+        // min-w-0: sem isso o wrapper é um item de grid com largura mínima
+        // automática e o card transborda para a célula vizinha no mobile.
+        <div className="relative flex min-w-0 flex-col gap-1">
         <button
             type="button"
             onClick={() => onSelect(assignment.id)}
@@ -521,11 +523,11 @@ function AssignmentSlotCard({ assignment, period, onSelect, onUpdated, facultyBa
                 <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${visual.iconWrapClass}`}>
                     <Icon className={`h-4 w-4 ${visual.iconClass}`} strokeWidth={2.2} />
                 </span>
-                <span className={`h-2.5 w-2.5 rounded-full ${visual.dotClass} ${showQuickActions ? "opacity-0" : ""}`} />
+                <span className={`h-2.5 w-2.5 rounded-full ${visual.dotClass}`} />
             </span>
         </button>
         {showQuickActions && (
-            <div className="absolute bottom-1 right-1 z-20">
+            <div className="relative">
                 <AttendanceQuickActions
                     assignmentId={assignment.id}
                     status={assignment.status}
