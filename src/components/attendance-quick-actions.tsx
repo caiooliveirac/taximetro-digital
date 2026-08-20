@@ -82,13 +82,13 @@ export function AttendanceQuickActions({
 
     const isIcon = variant === "icon";
     const shape = isIcon
-        ? "inline-flex h-7 w-7 touch-manipulation items-center justify-center rounded-md border shadow-sm transition disabled:cursor-wait disabled:opacity-60"
+        ? "inline-flex h-7 flex-1 touch-manipulation items-center justify-center rounded-md border shadow-sm transition disabled:cursor-wait disabled:opacity-60"
         : "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-60";
     const iconSize = isIcon ? "h-3.5 w-3.5" : "h-3.5 w-3.5";
 
     return (
         <>
-            <div className={isIcon ? "flex items-center gap-1" : "flex flex-wrap items-center gap-1.5"}>
+            <div className={isIcon ? "flex w-full items-stretch gap-1" : "flex flex-wrap items-center gap-1.5"}>
                 {canPresent && (
                     <button
                         type="button"
@@ -140,7 +140,7 @@ export function AttendanceQuickActions({
                 </p>
             )}
             {feedback && isIcon && (
-                <p className={`absolute bottom-full right-0 mb-1 w-max max-w-[220px] rounded px-1.5 py-0.5 text-[10px] text-white shadow ${feedback.type === "error" ? "bg-red-600" : "bg-emerald-600"}`}>
+                <p className={`absolute left-0 top-full z-20 mt-1 w-max max-w-[220px] rounded px-1.5 py-0.5 text-[10px] text-white shadow ${feedback.type === "error" ? "bg-red-600" : "bg-emerald-600"}`}>
                     {feedback.text}
                 </p>
             )}
