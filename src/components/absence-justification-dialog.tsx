@@ -35,6 +35,7 @@ function formatJustificationActor(actor: string | null | undefined) {
     if (actor === "INTERN") return "pelo aluno";
     if (actor === "LEADER") return "pelo líder";
     if (actor === "COORDINATOR") return "pela coordenação";
+    if (actor === "PRECEPTOR") return "pelo preceptor";
     return "";
 }
 

@@ -7,6 +7,9 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { assignments } from "@/db/schema";
 import { logAudit } from "@/lib/audit";
+import { canRecordManualAttendance } from "@/lib/attendance-permissions";
+import { sessionHasRole } from "@/lib/roles";
+import { checkRateLimit } from "@/shared/infra/rate-limit";
 import { getEffectiveUserFromContext } from "@/lib/impersonate";
 import {
   executeManualAttendance,
@@ -30,8 +33,14 @@ export async function manualAttendanceAction(input: unknown): Promise<ManualAtte
   const session = await auth();
   const sessionUser = session?.user as { id?: string; name?: string | null; role?: string } | undefined;
 
-  if (!sessionUser || sessionUser.role !== "COORDINATOR") {
+  if (!canRecordManualAttendance(session)) {
     return { success: false, error: "Sem permissão" };
+  }
+
+  // Lançar falta dispara aviso no Telegram para os líderes. Mesmo teto do
+  // /api/attendance/validate, para o botão da grade não virar disparador.
+  if (!checkRateLimit(`manual-attendance:${sessionUser?.id ?? "anon"}`)) {
+    return { success: false, error: "Muitas ações seguidas. Aguarde 1 minuto." };
   }
 
   const parsed = manualAttendanceSchema.safeParse(input);
@@ -41,11 +50,16 @@ export async function manualAttendanceAction(input: unknown): Promise<ManualAtte
 
   try {
     const result = await executeManualAttendance({
-      actor: { id: sessionUser.id ?? "", name: sessionUser.name ?? null },
+      actor: {
+        id: sessionUser?.id ?? "",
+        name: sessionUser?.name ?? null,
+        role: sessionHasRole(session, "COORDINATOR") ? "COORDINATOR" : "PRECEPTOR",
+      },
       input: parsed.data,
     });
 
     revalidatePath("/admin");
+    revalidatePath("/preceptor");
 
     if (!result.body.success) {
       return { success: false, error: result.body.error ?? "Falha ao processar" };

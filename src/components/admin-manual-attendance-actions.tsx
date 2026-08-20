@@ -10,7 +10,7 @@ type ManualAction = "CONFIRM_PRESENT" | "CONFIRM_CHECKOUT" | "MARK_ABSENT" | "EX
 const CONFIRMABLE_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "ABSENT"]);
 const CHECKOUTABLE_STATUSES = new Set(["CHECKED_IN"]);
 const ABSENCEABLE_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN"]);
-const EXCUSABLE_STATUSES = new Set(["ABSENT"]);
+const EXCUSABLE_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN", "ABSENT"]);
 
 export function AdminManualAttendanceActions({
     assignmentId,

@@ -59,6 +59,12 @@ function formatCheckinDoctor(raw: string | null | undefined): string | null {
 
 function assignmentStatusBadge(assignment: ReportAssignmentCard, group: "done" | "scheduled" | "absent") {
   if (group === "done") {
+    if (assignment.status === "EXCUSED") {
+      return {
+        label: "🟣 Falta abonada — carga horária cumprida",
+        className: "bg-fuchsia-100 text-fuchsia-800",
+      };
+    }
     return {
       label: assignment.status === "CHECKED_IN" ? "🔵 Em andamento" : "✅ Finalizado",
       className: "bg-emerald-100 text-emerald-800",
@@ -87,13 +93,20 @@ function AssignmentCard({
 }) {
   const badge = assignmentStatusBadge(assignment, group);
   const doctorName = formatCheckinDoctor(assignment.checkinDoctorName);
+  const isExcused = assignment.status === "EXCUSED";
   if (compactCompleted && group === "done") {
     return (
-      <div className="report-shift-card mb-2 flex flex-wrap items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-slate-700">
+      <div className={`report-shift-card mb-2 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm text-slate-700 ${isExcused ? "border-fuchsia-300 bg-fuchsia-50" : "border-emerald-200 bg-emerald-50"}`}>
         <span className="font-medium text-slate-900">{formatBrazilLongDate(assignment.date)}</span>
         <span className="rounded bg-white px-2 py-0.5 text-xs text-slate-600">{assignment.baseCode}</span>
         <span className="rounded bg-white px-2 py-0.5 text-xs text-slate-600">{periodLabel(assignment.period)}</span>
-        <span className="text-xs text-slate-500">{formatTimeOrDash(assignment.checkinAt)} → {formatTimeOrDash(assignment.checkoutAt)}</span>
+        {isExcused ? (
+          <span className="rounded bg-fuchsia-100 px-2 py-0.5 text-xs font-semibold text-fuchsia-800">
+            Falta abonada — carga horária cumprida{assignment.absenceJustification ? `: ${assignment.absenceJustification}` : ""}
+          </span>
+        ) : (
+          <span className="text-xs text-slate-500">{formatTimeOrDash(assignment.checkinAt)} → {formatTimeOrDash(assignment.checkoutAt)}</span>
+        )}
         {doctorName ? <span className="text-xs font-medium text-slate-600">{doctorName}</span> : null}
       </div>
     );
@@ -114,21 +127,21 @@ function AssignmentCard({
         {assignment.checkoutAt ? <span>Check-out: {formatTimeOrDash(assignment.checkoutAt)}</span> : null}
         {doctorName ? <span className="font-medium text-slate-600">{doctorName}</span> : null}
       </div>
+      {isExcused ? (
+        <div className="mt-2 rounded border-l-2 border-fuchsia-400 bg-fuchsia-50 px-3 py-2 text-xs text-fuchsia-800">
+          ✓ Falta abonada pela coordenação — conta como carga horária cumprida
+          {assignment.absenceJustification ? ` — motivo: ${assignment.absenceJustification}` : ""}
+        </div>
+      ) : null}
       {group === "absent" && assignment.isJustified ? (
         <div className="mt-2 rounded border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           ✓ Justificada{assignment.absenceJustification ? ` — ${assignment.absenceJustification}` : ""}
         </div>
       ) : null}
       {group === "absent" && !assignment.isJustified ? (
-        assignment.status === "EXCUSED" ? (
-          <div className="mt-2 rounded border-l-2 border-fuchsia-400 bg-fuchsia-50 px-3 py-2 text-xs text-fuchsia-800">
-            ✓ Falta abonada pela coordenação
-          </div>
-        ) : (
-          <div className="mt-2 rounded border-l-2 border-rose-400 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-            {assignment.status === "ABSENT" ? "⚠ Não justificada" : "⚠ Não compareceu"}
-          </div>
-        )
+        <div className="mt-2 rounded border-l-2 border-rose-400 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          {assignment.status === "ABSENT" ? "⚠ Não justificada" : "⚠ Não compareceu"}
+        </div>
       ) : null}
     </div>
   );

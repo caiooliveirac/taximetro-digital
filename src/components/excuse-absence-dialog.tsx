@@ -35,6 +35,10 @@ export function ExcuseAbsenceDialog({ assignment, onClose, onDone }: ExcuseAbsen
     const currentAssignment = assignment;
 
     function submit(justification: string) {
+        if (!justification.trim()) {
+            setError("Escolha um motivo ou escreva a justificativa — ela vai para o relatório.");
+            return;
+        }
         setLoading(true);
         setError("");
 
@@ -97,8 +101,8 @@ export function ExcuseAbsenceDialog({ assignment, onClose, onDone }: ExcuseAbsen
 
                 <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
                     <p className="text-sm text-slate-600">
-                        O plantão ficará registrado como <span className="font-semibold text-violet-700">falta abonada</span> — conta
-                        para a meta do interno, mas não aparece como presença.
+                        O plantão ficará registrado como <span className="font-semibold text-violet-700">falta abonada</span> — entra
+                        no relatório como carga horária cumprida, com o motivo por extenso, sem virar presença.
                     </p>
 
                     <div>
@@ -121,7 +125,7 @@ export function ExcuseAbsenceDialog({ assignment, onClose, onDone }: ExcuseAbsen
                     </div>
 
                     <label className="block">
-                        <span className="mb-1 block text-sm font-medium text-slate-700">Justificativa por escrito (opcional)</span>
+                        <span className="mb-1 block text-sm font-medium text-slate-700">Justificativa por escrito</span>
                         <textarea
                             value={text}
                             onChange={(event) => setText(event.target.value)}
@@ -141,7 +145,7 @@ export function ExcuseAbsenceDialog({ assignment, onClose, onDone }: ExcuseAbsen
 
                     <div className="flex justify-end gap-2">
                         <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Cancelar</Button>
-                        <Button type="submit" disabled={loading}>
+                        <Button type="submit" disabled={loading || !text.trim()}>
                             {loading
                                 ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Abonando...</span>
                                 : "Abonar falta"}
