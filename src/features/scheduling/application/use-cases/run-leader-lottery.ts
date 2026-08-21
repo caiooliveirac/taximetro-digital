@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import { getCruBlockedSlots } from "@/lib/slots";
 import { logAudit } from "@/shared/infra/logger/audit";
 import {
+  getBaseHistoryForInterns,
   getExistingAssignmentsForWeek,
   getFacultyAbbreviation,
   getSlotRulesForFaculty,
@@ -10,8 +11,10 @@ import {
 } from "@/features/scheduling/infra/repositories/lottery-repository";
 import {
   allocatePositions,
+  applyMatchesToBaseTally,
   applyMatchesToPeriodTally,
   type AllocPos,
+  type BaseTally,
   type PeriodTally,
 } from "./allocate-positions";
 import { temFeature } from "@/lib/instance";
@@ -33,6 +36,13 @@ const BASE_PRIORITY = [
   "SM01", "PM04", "PM40", "CN10", "PR03", "CC70",
   "BR60", "CB02", "IT30", "CZ50", "BR05", "PP20",
 ];
+
+/**
+ * Quanto tempo para trás o sorteio olha para saber em que bases o interno já
+ * esteve. Cobre com folga uma turma inteira — o suficiente para não repetir a
+ * base do interno dentro do estágio dele.
+ */
+const HISTORICO_DE_BASES_DIAS = 120;
 
 const DOW_INDEX: Record<string, number> = {
   MON: 0, TUE: 1, WED: 2, THU: 3, FRI: 4, SAT: 5, SUN: 6,
@@ -251,6 +261,21 @@ export async function executeRunLeaderLottery(params: {
     else tally.night += 1;
   }
 
+  // Equidade de base (SOFT): quantas vezes cada interno já caiu em cada base no
+  // histórico recente. Também só reordena preferência — ver allocate-positions.
+  const baseHistory = await getBaseHistoryForInterns({
+    internIds: safeIds,
+    dateFrom: addDays(windowStart, -HISTORICO_DE_BASES_DIAS),
+    dateTo: windowEnd,
+  });
+  const baseTally = new Map<string, BaseTally>();
+  for (const id of safeIds) baseTally.set(id, new Map());
+  for (const row of baseHistory) {
+    const porBase = baseTally.get(row.internId);
+    if (!porBase) continue;
+    porBase.set(row.baseCode, (porBase.get(row.baseCode) ?? 0) + 1);
+  }
+
   type LotteryInsert = {
     internId: string;
     facultyId: string;
@@ -338,10 +363,12 @@ export async function executeRunLeaderLottery(params: {
       cruBlocked,
       unavailable,
       periodTally,
+      baseTally,
     });
 
     // Carrega a equidade para a próxima semana e registra os slots ocupados.
     applyMatchesToPeriodTally(periodTally, matches);
+    applyMatchesToBaseTally(baseTally, matches);
     for (const { internId, position: pos } of matches) {
       const slotKey = isEbmsp
         ? `${pos.date}|${pos.period}|${pos.shift ?? ""}`

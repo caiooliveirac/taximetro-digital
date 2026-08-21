@@ -85,3 +85,34 @@ export async function insertLotteryAssignments(values: Array<{
   if (values.length === 0) return;
   await db.insert(assignments).values(values).onConflictDoNothing();
 }
+
+/**
+ * Quantas vezes cada interno já esteve em cada base no período pedido.
+ *
+ * Alimenta a equidade de bases do sorteio (ver allocate-positions.ts). Não
+ * filtra por faculdade de propósito: o que importa é a base onde o interno já
+ * caiu, não por qual escala ele foi parar lá.
+ */
+export async function getBaseHistoryForInterns(params: {
+  internIds: string[];
+  dateFrom: string;
+  dateTo: string;
+}) {
+  if (params.internIds.length === 0) return [];
+
+  return db
+    .select({
+      internId: assignments.internId,
+      baseCode: bases.code,
+    })
+    .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
+    .where(
+      and(
+        inArray(assignments.internId, params.internIds),
+        gte(assignments.date, params.dateFrom),
+        lte(assignments.date, params.dateTo),
+        ne(assignments.status, "CANCELLED"),
+      ),
+    );
+}

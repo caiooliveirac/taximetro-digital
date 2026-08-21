@@ -7,8 +7,10 @@
 import assert from "node:assert/strict";
 import {
   allocatePositions,
+  applyMatchesToBaseTally,
   applyMatchesToPeriodTally,
   type AllocPos,
+  type BaseTally,
   type PeriodTally,
 } from "../application/use-cases/allocate-positions";
 
@@ -570,6 +572,184 @@ test("fairness não reduz cardinalidade: mesmo nº de alocados com e sem tally (
     `tally não pode reduzir alocações: com=${comTally.matches.length} sem=${semTally.matches.length}`,
   );
   assert.equal(comTally.unallocatedInterns.length, semTally.unallocatedInterns.length);
+});
+
+// ── Section 7: equidade de base (não repetir a mesma base) ───────────────────
+
+console.log("\n── Section 7: equidade de base ────────────────────────────");
+
+function baseTally(entries: Record<string, Record<string, number>>): Map<string, BaseTally> {
+  return new Map(
+    Object.entries(entries).map(([id, porBase]) => [id, new Map(Object.entries(porBase))]),
+  );
+}
+
+function posNaBase(
+  baseCode: string,
+  date: string,
+  period: "DAY" | "NIGHT" = "DAY",
+): AllocPos {
+  return { baseId: baseCode, baseCode, baseType: "USA", date, period, shift: null };
+}
+
+test("interno não repete base quando existe outra viável", () => {
+  const interns = ["A"];
+  const positions = [
+    posNaBase("SM01", "2026-04-21"), // melhor base, mas A já esteve nela
+    posNaBase("PM04", "2026-04-21"),
+  ];
+
+  const { matches } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 0 } }),
+    baseTally: baseTally({ A: { SM01: 1 } }),
+  });
+
+  assert.equal(matches[0]?.position.baseCode, "PM04", "A já esteve em SM01");
+});
+
+test("troca pós-matching desfaz repetição de base entre dois internos", () => {
+  // Kuhn resolveria A→SM01 e B→PM04 pela ordem de prioridade; o histórico diz
+  // que isso repete base para os dois. A troca tem que consertar.
+  const interns = ["A", "B"];
+  const positions = [
+    posNaBase("SM01", "2026-04-21"),
+    posNaBase("PM04", "2026-04-21"),
+  ];
+
+  const { matches } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 0 }, B: { day: 0, night: 0 } }),
+    baseTally: baseTally({ A: { SM01: 2 }, B: { PM04: 2 } }),
+  });
+
+  const porInterno = new Map(matches.map((m) => [m.internId, m.position.baseCode]));
+  assert.equal(porInterno.get("A"), "PM04");
+  assert.equal(porInterno.get("B"), "SM01");
+});
+
+test("dentro do mesmo lote, 2 plantões não caem na mesma base", () => {
+  const interns = ["A"];
+  const positions = [
+    posNaBase("SM01", "2026-04-21"),
+    posNaBase("SM01", "2026-04-22"),
+    posNaBase("PM04", "2026-04-22"),
+  ];
+
+  const { matches } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 2,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 0 } }),
+    baseTally: baseTally({ A: {} }),
+  });
+
+  const codes = matches.map((m) => m.position.baseCode).sort();
+  assert.equal(matches.length, 2);
+  assert.deepEqual(codes, ["PM04", "SM01"], `não devia repetir base: ${codes.join(",")}`);
+});
+
+test("noturnos são espalhados: ninguém leva os dois quando dá para dividir", () => {
+  const interns = ["A", "B"];
+  const positions = [
+    posNaBase("SM01", "2026-04-21", "NIGHT"),
+    posNaBase("PM04", "2026-04-22", "NIGHT"),
+  ];
+
+  const { matches } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 2,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 0 }, B: { day: 0, night: 0 } }),
+    baseTally: baseTally({ A: {}, B: {} }),
+  });
+
+  assert.equal(matches.length, 2);
+  assert.equal(new Set(matches.map((m) => m.internId)).size, 2, "um noturno para cada");
+});
+
+test("quem já tem mais noturnos no histórico não leva o noturno da vez", () => {
+  const interns = ["A", "B"];
+  const positions = [
+    posNaBase("SM01", "2026-04-21", "DAY"),
+    posNaBase("SM01", "2026-04-21", "NIGHT"),
+  ];
+
+  const { matches } = allocatePositions({
+    positions,
+    internIds: ["A", "B"],
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked: empty(interns),
+    periodTally: tally({ A: { day: 0, night: 3 }, B: { day: 3, night: 0 } }),
+    baseTally: baseTally({ A: {}, B: {} }),
+  });
+
+  const porInterno = new Map(matches.map((m) => [m.internId, m.position.period]));
+  assert.equal(porInterno.get("A"), "DAY", "A já tem 3 noturnos");
+  assert.equal(porInterno.get("B"), "NIGHT");
+});
+
+test("CRÍTICO: equidade de base não reduz cardinalidade nem fura CRU", () => {
+  const interns = ["A", "B", "C"];
+  const positions = [
+    posNaBase("SM01", "2026-04-21"),
+    posNaBase("SM01", "2026-04-22"),
+    posNaBase("SM01", "2026-04-23"),
+  ];
+  const cruBlocked = new Map<string, Set<string>>([
+    ["A", new Set(["2026-04-22|DAY", "2026-04-23|DAY"])],
+    ["B", new Set()],
+    ["C", new Set()],
+  ]);
+
+  const { matches, unallocatedInterns } = allocatePositions({
+    positions,
+    internIds: interns,
+    maxShifts: 1,
+    isEbmsp: false,
+    existingUsaShiftCount: zeroCounts(interns),
+    usedSlots: empty(interns),
+    cruBlocked,
+    periodTally: tally({ A: { day: 0, night: 0 }, B: { day: 0, night: 0 }, C: { day: 0, night: 0 } }),
+    baseTally: baseTally({ A: { SM01: 5 }, B: { SM01: 5 }, C: { SM01: 5 } }),
+  });
+
+  assert.equal(matches.length, 3, "só existe SM01 — todos têm que ser alocados mesmo assim");
+  assert.equal(unallocatedInterns.length, 0);
+  const aMatch = matches.find((m) => m.internId === "A");
+  assert.equal(aMatch?.position.date, "2026-04-21", "A só pode dia 21 (CRU)");
+});
+
+test("applyMatchesToBaseTally acumula entre semanas do lote", () => {
+  const acumulado = baseTally({ A: {} });
+  applyMatchesToBaseTally(acumulado, [
+    { internId: "A", position: posNaBase("SM01", "2026-04-21") },
+    { internId: "A", position: posNaBase("SM01", "2026-04-28") },
+  ]);
+  assert.equal(acumulado.get("A")?.get("SM01"), 2);
 });
 
 // ── Results ───────────────────────────────────────────────────────────────────

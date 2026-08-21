@@ -5,19 +5,39 @@
  * so that the maximum number of interns get assigned even when CRU/CRL
  * constraints force some interns to compete for the same limited set of slots.
  *
- * Equidade diurno/noturno (opcional, via `periodTally`): é um objetivo SOFT.
- * Ela apenas REORDENA quem escolhe primeiro e qual período cada interno tenta
- * primeiro — nunca remove uma vaga viável. Por isso não reduz a cardinalidade
- * do emparelhamento nem fura CRU/CRL/maxShifts: quando não dá para equilibrar,
- * o interno simplesmente leva a vaga que sobrar (garantindo 1 plantão).
+ * Equidade (opcional, via `periodTally` e `baseTally`): é objetivo SOFT. Ela
+ * escolhe ENTRE as vagas viáveis — nunca remove uma. Por isso não reduz a
+ * cardinalidade do emparelhamento nem fura CRU/CRL/maxShifts: quando não dá
+ * para equilibrar, o interno leva a vaga que sobrar (1 plantão garantido).
+ *
+ * Duas coisas ela tenta evitar, nessa ordem de força:
+ * 1. o mesmo interno cair mais de uma vez na mesma base
+ * 2. o mesmo interno acumular noturnos
+ *
+ * Ambas viram custo CONVEXO (quadrático): a segunda vez na mesma base custa
+ * mais que a primeira, o terceiro noturno custa mais que o segundo. Isso faz o
+ * motor espalhar em vez de concentrar. Depois do emparelhamento ainda roda uma
+ * busca local de trocas (`melhoraPorTrocas`) que só aceita movimento que baixa
+ * o custo — e nunca muda quem foi alocado nem quantas vagas ficaram vazias.
  */
 
 /**
- * Alvo de proporção diurno:noturno por interno. `day = RATIO * night` é o
- * ponto de equilíbrio; abaixo disso o interno prefere DAY, acima prefere NIGHT.
- * RATIO=2 tende a ~2 diurnos para cada noturno quando há vagas diurnas sobrando.
+ * Pesos do custo. Custo de um interno =
+ *   PESO_BASE_REPETIDA * Σ_base (vezes na base)²  +  PESO_NOTURNO * (noturnos)²
+ *
+ * Com os dois em 1, a 1ª repetição de base custa 3 e o 1º noturno custa 1:
+ * repetir base pesa mais que pegar um noturno, mas o 2º noturno (custo 3) já
+ * empata com a repetição. É o equilíbrio pedido — nem noturno demais, nem a
+ * mesma base duas vezes.
  */
-const DAY_NIGHT_TARGET_RATIO = 2;
+const PESO_BASE_REPETIDA = 1;
+const PESO_NOTURNO = 1;
+
+/** Teto de passadas da busca local. Convergência é rápida; o teto é só trava. */
+const MAX_PASSADAS_DE_MELHORIA = 20;
+
+/** Contagem de plantões por base (baseCode) de um interno. */
+export type BaseTally = Map<string, number>;
 
 export type PeriodTally = { day: number; night: number };
 
@@ -60,6 +80,12 @@ export type AllocationInput = {
    * Opcional — ausente reproduz o comportamento antigo (sem viés de período).
    */
   periodTally?: Map<string, PeriodTally>;
+  /**
+   * Quantas vezes cada interno já esteve em cada base (`baseCode`), acumulado
+   * do histórico recente e das semanas já sorteadas neste lote. SOFT: só
+   * escolhe entre vagas viáveis. Ausente reproduz o comportamento antigo.
+   */
+  baseTally?: Map<string, BaseTally>;
 };
 
 export type AllocationMatch = {
@@ -85,14 +111,30 @@ function nightNeedScore(tally: PeriodTally | undefined): number {
 }
 
 /**
- * Período que reequilibra o interno rumo ao alvo (DAY_NIGHT_TARGET_RATIO).
- * Enquanto `day <= RATIO * night` ele "deve" diurno → prefere DAY (empate cai em
- * DAY, o que dá a tendência de mais diurnos). Acima disso já está day-heavy →
- * prefere NIGHT, aliviando os diurnos para quem precisa.
+ * Custo de dar ESTA vaga a um interno que já tem `vezesNaBase` plantões na base
+ * dela e `noturnos` noturnos. É a derivada discreta do custo quadrático
+ * (n² → (n+1)² cresce 2n+1), então quanto mais repetido, mais caro.
  */
-function preferredPeriod(tally: PeriodTally | undefined): "DAY" | "NIGHT" {
-  if (!tally) return "DAY";
-  return tally.day <= DAY_NIGHT_TARGET_RATIO * tally.night ? "DAY" : "NIGHT";
+function custoMarginal(pos: AllocPos, vezesNaBase: number, noturnos: number): number {
+  const repeticao = PESO_BASE_REPETIDA * (2 * vezesNaBase + 1);
+  const noturno = pos.period === "NIGHT" ? PESO_NOTURNO * (2 * noturnos + 1) : 0;
+  return repeticao + noturno;
+}
+
+/**
+ * Acumula os plantões sorteados na contagem por base. Usado pelo use-case para
+ * carregar a equidade de bases entre as semanas do mesmo lote.
+ */
+export function applyMatchesToBaseTally(
+  tally: Map<string, BaseTally>,
+  matches: Array<{ internId: string; position: AllocPos }>,
+): void {
+  for (const match of matches) {
+    const porBase = tally.get(match.internId) ?? new Map<string, number>();
+    const code = match.position.baseCode;
+    porBase.set(code, (porBase.get(code) ?? 0) + 1);
+    tally.set(match.internId, porBase);
+  }
 }
 
 /**
@@ -159,6 +201,7 @@ export function runMatchingRound(
   cruBlocked: Map<string, Set<string>>,
   unavailable?: Map<string, Set<string>>,
   periodTally?: Map<string, PeriodTally>,
+  baseTally?: Map<string, BaseTally>,
 ): AllocationMatch[] {
   const availableIdxs: number[] = [];
   for (let i = 0; i < positions.length; i++) {
@@ -170,6 +213,20 @@ export function runMatchingRound(
   // internos mais "devendo" diurno vão por último — assim eles tomam o DAY de quem
   // pode absorver um NIGHT. Sem tally, a ordem é a recebida (shuffle) — comportamento
   // antigo. Array.sort é estável (ES2019+), então empates preservam a ordem de origem.
+  const usaEquidade = Boolean(periodTally || baseTally);
+
+  /**
+   * Custo de dar a vaga `idx` ao interno. As contagens são as do INÍCIO da
+   * rodada — nesta rodada cada interno recebe no máximo uma vaga, então o custo
+   * de um não depende do que os outros receberam aqui, e comparar pares é exato.
+   */
+  const custo = (internId: string, idx: number): number =>
+    custoMarginal(
+      positions[idx],
+      baseTally?.get(internId)?.get(positions[idx].baseCode) ?? 0,
+      periodTally?.get(internId)?.night ?? 0,
+    );
+
   const orderedEligible = periodTally
     ? [...eligibleInterns].sort(
         (a, b) => nightNeedScore(periodTally.get(a)) - nightNeedScore(periodTally.get(b)),
@@ -185,18 +242,16 @@ export function runMatchingRound(
     );
     if (choices.length === 0) continue;
 
-    // Equidade (soft): tenta primeiro o período que reequilibra o interno. Só
-    // reordena — todas as vagas viáveis continuam na lista, então a cardinalidade
-    // do emparelhamento não muda. Sem tally, mantém a ordem de prioridade original.
-    if (periodTally && choices.length > 1) {
-      const wantDay = preferredPeriod(periodTally.get(internId)) === "DAY";
-      choices.sort((leftIdx, rightIdx) => {
-        const leftIsDay = positions[leftIdx].period === "DAY" ? 0 : 1;
-        const rightIsDay = positions[rightIdx].period === "DAY" ? 0 : 1;
-        const leftWeight = wantDay ? leftIsDay : 1 - leftIsDay;
-        const rightWeight = wantDay ? rightIsDay : 1 - rightIsDay;
-        return leftWeight - rightWeight || leftIdx - rightIdx;
-      });
+    // Equidade (soft): tenta primeiro a vaga mais barata (base menos repetida,
+    // e noturno só quando o diurno não compensa). Só reordena — todas as vagas
+    // viáveis continuam na lista, então a cardinalidade do emparelhamento não
+    // muda. Empate cai na ordem de prioridade original (DAY primeiro, melhor
+    // base primeiro). Sem tally, mantém a ordem de prioridade original.
+    if (usaEquidade && choices.length > 1) {
+      choices.sort(
+        (leftIdx, rightIdx) =>
+          custo(internId, leftIdx) - custo(internId, rightIdx) || leftIdx - rightIdx,
+      );
     }
 
     preferences.set(internId, choices);
@@ -226,6 +281,10 @@ export function runMatchingRound(
     tryMatch(internId, new Set<number>());
   }
 
+  if (usaEquidade) {
+    melhoraPorTrocas({ matchInternToPos, matchPosToIntern, preferences, custo });
+  }
+
   // Collect results sorted by position index (priority order)
   const result: AllocationMatch[] = [];
   for (const [internId, posIdx] of matchInternToPos) {
@@ -233,6 +292,71 @@ export function runMatchingRound(
   }
   result.sort((a, b) => a.positionIndex - b.positionIndex);
   return result;
+}
+
+/**
+ * Busca local depois do emparelhamento: "estressa" o resultado procurando
+ * trocas que baixem o custo (base repetida / noturno acumulado).
+ *
+ * Duas jogadas, ambas seguras:
+ * - TROCA: dois internos trocam de vaga. O conjunto de vagas preenchidas não
+ *   muda, então nem a cardinalidade nem quais vagas ficaram vazias mudam.
+ * - MUDANÇA: um interno vai para uma vaga viável que ninguém pegou, e só se
+ *   essa vaga for de prioridade MAIOR (índice menor) que a atual — assim a
+ *   vaga que fica vazia é sempre a pior das duas, respeitando BASE_PRIORITY.
+ *
+ * Só aceita movimento estritamente mais barato, então termina. Nenhuma jogada
+ * usa vaga fora de `preferences`, que já é a lista de vagas VIÁVEIS do interno
+ * (maxShifts, slot ocupado, CRU/CRL, indisponibilidade). Nada é furado aqui.
+ */
+function melhoraPorTrocas(params: {
+  matchInternToPos: Map<string, number>;
+  matchPosToIntern: Map<number, string>;
+  preferences: Map<string, number[]>;
+  custo: (internId: string, posIdx: number) => number;
+}): void {
+  const { matchInternToPos, matchPosToIntern, preferences, custo } = params;
+  const viavel = new Map(
+    [...preferences.entries()].map(([internId, idxs]) => [internId, new Set(idxs)]),
+  );
+  const internos = [...matchInternToPos.keys()];
+
+  for (let passada = 0; passada < MAX_PASSADAS_DE_MELHORIA; passada++) {
+    let mudou = false;
+
+    for (const internId of internos) {
+      const atual = matchInternToPos.get(internId)!;
+      const custoAtual = custo(internId, atual);
+      for (const idx of preferences.get(internId) ?? []) {
+        if (idx >= atual) continue;
+        if (matchPosToIntern.has(idx)) continue;
+        if (custo(internId, idx) >= custoAtual) continue;
+        matchPosToIntern.delete(atual);
+        matchInternToPos.set(internId, idx);
+        matchPosToIntern.set(idx, internId);
+        mudou = true;
+        break;
+      }
+    }
+
+    for (let i = 0; i < internos.length; i++) {
+      for (let j = i + 1; j < internos.length; j++) {
+        const a = internos[i];
+        const b = internos[j];
+        const posA = matchInternToPos.get(a)!;
+        const posB = matchInternToPos.get(b)!;
+        if (!viavel.get(a)?.has(posB) || !viavel.get(b)?.has(posA)) continue;
+        if (custo(a, posB) + custo(b, posA) >= custo(a, posA) + custo(b, posB)) continue;
+        matchInternToPos.set(a, posB);
+        matchInternToPos.set(b, posA);
+        matchPosToIntern.set(posB, a);
+        matchPosToIntern.set(posA, b);
+        mudou = true;
+      }
+    }
+
+    if (!mudou) break;
+  }
 }
 
 // ── top-level allocator ───────────────────────────────────────────────────────
@@ -253,6 +377,7 @@ export function allocatePositions(input: AllocationInput): {
     cruBlocked,
     unavailable,
     periodTally,
+    baseTally,
   } = input;
 
   const positionTaken = new Array<boolean>(positions.length).fill(false);
@@ -269,6 +394,11 @@ export function allocatePositions(input: AllocationInput): {
   // lote para equilibrar também entre rodadas quando maxShifts>1.
   const workingTally = periodTally
     ? new Map([...periodTally.entries()].map(([k, v]) => [k, { ...v }]))
+    : undefined;
+  // Mesma ideia para as bases: acumula o que este lote já deu, para a rodada
+  // seguinte não repetir a base que acabou de sair.
+  const workingBaseTally = baseTally
+    ? new Map([...baseTally.entries()].map(([k, v]) => [k, new Map(v)]))
     : undefined;
 
   const allMatches: Array<{ internId: string; position: AllocPos }> = [];
@@ -291,6 +421,7 @@ export function allocatePositions(input: AllocationInput): {
       workingCruBlocked,
       unavailable,
       workingTally,
+      workingBaseTally,
     );
     if (roundMatches.length === 0) break;
 
@@ -302,6 +433,12 @@ export function allocatePositions(input: AllocationInput): {
       const key = slotKey(pos, isEbmsp);
       if (!workingUsedSlots.has(m.internId)) workingUsedSlots.set(m.internId, new Set());
       workingUsedSlots.get(m.internId)!.add(key);
+
+      if (workingBaseTally) {
+        const porBase = workingBaseTally.get(m.internId) ?? new Map<string, number>();
+        porBase.set(pos.baseCode, (porBase.get(pos.baseCode) ?? 0) + 1);
+        workingBaseTally.set(m.internId, porBase);
+      }
 
       // Acumula no tally de trabalho para a próxima rodada ver o período sorteado.
       if (workingTally) {
