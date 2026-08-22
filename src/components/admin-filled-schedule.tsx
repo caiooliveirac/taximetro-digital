@@ -9,7 +9,7 @@ import { AttendanceQuickActions, attendanceQuickActionsAvailable } from "@/compo
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
-import { computeCapacityFlags, computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
+import { computeCapacityFlags, computePeriodLoad, splitPeriodSlots } from "@/features/scheduling/domain/policies/assignment-policy";
 import { addDaysToDateStr, checkinMethodLabel, checkinStatusLabel, formatBrazilTime, formatValidatorName, localDateStr } from "@/lib/utils";
 
 type Rule = {
@@ -164,7 +164,8 @@ type PeriodLoad = ReturnType<typeof computePeriodLoad>;
 type VisiblePeriodSlots = {
     slots: VisiblePeriodGridSlot[];
     overflowCount: number;
-    hiddenHasVacancy: boolean;
+    /** Vagas de grade que o teto físico bloqueou — viram selo, não card. */
+    blockedCount: number;
     load: PeriodLoad;
 };
 
@@ -615,12 +616,12 @@ function BlockedSlotCard({ facultyAbbr, period }: { facultyAbbr: string; period:
             title={`Vaga ${facultyAbbr} bloqueada: a base já atingiu o limite físico de internos neste turno. Remova um interno para liberar.`}
         >
             <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-black uppercase tracking-[0.16em]">Vaga bloqueada</span>
+                <span className="block text-[11px] font-black uppercase tracking-[0.14em]">Bloqueado</span>
                 <span className="mt-1 flex items-center gap-2">
                     <span className={`inline-flex max-w-[84px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${isNight ? "border border-rose-200/30 bg-rose-100/15 text-rose-100" : "border border-rose-300 bg-white/70 text-rose-800"}`}>
                         <span className="truncate">{facultyAbbr}</span>
                     </span>
-                    <span className={`truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${isNight ? "text-rose-200/85" : "text-rose-700"}`}>Base lotada</span>
+                    <span className={`truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${isNight ? "text-rose-200/85" : "text-rose-700"}`}>Sem vaga</span>
                 </span>
             </span>
             <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${isNight ? "bg-rose-100/15 text-rose-100" : "bg-rose-200 text-rose-800"}`}>
@@ -1156,22 +1157,14 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const buildVisiblePeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT", limit = SLOT_LIMIT_PER_PERIOD): VisiblePeriodSlots => {
         const allSlots = getPeriodSlots(base, date, period);
         const load = getPeriodLoad(base, date, period);
-        // Turno em aviso não pode esconder ninguém atrás de "ver mais um item":
-        // o interno a mais é justamente o que precisa saltar aos olhos.
-        const visibleLimit = load.full || load.aboveGrade ? Math.max(limit, allSlots.length) : limit;
-        const visibleSlots: ActualPeriodGridSlot[] = visibleLimit >= allSlots.length ? [...allSlots] : allSlots.slice(0, visibleLimit);
-        const hiddenSlots = visibleLimit >= allSlots.length ? [] : allSlots.slice(visibleLimit);
 
-        if (!visibleSlots.some((slot) => slot.kind === "vacancy")) {
-            const hiddenVacancyIndex = hiddenSlots.findIndex((slot) => slot.kind === "vacancy");
-            const replaceIndex = visibleSlots.findIndex((slot) => slot.kind === "assignment");
+        // Quem está de plantão nunca fica atrás de "ver mais um item": o terceiro
+        // interno é justamente o que precisa saltar aos olhos. E a vaga que o
+        // teto bloqueou vira selo no cabeçalho, não um terceiro card — assim a
+        // célula não desfigura a coluna por causa de uma vaga que ninguém pode
+        // usar. A lista completa continua no modal do turno.
+        const { visible: visibleSlots, hidden: hiddenSlots, blockedCount, visibleLimit } = splitPeriodSlots(allSlots, limit);
 
-            if (hiddenVacancyIndex !== -1 && replaceIndex !== -1) {
-                const replacement = hiddenSlots[hiddenVacancyIndex];
-                hiddenSlots[hiddenVacancyIndex] = visibleSlots[replaceIndex];
-                visibleSlots[replaceIndex] = replacement;
-            }
-        }
 
         const paddedSlots: VisiblePeriodGridSlot[] = [...visibleSlots];
 
@@ -1197,7 +1190,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         return {
             slots: paddedSlots,
             overflowCount: hiddenSlots.length,
-            hiddenHasVacancy: hiddenSlots.some((slot) => slot.kind === "vacancy"),
+            blockedCount,
             load,
         };
     }, [getPeriodLoad, getPeriodSlots, hasStrictContentFilter]);
@@ -1456,7 +1449,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 <div className="grid gap-1.5">
                     {periods.map((period) => {
                         const tone = getPeriodTone(period);
-                        const { slots, overflowCount, hiddenHasVacancy, load } = buildVisiblePeriodSlots(base, date, period);
+                        const { slots, overflowCount, blockedCount, load } = buildVisiblePeriodSlots(base, date, period);
                         // Filtro estrito: turno sem nada que case não ocupa espaço.
                         if (hasStrictContentFilter && slots.length === 0) return null;
                         // Dois avisos diferentes: âmbar = passou da grade (dois
@@ -1472,20 +1465,32 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         return (
                             <div key={`${base.id}|${date}|${period}`} className={`rounded-xl border p-1.5 ${shellClass}`}>
                                 <div className={`mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${metaClass}`}>
-                                    <span>{formatPeriod(period)}</span>
-                                    {load.overcrowded && (
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white" title={`${load.occupied} internos onde cabem ${load.limit} neste turno`}>
-                                            <AlertTriangle className="h-3 w-3" strokeWidth={2.4} />
-                                            Excesso {load.occupied}/{load.capacity}
-                                        </span>
-                                    )}
-                                    {!load.overcrowded && load.aboveGrade && (
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white" title={`${load.occupied} internos para ${load.capacity} vaga(s) na grade fixa deste turno. Permitido, mas fora da grade.`}>
-                                            <AlertTriangle className="h-3 w-3" strokeWidth={2.4} />
-                                            Superlotado {load.occupied}/{load.capacity}
-                                        </span>
-                                    )}
-                                    {!load.overcrowded && !load.aboveGrade && overflowCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${tone.overflow}`}>+{overflowCount}</span>}
+                                    <span className="min-w-0 truncate">{formatPeriod(period)}</span>
+                                    <span className="flex shrink-0 items-center gap-1">
+                                        {blockedCount > 0 && (
+                                            <span
+                                                className="inline-flex items-center gap-0.5 rounded-full bg-slate-700 px-1 py-0.5 text-[8px] font-bold leading-none text-white"
+                                                title={`${blockedCount} vaga(s) de grade bloqueada(s): a base já atingiu o limite físico neste turno.`}
+                                            >
+                                                <Ban className="h-2.5 w-2.5" strokeWidth={2.6} />
+                                                {blockedCount}
+                                                <span className="sr-only">vaga(s) bloqueada(s)</span>
+                                            </span>
+                                        )}
+                                        {load.overcrowded && (
+                                            <span className="inline-flex items-center gap-0.5 rounded-full bg-rose-600 px-1 py-0.5 text-[8px] font-bold leading-none text-white" title={`${load.occupied} internos onde cabem ${load.limit} neste turno`}>
+                                                <AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.6} />
+                                                LOTADO {load.occupied}/{load.capacity}
+                                            </span>
+                                        )}
+                                        {!load.overcrowded && load.aboveGrade && (
+                                            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500 px-1 py-0.5 text-[8px] font-bold leading-none text-white" title={`${load.occupied} internos para ${load.capacity} vaga(s) na grade fixa deste turno. Permitido, mas fora da grade.`}>
+                                                <AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.6} />
+                                                LOTADO {load.occupied}/{load.capacity}
+                                            </span>
+                                        )}
+                                        {!load.overcrowded && !load.aboveGrade && overflowCount > 0 && <span className={`rounded-full px-1 py-0.5 text-[8px] font-bold leading-none ${tone.overflow}`}>+{overflowCount}</span>}
+                                    </span>
                                 </div>
 
                                 <div className="grid gap-1">
@@ -1498,9 +1503,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                             return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
                                         }
 
-                                        if (slot.kind === "blocked") {
-                                            return <BlockedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={period} />;
-                                        }
+                                        // Vaga bloqueada não vira card aqui: virou selo no cabeçalho.
+                                        if (slot.kind === "blocked") return null;
 
                                         return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} />;
                                     })}
@@ -1517,10 +1521,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                             })}
                                             className={`flex w-full items-center justify-between rounded-xl border border-dashed px-2.5 py-2 text-left text-[11px] font-semibold transition hover:-translate-y-[1px] ${tone.ghost}`}
                                         >
-                                            <span>
-                                                Ver +{overflowCount} item(ns)
-                                                {hiddenHasVacancy ? " e vagas" : ""}
-                                            </span>
+                                            <span>Ver +{overflowCount} vaga{overflowCount > 1 ? "s" : ""}</span>
                                             <Plus className="h-3.5 w-3.5" />
                                         </button>
                                     )}
