@@ -54,3 +54,25 @@ test("falta continua podendo ser lançada sem texto", () => {
   });
   assert.equal(parsed.success, true);
 });
+
+test("checkout manual aceita o preceptor em cujo nome será registrado", () => {
+  const parsed = manualAttendanceSchema.safeParse({
+    assignmentId: "00000000-0000-4000-8000-000000000000",
+    action: "CONFIRM_CHECKOUT",
+    checkoutBy: "00000000-0000-4000-8000-000000000001",
+  });
+  assert.equal(parsed.success, true);
+
+  const semPreceptor = manualAttendanceSchema.safeParse({
+    assignmentId: "00000000-0000-4000-8000-000000000000",
+    action: "CONFIRM_CHECKOUT",
+  });
+  assert.equal(semPreceptor.success, true);
+
+  const idInvalido = manualAttendanceSchema.safeParse({
+    assignmentId: "00000000-0000-4000-8000-000000000000",
+    action: "CONFIRM_CHECKOUT",
+    checkoutBy: "preceptor-joao",
+  });
+  assert.equal(idInvalido.success, false);
+});

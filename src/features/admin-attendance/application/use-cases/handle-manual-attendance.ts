@@ -11,6 +11,8 @@ export const manualAttendanceSchema = z.object({
   assignmentId: z.string().uuid(),
   action: z.enum(["CONFIRM_PRESENT", "CONFIRM_CHECKOUT", "MARK_ABSENT", "EXCUSE_ABSENCE"]),
   justification: z.string().trim().max(2000).optional(),
+  /** Preceptor em cujo nome o checkout manual será registrado. */
+  checkoutBy: z.string().uuid().optional(),
 }).refine(
   (value) => value.action !== "EXCUSE_ABSENCE" || Boolean(value.justification),
   { message: "Abono exige motivo", path: ["justification"] },
@@ -179,6 +181,30 @@ export async function executeManualAttendance(params: {
       return { status: 409, body: { success: false, error: "Checkout manual exige um check-in validado" } } as const;
     }
 
+    // Quem assina o checkout é o preceptor que estava na base, não quem clicou
+    // dias depois. Sem escolha, cai no próprio ator.
+    let confirmedById = params.actor.id;
+    let confirmedByName: string | null = null;
+    if (params.input.checkoutBy) {
+      const [preceptor] = await db
+        .select({ id: users.id, name: users.name })
+        .from(userRoles)
+        .innerJoin(users, and(eq(users.id, userRoles.userId), eq(users.isActive, true)))
+        .where(and(
+          eq(userRoles.userId, params.input.checkoutBy),
+          eq(userRoles.role, "PRECEPTOR"),
+          eq(userRoles.isActive, true),
+          eq(userRoles.isArchived, false),
+        ))
+        .limit(1);
+
+      if (!preceptor) {
+        return { status: 400, body: { success: false, error: "Preceptor não encontrado ou inativo" } } as const;
+      }
+      confirmedById = preceptor.id;
+      confirmedByName = preceptor.name;
+    }
+
     // Horário sintético plausível de fim de turno. Se o checkinAt existente já é
     // posterior (caso degenerado), garante que checkoutAt > checkinAt + 11h.
     const plausible = pickPlausibleShiftTimes({ date: assignment.date, period: assignment.period });
@@ -199,8 +225,10 @@ export async function executeManualAttendance(params: {
 
       await tx.update(checkins).set({
         checkoutAt: syntheticCheckoutAt,
-        checkoutConfirmedBy: params.actor.id,
-        checkoutNotes: "Checkout confirmado manualmente pelo admin",
+        checkoutConfirmedBy: confirmedById,
+        checkoutNotes: confirmedByName
+          ? `Checkout confirmado manualmente em nome de ${confirmedByName}`
+          : "Checkout confirmado manualmente pelo admin",
       }).where(eq(checkins.id, existingCheckin.id));
 
       await tx.update(qrSessions).set({ consumedAt: now, consumedBy: params.actor.id })
@@ -219,6 +247,8 @@ export async function executeManualAttendance(params: {
         facultyId: assignment.facultyId,
         retroactive: isRetroactive,
         syntheticCheckoutAt: syntheticCheckoutAt.toISOString(),
+        checkoutConfirmedBy: confirmedById,
+        checkoutOnBehalfOf: confirmedByName,
       },
     });
 
