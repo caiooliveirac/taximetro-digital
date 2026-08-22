@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, Loader2, ShieldCheck, UserX } from "lucide-react";
+import { CheckCircle2, Loader2, LogOut, ShieldCheck, UserX } from "lucide-react";
 import { manualAttendanceAction } from "@/app/admin/actions";
 import { ExcuseAbsenceDialog } from "@/components/excuse-absence-dialog";
+import { CheckoutConfirmDialog } from "@/components/checkout-confirm-dialog";
 
 /**
  * Presença / abono / falta em um clique, na própria tela da escala e na tela do
@@ -16,6 +17,7 @@ type QuickAction = "CONFIRM_PRESENT" | "MARK_ABSENT" | "EXCUSE_ABSENCE";
 const PRESENT_FROM = new Set(["SCHEDULED", "CONFIRMED", "ABSENT", "EXCUSED"]);
 const ABSENT_FROM = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN", "EXCUSED"]);
 const EXCUSE_FROM = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN", "ABSENT"]);
+const CHECKOUT_FROM = new Set(["CHECKED_IN"]);
 
 export function attendanceQuickActionsAvailable(status: string) {
     return PRESENT_FROM.has(status) || ABSENT_FROM.has(status) || EXCUSE_FROM.has(status);
@@ -26,27 +28,29 @@ export function AttendanceQuickActions({
     status,
     assignment,
     variant = "labeled",
-    actions = ["present", "excuse", "absent"],
+    actions = ["present", "checkout", "excuse", "absent"],
     onUpdated,
 }: {
     assignmentId: string;
     status: string;
-    assignment?: { date?: string; period?: string; baseCode?: string; absenceJustification?: string | null };
+    assignment?: { date?: string; period?: string; baseCode?: string; internName?: string; absenceJustification?: string | null };
     variant?: "labeled" | "icon";
     /** Omitir "present" onde a tela já tem o botão próprio de check-in. */
-    actions?: Array<"present" | "excuse" | "absent">;
+    actions?: Array<"present" | "checkout" | "excuse" | "absent">;
     onUpdated?: () => void | Promise<void>;
 }) {
     const [pending, setPending] = useState<QuickAction | null>(null);
     const [feedback, setFeedback] = useState<{ type: "error" | "success"; text: string } | null>(null);
     const [excuseOpen, setExcuseOpen] = useState(false);
+    const [checkoutOpen, setCheckoutOpen] = useState(false);
     const [, startTransition] = useTransition();
 
     const canPresent = actions.includes("present") && PRESENT_FROM.has(status);
     const canAbsent = actions.includes("absent") && ABSENT_FROM.has(status);
     const canExcuse = actions.includes("excuse") && EXCUSE_FROM.has(status);
+    const canCheckout = actions.includes("checkout") && CHECKOUT_FROM.has(status);
 
-    if (!canPresent && !canAbsent && !canExcuse) return null;
+    if (!canPresent && !canAbsent && !canExcuse && !canCheckout) return null;
 
     function runAction(action: Exclude<QuickAction, "EXCUSE_ABSENCE">) {
         // Falta dispara aviso no Telegram para os líderes da faculdade. Num botão
@@ -104,6 +108,19 @@ export function AttendanceQuickActions({
                         {!isIcon && "Presença"}
                     </button>
                 )}
+                {canCheckout && (
+                    <button
+                        type="button"
+                        title="Confirmar checkout — escolha em nome de qual preceptor"
+                        aria-label="Confirmar checkout"
+                        onClick={(event) => { event.stopPropagation(); setCheckoutOpen(true); }}
+                        disabled={pending !== null}
+                        className={`${shape} border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100`}
+                    >
+                        <LogOut className={iconSize} strokeWidth={2.2} />
+                        {!isIcon && "Checkout"}
+                    </button>
+                )}
                 {canExcuse && (
                     <button
                         type="button"
@@ -145,6 +162,16 @@ export function AttendanceQuickActions({
                 </p>
             )}
 
+            {checkoutOpen && (
+                <CheckoutConfirmDialog
+                    assignment={{ id: assignmentId, ...assignment }}
+                    onClose={() => setCheckoutOpen(false)}
+                    onDone={async () => {
+                        setFeedback({ type: "success", text: "Checkout confirmado." });
+                        await onUpdated?.();
+                    }}
+                />
+            )}
             {excuseOpen && (
                 <ExcuseAbsenceDialog
                     assignment={{ id: assignmentId, ...assignment }}

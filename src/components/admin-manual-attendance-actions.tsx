@@ -4,8 +4,9 @@ import { useState, useTransition } from "react";
 import { CheckCircle2, Loader2, LogOut, ShieldCheck, UserX } from "lucide-react";
 import { manualAttendanceAction } from "@/app/admin/actions";
 import { ExcuseAbsenceDialog } from "@/components/excuse-absence-dialog";
+import { CheckoutConfirmDialog } from "@/components/checkout-confirm-dialog";
 
-type ManualAction = "CONFIRM_PRESENT" | "CONFIRM_CHECKOUT" | "MARK_ABSENT" | "EXCUSE_ABSENCE";
+type ManualAction = "CONFIRM_PRESENT" | "MARK_ABSENT" | "EXCUSE_ABSENCE";
 
 const CONFIRMABLE_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "ABSENT"]);
 const CHECKOUTABLE_STATUSES = new Set(["CHECKED_IN"]);
@@ -15,17 +16,20 @@ const EXCUSABLE_STATUSES = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN", "ABS
 export function AdminManualAttendanceActions({
     assignmentId,
     status,
+    assignment,
     compact = false,
     onUpdated,
 }: {
     assignmentId: string;
     status: string;
+    assignment?: { date?: string; period?: string; baseCode?: string; internName?: string };
     compact?: boolean;
     onUpdated?: () => void | Promise<void>;
 }) {
     const [pendingAction, setPendingAction] = useState<ManualAction | null>(null);
     const [feedback, setFeedback] = useState<{ type: "error" | "success"; text: string } | null>(null);
     const [excuseDialogOpen, setExcuseDialogOpen] = useState(false);
+    const [checkoutDialogOpen, setCheckoutDialogOpen] = useState(false);
     const [, startTransition] = useTransition();
 
     const canConfirm = CONFIRMABLE_STATUSES.has(status);
@@ -54,13 +58,11 @@ export function AdminManualAttendanceActions({
                     text:
                         action === "CONFIRM_PRESENT"
                             ? "Presença confirmada manualmente."
-                            : action === "CONFIRM_CHECKOUT"
-                                ? "Checkout confirmado manualmente."
-                                : action === "EXCUSE_ABSENCE"
-                                    ? "Falta abonada."
-                                    : notifications > 0
-                                        ? `Falta lançada. ${notifications} líder(es) avisado(s).`
-                                        : "Falta lançada manualmente.",
+                            : action === "EXCUSE_ABSENCE"
+                                ? "Falta abonada."
+                                : notifications > 0
+                                    ? `Falta lançada. ${notifications} líder(es) avisado(s).`
+                                    : "Falta lançada manualmente.",
                 });
 
                 await onUpdated?.();
@@ -96,11 +98,11 @@ export function AdminManualAttendanceActions({
                 {canCheckout && (
                     <button
                         type="button"
-                        onClick={() => runAction("CONFIRM_CHECKOUT")}
+                        onClick={() => setCheckoutDialogOpen(true)}
                         disabled={pendingAction !== null}
                         className={`${buttonClass} bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:cursor-wait disabled:opacity-60`}
                     >
-                        {pendingAction === "CONFIRM_CHECKOUT" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+                        <LogOut className="h-3.5 w-3.5" />
                         Confirmar checkout
                     </button>
                 )}
@@ -132,9 +134,19 @@ export function AdminManualAttendanceActions({
                     {feedback.text}
                 </p>
             )}
+            {checkoutDialogOpen && (
+                <CheckoutConfirmDialog
+                    assignment={{ id: assignmentId, ...assignment }}
+                    onClose={() => setCheckoutDialogOpen(false)}
+                    onDone={async () => {
+                        setFeedback({ type: "success", text: "Checkout confirmado." });
+                        await onUpdated?.();
+                    }}
+                />
+            )}
             {excuseDialogOpen && (
                 <ExcuseAbsenceDialog
-                    assignment={{ id: assignmentId }}
+                    assignment={{ id: assignmentId, ...assignment }}
                     onClose={() => setExcuseDialogOpen(false)}
                     onDone={async () => {
                         setFeedback({ type: "success", text: "Falta abonada." });

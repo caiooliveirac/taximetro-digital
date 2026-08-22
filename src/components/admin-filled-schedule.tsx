@@ -531,7 +531,7 @@ function AssignmentSlotCard({ assignment, period, onSelect, onUpdated, facultyBa
                 <AttendanceQuickActions
                     assignmentId={assignment.id}
                     status={assignment.status}
-                    assignment={{ date: assignment.date, period: assignment.period, baseCode: assignment.base_code }}
+                    assignment={{ date: assignment.date, period: assignment.period, baseCode: assignment.base_code, internName: assignment.intern_name }}
                     variant="icon"
                     onUpdated={onUpdated}
                 />
@@ -2256,7 +2256,17 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                     <p className="text-xs text-slate-500">Ações manuais disponíveis até a data seguinte, inclusive.</p>
                                 </div>
 
-                                <AdminManualAttendanceActions assignmentId={selectedAssignment.id} status={selectedAssignment.status} onUpdated={loadAssignments} />
+                                <AdminManualAttendanceActions
+                                    assignmentId={selectedAssignment.id}
+                                    status={selectedAssignment.status}
+                                    assignment={{
+                                        date: selectedAssignment.date,
+                                        period: selectedAssignment.period,
+                                        baseCode: selectedAssignment.base_code,
+                                        internName: selectedAssignment.intern_name,
+                                    }}
+                                    onUpdated={loadAssignments}
+                                />
 
                                 <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-500">
                                     A coordenação pode registrar presença, checkout ou falta retroativamente. Toda ação manual fica auditada.
