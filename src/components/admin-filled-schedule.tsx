@@ -156,7 +156,12 @@ type ActualPeriodGridSlot =
     | { kind: "vacancy"; key: string; allocation: AllocationState; facultyAbbr: string }
     | { kind: "blocked"; key: string; facultyAbbr: string };
 
-type VisiblePeriodGridSlot = ActualPeriodGridSlot | { kind: "open"; key: string; allocation: AllocationState };
+type VisiblePeriodGridSlot =
+    | ActualPeriodGridSlot
+    | { kind: "open"; key: string; allocation: AllocationState }
+    // Linha vazia só para a altura: célula lotada não ganha "Livre" de enfeite,
+    // mas também não pode encolher e deixar a linha da grade serrilhada.
+    | { kind: "spacer"; key: string };
 
 /** Lotação do turno: gente na base contra a soma das vagas da grade. */
 type PeriodLoad = ReturnType<typeof computePeriodLoad>;
@@ -1187,6 +1192,13 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             });
         }
 
+        // Altura fixa da linha: o que faltar para completar as duas faixas vira
+        // espaço reservado. Sem isso, célula lotada fica mais baixa que a
+        // vizinha e a tabela inteira serrilha.
+        while (!hasStrictContentFilter && paddedSlots.length < limit) {
+            paddedSlots.push({ kind: "spacer", key: `${base.id}|${date}|${period}|spacer-${paddedSlots.length + 1}` });
+        }
+
         return {
             slots: paddedSlots,
             overflowCount: hiddenSlots.length,
@@ -1446,7 +1458,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         const renderPeriodStack = (base: Base, date: string) => {
             const periods = filterPeriod ? [filterPeriod] : scopePeriods;
             return (
-                <div className="grid gap-1.5">
+                <div className="flex h-full flex-col gap-1.5">
                     {periods.map((period) => {
                         const tone = getPeriodTone(period);
                         const { slots, overflowCount, blockedCount, load } = buildVisiblePeriodSlots(base, date, period);
@@ -1463,7 +1475,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         const metaClass = load.overcrowded ? "text-rose-900" : load.aboveGrade ? "text-amber-900" : tone.meta;
 
                         return (
-                            <div key={`${base.id}|${date}|${period}`} className={`rounded-xl border p-1.5 ${shellClass}`}>
+                            <div key={`${base.id}|${date}|${period}`} className={`flex flex-1 flex-col rounded-xl border p-1.5 ${shellClass}`}>
                                 <div className={`mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${metaClass}`}>
                                     <span className="min-w-0 truncate">{formatPeriod(period)}</span>
                                     <span className="flex shrink-0 items-center gap-1">
@@ -1489,11 +1501,20 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                 LOTADO {load.occupied}/{load.capacity}
                                             </span>
                                         )}
-                                        {!load.overcrowded && !load.aboveGrade && overflowCount > 0 && <span className={`rounded-full px-1 py-0.5 text-[8px] font-bold leading-none ${tone.overflow}`}>+{overflowCount}</span>}
+                                        {overflowCount > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setFocusedPeriod({ baseId: base.id, baseCode: base.code, baseName: base.name, date, period })}
+                                                className={`touch-manipulation rounded-full px-2 py-1 text-[9px] font-bold leading-none transition hover:brightness-110 ${tone.overflow}`}
+                                                title={`Ver mais ${overflowCount} vaga(s) deste turno`}
+                                            >
+                                                +{overflowCount}
+                                            </button>
+                                        )}
                                     </span>
                                 </div>
 
-                                <div className="grid gap-1">
+                                <div className="grid flex-1 auto-rows-min gap-1">
                                     {slots.map((slot) => {
                                         if (slot.kind === "assignment") {
                                             return <AssignmentSlotCard key={slot.key} assignment={slot.assignment} period={period} onSelect={setSelectedAssignmentId} onUpdated={loadAssignments} />;
@@ -1506,25 +1527,13 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                         // Vaga bloqueada não vira card aqui: virou selo no cabeçalho.
                                         if (slot.kind === "blocked") return null;
 
+                                        if (slot.kind === "spacer") {
+                                            return <div key={slot.key} aria-hidden className="min-h-[56px] w-full rounded-xl border border-dashed border-current opacity-10" />;
+                                        }
+
                                         return <OpenSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} />;
                                     })}
 
-                                    {overflowCount > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setFocusedPeriod({
-                                                baseId: base.id,
-                                                baseCode: base.code,
-                                                baseName: base.name,
-                                                date,
-                                                period,
-                                            })}
-                                            className={`flex w-full items-center justify-between rounded-xl border border-dashed px-2.5 py-2 text-left text-[11px] font-semibold transition hover:-translate-y-[1px] ${tone.ghost}`}
-                                        >
-                                            <span>Ver +{overflowCount} vaga{overflowCount > 1 ? "s" : ""}</span>
-                                            <Plus className="h-3.5 w-3.5" />
-                                        </button>
-                                    )}
                                 </div>
                             </div>
                         );
@@ -1606,7 +1615,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 </div>
 
                                 {visibleWeekDates.map((date) => (
-                                    <div key={`${base.id}|${date}`} className={`border-b border-slate-100 px-1.5 py-1.5 ${date === today ? "bg-accent-50/20" : ""}`}>
+                                    <div key={`${base.id}|${date}`} className={`h-full border-b border-slate-100 px-1.5 py-1.5 ${date === today ? "bg-accent-50/20" : ""}`}>
                                         {renderPeriodStack(base, date)}
                                     </div>
                                 ))}
