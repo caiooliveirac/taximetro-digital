@@ -47,3 +47,22 @@ export function computePeriodLoad(params: { capacity: number; occupied: number }
     overcrowded: limit > 0 && occupied > limit,
   };
 }
+
+/**
+ * Os dois avisos de lotação que a grade filtra:
+ *  - superlotado: passou da grade (2 internos numa vaga) ou passou do que cabe
+ *    na viatura (3 onde cabem 2). Perguntas diferentes, mesma peneira.
+ *  - vaga bloqueada: turno no teto físico com vaga de grade ainda aberta — a
+ *    vaga existe, mas não dá para alocar até liberarem um interno.
+ */
+export function computeCapacityFlags(params: {
+  capacity: number;
+  occupied: number;
+  openRuleSlots: number;
+}) {
+  const load = computePeriodLoad({ capacity: params.capacity, occupied: params.occupied });
+  return {
+    overloaded: load.overcrowded || load.aboveGrade,
+    blocked: load.full && params.openRuleSlots > 0,
+  };
+}

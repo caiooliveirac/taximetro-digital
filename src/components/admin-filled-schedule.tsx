@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, User, X, Zap } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, User, Users, X, Zap } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { AttendanceQuickActions, attendanceQuickActionsAvailable } from "@/components/attendance-quick-actions";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
-import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
+import { computeCapacityFlags, computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
 import { addDaysToDateStr, checkinMethodLabel, checkinStatusLabel, formatBrazilTime, formatValidatorName, localDateStr } from "@/lib/utils";
 
 type Rule = {
@@ -685,6 +685,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [filterPeriod, setFilterPeriod] = useState<"" | "DAY" | "NIGHT">("");
     const [filterStatus, setFilterStatus] = useState<"" | StatusFilterKey>("");
     const [filterMissingCheckin, setFilterMissingCheckin] = useState(false);
+    const [filterCapacity, setFilterCapacity] = useState<"" | "OVERLOADED" | "BLOCKED">("");
     const [gradeFiltersOpen, setGradeFiltersOpen] = useState(false);
 
     // Mobile-first: no celular a grade abre já filtrada no dia de hoje
@@ -738,12 +739,21 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const weekEnd = weekDates[6];
     const today = localDateStr();
     const isRegulationScope = scope === "cru" || scope === "crl";
+    const baseMatchesScope = useCallback((base: Base) => {
+        if (scope === "usa") return base.type === "USA";
+        if (scope === "regulation") return base.type === "CENTRAL" || base.type === "CRL";
+        if (scope === "cru") return base.type === "CENTRAL";
+        if (scope === "crl") return base.type === "CRL";
+        return true;
+    }, [scope]);
     const hasInternSearch = searchIntern.trim().length > 0;
-    const hasStrictContentFilter = hasInternSearch || filterMissingCheckin || Boolean(filterStatus);
+    const hasStrictContentFilter = hasInternSearch || filterMissingCheckin || Boolean(filterStatus) || Boolean(filterCapacity);
     const hidesNight = scope === "crl";
+    // Só base USA tem teto — em CRU e CRL o filtro de lotação nunca casaria nada.
+    const hasCapacityFilters = scope === "usa" || scope === "all";
     const scopePeriods: Array<"DAY" | "NIGHT"> = hidesNight ? ["DAY"] : PERIODS;
     const activeGradeFilterCount =
-        [searchIntern.trim(), filterBase, filterFaculty, filterPeriod, filterStatus].filter(Boolean).length +
+        [searchIntern.trim(), filterBase, filterFaculty, filterPeriod, filterStatus, filterCapacity].filter(Boolean).length +
         (filterMissingCheckin ? 1 : 0);
     const filteredWeekDates = useMemo(
         () => (filterDayKey ? weekDates.filter((date) => getDayKey(date) === filterDayKey) : weekDates),
@@ -830,6 +840,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         }
     }, [filterPeriod, hidesNight]);
 
+    useEffect(() => {
+        if (!hasCapacityFilters && filterCapacity) setFilterCapacity("");
+    }, [filterCapacity, hasCapacityFilters]);
+
     const facultyById = useMemo(() => new Map(faculties.map((faculty) => [faculty.id, faculty])), [faculties]);
 
     const visibleFacultyOptions = useMemo(() => {
@@ -845,6 +859,57 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         const source = visibleFacultyOptions.length > 0 ? visibleFacultyOptions : faculties;
         return [...source].filter((f) => !f.isVirtual).sort((left, right) => left.abbreviation.localeCompare(right.abbreviation));
     }, [faculties, visibleFacultyOptions]);
+
+    /**
+     * Turnos em aviso, medidos na escala real (sem passar pelos filtros da tela):
+     *  - superlotado = passou da grade (2 numa vaga) ou passou do que cabe na
+     *    viatura (3 onde cabem 2). Os dois avisos numa peneira só.
+     *  - vaga bloqueada = turno no teto físico com vaga de grade ainda aberta,
+     *    que é o que o BlockedSlotCard mostra na célula.
+     * Só base USA tem teto; CRU e CRL vão pela grade e não têm alerta.
+     */
+    const capacityFlags = useMemo(() => {
+        const overloaded = new Set<string>();
+        const blocked = new Set<string>();
+        const usaBases = new Map(bases.filter((base) => base.type === "USA").map((base) => [base.id, base]));
+
+        // Dois recortes da mesma célula: `active` é quem conta como ocupação
+        // (igual a getPeriodLoad); `all` é quem a grade desenha por cima da vaga
+        // da regra (igual a getPeriodSlots) e decide se sobrou vaga bloqueada.
+        const byCell = new Map<string, { active: AssignmentDetail[]; all: AssignmentDetail[] }>();
+        for (const assignment of assignments) {
+            if (!usaBases.has(assignment.base_id)) continue;
+            const key = `${assignment.base_id}|${normalizeDateKey(assignment.date)}|${assignment.period}`;
+            const cell = byCell.get(key) ?? { active: [], all: [] };
+            cell.all.push(assignment);
+            if (!assignment.is_extra_shift && assignment.status !== "CANCELLED" && assignment.status !== "ABSENT") {
+                cell.active.push(assignment);
+            }
+            byCell.set(key, cell);
+        }
+
+        for (const [key, cell] of byCell) {
+            const [baseId, dateKey, period] = key.split("|");
+            const dayKey = getDayKey(dateKey);
+            const cellRules = rules.filter((rule) => (
+                rule.baseId === baseId
+                && rule.dayOfWeek === dayKey
+                && rule.period === period
+                && rule.isActive
+                && !rule.isExtraShift
+            ));
+            const capacity = cellRules.reduce((total, rule) => total + rule.capacity, 0);
+            const openRuleSlots = cellRules.reduce((total, rule) => (
+                total + Math.max(0, rule.capacity - cell.all.filter((row) => row.faculty_id === rule.facultyId).length)
+            ), 0);
+            const flags = computeCapacityFlags({ capacity, occupied: cell.active.length, openRuleSlots });
+
+            if (flags.overloaded) overloaded.add(key);
+            if (flags.blocked) blocked.add(key);
+        }
+
+        return { overloaded, blocked };
+    }, [assignments, bases, rules]);
 
     const filteredAssignments = useMemo(() => {
         const internQuery = searchIntern.trim().toLowerCase();
@@ -865,10 +930,15 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 filterMissingCheckin
                 && !(assignment.status === "ABSENT" || (isPendingStatus(assignment.status) && assignment.date <= today))
             ) return false;
+            if (filterCapacity) {
+                const cellKey = `${assignment.base_id}|${normalizeDateKey(assignment.date)}|${assignment.period}`;
+                const cells = filterCapacity === "OVERLOADED" ? capacityFlags.overloaded : capacityFlags.blocked;
+                if (!cells.has(cellKey)) return false;
+            }
             if (internQuery && !assignment.intern_name.toLowerCase().includes(internQuery)) return false;
             return true;
         });
-    }, [assignments, filterBase, filterFaculty, filterMissingCheckin, filterPeriod, filterStatus, searchIntern, today]);
+    }, [assignments, capacityFlags, filterBase, filterCapacity, filterFaculty, filterMissingCheckin, filterPeriod, filterStatus, searchIntern, today]);
 
     const filteredRules = useMemo(() => {
         if (filterMissingCheckin || filterStatus) return [];
@@ -915,27 +985,39 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         return map;
     }, [filteredAssignments]);
 
+    /**
+     * Com filtro estrito, dia sem nenhum plantão que case some da grade: filtrar
+     * "sem checkout" e ainda ter que varrer sete colunas vazias é o oposto de
+     * filtrar. Sem filtro, a semana inteira continua à vista.
+     */
+    const visibleWeekDates = useMemo(() => {
+        if (!hasStrictContentFilter) return filteredWeekDates;
+        const scopedBaseIds = new Set(
+            bases
+                .filter((base) => baseMatchesScope(base) && (!filterBase || base.id === filterBase))
+                .map((base) => base.id),
+        );
+        const datesWithContent = new Set(
+            filteredAssignments
+                .filter((assignment) => scopedBaseIds.has(assignment.base_id))
+                .map((assignment) => normalizeDateKey(assignment.date)),
+        );
+        return filteredWeekDates.filter((date) => datesWithContent.has(date));
+    }, [baseMatchesScope, bases, filterBase, filteredAssignments, filteredWeekDates, hasStrictContentFilter]);
+
     const visibleBases = useMemo(() => {
-        const hasContent = (base: Base) => filteredWeekDates.some((date) => {
+        const hasContent = (base: Base) => visibleWeekDates.some((date) => {
             const dayKey = getDayKey(date);
             const rulesForDay = filteredRules.filter((rule) => rule.baseId === base.id && rule.dayOfWeek === dayKey);
             const assignmentsForDay = assignmentsByBaseDate.get(`${base.id}|${date}`) ?? [];
-            if (isRegulationScope && hasStrictContentFilter) {
+            if (hasStrictContentFilter) {
                 return assignmentsForDay.length > 0;
             }
             return rulesForDay.length > 0 || assignmentsForDay.length > 0;
         });
 
-        const matchesScope = (base: Base) => {
-            if (scope === "usa") return base.type === "USA";
-            if (scope === "regulation") return base.type === "CENTRAL" || base.type === "CRL";
-            if (scope === "cru") return base.type === "CENTRAL";
-            if (scope === "crl") return base.type === "CRL";
-            return true;
-        };
-
         return bases
-            .filter((base) => matchesScope(base))
+            .filter((base) => baseMatchesScope(base))
             .filter((base) => !filterBase || base.id === filterBase)
             .filter((base) => (hasStrictContentFilter ? hasContent(base) : true))
             .sort((left, right) => {
@@ -945,7 +1027,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 }
                 return baseViewIndex(left.code) - baseViewIndex(right.code) || left.code.localeCompare(right.code);
             });
-    }, [assignmentsByBaseDate, bases, filterBase, filteredRules, filteredWeekDates, hasStrictContentFilter, isRegulationScope, scope]);
+    }, [assignmentsByBaseDate, baseMatchesScope, bases, filterBase, filteredRules, hasStrictContentFilter, isRegulationScope, visibleWeekDates]);
 
     const usaBases = visibleBases.filter((base) => base.type === "USA");
     const regulationBases = visibleBases.filter((base) => base.type !== "USA");
@@ -1017,6 +1099,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 if (facultyCompare !== 0) return facultyCompare;
                 return left.intern_name.localeCompare(right.intern_name);
             });
+        // Com filtro estrito, turno sem plantão que case não rende vaga nem vaga
+        // bloqueada: senão a célula filtrada volta a encher de card irrelevante.
+        if (hasStrictContentFilter && periodAssignments.length === 0) return [];
+
         const periodRules = filteredRules.filter((rule) => rule.baseId === base.id && rule.dayOfWeek === dayKey && rule.period === period);
         const facultyIds = [...new Set([...periodRules.map((rule) => rule.facultyId), ...periodAssignments.map((assignment) => assignment.faculty_id)])]
             .sort((left, right) => {
@@ -1065,7 +1151,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         }
 
         return flattenedSlots;
-    }, [assignmentsByBaseDate, facultyById, filterFaculty, filteredRules, getPeriodLoad]);
+    }, [assignmentsByBaseDate, facultyById, filteredRules, getPeriodLoad, hasStrictContentFilter]);
 
     const buildVisiblePeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT", limit = SLOT_LIMIT_PER_PERIOD): VisiblePeriodSlots => {
         const allSlots = getPeriodSlots(base, date, period);
@@ -1371,6 +1457,8 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                     {periods.map((period) => {
                         const tone = getPeriodTone(period);
                         const { slots, overflowCount, hiddenHasVacancy, load } = buildVisiblePeriodSlots(base, date, period);
+                        // Filtro estrito: turno sem nada que case não ocupa espaço.
+                        if (hasStrictContentFilter && slots.length === 0) return null;
                         // Dois avisos diferentes: âmbar = passou da grade (dois
                         // internos numa vaga só), decisão de quem escala, segue
                         // clicável. Vermelho = passou do que cabe na viatura.
@@ -1492,9 +1580,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                 <div key="week-grid" ref={autoScrollGridToToday} className="max-h-[75dvh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
                     {/* Coluna Base estreita no mobile (só o código) pra sobrar tela pros dias */}
-                    <div className="min-w-[1198px] [--sched-base-col:64px] sm:min-w-[1260px] sm:[--sched-base-col:124px]" style={{ display: "grid", gridTemplateColumns: "var(--sched-base-col) repeat(7, minmax(162px, 1fr))" }}>
+                    <div className={`[--sched-base-col:64px] sm:[--sched-base-col:124px] ${visibleWeekDates.length >= 7 ? "min-w-[1198px] sm:min-w-[1260px]" : ""}`} style={{ display: "grid", gridTemplateColumns: `var(--sched-base-col) repeat(${visibleWeekDates.length}, minmax(162px, 1fr))` }}>
                         <div className="sticky left-0 top-0 z-30 border-b border-r border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:px-3">Base</div>
-                        {filteredWeekDates.map((date) => (
+                        {visibleWeekDates.map((date) => (
                             <div key={date} className={`sticky top-0 z-20 border-b border-slate-200 px-2 py-2 text-center text-[11px] font-semibold ${date === today ? "bg-accent-50 text-accent-700" : "bg-slate-50 text-slate-500"}`}>
                                 {DAY_LABEL_BY_KEY[getDayKey(date)]}<br />
                                 <span className="font-normal">{formatDayMonth(date)}</span>
@@ -1516,7 +1604,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                     </div>
                                 </div>
 
-                                {filteredWeekDates.map((date) => (
+                                {visibleWeekDates.map((date) => (
                                     <div key={`${base.id}|${date}`} className={`border-b border-slate-100 px-1.5 py-1.5 ${date === today ? "bg-accent-50/20" : ""}`}>
                                         {renderPeriodStack(base, date)}
                                     </div>
@@ -1534,7 +1622,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
         const showBaseCode = rows.length > 1;
         const periods = filterPeriod ? [filterPeriod] : scopePeriods;
-        const visibleDateCards = filteredWeekDates.map((date) => {
+        const visibleDateCards = visibleWeekDates.map((date) => {
             const periodCards = periods.map((period) => {
                 const tone = getPeriodTone(period);
                 const facultyGroups = rows.flatMap((base) => {
@@ -1826,6 +1914,25 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             </button>
                         );
                     })}
+
+                    {hasCapacityFilters && <span className="mx-1 text-slate-300">|</span>}
+                    {hasCapacityFilters && <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Lotação</span>}
+                    {hasCapacityFilters && <button
+                        type="button"
+                        onClick={() => setFilterCapacity((current) => (current === "OVERLOADED" ? "" : "OVERLOADED"))}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 transition-all ${filterCapacity === "OVERLOADED" ? "bg-amber-500 font-semibold text-white shadow-[0_10px_18px_rgba(180,83,9,0.24)] scale-105" : "border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}
+                        title="Turnos acima da grade (2 internos numa vaga) ou acima do que cabe na viatura (3 onde cabem 2)"
+                    >
+                        <Users className="h-3.5 w-3.5" strokeWidth={1.7} /> Superlotado
+                    </button>}
+                    {hasCapacityFilters && <button
+                        type="button"
+                        onClick={() => setFilterCapacity((current) => (current === "BLOCKED" ? "" : "BLOCKED"))}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 transition-all ${filterCapacity === "BLOCKED" ? "bg-slate-800 font-semibold text-white shadow-[0_10px_18px_rgba(15,23,42,0.24)] scale-105" : "border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"}`}
+                        title="Turnos no teto físico com vaga da grade que ficou bloqueada"
+                    >
+                        <Ban className="h-3.5 w-3.5" strokeWidth={1.7} /> Vaga bloqueada
+                    </button>}
                 </div>
                 </div>
                 </div>
