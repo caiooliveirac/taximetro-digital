@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ArrowLeftRight, Trash2, PlusCircle, CheckCircle, X, Search, ChevronDown, ChevronUp } from "lucide-react";
-import { isFutureShiftRequest } from "@/features/requests/domain/request-shift-window";
+import { isTodayOrFutureRequest } from "@/features/requests/domain/request-shift-window";
 
 type Request = {
   id: string; type: string; status: string; createdAt: string;
@@ -97,10 +97,11 @@ export default function LeaderSolicitacoes() {
     setDeciding(null);
   }
 
-  // A tela é de decisão, não de arquivo: plantão que já começou sai da lista.
-  // Histórico de trocas continua na aba própria.
+  // A tela é de decisão, não de arquivo: plantão de data passada sai da lista.
+  // Hoje continua aparecendo o dia inteiro, turno em curso ou não. Histórico
+  // de trocas segue na aba própria.
   const now = new Date();
-  const upcoming = requests.filter((r) => isFutureShiftRequest(r, now));
+  const upcoming = requests.filter((r) => isTodayOrFutureRequest(r, now));
 
   const filtered = upcoming.filter((r) => {
     if (filter === "PENDING") return ["PENDING", "ESCALATED"].includes(r.status) && r.type !== "SWAP";
@@ -119,7 +120,7 @@ export default function LeaderSolicitacoes() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Solicitações</h1>
-          <p className="text-xs text-slate-500">Somente plantões que ainda não começaram.</p>
+          <p className="text-xs text-slate-500">Somente plantões de hoje em diante.</p>
         </div>
         {pendingCount > 0 && (
           <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
@@ -315,7 +316,7 @@ export default function LeaderSolicitacoes() {
 
         {filtered.length === 0 && (
           <p className="py-8 text-center text-sm text-slate-500">
-            Nenhuma solicitação de plantão futuro{filter !== "ALL" ? " nesta categoria" : ""}.
+            Nenhuma solicitação de hoje em diante{filter !== "ALL" ? " nesta categoria" : ""}.
           </p>
         )}
       </>)}
