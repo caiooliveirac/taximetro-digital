@@ -109,6 +109,18 @@ function getDayLabel(dayOfWeek: string) {
   return DAY_LABELS[DOW_IDX[dayOfWeek as keyof typeof DOW_IDX] ?? 0];
 }
 
+/**
+ * O X de remover fica sempre visível, em qualquer viewport.
+ *
+ * Antes ele só aparecia com `group-hover`, e tela de toque não tem "passar o
+ * mouse por cima": no celular o líder via o nome na grade e não tinha como
+ * tirar ninguém da escala. O círculo continua com 16px para não engordar a
+ * linha da grade — quem cresce é a área de toque, no `::after`, que estica
+ * além do desenho sem ocupar espaço no layout.
+ */
+const BOTAO_REMOVER_X =
+  "relative ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 active:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1 after:absolute after:-inset-y-2 after:-left-1 after:-right-2";
+
 function getStatusRing(a: { status: string; checkinGeoValid?: boolean | null }): string {
   if (a.status === "ABSENT") return "ring-2 ring-red-400";
   if (a.status === "CHECKED_IN" || a.status === "CHECKED_OUT") {
@@ -231,6 +243,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   const [cruFixedMsg, setCruFixedMsg] = useState("");
   const [cruGenMsg, setCruGenMsg] = useState("");
   const [cruConflictPending, setCruConflictPending] = useState<CruConflictPending | null>(null);
+  const [cruFixedRemoveTarget, setCruFixedRemoveTarget] = useState<CruFixed | null>(null);
+  const [cruFixedRemoveLoading, setCruFixedRemoveLoading] = useState(false);
 
   /* ── Intern detail drawer ── */
   const [internDetail, setInternDetail] = useState<{ id: string; name: string } | null>(null);
@@ -656,17 +670,30 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     setCruFixedLoading(false);
   }
 
-  async function removeCruFixed(id: string) {
+  /**
+   * Remover o fixo derruba a recorrência inteira de hoje em diante, e agora o X
+   * está a um toque de distância na tela de celular — daí a confirmação.
+   */
+  async function confirmRemoveCruFixed() {
+    if (!cruFixedRemoveTarget) return;
+    setCruFixedRemoveLoading(true);
     try {
-      const res = await enviarJson(`${baseApi}/cru-fixed?id=${id}`, "DELETE");
+      const res = await enviarJson(`${baseApi}/cru-fixed?id=${cruFixedRemoveTarget.id}`, "DELETE");
       const json = await res.json();
       if (json.success) {
         const cancelled = json.data?.cancelledCount ?? 0;
         const alreadyCancelled = json.data?.alreadyCancelledCount ?? 0;
         setCruGenMsg(`✅ Template removido. ${cancelled} plantão(ões) futuro(s) cancelado(s)${alreadyCancelled > 0 ? ` · ${alreadyCancelled} já estavam cancelados` : ""}`);
+      } else {
+        setCruGenMsg(`❌ ${json.error ?? "Não foi possível remover o fixo."}`);
       }
       await load();
-    } catch { /* silent */ }
+      setCruFixedRemoveTarget(null);
+    } catch {
+      setCruGenMsg("❌ Erro de conexão ao remover o fixo.");
+      setCruFixedRemoveTarget(null);
+    }
+    setCruFixedRemoveLoading(false);
   }
 
   async function generateCruWeek() {
@@ -977,7 +1004,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 <div
                                   key={assignment.id}
                                   onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
-                                  className={`group relative rounded-md px-2 py-1 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition hover:opacity-80 ${periodStyle.bg} ${periodStyle.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""} ${isExtra ? "extra-shift-card" : ""}`}
+                                  className={`relative rounded-md px-2 py-1 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition hover:opacity-80 ${periodStyle.bg} ${periodStyle.text} ${ring} ${isCruBlocked ? "ring-2 ring-red-500 bg-red-50" : ""} ${isExtra ? "extra-shift-card" : ""}`}
                                   title={`${assignment.internName} · ${assignment.status}${assignment.shift ? ` · ${assignment.shift === "MORNING" ? "Manhã" : "Tarde"}` : ""}${capacity === 0 ? " · sem vaga configurada" : ""}${isCruBlocked ? " · conflito CRU ±12h" : ""}${isExtra ? " · Plantão Extra" : ""}`}
                                   style={isExtra ? { boxShadow: "0 0 6px 1px rgba(99,102,241,0.5)" } : undefined}
                                 >
@@ -988,9 +1015,11 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                   <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                                   {assignment.status === "SCHEDULED" && (
                                     <button
+                                      type="button"
                                       onClick={(e) => { e.stopPropagation(); setRemoveError(""); setRemoveTarget(assignment); }}
-                                      className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
+                                      className={BOTAO_REMOVER_X}
                                       title="Remover da escala"
+                                      aria-label={`Remover ${assignment.internName} da escala`}
                                     >
                                       <X className="h-2.5 w-2.5" />
                                     </button>
@@ -1113,7 +1142,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 <div
                                   key={assignment.id}
                                   onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
-                                  className={`group relative flex cursor-pointer items-center gap-1 rounded-md bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700 transition hover:opacity-80 ${ring} ${isExtra ? "extra-shift-card" : ""}`}
+                                  className={`relative flex cursor-pointer items-center gap-1 rounded-md bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700 transition hover:opacity-80 ${ring} ${isExtra ? "extra-shift-card" : ""}`}
                                   title={`${assignment.internName} · ${assignment.status}${isExtra ? " · Plantão Extra" : ""}`}
                                   style={isExtra ? { boxShadow: "0 0 6px 1px rgba(99,102,241,0.5)" } : undefined}
                                 >
@@ -1122,9 +1151,11 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                   <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                                   {assignment.status === "SCHEDULED" && (
                                     <button
+                                      type="button"
                                       onClick={(e) => { e.stopPropagation(); setRemoveError(""); setRemoveTarget(assignment); }}
-                                      className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
+                                      className={BOTAO_REMOVER_X}
                                       title="Remover da escala"
+                                      aria-label={`Remover ${assignment.internName} da escala`}
                                     >
                                       <X className="h-2.5 w-2.5" />
                                     </button>
@@ -1227,7 +1258,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                             <div
                               key={assignment.id}
                               onClick={() => setInternDetail({ id: assignment.internId, name: assignment.internName })}
-                              className={`group relative flex cursor-pointer items-center gap-1 rounded-md bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 transition hover:opacity-80 ${ring} ${isExtra ? "extra-shift-card" : ""}`}
+                              className={`relative flex cursor-pointer items-center gap-1 rounded-md bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 transition hover:opacity-80 ${ring} ${isExtra ? "extra-shift-card" : ""}`}
                               title={`${assignment.internName} · ${assignment.status}${assignment.shift ? ` · ${assignment.shift === "MORNING" ? "Manhã" : "Tarde"}` : ""}${isExtra ? " · Plantão Extra" : ""}`}
                               style={isExtra ? { boxShadow: "0 0 6px 1px rgba(99,102,241,0.5)" } : undefined}
                             >
@@ -1237,9 +1268,11 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               <span className="truncate">{assignment.internName.split(" ").slice(0, 2).join(" ")}</span>
                               {assignment.status === "SCHEDULED" && (
                                 <button
+                                  type="button"
                                   onClick={(e) => { e.stopPropagation(); setRemoveError(""); setRemoveTarget(assignment); }}
-                                  className="ml-auto hidden h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500/80 text-white transition hover:bg-red-600 group-hover:flex"
+                                  className={BOTAO_REMOVER_X}
                                   title="Remover da escala"
+                                  aria-label={`Remover ${assignment.internName} da escala`}
                                 >
                                   <X className="h-2.5 w-2.5" />
                                 </button>
@@ -1328,13 +1361,15 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                       const daysRemaining = Math.floor((validUntilDate.getTime() - todayDate.getTime()) / (86400000));
                       const weeksLeft = Math.max(0, Math.ceil((daysRemaining + 1) / 7));
                       return (
-                        <div key={c.id} className="group rounded-md bg-amber-50 text-amber-800 px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1">
+                        <div key={c.id} className="rounded-md bg-amber-50 text-amber-800 px-1.5 py-1 text-[11px] font-medium mb-1 flex items-center gap-1">
                           <span className="truncate">{c.intern_name.split(" ").slice(0, 2).join(" ")}</span>
                           <span className="text-[9px] text-amber-500 shrink-0">{weeksLeft}s</span>
                           <button
-                            onClick={() => removeCruFixed(c.id)}
-                            className="ml-auto hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
+                            type="button"
+                            onClick={() => { setCruGenMsg(""); setCruFixedRemoveTarget(c); }}
+                            className={BOTAO_REMOVER_X}
                             title="Remover fixo"
+                            aria-label={`Remover o fixo de ${c.intern_name}`}
                           >
                             <X className="h-2.5 w-2.5" />
                           </button>
@@ -1366,13 +1401,15 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                       const daysRemaining = Math.floor((validUntilDate.getTime() - todayDate.getTime()) / (86400000));
                       const weeksLeft = Math.max(0, Math.ceil((daysRemaining + 1) / 7));
                       return (
-                        <div key={c.id} className="group rounded-md bg-indigo-50 text-indigo-800 px-1.5 py-0.5 text-[11px] font-medium mb-0.5 flex items-center gap-1">
+                        <div key={c.id} className="rounded-md bg-indigo-50 text-indigo-800 px-1.5 py-1 text-[11px] font-medium mb-1 flex items-center gap-1">
                           <span className="truncate">{c.intern_name.split(" ").slice(0, 2).join(" ")}</span>
                           <span className="text-[9px] text-indigo-500 shrink-0">{weeksLeft}s</span>
                           <button
-                            onClick={() => removeCruFixed(c.id)}
-                            className="ml-auto hidden group-hover:flex shrink-0 items-center justify-center rounded-full h-4 w-4 bg-red-500/80 text-white hover:bg-red-600 transition"
+                            type="button"
+                            onClick={() => { setCruGenMsg(""); setCruFixedRemoveTarget(c); }}
+                            className={BOTAO_REMOVER_X}
                             title="Remover fixo"
+                            aria-label={`Remover o fixo de ${c.intern_name}`}
                           >
                             <X className="h-2.5 w-2.5" />
                           </button>
@@ -1658,6 +1695,53 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-bold text-white hover:bg-red-700 transition disabled:opacity-50"
               >
                 {removeLoading ? "Removendo..." : "Confirmar Remoção"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ Remove CRU Fixed Confirmation Modal ═══════════ */}
+      {cruFixedRemoveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-red-500 to-rose-600 px-6 py-4 text-white">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <X className="h-5 w-5" /> Remover Fixo da CRU
+              </h2>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm text-slate-700">
+                Tem certeza que deseja remover <strong>{cruFixedRemoveTarget.intern_name}</strong> do fixo semanal?
+              </p>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm">
+                <span className="font-medium">CRU</span>
+                {" · "}
+                {getDayLabel(cruFixedRemoveTarget.day_of_week)}
+                {" · "}
+                {cruFixedRemoveTarget.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
+              </div>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                ⚠️ Atenção: sai a recorrência e, junto, os plantões dela de hoje em diante. Plantões já
+                realizados não mudam.
+              </div>
+            </div>
+            <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCruFixedRemoveTarget(null)}
+                disabled={cruFixedRemoveLoading}
+                className="flex-1 rounded-lg bg-slate-200 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmRemoveCruFixed}
+                disabled={cruFixedRemoveLoading}
+                className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-bold text-white hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {cruFixedRemoveLoading ? "Removendo..." : "Confirmar Remoção"}
               </button>
             </div>
           </div>
