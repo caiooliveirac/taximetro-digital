@@ -2,24 +2,13 @@ import {
   findFacultyInternIds,
   listRequestsRows,
 } from "@/features/requests/infra/repositories/request-repository";
-import { hasShiftStarted } from "@/lib/utils";
+import { shiftAlreadyStarted } from "@/features/requests/domain/request-shift-window";
 
 // Troca em aberto (ou proposta ainda não confirmada) cujo plantão já começou não
 // serve mais para ninguém: some da lista em vez de ficar eternamente visível.
 // O corte é o INÍCIO do turno, não o fim do dia — troca de diurno de hoje some
 // às 07:00, não à meia-noite.
 const SWAP_STALE_STATUSES = ["OPEN", "PENDING"];
-
-type SwapShiftRef = {
-  date: string | null;
-  period: string | null;
-  shift: string | null;
-};
-
-function shiftStarted(ref: SwapShiftRef, now: Date): boolean {
-  if (!ref.date) return false;
-  return hasShiftStarted(ref.date, ref.period === "NIGHT" ? "NIGHT" : "DAY", ref.shift, now);
-}
 
 export function isStaleSwap(r: {
   type: string;
@@ -33,8 +22,8 @@ export function isStaleSwap(r: {
 }, now: Date = new Date()) {
   if (r.type !== "SWAP" || !SWAP_STALE_STATUSES.includes(r.status)) return false;
   return (
-    shiftStarted({ date: r.assignmentDate, period: r.assignmentPeriod ?? null, shift: r.assignmentShift ?? null }, now) ||
-    shiftStarted({ date: r.targetAssignmentDate, period: r.targetAssignmentPeriod ?? null, shift: r.targetAssignmentShift ?? null }, now)
+    shiftAlreadyStarted({ date: r.assignmentDate, period: r.assignmentPeriod, shift: r.assignmentShift }, now) ||
+    shiftAlreadyStarted({ date: r.targetAssignmentDate, period: r.targetAssignmentPeriod, shift: r.targetAssignmentShift }, now)
   );
 }
 

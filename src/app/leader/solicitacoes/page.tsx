@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, Trash2, PlusCircle, CheckCircle, X, AlertTriangle, Clock, Search, ChevronDown, ChevronUp, Sun, Moon } from "lucide-react";
+import { ArrowLeftRight, Trash2, PlusCircle, CheckCircle, X, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { isFutureShiftRequest } from "@/features/requests/domain/request-shift-window";
 
 type Request = {
   id: string; type: string; status: string; createdAt: string;
   requesterId: string; requesterName: string;
-  assignmentDate: string | null; assignmentPeriod: string | null;
+  assignmentDate: string | null; assignmentPeriod: string | null; assignmentShift: string | null;
   baseCode: string | null; baseName: string | null;
   targetInternId: string | null; targetInternName: string | null;
-  targetAssignmentDate: string | null; targetAssignmentPeriod: string | null;
+  targetAssignmentDate: string | null; targetAssignmentPeriod: string | null; targetAssignmentShift: string | null;
   targetBaseCode: string | null;
   extraBaseCode: string | null; extraDate: string | null; extraPeriod: string | null;
   reviewNotes: string | null;
@@ -26,7 +27,7 @@ const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra"
 const TYPE_ICON: Record<string, typeof ArrowLeftRight> = { SWAP: ArrowLeftRight, EXTRA_SHIFT: PlusCircle, DROP_SHIFT: Trash2 };
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "Pendente", APPROVED: "Aprovada", COMPLETED: "Concluída",
-  REJECTED: "Rejeitada", ESCALATED: "Escalada", OPEN: "Aberta", CANCELLED: "Cancelada",
+  REJECTED: "Recusada", ESCALATED: "Escalada", OPEN: "Aberta", CANCELLED: "Cancelada",
   AWAITING_AUTH: "Aguardando preceptor",
 };
 const STATUS_COLOR: Record<string, string> = {
@@ -48,10 +49,9 @@ export default function LeaderSolicitacoes() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reviewing, setReviewing] = useState<{ id: string; reviewNotes: string } | null>(null);
+  const [deciding, setDeciding] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
   const [filter, setFilter] = useState<"ALL" | "PENDING" | "SWAP" | "SWAP_HISTORY">("ALL");
   const [historySearch, setHistorySearch] = useState("");
   const [expandedInterns, setExpandedInterns] = useState<Set<string>>(new Set());
@@ -74,33 +74,42 @@ export default function LeaderSolicitacoes() {
 
   useEffect(() => { load(); }, []);
 
-  async function review(status: string) {
-    if (!reviewing) return;
-    setSaving(true); setActionError("");
+  // Aprovar/recusar direto do card: sem tela intermediária e sem escalar —
+  // plantão futuro é decisão do líder, e ela cabe em um clique.
+  async function decide(id: string, status: "APPROVED" | "REJECTED") {
+    setDeciding(id); setActionError(null);
     try {
       const res = await fetch("/taximetro/api/requests", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: reviewing.id, status, reviewNotes: reviewing.reviewNotes }),
+        body: JSON.stringify({ id, status }),
       });
       const json = await res.json();
-      if (!json.success) { setActionError(json.error || "Erro ao processar."); setSaving(false); return; }
-      setReviewing(null);
-      load();
+      if (!json.success) {
+        setActionError({ id, message: json.error || "Erro ao processar." });
+        setDeciding(null);
+        return;
+      }
+      await load();
     } catch {
-      setActionError("Erro de conexão.");
+      setActionError({ id, message: "Erro de conexão." });
     }
-    setSaving(false);
+    setDeciding(null);
   }
 
-  const filtered = requests.filter((r) => {
+  // A tela é de decisão, não de arquivo: plantão que já começou sai da lista.
+  // Histórico de trocas continua na aba própria.
+  const now = new Date();
+  const upcoming = requests.filter((r) => isFutureShiftRequest(r, now));
+
+  const filtered = upcoming.filter((r) => {
     if (filter === "PENDING") return ["PENDING", "ESCALATED"].includes(r.status) && r.type !== "SWAP";
     if (filter === "SWAP") return r.type === "SWAP";
     return true;
   });
 
   // Count pending drop/extra that need review
-  const pendingCount = requests.filter((r) => ["PENDING", "ESCALATED"].includes(r.status) && r.type !== "SWAP").length;
+  const pendingCount = upcoming.filter((r) => ["PENDING", "ESCALATED"].includes(r.status) && r.type !== "SWAP").length;
 
   if (loading) return <p className="text-slate-400">Carregando...</p>;
   if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
@@ -108,7 +117,10 @@ export default function LeaderSolicitacoes() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900">Solicitações</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Solicitações</h1>
+          <p className="text-xs text-slate-500">Somente plantões que ainda não começaram.</p>
+        </div>
         {pendingCount > 0 && (
           <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
             {pendingCount} pendente{pendingCount > 1 ? "s" : ""}
@@ -130,30 +142,6 @@ export default function LeaderSolicitacoes() {
           </button>
         ))}
       </div>
-
-      {/* Review modal */}
-      {reviewing && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
-          <h2 className="font-semibold text-slate-900">Analisar Solicitação</h2>
-          <input placeholder="Observação (opcional)" value={reviewing.reviewNotes} onChange={(e) => setReviewing({ ...reviewing, reviewNotes: e.target.value })}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" />
-          {actionError && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</div>}
-          <div className="flex gap-2">
-            <button onClick={() => review("APPROVED")} disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50">
-              {saving ? "..." : "Aprovar"}
-            </button>
-            <button onClick={() => review("REJECTED")} disabled={saving} className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50">
-              {saving ? "..." : "Rejeitar"}
-            </button>
-            <button onClick={() => review("ESCALATED")} disabled={saving} className="rounded-lg bg-amber-500 px-4 py-2 text-sm text-white hover:bg-amber-600 disabled:opacity-50">
-              {saving ? "..." : "Escalar"}
-            </button>
-            <button onClick={() => { setReviewing(null); setActionError(""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ═══════ SWAP HISTORY TAB ═══════ */}
       {filter === "SWAP_HISTORY" && (() => {
@@ -261,6 +249,7 @@ export default function LeaderSolicitacoes() {
             const Icon = TYPE_ICON[r.type] ?? ArrowLeftRight;
             const isSwap = r.type === "SWAP";
             const canReview = !isSwap && ["PENDING", "ESCALATED"].includes(r.status);
+            const busy = deciding === r.id;
 
             return (
               <div key={r.id} className={`rounded-lg border bg-white px-4 py-3 space-y-1.5 ${canReview ? "border-amber-200" : "border-slate-200"}`}>
@@ -294,16 +283,29 @@ export default function LeaderSolicitacoes() {
                 </div>
 
                 {/* Date + action row */}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] text-slate-400">{new Date(r.createdAt).toLocaleDateString("pt-BR")}</span>
                   {canReview ? (
-                    <button onClick={() => setReviewing({ id: r.id, reviewNotes: "" })} className="text-xs font-medium text-accent-600 hover:text-accent-500">
-                      Analisar
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => decide(r.id, "APPROVED")} disabled={busy}
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50">
+                        <CheckCircle className="h-3.5 w-3.5" strokeWidth={2} />
+                        {busy ? "..." : "Aprovar"}
+                      </button>
+                      <button onClick={() => decide(r.id, "REJECTED")} disabled={busy}
+                        className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700 disabled:opacity-50">
+                        <X className="h-3.5 w-3.5" strokeWidth={2} />
+                        {busy ? "..." : "Recusar"}
+                      </button>
+                    </div>
                   ) : isSwap ? (
                     <span className="text-[11px] text-blue-500">Auto-gerida</span>
                   ) : null}
                 </div>
+
+                {actionError?.id === r.id && (
+                  <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{actionError.message}</div>
+                )}
 
                 {r.reviewNotes && <p className="text-[11px] text-slate-400 italic">{r.reviewNotes}</p>}
               </div>
@@ -311,7 +313,11 @@ export default function LeaderSolicitacoes() {
           })}
         </div>
 
-        {filtered.length === 0 && <p className="py-8 text-center text-sm text-slate-500">Nenhuma solicitação{filter !== "ALL" ? " nesta categoria" : ""}.</p>}
+        {filtered.length === 0 && (
+          <p className="py-8 text-center text-sm text-slate-500">
+            Nenhuma solicitação de plantão futuro{filter !== "ALL" ? " nesta categoria" : ""}.
+          </p>
+        )}
       </>)}
     </div>
   );
