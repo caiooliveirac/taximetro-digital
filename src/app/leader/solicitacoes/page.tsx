@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, Trash2, PlusCircle, CheckCircle, X, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeftRight, Trash2, PlusCircle, Search, ChevronDown, ChevronUp } from "lucide-react";
 import { isTodayOrFutureRequest } from "@/features/requests/domain/request-shift-window";
+import { useRequestDecision, DecisionButtons } from "@/components/pending-approvals";
 
 type Request = {
   id: string; type: string; status: string; createdAt: string;
@@ -49,10 +50,9 @@ export default function LeaderSolicitacoes() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deciding, setDeciding] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
-  const [filter, setFilter] = useState<"ALL" | "PENDING" | "SWAP" | "SWAP_HISTORY">("ALL");
+  // Cai em Pendentes: quem abre Solicitações vem decidir, não navegar.
+  const [filter, setFilter] = useState<"ALL" | "PENDING" | "SWAP" | "SWAP_HISTORY">("PENDING");
   const [historySearch, setHistorySearch] = useState("");
   const [expandedInterns, setExpandedInterns] = useState<Set<string>>(new Set());
 
@@ -75,27 +75,9 @@ export default function LeaderSolicitacoes() {
   useEffect(() => { load(); }, []);
 
   // Aprovar/recusar direto do card: sem tela intermediária e sem escalar —
-  // plantão futuro é decisão do líder, e ela cabe em um clique.
-  async function decide(id: string, status: "APPROVED" | "REJECTED") {
-    setDeciding(id); setActionError(null);
-    try {
-      const res = await fetch("/taximetro/api/requests", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      });
-      const json = await res.json();
-      if (!json.success) {
-        setActionError({ id, message: json.error || "Erro ao processar." });
-        setDeciding(null);
-        return;
-      }
-      await load();
-    } catch {
-      setActionError({ id, message: "Erro de conexão." });
-    }
-    setDeciding(null);
-  }
+  // a decisão cabe em um clique. A chamada em si mora no hook compartilhado
+  // com o dashboard.
+  const { decide, deciding, error: actionError } = useRequestDecision(load);
 
   // A tela é de decisão, não de arquivo: plantão de data passada sai da lista.
   // Hoje continua aparecendo o dia inteiro, turno em curso ou não. Histórico
@@ -287,18 +269,7 @@ export default function LeaderSolicitacoes() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] text-slate-400">{new Date(r.createdAt).toLocaleDateString("pt-BR")}</span>
                   {canReview ? (
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => decide(r.id, "APPROVED")} disabled={busy}
-                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50">
-                        <CheckCircle className="h-3.5 w-3.5" strokeWidth={2} />
-                        {busy ? "..." : "Aprovar"}
-                      </button>
-                      <button onClick={() => decide(r.id, "REJECTED")} disabled={busy}
-                        className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700 disabled:opacity-50">
-                        <X className="h-3.5 w-3.5" strokeWidth={2} />
-                        {busy ? "..." : "Recusar"}
-                      </button>
-                    </div>
+                    <DecisionButtons id={r.id} busy={busy} onDecide={decide} />
                   ) : isSwap ? (
                     <span className="text-[11px] text-blue-500">Auto-gerida</span>
                   ) : null}

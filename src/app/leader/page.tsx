@@ -15,6 +15,7 @@ import { getFacultyStyle } from "@/lib/base-colors";
 import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr, weeksBetweenDateStr } from "@/lib/utils";
 import { sessionHasRole } from "@/lib/roles";
 import { isTodayOrFutureRequest, type RequestShiftRow } from "@/features/requests/domain/request-shift-window";
+import { PendingApprovals, type PendingRequest } from "@/components/pending-approvals";
 
 type Stats = {
   totalInterns: number;
@@ -138,6 +139,8 @@ export default function LeaderDashboard() {
   const [summary, setSummary] = useState<ComplianceSummary | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingRequest[]>([]);
+  const [reloadKey, setReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expandedGroup, setExpandedGroup] = useState<WeeklyCategory | null>(null);
   const [expandedPendingInternId, setExpandedPendingInternId] = useState<string | null>(null);
@@ -270,15 +273,19 @@ export default function LeaderDashboard() {
 
         const todayActive = todayJson.success ? todayJson.data.filter((a: { status: string }) => a.status !== "CANCELLED") : [];
 
+        // O que espera decisão do líder: descarte e extra, de hoje em diante.
+        // Troca fica fora — é auto-gerida entre internos. Mesma régua da tela
+        // de Solicitações, para o KPI e o painel baterem com ela.
+        const pendingApprovalRows: PendingRequest[] = requestsJson.success
+          ? (requestsJson.data as Array<PendingRequest & RequestShiftRow>).filter((r) =>
+            ["PENDING", "ESCALATED"].includes(r.status) && r.type !== "SWAP" && isTodayOrFutureRequest(r))
+          : [];
+        setPendingApprovals(pendingApprovalRows);
+
         setStats({
           totalInterns: usersJson.success ? usersJson.data.filter((u: { role: string }) => u.role === "INTERN").length : 0,
           scheduledThisWeek: assignmentsJson.success ? assignmentsJson.data.filter((a: { status: string }) => a.status !== "CANCELLED").length : 0,
-          // Mesma régua da tela de solicitações: plantão de data passada não
-          // é mais pendência do líder.
-          pendingRequests: requestsJson.success
-            ? (requestsJson.data as Array<RequestShiftRow & { status: string }>)
-              .filter((r) => r.status === "PENDING" && isTodayOrFutureRequest(r)).length
-            : 0,
+          pendingRequests: pendingApprovalRows.length,
           confirmedToday: todayActive.filter((a: { status: string }) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status)).length,
           absentToday: todayActive.filter((a: { status: string }) => a.status === "ABSENT").length,
           checkedInToday: todayActive.filter((a: { status: string }) => a.status === "CHECKED_IN").length,
@@ -321,7 +328,7 @@ export default function LeaderDashboard() {
     load();
     const iv = setInterval(load, 30000);
     return () => clearInterval(iv);
-  }, []);
+  }, [reloadKey]);
 
   if (loading) return <TableSkeleton rows={4} cols={5} />;
   if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
@@ -561,6 +568,24 @@ export default function LeaderDashboard() {
         <MetricCard label="Faltas hoje" value={stats.absentToday} icon={XCircle} severity={stats.absentToday > 0 ? "danger" : "default"} />
         <MetricCard label="Solicitações" value={stats.pendingRequests} icon={Clock} severity={stats.pendingRequests > 0 ? "warning" : "default"} />
       </div>
+
+      {/* Solicitações à espera do líder. Fica no alto de propósito: é o que ele
+          precisa ver ao logar, sem passar pelo menu. */}
+      {pendingApprovals.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-600" strokeWidth={1.5} />
+              <h2 className="text-sm font-semibold text-amber-900">Solicitações para aprovar</h2>
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{pendingApprovals.length}</span>
+            </div>
+            <Link href="/leader/solicitacoes" className="shrink-0 text-xs font-medium text-amber-800 hover:text-amber-900">
+              Ver todas
+            </Link>
+          </div>
+          <PendingApprovals requests={pendingApprovals} onChanged={() => setReloadKey((k) => k + 1)} />
+        </div>
+      )}
 
       {/* Leader's own shift */}
       {myAssignment && (myAssignment.status === "SCHEDULED" || myAssignment.status === "CONFIRMED") && (
