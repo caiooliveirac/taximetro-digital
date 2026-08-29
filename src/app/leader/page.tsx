@@ -14,6 +14,7 @@ import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr, weeksBetweenDateStr } from "@/lib/utils";
 import { sessionHasRole } from "@/lib/roles";
+import { isFutureShiftRequest, type RequestShiftRow } from "@/features/requests/domain/request-shift-window";
 
 type Stats = {
   totalInterns: number;
@@ -272,7 +273,12 @@ export default function LeaderDashboard() {
         setStats({
           totalInterns: usersJson.success ? usersJson.data.filter((u: { role: string }) => u.role === "INTERN").length : 0,
           scheduledThisWeek: assignmentsJson.success ? assignmentsJson.data.filter((a: { status: string }) => a.status !== "CANCELLED").length : 0,
-          pendingRequests: requestsJson.success ? requestsJson.data.filter((r: { status: string }) => r.status === "PENDING").length : 0,
+          // Mesma régua da tela de solicitações: plantão que já começou não
+          // é mais pendência do líder.
+          pendingRequests: requestsJson.success
+            ? (requestsJson.data as Array<RequestShiftRow & { status: string }>)
+              .filter((r) => r.status === "PENDING" && isFutureShiftRequest(r)).length
+            : 0,
           confirmedToday: todayActive.filter((a: { status: string }) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT"].includes(a.status)).length,
           absentToday: todayActive.filter((a: { status: string }) => a.status === "ABSENT").length,
           checkedInToday: todayActive.filter((a: { status: string }) => a.status === "CHECKED_IN").length,
