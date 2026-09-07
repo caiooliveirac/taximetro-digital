@@ -22,7 +22,7 @@ import { PhotoLightbox } from "@/components/photo-lightbox";
 import {
   RealizedByTypeBoxes,
   ShiftListByKind,
-  WeekBreakdownByType,
+  GoalSlotsBoard,
   AssignmentDetailPanel,
 } from "@/components/admin/intern-shifts-blocks";
 
@@ -32,6 +32,7 @@ type CohortOption = { id: string; name: string | null; label: string; status: st
 type Assignment = {
   id: string; internName: string; baseCode: string; baseName: string;
   baseType?: string; date: string; period: string; status: string;
+  isExtraShift?: boolean;
   facultyAbbr: string;
   checkinStatus?: string | null;
   checkinMethod?: string | null;
@@ -49,15 +50,14 @@ type Assignment = {
 };
 type ComplianceRow = {
   userId: string; name: string; facultyAbbr: string;
-  targetShifts: number; targetShiftsPerWeek: number;
+  targetShifts: number; targetHours: number;
   totalCompleted: number; totalAbsent: number; totalHours: number;
   totalPct: number | null; thisWeekCompleted: number; thisWeekScheduled: number;
   thisWeekAbsent: number; rawDeficit: number; netDeficit: number;
   futureScheduled: number; pendingScheduled: number; status: "ok" | "compensating" | "partial" | "deficit";
   rotationStartDate: string | null; rotationEndDate: string | null;
-  targetUSAPerWeek?: number; targetCRUPerWeek?: number; targetCRLPerWeek?: number;
-  thisWeekUSAPlanned?: number; thisWeekCRUPlanned?: number; thisWeekCRLPlanned?: number;
-  lastWeekUSACompleted?: number; lastWeekCRUCompleted?: number; lastWeekCRLCompleted?: number;
+  targetUSATotal?: number; targetCRUTotal?: number; targetCRLTotal?: number;
+  missingSlots?: number;
 };
 type Request = {
   id: string; type: string; status: string; createdAt: string;
@@ -328,8 +328,14 @@ function AdminVerComoInterno() {
   const present = pastAssignments.filter((a) => ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"].includes(a.status)).length;
   const absent = pastAssignments.filter((a) => a.status === "ABSENT").length;
 
-  const weeklyEffective = compliance ? compliance.thisWeekScheduled - (compliance.thisWeekAbsent ?? 0) : 0;
-  const weeklyGoal = compliance?.targetShiftsPerWeek ?? 0;
+  // Metas diretas da faculdade viram as casinhas: cada plantão exigido é uma
+  // vaga, e a vaga sem plantão é o alerta que o coordenador precisa resolver.
+  const goalTargets = {
+    USA: compliance?.targetUSATotal ?? 0,
+    CRU: compliance?.targetCRUTotal ?? 0,
+    CRL: compliance?.targetCRLTotal ?? 0,
+  };
+  const missingSlots = compliance?.missingSlots ?? 0;
   const caseRecordsByAssignment = useMemo(() => {
     const grouped = new Map<string, CaseRecord[]>();
     for (const record of caseRecords) {
@@ -339,6 +345,8 @@ function AdminVerComoInterno() {
     }
     return grouped;
   }, [caseRecords]);
+
+  const selectedSlotAssignment = assignments.find((a) => a.id === expandedAssignmentId) ?? null;
 
   const selectClass = "block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500";
 
@@ -432,7 +440,6 @@ function AdminVerComoInterno() {
                             target: cmp.targetShifts,
                             rotationStartDate: cmp.rotationStartDate,
                             rotationEndDate: cmp.rotationEndDate,
-                            weeklyTarget: cmp.targetShiftsPerWeek,
                           }}
                         />
                       </div>
@@ -534,14 +541,35 @@ function AdminVerComoInterno() {
             <MetricCard label="Ausentes" value={absent} icon={XCircle} />
             <MetricCard label="Próximos" value={upcoming.length} icon={Calendar} />
             <MetricCard
-              label="Meta semanal"
-              value={weeklyGoal > 0 ? `${weeklyEffective}/${weeklyGoal}` : "—"}
+              label="Vagas da meta em aberto"
+              value={compliance ? String(missingSlots) : "—"}
               icon={Target}
             />
           </div>
 
-          {/* Breakdown semanal por tipo (CRU/USA/CRL — esta semana vs passada) */}
-          <WeekBreakdownByType compliance={compliance} />
+          {/* Casinhas da meta — clicáveis, abrem o detalhe do plantão */}
+          <div>
+            <h2 className="mb-2 text-sm font-semibold text-slate-900">Casinhas da meta</h2>
+            <GoalSlotsBoard
+              assignments={assignments}
+              targets={goalTargets}
+              today={today}
+              selectedId={expandedAssignmentId}
+              onSelect={(a) => setExpandedAssignmentId(expandedAssignmentId === a.id ? null : a.id)}
+            />
+            {selectedSlotAssignment && (
+              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+                <p className="mb-1 text-xs font-semibold text-slate-700">
+                  {selectedSlotAssignment.baseCode} — {new Date(`${selectedSlotAssignment.date}T12:00:00`).toLocaleDateString("pt-BR")}
+                </p>
+                <AssignmentDetailPanel
+                  assignment={selectedSlotAssignment}
+                  caseRecords={caseRecordsByAssignment.get(selectedSlotAssignment.id) ?? []}
+                  userNameById={userNameById}
+                />
+              </div>
+            )}
+          </div>
 
           {/* Velocímetro da rotação */}
           {compliance && compliance.targetShifts > 0 && (
@@ -553,7 +581,6 @@ function AdminVerComoInterno() {
                 target: compliance.targetShifts,
                 rotationStartDate: compliance.rotationStartDate,
                 rotationEndDate: compliance.rotationEndDate,
-                weeklyTarget: compliance.targetShiftsPerWeek,
               }}
             />
           )}

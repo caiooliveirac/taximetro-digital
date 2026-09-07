@@ -137,22 +137,23 @@ async function seedProd() {
 
   // 2. Faculty targets (segmented by base type: USA/CRU/CRL)
   console.log("🎯 Atualizando metas por tipo de base...");
-  const targets: Record<string, { usas: number; crus: number; crls: number; hours: number; total: number }> = {
-    ZARNS: { usas: 2, crus: 2, crls: 2, hours: 240, total: 6 },     // 2+2+2 = 6 por semana (12h each)
-    UFBA: { usas: 2, crus: 2, crls: 1, hours: 240, total: 5 },      // 2+2+1 = 5 por semana (12h each)
-    AFYA: { usas: 2, crus: 2, crls: 2, hours: 240, total: 6 },      // 2+2+2 = 6 por semana (12h each)
-    UNIFACS: { usas: 1, crus: 2, crls: 2, hours: 240, total: 5 },   // 1+2+2 = 5 por semana (12h each)
-    EBMSP: { usas: 0, crus: 8, crls: 0, hours: 240, total: 8 },     // 0+8+0 = 8 por semana (6h each turno)
+  // Metas diretas da rotação de ~4 semanas. Ajustar em Admin → Faculdades:
+  // cada número é uma casinha que o interno precisa preencher.
+  const targets: Record<string, { usas: number; crus: number; crls: number; hours: number }> = {
+    ZARNS: { usas: 8, crus: 8, crls: 8, hours: 240 },     // 24 plantões de 12h
+    UFBA: { usas: 8, crus: 8, crls: 4, hours: 240 },      // 20 plantões de 12h
+    AFYA: { usas: 8, crus: 8, crls: 8, hours: 240 },      // 24 plantões de 12h
+    UNIFACS: { usas: 4, crus: 8, crls: 8, hours: 240 },   // 20 plantões de 12h
+    EBMSP: { usas: 0, crus: 32, crls: 0, hours: 240 },    // 32 turnos de 6h
   };
-  
+
   for (const abbr of FAC_ABBR) {
     const t = targets[abbr];
     await db.update(faculties).set({
-      targetHours: t.hours, targetShifts: t.total * 4, // ~4 semanas por mês
-      targetShiftsPerWeek: t.total, // backward compat
-      targetUSAsPerWeek: t.usas,
-      targetCRUsPerWeek: t.crus,
-      targetCRLsPerWeek: t.crls,
+      targetHours: t.hours,
+      targetUSAsTotal: t.usas,
+      targetCRUsTotal: t.crus,
+      targetCRLsTotal: t.crls,
       totalInterns: 12,
     }).where(eq(faculties.id, facByAbbr[abbr].id));
   }

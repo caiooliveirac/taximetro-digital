@@ -26,7 +26,6 @@ type Assignment = {
 type Compliance = {
   targetHours: number;
   targetShifts: number;
-  targetShiftsPerWeek: number;
   totalCompleted: number;
   totalAbsent: number;
   totalHours: number;
@@ -34,8 +33,7 @@ type Compliance = {
   thisWeekCompleted: number;
   thisWeekScheduled: number;
   lastWeekCompleted: number;
-  belowWeeklyTarget: boolean;
-  weeklyDeficit: number;
+  missingSlots: number;
 };
 
 export default function InternHistorico() {
@@ -75,9 +73,6 @@ export default function InternHistorico() {
 
   const hoursPct = compliance?.targetHours ? Math.min(Math.round((totalHours / compliance.targetHours) * 100), 100) : null;
   const shiftsPct = compliance?.totalPct ?? null;
-  const weeklyPct = compliance?.targetShiftsPerWeek
-    ? Math.min(Math.round((compliance.thisWeekCompleted / compliance.targetShiftsPerWeek) * 100), 100)
-    : null;
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
@@ -101,28 +96,6 @@ export default function InternHistorico() {
         </div>
       </div>
 
-      {/* Weekly progress */}
-      {compliance && compliance.targetShiftsPerWeek > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-3">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-accent-500" strokeWidth={1.5} />
-            <h2 className="text-sm font-semibold text-slate-900">Esta Semana</h2>
-          </div>
-          <div>
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-              <span>Plantões</span>
-              <span className="font-medium text-slate-700">{compliance.thisWeekCompleted} / {compliance.targetShiftsPerWeek}</span>
-            </div>
-            <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${(weeklyPct ?? 0) >= 100 ? "bg-emerald-500" : (weeklyPct ?? 0) >= 50 ? "bg-accent-500" : "bg-amber-400"}`}
-                style={{ width: `${weeklyPct ?? 0}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Progress toward targets */}
       {compliance && (hoursPct !== null || shiftsPct !== null) && (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-3">
@@ -143,6 +116,12 @@ export default function InternHistorico() {
                 />
               </div>
             </div>
+          )}
+          {(compliance.missingSlots ?? 0) > 0 && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              ⚠️ {compliance.missingSlots} plantão{compliance.missingSlots > 1 ? "s" : ""} da meta ainda sem data.
+              Fale com o líder da sua faculdade — veja as casinhas em Meu Plantão.
+            </p>
           )}
           {shiftsPct !== null && compliance.targetShifts > 0 && (
             <div>

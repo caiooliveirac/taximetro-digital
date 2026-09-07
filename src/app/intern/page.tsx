@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MapPin, Sun, Moon, Calendar, ArrowRight, Clock, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut, FileText, XCircle } from "lucide-react";
+import { MapPin, Sun, Moon, Calendar, ArrowRight, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut, FileText, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { GoalSlotsBoard } from "@/components/admin/intern-shifts-blocks";
 import { formatBrazilTime, getBrazilNowParts, getShiftShortLabel, isCurrentOperationalAssignment, isWithinAttendanceWindow, localDateStr } from "@/lib/utils";
 
 type Assignment = {
@@ -17,6 +18,7 @@ type Assignment = {
   baseType?: string;
   baseLatitude: number;
   baseLongitude: number;
+  isExtraShift?: boolean;
   date: string;
   period: string;
   shift?: string | null;
@@ -36,11 +38,20 @@ type Slot = {
   nextDate: string;
 };
 
-type WeeklyCompliance = {
-  thisWeekScheduled: number;
-  thisWeekCompleted: number;
-  thisWeekAbsent: number;
-  targetShiftsPerWeek: number;
+/**
+ * A meta da faculdade, do jeito que o interno precisa ver: quantos plantões de
+ * cada tipo ele tem que cumprir na rotação, quantas horas, e a partir de quando
+ * a contagem vale.
+ */
+type GoalCompliance = {
+  targetUSATotal: number;
+  targetCRUTotal: number;
+  targetCRLTotal: number;
+  targetHours: number;
+  totalHours: number;
+  missingSlots: number;
+  rotationStartDate: string | null;
+  rotationEndDate: string | null;
 };
 
 type CheckoutStatus = {
@@ -96,7 +107,8 @@ export default function InternHoje() {
   const [absences, setAbsences] = useState<Assignment[]>([]);
   const [justifyingAbsence, setJustifyingAbsence] = useState<Assignment | null>(null);
   const [vacantSlots, setVacantSlots] = useState<Slot[]>([]);
-  const [weekly, setWeekly] = useState<WeeklyCompliance | null>(null);
+  const [goal, setGoal] = useState<GoalCompliance | null>(null);
+  const [allAssignments, setAllAssignments] = useState<Assignment[]>([]);
   const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -106,14 +118,17 @@ export default function InternHoje() {
 
   useEffect(() => {
     Promise.all([
-      // Busca também os últimos 60 dias para exibir faltas pendentes de justificativa
-      fetch(`/taximetro/api/assignments?from=${localDateStr(new Date(Date.now() - 60 * 86400000))}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      // A rotação inteira: as casinhas da meta contam passado e futuro. As faltas
+      // pendentes de justificativa continuam sendo só as dos últimos 60 dias.
+      fetch(`/taximetro/api/assignments?from=${localDateStr(new Date(Date.now() - 240 * 86400000))}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/slots/available?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/attendance/current").then((r) => r.json()).catch(() => ({ success: false, data: null })),
     ]).then(([assignJson, slotsJson, complianceJson, attendanceJson]) => {
       if (assignJson.success) {
         const active = assignJson.data.filter((a: Assignment) => a.status !== "CANCELLED");
+        setAllAssignments(active);
+        const sixtyDaysAgo = localDateStr(new Date(Date.now() - 60 * 86400000));
 
         const actionableToday = active
           .filter((a: Assignment) => {
@@ -137,7 +152,7 @@ export default function InternHoje() {
         setTodayAssignments(actionableToday);
         setAbsences(
           active
-            .filter((a: Assignment) => a.status === "ABSENT" || a.status === "EXCUSED")
+            .filter((a: Assignment) => (a.status === "ABSENT" || a.status === "EXCUSED") && a.date >= sixtyDaysAgo)
             .sort((a: Assignment, b: Assignment) => b.date.localeCompare(a.date)),
         );
         const actionableIds = new Set(actionableToday.map((a: Assignment) => a.id));
@@ -162,11 +177,15 @@ export default function InternHoje() {
       }
       if (complianceJson.success && complianceJson.data.length > 0) {
         const c = complianceJson.data[0];
-        setWeekly({
-          thisWeekScheduled: c.thisWeekScheduled,
-          thisWeekCompleted: c.thisWeekCompleted,
-          thisWeekAbsent: c.thisWeekAbsent ?? 0,
-          targetShiftsPerWeek: c.targetShiftsPerWeek,
+        setGoal({
+          targetUSATotal: c.targetUSATotal ?? 0,
+          targetCRUTotal: c.targetCRUTotal ?? 0,
+          targetCRLTotal: c.targetCRLTotal ?? 0,
+          targetHours: c.targetHours ?? 0,
+          totalHours: c.totalHours ?? 0,
+          missingSlots: c.missingSlots ?? 0,
+          rotationStartDate: c.rotationStartDate ?? null,
+          rotationEndDate: c.rotationEndDate ?? null,
         });
       }
       if (attendanceJson.success && attendanceJson.data) {
@@ -180,8 +199,19 @@ export default function InternHoje() {
   if (loading) return <p className="text-sm text-slate-400">Carregando...</p>;
   if (error) return <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
 
-  const weeklyEffective = weekly ? weekly.thisWeekScheduled - weekly.thisWeekAbsent : 0;
-  const weeklyOnTrack = weekly ? weeklyEffective >= weekly.targetShiftsPerWeek : false;
+  // As casinhas contam a rotação: nada antes da data em que a contagem começa.
+  const rotationAssignments = goal?.rotationStartDate
+    ? allAssignments.filter((a) => a.date >= goal.rotationStartDate!)
+    : allAssignments;
+  const goalTargets = {
+    USA: goal?.targetUSATotal ?? 0,
+    CRU: goal?.targetCRUTotal ?? 0,
+    CRL: goal?.targetCRLTotal ?? 0,
+  };
+  const hasGoal = goalTargets.USA + goalTargets.CRU + goalTargets.CRL > 0;
+  const hoursPct = goal && goal.targetHours > 0
+    ? Math.min(100, Math.round((goal.totalHours / goal.targetHours) * 100))
+    : null;
   const pendingCheckout = checkoutStatus?.state === "PENDING" || checkoutStatus?.state === "AWAITING" ? checkoutStatus : null;
   const completedCheckout = checkoutStatus?.state === "COMPLETED" ? checkoutStatus : null;
   const upcomingByMonth = upcoming.reduce<Record<string, Assignment[]>>((acc, assignment) => {
@@ -234,16 +264,47 @@ export default function InternHoje() {
             {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
-        {weekly && weekly.targetShiftsPerWeek > 0 && (
-          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${weeklyOnTrack
+        {hasGoal && goal && (
+          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${goal.missingSlots === 0
             ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
             : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
             }`}>
             <Target className="h-4 w-4" strokeWidth={2} />
-            {weeklyEffective}/{weekly.targetShiftsPerWeek}
+            {goal.missingSlots === 0 ? "Meta fechada" : `${goal.missingSlots} em aberto`}
           </div>
         )}
       </div>
+
+      {/* Casinhas da meta: o que a faculdade exige, passado e futuro na mesma fileira */}
+      {hasGoal && goal && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-900">Minha meta</h2>
+            {goal.rotationEndDate && (
+              <span className="text-[11px] text-slate-500">
+                até {new Date(`${goal.rotationEndDate}T12:00:00`).toLocaleDateString("pt-BR")}
+              </span>
+            )}
+          </div>
+          <GoalSlotsBoard assignments={rotationAssignments} targets={goalTargets} today={today} />
+          {hoursPct !== null && goal && (
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-slate-600">Carga horária</span>
+                <span className="tabular-nums text-slate-500">
+                  <span className="font-semibold text-slate-800">{goal.totalHours}h</span> / {goal.targetHours}h
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className={`h-full ${hoursPct >= 100 ? "bg-emerald-500" : "bg-accent-500"}`}
+                  style={{ width: `${hoursPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {pendingCheckout?.assignment && (
         <div className={`rounded-xl border p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${pendingCheckout.state === "AWAITING" ? "border-blue-300 bg-blue-50" : "border-amber-300 bg-amber-50"}`}>

@@ -62,19 +62,17 @@ const FACULTIES_DATA = [
     name: "UNIFACS",
     abbreviation: "UNIFACS",
     targetHours: 72,
-    targetShifts: 6,
-    targetUSAsPerWeek: 1,
     targetUSAsTotal: 5,
     targetCRUsTotal: 1,
+    targetCRLsTotal: 0,
   },
   {
     name: "EBMSP",
     abbreviation: "EBMSP",
     targetHours: 72,
-    targetShifts: 6,
-    targetUSAsPerWeek: 1,
     targetUSAsTotal: 5,
     targetCRUsTotal: 1,
+    targetCRLsTotal: 0,
   },
 ];
 

@@ -16,7 +16,6 @@ const base = {
   completed: 7,
   rotationStartDate: addDaysToDateStr(today, -49), // 7 semanas atrás
   rotationEndDate: addDaysToDateStr(today, 21), // 3 semanas restantes
-  weeklyTarget: 2,
 };
 
 test("agendados que fecham a meta deixam o velocímetro verde", () => {
@@ -32,10 +31,12 @@ test("sem agendados, o que falta agendar aparece — mas ritmo bom segue verde",
   assert.equal(c.status, "ok"); // 2 em 3 semanas cabe no ritmo já praticado
 });
 
-test("ritmo insuficiente e agenda que não fecha viram alerta", () => {
+test("agenda que não fecha, com ritmo nominal apertado, vira crítico", () => {
+  // 3 de 9 com 3 semanas restantes: o ritmo nominal da rotação (9 em 10
+  // semanas) não cobre os 6 que faltam — a conta não fecha.
   const c = computeVelocimeter({ ...base, completed: 3, scheduled: 1 });
   assert.equal(c.faltaAgendar, 5);
-  assert.equal(c.status, "atencao");
+  assert.equal(c.status, "critico");
 });
 
 test("crítico quando nem a capacidade restante fecha a conta", () => {

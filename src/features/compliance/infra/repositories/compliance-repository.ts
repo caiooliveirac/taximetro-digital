@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, bases, cohorts, faculties, userRoles, users } from "@/shared/db/schema";
+import { assignments, bases, cohorts, faculties, facultyTargetShifts, userRoles, users } from "@/shared/db/schema";
 
 export async function listActiveComplianceSubjects(params: {
   roleFilter: Array<"INTERN" | "LEADER">;
@@ -35,14 +35,13 @@ export async function listActiveComplianceSubjects(params: {
       // filtro errado em relevantRows (plantões reais ficam fora).
       rotationStartDate: sql<string>`COALESCE(${cohorts.startDate}, ${faculties.rotationStartDate})`,
       rotationEndDate: cohorts.endDate,
-      targetShifts: faculties.targetShifts,
+      // Metas diretas da faculdade. O total é a soma das três — não existe
+      // meta de plantões avulsa nem meta semanal.
       targetHours: faculties.targetHours,
-      targetShiftsPerWeek: faculties.targetShiftsPerWeek,
-      targetUSAsPerWeek: faculties.targetUSAsPerWeek,
       targetUSAsTotal: faculties.targetUSAsTotal,
-      targetCRUsPerWeek: faculties.targetCRUsPerWeek,
       targetCRUsTotal: faculties.targetCRUsTotal,
-      targetCRLsPerWeek: faculties.targetCRLsPerWeek,
+      targetCRLsTotal: faculties.targetCRLsTotal,
+      targetShifts: facultyTargetShifts,
     })
     .from(userRoles)
     .innerJoin(users, and(eq(users.id, userRoles.userId), eq(users.isActive, true)))
@@ -55,6 +54,7 @@ export async function listActiveComplianceSubjects(params: {
 export async function listNonCancelledAssignmentsForInterns(internIds: string[]) {
   return db
     .select({
+      id: assignments.id,
       internId: assignments.internId,
       date: assignments.date,
       status: assignments.status,

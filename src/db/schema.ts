@@ -2,6 +2,7 @@ import {
   pgTable, pgEnum, uuid, varchar, text, integer, real,
   boolean, timestamp, date, uniqueIndex, index, jsonb,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ==================== ENUMS ====================
 
@@ -55,19 +56,40 @@ export const faculties = pgTable("faculties", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 100 }).notNull().unique(),
   abbreviation: varchar("abbreviation", { length: 10 }).notNull().unique(),
+
+  // ── Metas diretas ───────────────────────────────────────────────────
+  // A meta da faculdade é isto e nada mais: quantos plantões de cada tipo
+  // o interno precisa cumprir na rotação, e quantas horas. É o que a tela
+  // de Faculdades edita e o que o interno vê como casinhas a preencher.
   targetHours: integer("target_hours").notNull().default(0),
-  targetShifts: integer("target_shifts").notNull().default(0),
-  targetShiftsPerWeek: integer("target_shifts_per_week").notNull().default(0),
-  targetUSAsPerWeek: integer("target_usas_per_week").notNull().default(0),
   targetUSAsTotal: integer("target_usas_total").notNull().default(0),
-  targetCRUsPerWeek: integer("target_crus_per_week").notNull().default(0),
   targetCRUsTotal: integer("target_crus_total").notNull().default(0),
-  targetCRLsPerWeek: integer("target_crls_per_week").notNull().default(0),
+  targetCRLsTotal: integer("target_crls_total").notNull().default(0),
+
   totalInterns: integer("total_interns").notNull().default(0),
   isVirtual: boolean("is_virtual").notNull().default(false),
   rotationStartDate: date("rotation_start_date").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+
+  // ── Legado: aposentado em 2026-09-07 ────────────────────────────────
+  // Metas semanais e meta total avulsa. Nenhum leitor no código — a meta
+  // total agora é a soma das três metas diretas (facultyTargetShifts).
+  // Continuam declaradas porque o deploy roda `drizzle-kit push --force`:
+  // tirar do schema é apagar a coluna em produção, e o backfill de
+  // drizzle/0027_faculty_direct_targets.sql lê justamente estas colunas.
+  targetShifts: integer("target_shifts").notNull().default(0),
+  targetShiftsPerWeek: integer("target_shifts_per_week").notNull().default(0),
+  targetUSAsPerWeek: integer("target_usas_per_week").notNull().default(0),
+  targetCRUsPerWeek: integer("target_crus_per_week").notNull().default(0),
+  targetCRLsPerWeek: integer("target_crls_per_week").notNull().default(0),
 });
+
+/**
+ * Meta total de plantões da faculdade = soma das metas diretas por tipo.
+ * Fonte única: quem precisa do total em SQL usa esta expressão, não a
+ * coluna legada target_shifts.
+ */
+export const facultyTargetShifts = sql<number>`(${faculties.targetUSAsTotal} + ${faculties.targetCRUsTotal} + ${faculties.targetCRLsTotal})`;
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),

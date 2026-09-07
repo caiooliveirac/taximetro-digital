@@ -10,6 +10,7 @@ import {
   listActiveComplianceSubjects,
   listNonCancelledAssignmentsForInterns,
 } from "@/features/compliance/infra/repositories/compliance-repository";
+import { summarizeGoals, totalMissingSlots } from "@/lib/goal-slots";
 
 // EXCUSED conta como cumprido: abono libera o interno da reposição.
 const COMPLETED = ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"] as const;
@@ -29,13 +30,25 @@ type Actor = {
   facultyId: string | null;
 };
 
-export async function executeGetComplianceOverview(params: {
+export type ComplianceScope = {
+  facultyId: string | null;
+  personOnly: string | null;
+  roleFilter: Array<"INTERN" | "LEADER">;
+};
+
+/**
+ * Quem cada ator pode ver. Fica separado porque é decisão de autorização:
+ * o `internId` vem do cliente, mas a faculdade do líder é fixada aqui — pedir
+ * a ficha de um interno de outra faculdade cai em consulta vazia, não em dado
+ * alheio. Coordenador não tem recorte; interno só vê a si.
+ */
+export function resolveComplianceScope(params: {
   actor: Actor;
   selfOnly?: boolean;
   facultyId?: string | null;
   internId?: string | null;
-}) {
-  const { actor, selfOnly = false, internId } = params;
+}): ComplianceScope {
+  const { actor, selfOnly = false, internId = null } = params;
   let facultyId = params.facultyId ?? null;
 
   if (actor.role === "LEADER" && actor.facultyId && !selfOnly) {
@@ -49,9 +62,21 @@ export async function executeGetComplianceOverview(params: {
     roleFilter = actor.role === "LEADER" ? ["INTERN", "LEADER"] : ["INTERN"];
   } else if (actor.role === "INTERN") {
     personOnly = actor.id;
-  } else if (actor.role === "COORDINATOR" && internId) {
+  } else if ((actor.role === "COORDINATOR" || actor.role === "LEADER") && internId) {
+    // O líder também abre a ficha de um interno — a mesma que o coordenador vê.
     personOnly = internId;
   }
+
+  return { facultyId, personOnly, roleFilter };
+}
+
+export async function executeGetComplianceOverview(params: {
+  actor: Actor;
+  selfOnly?: boolean;
+  facultyId?: string | null;
+  internId?: string | null;
+}) {
+  const { facultyId, personOnly, roleFilter } = resolveComplianceScope(params);
 
   const rawInternRows = await listActiveComplianceSubjects({
     roleFilter,
@@ -76,7 +101,7 @@ export async function executeGetComplianceOverview(params: {
       data: [],
       summary: {
         totalInterns: 0,
-        belowWeeklyTarget: 0,
+        belowTypeTarget: 0,
         belowTotalTarget: 0,
         compensating: 0,
         weekRange: { thisWeek, lastWeek },
@@ -158,28 +183,35 @@ export async function executeGetComplianceOverview(params: {
     const lastWeekCRUPlanned = lastWeekRows.filter((r) => r.baseType === "CENTRAL").length;
     const lastWeekCRLPlanned = lastWeekRows.filter((r) => r.baseType === "CRL").length;
 
-    const weeklyTarget = intern.targetShiftsPerWeek ?? 0;
-    const targetUSAPerWeek = intern.targetUSAsPerWeek ?? 0;
+    // Metas diretas da faculdade: a rotação inteira, por tipo. Não existe mais
+    // meta semanal — o que o interno precisa cumprir são estas casinhas.
     const targetUSATotal = intern.targetUSAsTotal ?? 0;
-    const targetCRUPerWeek = intern.targetCRUsPerWeek ?? 0;
     const targetCRUTotal = intern.targetCRUsTotal ?? 0;
-    const targetCRLPerWeek = intern.targetCRLsPerWeek ?? 0;
+    const targetCRLTotal = intern.targetCRLsTotal ?? 0;
+    const targetShifts = intern.targetShifts ?? 0;
 
-    // Weekly deficit: count what's missing THIS WEEK considering scheduled future
-    const thisWeekUSAScheduledOrCompleted = thisWeekUSAPlanned;
-    const thisWeekCRUScheduledOrCompleted = thisWeekCRUPlanned;
-    const thisWeekCRLScheduledOrCompleted = thisWeekCRLPlanned;
+    // Casinhas vazias: vagas da meta que ninguém escalou. É o alerta que o
+    // interno vê na tela dele e o que o líder precisa resolver.
+    const goals = summarizeGoals(
+      relevantRows,
+      { USA: targetUSATotal, CRU: targetCRUTotal, CRL: targetCRLTotal },
+      todayStr,
+    );
+    const missingByKind = Object.fromEntries(goals.map((g) => [g.kind, g.missing])) as Record<"USA" | "CRU" | "CRL", number>;
+    const missingSlots = totalMissingSlots(goals);
 
-    const weeklyUSADeficit = Math.max(0, targetUSAPerWeek - thisWeekUSAScheduledOrCompleted);
-    const weeklyCRUDeficit = Math.max(0, targetCRUPerWeek - thisWeekCRUScheduledOrCompleted);
-    const weeklyCRLDeficit = Math.max(0, targetCRLPerWeek - thisWeekCRLScheduledOrCompleted);
-
+    // Esperado até agora: a meta rateada pela fração da rotação já decorrida.
+    // Sem cohort com data de fim não há fração — o velocímetro degrada para
+    // "sem turma vinculada" em vez de inventar ritmo.
     let expectedToNow = 0;
     let weeksElapsed = 0;
-    if (weeklyTarget > 0 && relevantRows.length > 0) {
+    if (targetShifts > 0 && relevantRows.length > 0) {
       const rotationMonStr = startOfWeekDateStr(rotationStart);
       weeksElapsed = weeksBetweenDateStr(rotationMonStr, thisWeek.from) + 1;
-      expectedToNow = weeksElapsed * weeklyTarget;
+      if (intern.rotationEndDate) {
+        const totalWeeks = Math.max(1, weeksBetweenDateStr(rotationMonStr, intern.rotationEndDate) + 1);
+        expectedToNow = Math.round(targetShifts * Math.min(1, weeksElapsed / totalWeeks));
+      }
     }
 
     // Semanas restantes até o fim da rotação (cohort.endDate). 0 quando a
@@ -220,12 +252,10 @@ export async function executeGetComplianceOverview(params: {
     const rawDeficit = Math.max(0, expectedToNow - totalCompleted);
     const netDeficit = Math.max(0, rawDeficit - futureScheduled);
     const compensating = rawDeficit > 0 && futureScheduled > 0 && netDeficit === 0;
-    const totalDeficit = Math.max(0, (intern.targetShifts ?? 0) - totalCompleted);
-    const weeklyDeficit = Math.max(0, weeklyTarget - lastWeekCompleted);
-    const belowWeeklyTarget = weeklyTarget > 0 && lastWeekCompleted < weeklyTarget;
+    const totalDeficit = Math.max(0, targetShifts - totalCompleted);
 
-    const totalPct = (intern.targetShifts ?? 0) > 0
-      ? Math.min(100, Math.round((totalCompleted / intern.targetShifts!) * 100))
+    const totalPct = targetShifts > 0
+      ? Math.min(100, Math.round((totalCompleted / targetShifts) * 100))
       : null;
 
     let status: "ok" | "compensating" | "partial" | "deficit" = "ok";
@@ -242,14 +272,15 @@ export async function executeGetComplianceOverview(params: {
       facultyAbbr: intern.facultyAbbr,
       rotationStartDate: intern.rotationStartDate,
       rotationEndDate: intern.rotationEndDate,
-      targetShifts: intern.targetShifts ?? 0,
+      targetShifts,
       targetHours: intern.targetHours ?? 0,
-      targetShiftsPerWeek: intern.targetShiftsPerWeek ?? 0,
-      targetUSAPerWeek,
       targetUSATotal,
-      targetCRUPerWeek,
       targetCRUTotal,
-      targetCRLPerWeek,
+      targetCRLTotal,
+      missingUSA: missingByKind.USA,
+      missingCRU: missingByKind.CRU,
+      missingCRL: missingByKind.CRL,
+      missingSlots,
       totalScheduled,
       pendingScheduled,
       totalCompleted,
@@ -286,11 +317,6 @@ export async function executeGetComplianceOverview(params: {
       thisWeekUSAPlanned,
       thisWeekCRUPlanned,
       thisWeekCRLPlanned,
-      weeklyUSADeficit,
-      weeklyCRUDeficit,
-      weeklyCRLDeficit,
-      weeklyDeficit,
-      belowWeeklyTarget,
     };
   });
 
@@ -300,7 +326,7 @@ export async function executeGetComplianceOverview(params: {
     data,
     summary: {
       totalInterns: data.length,
-      belowWeeklyTarget: data.filter((d) => d.belowWeeklyTarget).length,
+      belowTypeTarget: data.filter((d) => d.missingSlots > 0).length,
       belowTotalTarget: data.filter((d) => d.totalDeficit > 0).length,
       compensating: data.filter((d) => d.status === "compensating").length,
       weekRange: { thisWeek, lastWeek },

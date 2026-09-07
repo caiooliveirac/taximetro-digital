@@ -86,6 +86,18 @@ jobs:
               ${{ env.APP }}-builder \
               npx drizzle-kit push --force
 
+            echo "=== Applying data backfills (drizzle/*.sql) ==="
+            # `drizzle-kit push` cria coluna, mas não preenche dado. As metas
+            # diretas por faculdade (0027) dependem do backfill a partir das
+            # metas semanais: sem ele, faculdade que só tinha meta semanal fica
+            # com meta zero e o interno perde as casinhas. Idempotente.
+            docker run --rm \
+              --network host \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              -v "$(pwd)/drizzle/0027_faculty_direct_targets.sql:/tmp/0027.sql:ro" \
+              postgres:16-alpine \
+              sh -c 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/0027.sql'
+
             echo "=== Recreating available_slots materialized view/triggers ==="
             docker run --rm \
               --network host \

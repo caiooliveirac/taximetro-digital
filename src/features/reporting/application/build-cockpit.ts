@@ -8,11 +8,11 @@ type ComplianceIntern = {
   userId: string;
   name: string;
   facultyAbbr?: string | null;
-  // Metas semanais por tipo (já expostas por executeGetComplianceOverview).
-  // CRL: meta cumulativa, não semanal (ex: 1 plantão na rotação inteira).
-  targetUSAPerWeek: number;
-  targetCRUPerWeek: number;
-  targetCRLPerWeek: number;
+  // Metas diretas por tipo: a rotação inteira (já expostas por
+  // executeGetComplianceOverview). Não há mais meta semanal.
+  targetUSATotal: number;
+  targetCRUTotal: number;
+  targetCRLTotal: number;
   // Cumulativo da rotação inteira (cumpridos + escalados não-absent).
   // Usado pelo detector "esperado-até-agora = semanaCorrente × meta/sem".
   totalUSAPlanned: number;
@@ -219,11 +219,14 @@ function coverageGap(intern: ComplianceIntern): { detail: string; breakdown: Wee
   if (!intern.semanaCorrente || intern.semanaCorrente <= 0) return null;
   const sem = intern.semanaCorrente;
 
-  const expectedUSA = sem * intern.targetUSAPerWeek;
-  const expectedCRU = sem * intern.targetCRUPerWeek;
-  // CRL: targetCRLPerWeek é tratado como meta TOTAL (semantic do produto:
-  // "1 plantão CRL na vida da rotação", não 1 por semana).
-  const expectedCRL = intern.targetCRLPerWeek;
+  // A meta é da rotação inteira; o esperado-até-agora é ela rateada pela
+  // fração de rotação já corrida. Sem saber o total de semanas não há
+  // rateio — e cobrar a meta cheia na Sem 1 seria alarme falso.
+  if (!intern.semanaTotal) return null;
+  const fracao = Math.min(1, sem / intern.semanaTotal);
+  const expectedUSA = Math.round(intern.targetUSATotal * fracao);
+  const expectedCRU = Math.round(intern.targetCRUTotal * fracao);
+  const expectedCRL = Math.round(intern.targetCRLTotal * fracao);
 
   const debtUSA = Math.max(0, expectedUSA - intern.totalUSAPlanned);
   const debtCRU = Math.max(0, expectedCRU - intern.totalCRUPlanned);
@@ -235,13 +238,13 @@ function coverageGap(intern: ComplianceIntern): { detail: string; breakdown: Wee
   // com cor (tipo com débito vermelho, tipo OK em slate). Inclui também
   // tipos OK que têm meta > 0, pra dar contexto visual completo.
   const breakdown: WeekBreakdown[] = [];
-  if (intern.targetUSAPerWeek > 0) {
+  if (intern.targetUSATotal > 0) {
     breakdown.push({ type: "USA", completed: intern.totalUSAPlanned, target: expectedUSA, below: debtUSA > 0 });
   }
-  if (intern.targetCRUPerWeek > 0) {
+  if (intern.targetCRUTotal > 0) {
     breakdown.push({ type: "CRU", completed: intern.totalCRUPlanned, target: expectedCRU, below: debtCRU > 0 });
   }
-  if (intern.targetCRLPerWeek > 0) {
+  if (intern.targetCRLTotal > 0) {
     breakdown.push({ type: "CRL", completed: intern.totalCRLPlanned, target: expectedCRL, below: debtCRL > 0 });
   }
 
