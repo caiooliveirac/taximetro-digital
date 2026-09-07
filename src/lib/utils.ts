@@ -345,6 +345,34 @@ export function formatValidatorName(name: string | null | undefined): string {
   return name;
 }
 
+/** `validated_by_name` gravado quando o geofence valida o check-in sozinho. Não é pessoa. */
+export const GEO_VALIDATOR_NAME = "Georreferenciamento";
+
+/**
+ * "Dr/Dra Primeiro Segundo" para o relatório. Se o nome já vier com título,
+ * reaproveita-o; senão, heurística pelo fim do primeiro nome (não há dado de
+ * gênero no cadastro). Nomes sentinela (geofence) nunca viram médico.
+ */
+export function formatDoctorName(raw: string | null | undefined): string | null {
+  if (!raw || raw.trim() === GEO_VALIDATOR_NAME) return null;
+  let parts = raw.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+
+  let title: string | null = null;
+  const head = parts[0].toLowerCase().replace(/\.$/, "");
+  if (head === "dr" || head === "dra") {
+    title = head === "dra" ? "Dra" : "Dr";
+    parts = parts.slice(1);
+  }
+  if (parts.length === 0) return null;
+
+  if (!title) {
+    const firstNormalized = parts[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    title = firstNormalized.endsWith("a") ? "Dra" : "Dr";
+  }
+  return `${title} ${parts.slice(0, 2).join(" ")}`;
+}
+
 /* ────────── EBMSP Shift helpers ────────── */
 
 export type EbmspShift = "MORNING" | "AFTERNOON";

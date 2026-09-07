@@ -70,7 +70,7 @@ function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument 
           isJustified: assignment.isJustified,
           absenceJustification: assignment.absenceJustification,
           isExtraShift: false,
-          checkinDoctorName: null,
+          doctorName: null,
         };
         const group = classifyReportAssignment(card, todayStr, hourNow);
         if (group === "absent") {
