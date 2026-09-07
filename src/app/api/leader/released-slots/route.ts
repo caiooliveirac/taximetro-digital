@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEffectiveUser } from "@/lib/impersonate";
 import {
+  executeListFreeSlots,
   executeListReleased,
   executeReleaseSlots,
   executeUndoRelease,
@@ -34,7 +35,10 @@ export async function GET(req: NextRequest) {
   if (!actor) return semPermissao();
   const from = req.nextUrl.searchParams.get("from") ?? "";
   const to = req.nextUrl.searchParams.get("to") ?? "";
-  const result = await executeListReleased({ actor, input: { from, to } });
+  const livres = req.nextUrl.searchParams.get("free") === "1";
+  const result = livres
+    ? await executeListFreeSlots({ actor, input: { from, to } })
+    : await executeListReleased({ actor, input: { from, to } });
   return NextResponse.json(result.body, { status: result.status });
 }
 

@@ -55,7 +55,7 @@ test("o sorteio desconta as liberações da faculdade na janela", () => {
 
 test("interno não pega vaga que a própria faculdade liberou", () => {
   const src = readFileSync(path.join(process.cwd(), "src/features/extra-offers/application/use-cases/claim-extra-offer.ts"), "utf8");
-  assert.match(src, /offer\.releasedFacultyId === actor\.facultyId/);
+  assert.match(src, /offer\.releasedFacultyId === facultyId/);
 });
 
 test("liberar aceita escopo: só intervenção (padrão) ou regulação também", () => {
@@ -69,4 +69,25 @@ test("CRU fixo não nasce em dia/turno que a faculdade liberou", () => {
   assert.match(src, /eq\(extraShiftOffers\.releasedFacultyId, params\.facultyId\)/);
   assert.match(src, /releasedCru\.has\(`\$\{date\}\|\$\{template\.period\}`\)/);
   assert.match(src, /status: "RELEASED"/);
+});
+
+test("vaga livre: líder aloca interno de outra faculdade pela oferta, como plantão normal", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/features/extra-offers/application/use-cases/claim-extra-offer.ts"), "utf8");
+  assert.match(src, /\["LEADER", "COORDINATOR"\]\.includes\(actor\.role\)/);
+  assert.match(src, /isExtraShift: !vagaLivre/);
+  assert.match(src, /action: "FREE_SLOT_USED"/);
+});
+
+test("vaga liberada não aparece no board de extras", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/features/extra-offers/infra/repositories/extra-offer-repository.ts"), "utf8");
+  const filtros = src.match(/isNull\(extraShiftOffers\.releasedFacultyId\)/g) ?? [];
+  assert.ok(filtros.length >= 4, `esperava filtro nas listas do board e analytics, achei ${filtros.length}`);
+});
+
+test("auditoria de vaga liberada/usada sai em português", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/features/audit/application/use-cases/list-audit-log.ts"), "utf8");
+  assert.match(src, /liberou \$\{n\} vaga/);
+  assert.match(src, /foi escalado na vaga livre que a/);
+  const page = readFileSync(path.join(process.cwd(), "src/app/admin/audit/page.tsx"), "utf8");
+  assert.match(page, /FREE_SLOT_USED: "Vaga livre usada"/);
 });

@@ -17,6 +17,7 @@ import { localDateStr } from "@/lib/utils";
 import {
   cancelReleasedOffers,
   insertExtraOffers,
+  listFreeOffers,
   listReleasedOffers,
 } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import {
@@ -66,6 +67,17 @@ export async function executeListReleased(params: {
   const facultyId = faculdadeDoAtor(params.actor, params.input);
   if (!facultyId) return { status: 403, body: { success: false, error: "Sem permissão" } } as const;
   const rows = await listReleasedOffers({ facultyId, from: params.input.from, to: params.input.to });
+  return { status: 200, body: { success: true, data: rows } } as const;
+}
+
+/** Vagas que as outras faculdades liberaram e esta pode usar. */
+export async function executeListFreeSlots(params: {
+  actor: SchedulingActor;
+  input: { from: string; to: string; facultyId?: string };
+}) {
+  const facultyId = faculdadeDoAtor(params.actor, params.input);
+  if (!facultyId) return { status: 403, body: { success: false, error: "Sem permissão" } } as const;
+  const rows = await listFreeOffers({ excludeFacultyId: facultyId, from: params.input.from, to: params.input.to });
   return { status: 200, body: { success: true, data: rows } } as const;
 }
 
@@ -121,9 +133,11 @@ export async function executeReleaseSlots(params: {
       action: "SLOTS_RELEASED",
       entity: "extra_shift_offers",
       entityId: created[0].id,
+      // Campos legíveis de propósito: a auditoria mostra isto para gente.
       payload: {
-        facultyId, date: input.date, period: input.period, baseId: input.baseId ?? null,
+        facultyId, facultyAbbr: abbr, date: input.date, period: input.period,
         scope: input.scope, created: created.length,
+        bases: [...new Set(rules.filter((r) => toCreate.some((c) => c.baseId === r.baseId)).map((r) => r.baseCode))],
         ...(actor.isImpersonating ? { impersonating: actor.id } : {}),
       },
     });
@@ -141,6 +155,7 @@ export async function executeUndoRelease(params: {
   if (!facultyId) return { status: 403, body: { success: false, error: "Sem permissão" } } as const;
 
   const cancelledBy = actor.realUserId ?? actor.id;
+  const abbr = await getFacultyAbbreviation(facultyId);
   const cancelled = await cancelReleasedOffers({
     facultyId,
     cancelledBy,
@@ -153,7 +168,7 @@ export async function executeUndoRelease(params: {
       action: "SLOTS_RELEASE_UNDONE",
       entity: "extra_shift_offers",
       entityId: input.id ?? facultyId,
-      payload: { facultyId, date: input.date ?? null, period: input.period ?? null, cancelled },
+      payload: { facultyId, facultyAbbr: abbr, date: input.date ?? null, period: input.period ?? null, cancelled },
     });
   }
 

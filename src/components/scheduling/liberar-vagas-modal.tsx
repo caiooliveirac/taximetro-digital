@@ -22,8 +22,10 @@ type Released = { id: string; baseCode: string; period: string; claimedBy: strin
 type Escopo = "USA" | "ALL";
 type Periodo = "DAY" | "NIGHT";
 
-export function LiberarVagasButton({ facultyId, onChanged, className }: {
+export function LiberarVagasButton({ facultyId, pickFaculty, onChanged, className }: {
   facultyId?: string | null;
+  /** Coordenador fora da tela de escala: escolhe a faculdade dentro do modal. */
+  pickFaculty?: boolean;
   onChanged?: () => void;
   className?: string;
 }) {
@@ -37,18 +39,32 @@ export function LiberarVagasButton({ facultyId, onChanged, className }: {
       >
         <Unlock className="h-4 w-4" /> Liberar vagas
       </button>
-      {open && <LiberarVagasModal facultyId={facultyId} onClose={() => setOpen(false)} onChanged={onChanged} />}
+      {open && <LiberarVagasModal facultyId={facultyId} pickFaculty={pickFaculty} onClose={() => setOpen(false)} onChanged={onChanged} />}
     </>
   );
 }
 
-export function LiberarVagasModal({ facultyId, onClose, onChanged }: {
+type Faculdade = { id: string; abbreviation: string; name: string; isVirtual?: boolean };
+
+export function LiberarVagasModal({ facultyId, pickFaculty, onClose, onChanged }: {
   facultyId?: string | null;
+  pickFaculty?: boolean;
   onClose: () => void;
   onChanged?: () => void;
 }) {
-  const escopo = escopoDeEscala(facultyId);
+  const [faculdades, setFaculdades] = useState<Faculdade[]>([]);
+  const [faculdadeEscolhida, setFaculdadeEscolhida] = useState("");
+  const faculdadeAtiva = facultyId ?? (pickFaculty ? faculdadeEscolhida || null : null);
+  const escopo = escopoDeEscala(faculdadeAtiva);
   const api = `${baseDaEscala(escopo)}/released-slots`;
+
+  useEffect(() => {
+    if (!pickFaculty) return;
+    fetch("/taximetro/api/admin/faculties", { cache: "no-store", headers: { "x-no-impersonate": "1" } })
+      .then((r) => r.json())
+      .then((json) => { if (json.success) setFaculdades((json.data as Faculdade[]).filter((f) => !f.isVirtual)); })
+      .catch(() => {});
+  }, [pickFaculty]);
 
   const [scope, setScope] = useState<Escopo | null>(null);
   const [date, setDate] = useState("");
@@ -67,7 +83,8 @@ export function LiberarVagasModal({ facultyId, onClose, onChanged }: {
     setReleased(json.success ? json.data : []);
   }
 
-  useEffect(() => { if (date) void carregar(date); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [date]);
+  const prontoParaEscolher = !pickFaculty || Boolean(faculdadeAtiva);
+  useEffect(() => { if (date && prontoParaEscolher) void carregar(date); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [date, faculdadeAtiva]);
 
   function togglePeriodo(p: Periodo) {
     setPeriods((prev) => {
@@ -136,8 +153,22 @@ export function LiberarVagasModal({ facultyId, onClose, onChanged }: {
         </div>
 
         <div className="space-y-4 px-5 py-4">
+          {pickFaculty && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Faculdade</p>
+              <select
+                value={faculdadeEscolhida}
+                onChange={(e) => { setFaculdadeEscolhida(e.target.value); setMsg(""); }}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+              >
+                <option value="">Escolha a faculdade</option>
+                {faculdades.map((f) => <option key={f.id} value={f.id}>{f.abbreviation} — {f.name}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Passo 1 — o quê */}
-          <div>
+          <div className={prontoParaEscolher ? "" : "pointer-events-none opacity-40"}>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">1. O que liberar</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {([
@@ -160,7 +191,7 @@ export function LiberarVagasModal({ facultyId, onClose, onChanged }: {
           </div>
 
           {/* Passo 2 — quando */}
-          <div className={scope ? "" : "pointer-events-none opacity-40"}>
+          <div className={scope && prontoParaEscolher ? "" : "pointer-events-none opacity-40"}>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">2. Quando</p>
             <input
               type="date"
@@ -220,7 +251,7 @@ export function LiberarVagasModal({ facultyId, onClose, onChanged }: {
           <button
             type="button"
             onClick={liberar}
-            disabled={busy || !scope || !date || periods.size === 0}
+            disabled={busy || !scope || !date || periods.size === 0 || !prontoParaEscolher}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 py-2.5 text-sm font-bold text-white transition hover:bg-violet-700 disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlock className="h-4 w-4" />} Liberar

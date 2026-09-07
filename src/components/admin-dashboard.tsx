@@ -7,6 +7,7 @@ import { MetricCard } from "@/components/metric-card";
 import { InviteButton } from "@/components/invite-button";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { CockpitAlarms, type CockpitData } from "@/components/admin/cockpit-alarms";
+import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 import { formatBrazilTime, localDateStr } from "@/lib/utils";
@@ -211,6 +212,7 @@ export function AdminDashboardClient({
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <LiberarVagasButton pickFaculty onChanged={triggerRefresh} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-sm font-semibold text-violet-800 transition hover:bg-violet-100" />
           <select
             value={facultyFilter ?? ""}
             onChange={(e) => changeFacultyFilter(e.target.value || null)}

@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { escopoDoAdminNaEscala } from "@/lib/admin-escala";
 import {
+  executeListFreeSlots,
   executeListReleased,
   executeReleaseSlots,
   executeUndoRelease,
@@ -20,7 +21,10 @@ export async function GET(req: NextRequest) {
   if (!escopo.ok) return escopo.resposta;
   const from = req.nextUrl.searchParams.get("from") ?? "";
   const to = req.nextUrl.searchParams.get("to") ?? "";
-  const result = await executeListReleased({ actor: escopo.actor, input: { from, to } });
+  const livres = req.nextUrl.searchParams.get("free") === "1";
+  const result = livres
+    ? await executeListFreeSlots({ actor: escopo.actor, input: { from, to } })
+    : await executeListReleased({ actor: escopo.actor, input: { from, to } });
   return NextResponse.json(result.body, { status: result.status });
 }
 

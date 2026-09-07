@@ -48,8 +48,11 @@ export async function listExtraOffers(opts: { includeUnavailable?: boolean } = {
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .innerJoin(users, eq(users.id, extraShiftOffers.publishedBy))
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.facultyId))
-    .where(opts.includeUnavailable ? fromToday : and(
+    // Vaga liberada por faculdade não é extra: aparece como vaga livre na grade
+    // das outras faculdades (listFreeOffers), não no board.
+    .where(opts.includeUnavailable ? and(fromToday, isNull(extraShiftOffers.releasedFacultyId)) : and(
       fromToday,
+      isNull(extraShiftOffers.releasedFacultyId),
       isNull(extraShiftOffers.claimedBy),
       isNull(extraShiftOffers.cancelledAt),
     ))
@@ -91,7 +94,7 @@ export async function listExtraOffersForAdmin() {
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .innerJoin(users, eq(users.id, extraShiftOffers.publishedBy))
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.facultyId))
-    .where(fromToday)
+    .where(and(fromToday, isNull(extraShiftOffers.releasedFacultyId)))
     .orderBy(desc(extraShiftOffers.publishedAt));
 
   return rows.filter(stillUpcoming);
@@ -112,11 +115,12 @@ export async function getExtraOffersAnalytics(fromDate?: string, toDate?: string
   const dateFilter = fromDate && toDate
     ? and(
         fromToday,
+        isNull(extraShiftOffers.releasedFacultyId),
         sql`${extraShiftOffers.date} >= ${fromDate}`,
         sql`${extraShiftOffers.date} <= ${toDate}`,
         isNull(extraShiftOffers.cancelledAt),
       )
-    : and(fromToday, isNull(extraShiftOffers.cancelledAt));
+    : and(fromToday, isNull(extraShiftOffers.releasedFacultyId), isNull(extraShiftOffers.cancelledAt));
 
   // By faculty
   const byFaculty = await db
@@ -239,6 +243,37 @@ export async function listReleasedOffers(params: { facultyId: string; from: stri
       eq(extraShiftOffers.releasedFacultyId, params.facultyId),
       gte(extraShiftOffers.date, params.from),
       lte(extraShiftOffers.date, params.to),
+      isNull(extraShiftOffers.cancelledAt),
+    ))
+    .orderBy(extraShiftOffers.date, extraShiftOffers.period);
+}
+
+/**
+ * Vagas livres para uma faculdade usar: o que as OUTRAS liberaram na janela e
+ * ninguém pegou ainda. É o que aparece como "Vaga livre" na grade dela.
+ */
+export async function listFreeOffers(params: { excludeFacultyId: string; from: string; to: string }) {
+  return db
+    .select({
+      id: extraShiftOffers.id,
+      baseId: extraShiftOffers.baseId,
+      baseCode: bases.code,
+      baseType: bases.type,
+      date: extraShiftOffers.date,
+      period: extraShiftOffers.period,
+      shift: extraShiftOffers.shift,
+      releasedFacultyId: extraShiftOffers.releasedFacultyId,
+      releasedFacultyAbbr: faculties.abbreviation,
+    })
+    .from(extraShiftOffers)
+    .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
+    .innerJoin(faculties, eq(faculties.id, extraShiftOffers.releasedFacultyId))
+    .where(and(
+      sql`${extraShiftOffers.releasedFacultyId} is not null`,
+      sql`${extraShiftOffers.releasedFacultyId} <> ${params.excludeFacultyId}`,
+      gte(extraShiftOffers.date, params.from),
+      lte(extraShiftOffers.date, params.to),
+      isNull(extraShiftOffers.claimedBy),
       isNull(extraShiftOffers.cancelledAt),
     ))
     .orderBy(extraShiftOffers.date, extraShiftOffers.period);
