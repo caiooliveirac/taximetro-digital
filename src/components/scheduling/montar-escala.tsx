@@ -53,6 +53,11 @@ type Released = {
   id: string; baseId: string; baseCode: string; date: string; period: string;
   shift: string | null; claimedBy: string | null;
 };
+/** Vaga que OUTRA faculdade liberou e esta pode usar. */
+type FreeSlot = {
+  id: string; baseId: string; baseCode: string; baseType: string; date: string; period: string;
+  shift: string | null; releasedFacultyAbbr: string;
+};
 type CruFixed = {
   id: string; intern_id: string; intern_name: string;
   day_of_week: string; period: string; valid_until: string;
@@ -194,6 +199,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [released, setReleased] = useState<Released[]>([]);
+  const [freeSlots, setFreeSlots] = useState<FreeSlot[]>([]);
   const [releaseBusy, setReleaseBusy] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -227,7 +233,11 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   const [numWeeks, setNumWeeks] = useState(1);
 
   /* ── Manual allocation modal ── */
-  const [allocSlot, setAllocSlot] = useState<{ baseId: string; baseCode: string; baseType: string; date: string; period: "DAY" | "NIGHT" } | null>(null);
+  const [allocSlot, setAllocSlot] = useState<{
+    baseId: string; baseCode: string; baseType: string; date: string; period: "DAY" | "NIGHT";
+    /** Vaga livre de outra faculdade: a alocação passa pela oferta, não pela regra de vaga. */
+    free?: { id: string; abbr: string };
+  } | null>(null);
   const [allocInternId, setAllocInternId] = useState("");
   const [allocSearch, setAllocSearch] = useState("");
   const [allocLoading, setAllocLoading] = useState(false);
@@ -267,21 +277,23 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
         await enviarJson(`${baseApi}/cru-generate`, "POST", { weekStart }).catch(() => null);
       }
 
-      const [uRes, bRes, aRes, sRes, cfRes, rlRes] = await Promise.all([
+      const [uRes, bRes, aRes, sRes, cfRes, rlRes, frRes] = await Promise.all([
         fetchJsonNoStore(`${baseApi}/interns`),
         fetchJsonNoStore("/taximetro/api/admin/bases"),
         fetchJsonNoStore(`/taximetro/api/assignments?from=${from}&to=${to}`),
         fetchJsonNoStore(`/taximetro/api/slots/available?weekStart=${weekStart}`),
         fetchJsonNoStore(`${baseApi}/cru-fixed`),
         fetchJsonNoStore(`${baseApi}/released-slots?from=${from}&to=${to}`),
+        fetchJsonNoStore(`${baseApi}/released-slots?from=${from}&to=${to}&free=1`),
       ]);
-      const [uJson, bJson, aJson, sJson, cfJson, rlJson] = await Promise.all([uRes, bRes, aRes, sRes, cfRes, rlRes]);
+      const [uJson, bJson, aJson, sJson, cfJson, rlJson, frJson] = await Promise.all([uRes, bRes, aRes, sRes, cfRes, rlRes, frRes]);
       if (uJson.success) setInterns(uJson.data);
       if (bJson.success) setBases(bJson.data.filter((b: { isActive: boolean }) => b.isActive));
       if (aJson.success) setAssignments(aJson.data);
       if (sJson.success) setSlots(sJson.data);
       if (cfJson.success) setCruFixed(cfJson.data);
       if (rlJson.success) setReleased(rlJson.data);
+      if (frJson.success) setFreeSlots(frJson.data);
     } catch {
       setLotteryMsg("❌ Erro ao carregar dados da escala.");
     }
@@ -348,6 +360,18 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   }, [released]);
   const releasedIn = (baseId: string, date: string, period: string) =>
     releasedBySlot.get(`${baseId}|${date}|${period}`) ?? [];
+
+  const freeBySlot = useMemo(() => {
+    const m = new Map<string, FreeSlot[]>();
+    for (const f of freeSlots) {
+      const key = `${f.baseId}|${normalizeDateKey(f.date)}|${f.period}`;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(f);
+    }
+    return m;
+  }, [freeSlots]);
+  const freeIn = (baseId: string, date: string, period: string) =>
+    freeBySlot.get(`${baseId}|${date}|${period}`) ?? [];
 
 
   const activeInterns = useMemo(
@@ -558,8 +582,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   }
 
   /* ── Manual allocation ── */
-  function openAllocModal(baseId: string, baseCode: string, baseType: string, date: string, period: "DAY" | "NIGHT", isExtra?: boolean) {
-    setAllocSlot({ baseId, baseCode, baseType, date, period });
+  function openAllocModal(baseId: string, baseCode: string, baseType: string, date: string, period: "DAY" | "NIGHT", isExtra?: boolean, free?: { id: string; abbr: string }) {
+    setAllocSlot({ baseId, baseCode, baseType, date, period, free });
     setAllocInternId("");
     setAllocSearch("");
     setAllocMsg("");
@@ -579,15 +603,20 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     setAllocLoading(true);
     setAllocMsg("");
     try {
-      const res = await enviarJson("/taximetro/api/assignments", "POST", {
-        internId: allocInternId,
-        facultyId: effectiveFacultyId,
-        baseId: allocSlot.baseId,
-        date: allocSlot.date,
-        period: allocSlot.period,
-        ...(allocShift ? { shift: allocShift } : {}),
-        ...(allocIsExtraShift ? { isExtraShift: true, extraShiftNotes: allocExtraShiftNotes || undefined } : {}),
-      });
+      const res = allocSlot.free
+        ? await enviarJson(`/taximetro/api/extra-offers/${allocSlot.free.id}`, "POST", {
+          internId: allocInternId,
+          facultyId: effectiveFacultyId,
+        })
+        : await enviarJson("/taximetro/api/assignments", "POST", {
+          internId: allocInternId,
+          facultyId: effectiveFacultyId,
+          baseId: allocSlot.baseId,
+          date: allocSlot.date,
+          period: allocSlot.period,
+          ...(allocShift ? { shift: allocShift } : {}),
+          ...(allocIsExtraShift ? { isExtraShift: true, extraShiftNotes: allocExtraShiftNotes || undefined } : {}),
+        });
 
       const contentType = res.headers.get("content-type") ?? "";
       const json = contentType.includes("application/json") ? await res.json() : null;
@@ -1038,12 +1067,13 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                         .sort((left, right) => left.internName.localeCompare(right.internName));
                       const capacity = slotState?.[period].cap ?? 0;
                       const releasedHere = releasedIn(base.id, d, period);
+                      const freeHere = freeIn(base.id, d, period);
                       const openCount = Math.max(capacity - periodAssignments.length - releasedHere.length, 0);
 
-                      if (capacity === 0 && periodAssignments.length === 0) return null;
+                      if (capacity === 0 && periodAssignments.length === 0 && freeHere.length === 0) return null;
 
                       const periodStyle = getPeriodStyle(period);
-                      const containerStyle = capacity === 0
+                      const containerStyle = capacity === 0 && freeHere.length === 0
                         ? "border-rose-200 bg-rose-50/60"
                         : openCount > 0
                           ? "border-amber-200 bg-amber-50/60"
@@ -1112,6 +1142,19 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               </div>
                             ))}
 
+                            {freeIn(base.id, d, period).map((f) => (
+                              <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, period, false, { id: f.id, abbr: f.releasedFacultyAbbr })}
+                                className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
+                                title={`Vaga livre liberada pela ${f.releasedFacultyAbbr} — toque para escalar um interno`}
+                              >
+                                <Plus className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">Vaga livre · {f.releasedFacultyAbbr}</span>
+                              </button>
+                            ))}
+
                             {Array.from({ length: openCount }, (_, vacancyIndex) => (
                               <button
                                 key={`${base.id}|${d}|${period}|vacancy-${vacancyIndex + 1}`}
@@ -1128,7 +1171,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               </button>
                             ))}
 
-                            {capacity === 0 && periodAssignments.length > 0 && (
+                            {capacity === 0 && periodAssignments.length > 0 && freeHere.length === 0 && (
                               <p className="rounded-md bg-white/70 px-2 py-1 text-[10px] font-medium text-rose-700">
                                 Plantão preservado sem regra ativa de vaga.
                               </p>
@@ -1207,11 +1250,11 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                     className={`border-b border-rose-50 px-2 py-2 min-h-[110px] ${d === today ? "bg-rose-50/20" : ""}`}
                   >
                     <div className="space-y-1.5">
-                      {cellAssignments.length === 0 && dayCapacity === 0 && (
+                      {cellAssignments.length === 0 && dayCapacity === 0 && freeIn(crlBase.id, d, "DAY").length === 0 && (
                         <span className="text-xs italic text-slate-300">—</span>
                       )}
 
-                      {(cellAssignments.length > 0 || dayCapacity > 0) && (
+                      {(cellAssignments.length > 0 || dayCapacity > 0 || freeIn(crlBase.id, d, "DAY").length > 0) && (
                         <div className={`rounded-lg border p-1.5 ${openCount > 0 ? "border-amber-200 bg-amber-50/60" : "border-emerald-200 bg-emerald-50/50"}`}>
                           <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                             <span className="flex items-center gap-1">☀️ Diurno</span>
@@ -1247,6 +1290,19 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 </div>
                               );
                             })}
+
+                            {freeIn(crlBase.id, d, "DAY").map((f) => (
+                              <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, "DAY", false, { id: f.id, abbr: f.releasedFacultyAbbr })}
+                                className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
+                                title={`Vaga livre liberada pela ${f.releasedFacultyAbbr} — toque para escalar um interno`}
+                              >
+                                <Plus className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">Vaga livre · {f.releasedFacultyAbbr}</span>
+                              </button>
+                            ))}
 
                             {openCount > 0 && (!filterPeriod || filterPeriod === "DAY") && (
                               <button
@@ -1318,7 +1374,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                   const capacity = slotState?.[period].cap ?? 0;
                   const openCount = Math.max(capacity - periodAssignments.length - releasedIn(cruBase.id, d, period).length, 0);
 
-                  if (capacity === 0 && periodAssignments.length === 0) return null;
+                  if (capacity === 0 && periodAssignments.length === 0 && freeIn(cruBase.id, d, period).length === 0) return null;
 
                   const periodStyle = getPeriodStyle(period);
                   const containerStyle = capacity === 0
@@ -1364,6 +1420,19 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                             </div>
                           );
                         })}
+
+                        {freeIn(cruBase.id, d, period).map((f) => (
+                              <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, period, false, { id: f.id, abbr: f.releasedFacultyAbbr })}
+                                className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
+                                title={`Vaga livre liberada pela ${f.releasedFacultyAbbr} — toque para escalar um interno`}
+                              >
+                                <Plus className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">Vaga livre · {f.releasedFacultyAbbr}</span>
+                              </button>
+                            ))}
 
                         {openCount > 0 && (
                           <button
@@ -1843,6 +1912,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 </h2>
                 <p className="text-sm text-blue-100">
                   {allocSlot.baseCode} · {formatDateLabel(allocSlot.date, { day: "2-digit", month: "2-digit", year: "numeric" })} · {allocSlot.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
+                  {allocSlot.free && ` · vaga livre da ${allocSlot.free.abbr}`}
                 </p>
               </div>
               <button onClick={() => setAllocSlot(null)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
@@ -1912,7 +1982,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                   {allocationCandidates.busyCount > 0 && <p>{allocationCandidates.busyCount} interno(s) já ocupados neste mesmo dia e turno.</p>}
                 </div>
               )}
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-2">
+              {!allocSlot.free && <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1931,9 +2001,9 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                   />
                 )}
-              </div>
+              </div>}
               {allocMsg && <p className="text-sm">{allocMsg}</p>}
-              {allocSlot.date >= today && (
+              {allocSlot.date >= today && !allocSlot.free && (
                 <button
                   type="button"
                   disabled={releaseBusy !== ""}

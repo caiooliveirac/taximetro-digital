@@ -36,7 +36,49 @@ function reasonGuidance(reason: string | null | undefined) {
   }
 }
 
+const PERIODO: Record<string, string> = { DAY: "diurno", NIGHT: "noturno" };
+function dataBr(value: unknown) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)
+    ? `${value.slice(8, 10)}/${value.slice(5, 7)}/${value.slice(0, 4)}`
+    : "data não informada";
+}
+function turno(value: unknown) {
+  return typeof value === "string" ? PERIODO[value] ?? value.toLowerCase() : "";
+}
+function texto(value: unknown, fallback: string) {
+  return typeof value === "string" && value ? value : fallback;
+}
+
+/** Vaga liberada / vaga livre: frases em português, sem id nem sigla de banco. */
+function formatVagaLivre(action: string, payload: Record<string, unknown> | null) {
+  const fac = texto(payload?.facultyAbbr, "a faculdade");
+  const quando = `${dataBr(payload?.date)} ${turno(payload?.period)}`.trim();
+
+  if (action === "SLOTS_RELEASED") {
+    const n = Number(payload?.created ?? 0);
+    const escopo = payload?.scope === "ALL" ? "de intervenção e regulação" : "de intervenção";
+    const bases = Array.isArray(payload?.bases) && payload.bases.length > 0 ? ` (${payload.bases.join(", ")})` : "";
+    return `${fac} liberou ${n} vaga${n === 1 ? "" : "s"} ${escopo} em ${quando}${bases}. Ficam fora do sorteio e livres para as outras faculdades.`;
+  }
+  if (action === "SLOTS_RELEASE_UNDONE") {
+    const n = Number(payload?.cancelled ?? 0);
+    const quandoOuVaga = payload?.date ? ` em ${quando}` : "";
+    return `${fac} desfez a liberação de ${n} vaga${n === 1 ? "" : "s"}${quandoOuVaga}. Voltam para o sorteio dela.`;
+  }
+  if (action === "FREE_SLOT_USED") {
+    const interno = texto(payload?.internName, "um interno");
+    const de = texto(payload?.facultyAbbr, "outra faculdade");
+    const liberou = texto(payload?.releasedByAbbr, "outra faculdade");
+    const base = texto(payload?.baseCode, "base");
+    return `${interno} (${de}) foi escalado na vaga livre que a ${liberou} liberou: ${base}, ${quando}.`;
+  }
+  return null;
+}
+
 function formatDetail(action: string, payload: Record<string, unknown> | null, ipAddress: string | null) {
+  const vagaLivre = formatVagaLivre(action, payload);
+  if (vagaLivre) return vagaLivre;
+
   if (action === "LOGIN_CREDENTIALS_FAILED") {
     const identifierType = payload?.identifierType === "CPF" ? "CPF" : "Email";
     const maskedIdentifier = typeof payload?.maskedIdentifier === "string" ? payload.maskedIdentifier : "***";
