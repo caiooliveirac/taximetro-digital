@@ -111,6 +111,16 @@ export async function executeGetComplianceOverview(params: {
     const futureScheduled = futureRows.length;
     const totalScheduled = relevantRows.length;
 
+    // Agendados que ainda podem virar realizados (hoje inclusive, ausência fora).
+    // É com isto que o velocímetro responde "a conta fecha?": realizados +
+    // agendados vs meta total.
+    const pendingScheduled = relevantRows.filter(
+      (r) =>
+        r.date >= todayStr &&
+        r.status !== "ABSENT" &&
+        !COMPLETED.includes(r.status as typeof COMPLETED[number]),
+    ).length;
+
     const thisWeekRows = relevantRows.filter((r) => r.date >= thisWeek.from && r.date <= thisWeek.to);
     const thisWeekCompleted = thisWeekRows.filter((r) => COMPLETED.includes(r.status as typeof COMPLETED[number])).length;
     const thisWeekAbsent = thisWeekRows.filter((r) => r.status === "ABSENT").length;
@@ -241,6 +251,7 @@ export async function executeGetComplianceOverview(params: {
       targetCRUTotal,
       targetCRLPerWeek,
       totalScheduled,
+      pendingScheduled,
       totalCompleted,
       totalAbsent,
       totalUSACompleted,
