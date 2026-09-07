@@ -127,3 +127,29 @@ export function summarizeGoals<T extends GoalSlotItem>(
 export function totalMissingSlots(summaries: Array<Pick<GoalKindSummary, "missing">>): number {
   return summaries.reduce((acc, s) => acc + s.missing, 0);
 }
+
+/**
+ * As casinhas quando só há contagem, sem os plantões em mãos — é o caso das
+ * listas (escolher interno, cockpit do líder), que carregam o compliance de
+ * todo mundo mas não a agenda de cada um. Mesma leitura da ficha: realizado,
+ * agendado, e a vaga da meta que ninguém escalou.
+ */
+export type GoalCounts = {
+  /** Realizados (ou abonados) já contabilizados. */
+  done: number;
+  /** Escalados na rotação, sem falta: realizados + o que ainda vai acontecer. */
+  planned: number;
+  /** Vagas da meta sem plantão nenhum. */
+  missing: number;
+};
+
+export function slotStatesFromCounts(counts: GoalCounts): GoalSlotState[] {
+  const done = Math.max(0, counts.done);
+  const scheduled = Math.max(0, counts.planned - done);
+  const missing = Math.max(0, counts.missing);
+  return [
+    ...Array<GoalSlotState>(done).fill("done"),
+    ...Array<GoalSlotState>(scheduled).fill("scheduled"),
+    ...Array<GoalSlotState>(missing).fill("empty"),
+  ];
+}

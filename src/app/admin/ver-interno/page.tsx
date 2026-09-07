@@ -23,6 +23,7 @@ import {
   RealizedByTypeBoxes,
   ShiftListByKind,
   GoalSlotsBoard,
+  GoalSlotsStrip,
   AssignmentDetailPanel,
 } from "@/components/admin/intern-shifts-blocks";
 
@@ -57,6 +58,9 @@ type ComplianceRow = {
   futureScheduled: number; pendingScheduled: number; status: "ok" | "compensating" | "partial" | "deficit";
   rotationStartDate: string | null; rotationEndDate: string | null;
   targetUSATotal?: number; targetCRUTotal?: number; targetCRLTotal?: number;
+  totalUSACompleted?: number; totalCRUCompleted?: number; totalCRLCompleted?: number;
+  totalUSAPlanned?: number; totalCRUPlanned?: number; totalCRLPlanned?: number;
+  missingUSA?: number; missingCRU?: number; missingCRL?: number;
   missingSlots?: number;
 };
 type Request = {
@@ -431,7 +435,7 @@ function AdminVerComoInterno() {
                       )}
                     </div>
                     {cmp && cmp.targetShifts > 0 && (
-                      <div className="mt-0.5">
+                      <div className="mt-0.5 space-y-1">
                         <VelocimeterCard
                           variant="compact"
                           data={{
@@ -442,6 +446,9 @@ function AdminVerComoInterno() {
                             rotationEndDate: cmp.rotationEndDate,
                           }}
                         />
+                        {/* Casinhas na própria lista: dá para varrer a turma
+                            inteira sem abrir interno por interno. */}
+                        <GoalSlotsStrip counts={cmp} />
                       </div>
                     )}
                   </div>

@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { StatusBadge } from "@/components/status-badge";
 import { getPeriodStyle } from "@/lib/base-colors";
 import { sessionHasRole } from "@/lib/roles";
-import { summarizeGoals, type GoalKindSummary, type GoalSlotState, type GoalTargets } from "@/lib/goal-slots";
+import { GOAL_KINDS, slotStatesFromCounts, summarizeGoals, type GoalKind, type GoalKindSummary, type GoalSlotState, type GoalTargets } from "@/lib/goal-slots";
 
 /* ──────────────────────────────────────────────────────────────────
  * Tipos compartilhados
@@ -143,6 +143,53 @@ export function goalAlertText(summaries: Array<Pick<GoalKindSummary, "kind" | "m
     ? `${partes.slice(0, -1).join(", ")} e ${partes[partes.length - 1]}`
     : partes[0];
   return `Faltam ${lista} para fechar a meta da faculdade.`;
+}
+
+/**
+ * Tira de casinhas para a lista: a mesma leitura da ficha, em miniatura, a
+ * partir da contagem que o compliance já devolve para todo mundo. Serve para
+ * varrer a turma inteira sem abrir interno por interno.
+ */
+export type GoalStripCounts = {
+  targetUSATotal?: number; totalUSACompleted?: number; totalUSAPlanned?: number; missingUSA?: number;
+  targetCRUTotal?: number; totalCRUCompleted?: number; totalCRUPlanned?: number; missingCRU?: number;
+  targetCRLTotal?: number; totalCRLCompleted?: number; totalCRLPlanned?: number; missingCRL?: number;
+};
+
+const STRIP_STATE_CLASS: Record<GoalSlotState, string> = {
+  done: "bg-emerald-500",
+  pending: "bg-amber-400",
+  scheduled: "bg-sky-400",
+  missed: "bg-red-500",
+  empty: "border border-dashed border-amber-400 bg-amber-50",
+};
+
+export function GoalSlotsStrip({ counts }: { counts: GoalStripCounts | null | undefined }) {
+  if (!counts) return null;
+  const perKind: Array<{ kind: GoalKind; states: GoalSlotState[]; missing: number }> = GOAL_KINDS.map((kind) => {
+    const target = counts[`target${kind}Total` as const] ?? 0;
+    const done = counts[`total${kind}Completed` as const] ?? 0;
+    const planned = counts[`total${kind}Planned` as const] ?? 0;
+    const missing = counts[`missing${kind}` as const] ?? 0;
+    return { kind, states: target > 0 || planned > 0 ? slotStatesFromCounts({ done, planned, missing }) : [], missing };
+  }).filter((entry) => entry.states.length > 0);
+
+  if (perKind.length === 0) return null;
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {perKind.map(({ kind, states, missing }) => (
+        <span key={kind} className="inline-flex items-center gap-1" title={`${kind}: ${states.length - missing} de ${states.length} escalados`}>
+          <span className={`rounded px-1 text-[9px] font-semibold uppercase leading-4 ring-1 ${KIND_STYLE[kind].chip}`}>{kind}</span>
+          <span className="inline-flex items-center gap-0.5">
+            {states.map((state, i) => (
+              <span key={`${kind}-${i}`} className={`h-2.5 w-2.5 rounded-[3px] ${STRIP_STATE_CLASS[state]}`} />
+            ))}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 export function GoalSlotsBoard({
