@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, bases, faculties, slotRules, userRoles } from "@/shared/db/schema";
+import { assignments, bases, faculties, slotRules, userRoles, users } from "@/shared/db/schema";
 
 export async function getValidInternIdsForFaculty(params: {
   facultyId: string;
@@ -44,6 +44,7 @@ export async function getExistingAssignmentsForWeek(params: {
 }) {
   return db
     .select({
+      id: assignments.id,
       internId: assignments.internId,
       baseId: assignments.baseId,
       baseType: bases.type,
@@ -61,6 +62,43 @@ export async function getExistingAssignmentsForWeek(params: {
         ne(assignments.status, "CANCELLED"),
       ),
     );
+}
+
+/**
+ * Plantões da faculdade num dia/turno que ainda podem sair da escala (não
+ * começaram: SCHEDULED/CONFIRMED, não extra). É o que a liberação de vaga
+ * remove para abrir a vaga inteira — ver release-slots.ts.
+ */
+export async function getRemovableAssignmentsForSlot(params: {
+  facultyId: string;
+  date: string;
+  period: "DAY" | "NIGHT";
+  baseIds: string[];
+}) {
+  if (params.baseIds.length === 0) return [];
+  return db
+    .select({
+      id: assignments.id,
+      internId: assignments.internId,
+      internName: users.name,
+      baseId: assignments.baseId,
+      baseCode: bases.code,
+      status: assignments.status,
+    })
+    .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
+    .innerJoin(users, eq(users.id, assignments.internId))
+    .where(
+      and(
+        eq(assignments.facultyId, params.facultyId),
+        eq(assignments.date, params.date),
+        eq(assignments.period, params.period),
+        inArray(assignments.baseId, params.baseIds),
+        inArray(assignments.status, ["SCHEDULED", "CONFIRMED"]),
+        eq(assignments.isExtraShift, false),
+      ),
+    )
+    .orderBy(users.name);
 }
 
 export async function getFacultyAbbreviation(facultyId: string) {

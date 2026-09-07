@@ -58,7 +58,10 @@ function formatVagaLivre(action: string, payload: Record<string, unknown> | null
     const n = Number(payload?.created ?? 0);
     const escopo = payload?.scope === "ALL" ? "de intervenção e regulação" : "de intervenção";
     const bases = Array.isArray(payload?.bases) && payload.bases.length > 0 ? ` (${payload.bases.join(", ")})` : "";
-    return `${fac} liberou ${n} vaga${n === 1 ? "" : "s"} ${escopo} em ${quando}${bases}. Ficam fora do sorteio e livres para as outras faculdades.`;
+    const removidos = Array.isArray(payload?.removedInterns) && payload.removedInterns.length > 0
+      ? ` Saíram da escala: ${payload.removedInterns.join(", ")}.`
+      : "";
+    return `${fac} liberou ${n} vaga${n === 1 ? "" : "s"} ${escopo} em ${quando}${bases}. Ficam fora do sorteio e livres para as outras faculdades.${removidos}`;
   }
   if (action === "SLOTS_RELEASE_UNDONE") {
     const n = Number(payload?.cancelled ?? 0);
