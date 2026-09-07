@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
   assignments,
@@ -13,7 +14,7 @@ import {
   users,
 } from "@/db/schema";
 import type { CohortGrouping, ReportFilterInput, ReportOrderBy } from "@/lib/report-filters";
-import { sumAssignmentHours } from "@/lib/utils";
+import { GEO_VALIDATOR_NAME, sumAssignmentHours } from "@/lib/utils";
 
 export type ReportAssignmentGroup = "done" | "scheduled" | "absent";
 export type ReportTypeKey = "CENTRAL" | "CRL" | "USA";
@@ -55,7 +56,7 @@ type AssignmentRow = {
   checkoutAt: string | null;
   absenceJustification: string | null;
   isExtraShift: boolean;
-  checkinDoctorName: string | null;
+  doctorName: string | null;
 };
 
 type RequestRow = {
@@ -90,7 +91,7 @@ export type ReportAssignmentCard = {
   isJustified: boolean;
   absenceJustification: string | null;
   isExtraShift: boolean;
-  checkinDoctorName: string | null;
+  doctorName: string | null;
 };
 
 export type ReportTypeSection = {
@@ -698,6 +699,9 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     };
   }
 
+  // Médico do relatório = quem confirmou o checkout. Sem checkout, cai no
+  // validador humano do check-in; o geofence não é médico.
+  const checkoutUsers = alias(users, "checkout_users");
   const assignmentRowsRaw = await db
     .select({
       assignmentId: assignments.id,
@@ -713,12 +717,13 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       checkoutAt: checkins.checkoutAt,
       absenceJustification: assignments.absenceJustification,
       isExtraShift: assignments.isExtraShift,
-      checkinDoctorName: sql<string | null>`coalesce(${users.name}, ${checkins.validatedByName})`,
+      doctorName: sql<string | null>`coalesce(${checkoutUsers.name}, ${checkins.checkoutConfirmedByName}, ${users.name}, nullif(${checkins.validatedByName}, ${GEO_VALIDATOR_NAME}))`,
     })
     .from(assignments)
     .innerJoin(bases, eq(bases.id, assignments.baseId))
     .leftJoin(checkins, eq(checkins.assignmentId, assignments.id))
     .leftJoin(users, eq(users.id, checkins.validatedBy))
+    .leftJoin(checkoutUsers, eq(checkoutUsers.id, checkins.checkoutConfirmedBy))
     .where(
       and(
         inArray(assignments.internId, scopedInternIds),
@@ -743,7 +748,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     checkoutAt: row.checkoutAt ? row.checkoutAt.toISOString() : null,
     absenceJustification: row.absenceJustification,
     isExtraShift: row.isExtraShift,
-    checkinDoctorName: row.checkinDoctorName,
+    doctorName: row.doctorName,
   }));
 
   const requestRowsRaw = await db
@@ -840,7 +845,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       isJustified: Boolean(assignment.absenceJustification),
       absenceJustification: assignment.absenceJustification,
       isExtraShift: assignment.isExtraShift,
-      checkinDoctorName: assignment.checkinDoctorName,
+      doctorName: assignment.doctorName,
     } satisfies ReportAssignmentCard));
 
     const typeSections: Record<ReportTypeKey, ReportTypeSection> = {

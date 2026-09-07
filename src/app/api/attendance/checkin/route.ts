@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { assignments, bases, checkins, qrSessions, users } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { isWithinGeofence } from "@/lib/geo";
+import { GEO_VALIDATOR_NAME } from "@/lib/utils";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
         method: "GEO" as const,
         totpValidatedAt: now,
         validatedBy: null,
-        validatedByName: "Georreferenciamento",
+        validatedByName: GEO_VALIDATOR_NAME,
       }
       : { status: "PENDING" as const }),
   };

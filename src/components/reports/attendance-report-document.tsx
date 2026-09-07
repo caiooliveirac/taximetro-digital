@@ -15,6 +15,7 @@ import {
   formatBrazilDateTime,
   formatBrazilLongDate,
   formatBrazilTime,
+  formatDoctorName,
   formatValidatorName,
 } from "@/lib/utils";
 
@@ -32,29 +33,6 @@ function periodDetailedLabel(period: string, shift: string | null | undefined) {
   if (shift === "MORNING") return "Manhã";
   if (shift === "AFTERNOON") return "Tarde";
   return "Dia";
-}
-
-// "Dr/Dra Primeiro Segundo" — médico do check-in (login ou nome do Telegram).
-// Se o nome já vier com título, reaproveita-o; senão, heurística pelo fim do
-// primeiro nome (não há dado de gênero no cadastro).
-function formatCheckinDoctor(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  let parts = raw.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return null;
-
-  let title: string | null = null;
-  const head = parts[0].toLowerCase().replace(/\.$/, "");
-  if (head === "dr" || head === "dra") {
-    title = head === "dra" ? "Dra" : "Dr";
-    parts = parts.slice(1);
-  }
-  if (parts.length === 0) return null;
-
-  if (!title) {
-    const firstNormalized = parts[0].toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    title = firstNormalized.endsWith("a") ? "Dra" : "Dr";
-  }
-  return `${title} ${parts.slice(0, 2).join(" ")}`;
 }
 
 function assignmentStatusBadge(assignment: ReportAssignmentCard, group: "done" | "scheduled" | "absent") {
@@ -92,7 +70,7 @@ function AssignmentCard({
   compactCompleted: boolean;
 }) {
   const badge = assignmentStatusBadge(assignment, group);
-  const doctorName = formatCheckinDoctor(assignment.checkinDoctorName);
+  const doctorName = formatDoctorName(assignment.doctorName);
   const isExcused = assignment.status === "EXCUSED";
   if (compactCompleted && group === "done") {
     return (
