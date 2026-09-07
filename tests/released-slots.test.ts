@@ -91,3 +91,13 @@ test("auditoria de vaga liberada/usada sai em português", () => {
   const page = readFileSync(path.join(process.cwd(), "src/app/admin/audit/page.tsx"), "utf8");
   assert.match(page, /FREE_SLOT_USED: "Vaga livre usada"/);
 });
+
+test("liberar o dia inteiro tira da escala quem ainda não começou; liberar uma vaga pela grade não tira ninguém", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/features/scheduling/application/use-cases/release-slots.ts"), "utf8");
+  assert.match(src, /preview: z\.boolean\(\)\.default\(false\)/);
+  assert.match(src, /const removiveis = input\.baseId\s*\?\s*\[\]/);
+  assert.match(src, /status: "CANCELLED"/);
+  const repo = readFileSync(path.join(process.cwd(), "src/features/scheduling/infra/repositories/lottery-repository.ts"), "utf8");
+  assert.match(repo, /inArray\(assignments\.status, \["SCHEDULED", "CONFIRMED"\]\)/);
+  assert.match(repo, /eq\(assignments\.isExtraShift, false\)/);
+});

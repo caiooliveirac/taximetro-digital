@@ -23,8 +23,10 @@ import {
 import {
   getExistingAssignmentsForWeek,
   getFacultyAbbreviation,
+  getRemovableAssignmentsForSlot,
   getSlotRulesForFaculty,
 } from "@/features/scheduling/infra/repositories/lottery-repository";
+import { updateAssignmentStatus } from "@/features/scheduling/infra/repositories/assignment-repository";
 import { shouldIncludeRuleInLottery } from "./run-leader-lottery";
 import type { SchedulingActor } from "./cru-fixed-shared";
 
@@ -37,6 +39,8 @@ export const releaseSlotsSchema = z.object({
   baseId: z.string().uuid().optional(),
   /** USA = só intervenção (o que o sorteio usa). ALL = intervenção e regulação (CRU/CRL) também. */
   scope: z.enum(["USA", "ALL"]).default("USA"),
+  /** Só calcula: quantas vagas abrem e quais internos sairiam da escala. Não grava nada. */
+  preview: z.boolean().default(false),
   facultyId: z.string().uuid().optional(),
 });
 
@@ -105,6 +109,17 @@ export async function executeReleaseSlots(params: {
       : input.scope === "ALL" || shouldIncludeRuleInLottery(rule, isEbmsp)),
   );
 
+  // Liberar o dia/turno inteiro tira da escala quem já estava marcado e ainda
+  // não começou o plantão: a faculdade não vai usar a vaga, então o interno sai
+  // e volta a contar como abaixo da meta (dashboard do líder e Ver interno).
+  // Liberar UMA vaga pela grade (baseId) é só a vaga aberta — ninguém sai.
+  const removiveis = input.baseId
+    ? []
+    : await getRemovableAssignmentsForSlot({
+      facultyId, date: input.date, period: input.period, baseIds: rules.map((r) => r.baseId),
+    });
+  const idsRemovidos = new Set(removiveis.map((a) => a.id));
+
   const [existing, released] = await Promise.all([
     getExistingAssignmentsForWeek({ facultyId, weekStart: input.date, weekEnd: input.date }),
     listReleasedOffers({ facultyId, from: input.date, to: input.date }),
@@ -112,7 +127,9 @@ export async function executeReleaseSlots(params: {
 
   const publishedBy = actor.realUserId ?? actor.id;
   const toCreate = rules.flatMap((rule) => {
-    const filled = existing.filter((a) => a.baseId === rule.baseId && a.period === rule.period).length;
+    const filled = existing.filter((a) =>
+      a.baseId === rule.baseId && a.period === rule.period && !idsRemovidos.has((a as { id?: string }).id ?? ""),
+    ).length;
     const already = released.filter((r) => r.baseId === rule.baseId && r.period === rule.period).length;
     const open = Math.max(rule.capacity - filled - already, 0);
     return Array.from({ length: open }, () => ({
@@ -125,9 +142,24 @@ export async function executeReleaseSlots(params: {
     }));
   });
 
+  const internos = removiveis.map((a) => ({ assignmentId: a.id, internId: a.internId, internName: a.internName, baseCode: a.baseCode }));
+
+  if (input.preview) {
+    return { status: 200, body: { success: true, data: { open: toCreate.length, interns: internos } } } as const;
+  }
+
+  const quando = `${input.date.slice(8, 10)}/${input.date.slice(5, 7)} ${input.period === "DAY" ? "diurno" : "noturno"}`;
+  for (const a of removiveis) {
+    await updateAssignmentStatus({
+      id: a.id,
+      status: "CANCELLED",
+      notes: `Removido da escala: a ${abbr ?? "faculdade"} liberou a vaga de ${quando} para outras faculdades`,
+    });
+  }
+
   const created = await insertExtraOffers(toCreate);
 
-  if (created.length > 0) {
+  if (created.length > 0 || removiveis.length > 0) {
     await logAudit({
       userId: publishedBy,
       action: "SLOTS_RELEASED",
@@ -138,12 +170,13 @@ export async function executeReleaseSlots(params: {
         facultyId, facultyAbbr: abbr, date: input.date, period: input.period,
         scope: input.scope, created: created.length,
         bases: [...new Set(rules.filter((r) => toCreate.some((c) => c.baseId === r.baseId)).map((r) => r.baseCode))],
+        removedInterns: internos.map((i) => `${i.internName} (${i.baseCode})`),
         ...(actor.isImpersonating ? { impersonating: actor.id } : {}),
       },
     });
   }
 
-  return { status: 200, body: { success: true, data: { created: created.length } } } as const;
+  return { status: 200, body: { success: true, data: { created: created.length, interns: internos } } } as const;
 }
 
 export async function executeUndoRelease(params: {
