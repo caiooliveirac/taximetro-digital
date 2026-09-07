@@ -357,8 +357,15 @@ export const extraShiftOffers = pgTable("extra_shift_offers", {
   assignmentId: uuid("assignment_id").references(() => assignments.id),
   cancelledAt: timestamp("cancelled_at"),
   cancelledBy: uuid("cancelled_by").references(() => users.id),
+  // Vaga LIBERADA por uma faculdade: o líder (ou o coordenador por ele) avisou
+  // que naquela data/turno a faculdade não vai usar a vaga da grade fixa dela.
+  // A oferta vai ao board para as outras faculdades e, enquanto não for
+  // cancelada, o sorteio e a grade dessa faculdade descontam a vaga
+  // (ver release-slots.ts e run-leader-lottery.ts). Extra comum fica null.
+  releasedFacultyId: uuid("released_faculty_id").references(() => faculties.id),
 }, (t) => [
   index("idx_extra_offer_date").on(t.date),
+  index("idx_extra_offer_released").on(t.releasedFacultyId, t.date),
   index("idx_extra_offer_base").on(t.baseId),
   index("idx_extra_offer_claimed_by").on(t.claimedBy),
 ]);
