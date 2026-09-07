@@ -17,6 +17,8 @@ import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle, getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
 import { operationalDateStr } from "@/lib/utils";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
+import { UserAvatar } from "@/components/user-avatar";
+import { PhotoLightbox } from "@/components/photo-lightbox";
 import {
   RealizedByTypeBoxes,
   ShiftListByKind,
@@ -51,7 +53,7 @@ type ComplianceRow = {
   totalCompleted: number; totalAbsent: number; totalHours: number;
   totalPct: number | null; thisWeekCompleted: number; thisWeekScheduled: number;
   thisWeekAbsent: number; rawDeficit: number; netDeficit: number;
-  futureScheduled: number; status: "ok" | "compensating" | "partial" | "deficit";
+  futureScheduled: number; pendingScheduled: number; status: "ok" | "compensating" | "partial" | "deficit";
   rotationStartDate: string | null; rotationEndDate: string | null;
   targetUSAPerWeek?: number; targetCRUPerWeek?: number; targetCRLPerWeek?: number;
   thisWeekUSAPlanned?: number; thisWeekCRUPlanned?: number; thisWeekCRLPlanned?: number;
@@ -130,6 +132,7 @@ function AdminVerComoInterno() {
   const [extraDate, setExtraDate] = useState("");
   const [extraPeriod, setExtraPeriod] = useState<"DAY" | "NIGHT">("DAY");
   const [actionMsg, setActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [zoomPhoto, setZoomPhoto] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   /* ── load intern list + compliance overview (para velocímetro compact na lista) ── */
@@ -425,6 +428,7 @@ function AdminVerComoInterno() {
                           variant="compact"
                           data={{
                             completed: cmp.totalCompleted,
+                            scheduled: cmp.pendingScheduled,
                             target: cmp.targetShifts,
                             rotationStartDate: cmp.rotationStartDate,
                             rotationEndDate: cmp.rotationEndDate,
@@ -464,6 +468,12 @@ function AdminVerComoInterno() {
           >
             ← Voltar
           </button>
+          <UserAvatar
+            userId={selected.id}
+            name={selected.name}
+            onZoom={setZoomPhoto}
+            className="h-12 w-12 shrink-0 rounded-full text-base"
+          />
           <div>
             <h1 className="text-xl font-semibold text-slate-900">{selected.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -539,6 +549,7 @@ function AdminVerComoInterno() {
               variant="card"
               data={{
                 completed: compliance.totalCompleted,
+                scheduled: compliance.pendingScheduled,
                 target: compliance.targetShifts,
                 rotationStartDate: compliance.rotationStartDate,
                 rotationEndDate: compliance.rotationEndDate,
@@ -762,6 +773,10 @@ function AdminVerComoInterno() {
             </div>
           )}
         </>
+      )}
+
+      {zoomPhoto && (
+        <PhotoLightbox src={zoomPhoto} alt={`Foto de ${selected.name}`} onClose={() => setZoomPhoto(null)} />
       )}
     </div>
   );
