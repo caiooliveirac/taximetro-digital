@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import { hasShiftStarted } from "@/lib/utils";
 import {
@@ -42,6 +42,7 @@ export async function listExtraOffers(opts: { includeUnavailable?: boolean } = {
       claimedAt: extraShiftOffers.claimedAt,
       assignmentId: extraShiftOffers.assignmentId,
       cancelledAt: extraShiftOffers.cancelledAt,
+      releasedFacultyId: extraShiftOffers.releasedFacultyId,
     })
     .from(extraShiftOffers)
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
@@ -84,6 +85,7 @@ export async function listExtraOffersForAdmin() {
       assignmentId: extraShiftOffers.assignmentId,
       cancelledAt: extraShiftOffers.cancelledAt,
       cancelledBy: extraShiftOffers.cancelledBy,
+      releasedFacultyId: extraShiftOffers.releasedFacultyId,
     })
     .from(extraShiftOffers)
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
@@ -177,6 +179,7 @@ export type InsertExtraOffer = {
   facultyId?: string | null;
   notes?: string | null;
   publishedBy: string;
+  releasedFacultyId?: string | null;
 };
 
 export async function insertExtraOffer(data: InsertExtraOffer) {
@@ -190,9 +193,88 @@ export async function insertExtraOffer(data: InsertExtraOffer) {
       facultyId: data.facultyId ?? null,
       notes: data.notes ?? null,
       publishedBy: data.publishedBy,
+      releasedFacultyId: data.releasedFacultyId ?? null,
     })
     .returning();
   return row;
+}
+
+export async function insertExtraOffers(rows: InsertExtraOffer[]) {
+  if (rows.length === 0) return [];
+  return db
+    .insert(extraShiftOffers)
+    .values(rows.map((data) => ({
+      baseId: data.baseId,
+      date: data.date,
+      period: data.period,
+      shift: data.shift ?? null,
+      facultyId: data.facultyId ?? null,
+      notes: data.notes ?? null,
+      publishedBy: data.publishedBy,
+      releasedFacultyId: data.releasedFacultyId ?? null,
+    })))
+    .returning({ id: extraShiftOffers.id });
+}
+
+/* ═══════════ Vagas liberadas pela faculdade ═══════════ */
+
+/**
+ * Ofertas vivas (não canceladas) que a faculdade liberou na janela. A oferta
+ * já pega por outra faculdade continua contando: a vaga segue fora do sorteio.
+ */
+export async function listReleasedOffers(params: { facultyId: string; from: string; to: string }) {
+  return db
+    .select({
+      id: extraShiftOffers.id,
+      baseId: extraShiftOffers.baseId,
+      baseCode: bases.code,
+      date: extraShiftOffers.date,
+      period: extraShiftOffers.period,
+      shift: extraShiftOffers.shift,
+      claimedBy: extraShiftOffers.claimedBy,
+    })
+    .from(extraShiftOffers)
+    .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
+    .where(and(
+      eq(extraShiftOffers.releasedFacultyId, params.facultyId),
+      gte(extraShiftOffers.date, params.from),
+      lte(extraShiftOffers.date, params.to),
+      isNull(extraShiftOffers.cancelledAt),
+    ))
+    .orderBy(extraShiftOffers.date, extraShiftOffers.period);
+}
+
+/**
+ * Desfaz liberações ainda não pegas. Por id (um card da grade) ou por
+ * data/turno[/base] (o chip do dia). Devolve quantas cancelou.
+ */
+export async function cancelReleasedOffers(params: {
+  facultyId: string;
+  cancelledBy: string;
+  ids?: string[];
+  date?: string;
+  period?: "DAY" | "NIGHT";
+  baseId?: string;
+}) {
+  const filtros = [
+    eq(extraShiftOffers.releasedFacultyId, params.facultyId),
+    isNull(extraShiftOffers.claimedBy),
+    isNull(extraShiftOffers.cancelledAt),
+  ];
+  if (params.ids) {
+    if (params.ids.length === 0) return 0;
+    filtros.push(inArray(extraShiftOffers.id, params.ids));
+  }
+  if (params.date) filtros.push(eq(extraShiftOffers.date, params.date));
+  if (params.period) filtros.push(eq(extraShiftOffers.period, params.period));
+  if (params.baseId) filtros.push(eq(extraShiftOffers.baseId, params.baseId));
+
+  const rows = await db
+    .update(extraShiftOffers)
+    .set({ cancelledAt: new Date(), cancelledBy: params.cancelledBy })
+    .where(and(...filtros))
+    .returning({ id: extraShiftOffers.id });
+  return rows.length;
 }
 
 export async function claimExtraOffer(

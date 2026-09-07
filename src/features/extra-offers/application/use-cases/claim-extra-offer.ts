@@ -28,6 +28,11 @@ export async function executeClaimExtraOffer(params: {
   if (offer.claimedBy) {
     return { status: 409, body: { success: false, error: "Este plantão extra já foi preenchido" } } as const;
   }
+  // Vaga que a própria faculdade liberou é para as outras — se o interno dela
+  // pegasse, a faculdade estaria usando a vaga que disse que não ia usar.
+  if (offer.releasedFacultyId && offer.releasedFacultyId === actor.facultyId) {
+    return { status: 409, body: { success: false, error: "Sua faculdade liberou esta vaga para as outras" } } as const;
+  }
 
   // Check the claimer doesn't already have an assignment in this slot
   const existing = await findAssignmentByInternSlot({

@@ -18,6 +18,7 @@ import {
   type PeriodTally,
 } from "./allocate-positions";
 import { temFeature } from "@/lib/instance";
+import { listReleasedOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import {
   bloqueiosCompostos,
   internosParaBloqueio,
@@ -131,13 +132,15 @@ function shuffle<T>(items: T[]): T[] {
  * preenchido, filtradas para USA (e CENTRAL/DAY no EBMSP com split manhã/tarde),
  * ordenadas DAY-first e então por BASE_PRIORITY.
  */
-function buildWeekPositions(params: {
+export function buildWeekPositions(params: {
   rules: SlotRuleRow[];
   weekExisting: WeekExistingRow[];
   weekDates: string[];
   isEbmsp: boolean;
+  /** Vagas liberadas pela faculdade, por `${baseId}|${date}|${period}` (ver release-slots.ts). */
+  released?: Map<string, number>;
 }): AllocPos[] {
-  const { rules, weekExisting, weekDates, isEbmsp } = params;
+  const { rules, weekExisting, weekDates, isEbmsp, released } = params;
   const positions: AllocPos[] = [];
 
   for (const rule of rules) {
@@ -152,7 +155,8 @@ function buildWeekPositions(params: {
       (assignment) => assignment.baseId === rule.baseId && assignment.date === dateStr && assignment.period === rule.period,
     ).length;
 
-    const openCount = rule.capacity - filled;
+    const releasedCount = released?.get(`${rule.baseId}|${dateStr}|${rule.period}`) ?? 0;
+    const openCount = rule.capacity - filled - releasedCount;
 
     if (isEbmsp && rule.period === "DAY" && rule.baseType === "CENTRAL") {
       const morningCount = Math.ceil(openCount / 2);
@@ -233,6 +237,14 @@ export async function executeRunLeaderLottery(params: {
     weekEnd: windowEnd,
   });
 
+  // Vagas que a faculdade liberou na janela ficam fora do sorteio — pegas ou
+  // não por outra faculdade, ela abriu mão delas.
+  const released = new Map<string, number>();
+  for (const offer of await listReleasedOffers({ facultyId, from: windowStart, to: windowEnd })) {
+    const key = `${offer.baseId}|${offer.date}|${offer.period}`;
+    released.set(key, (released.get(key) ?? 0) + 1);
+  }
+
   const facultyAbbreviation = await getFacultyAbbreviation(facultyId);
   const isEbmsp = facultyAbbreviation === "EBMSP";
   const usaUnavailability = temFeature("internUnavailability");
@@ -308,7 +320,7 @@ export async function executeRunLeaderLottery(params: {
       (assignment) => assignment.date >= weekDates[0] && assignment.date <= weekDates[6],
     );
 
-    const positions = buildWeekPositions({ rules, weekExisting, weekDates, isEbmsp });
+    const positions = buildWeekPositions({ rules, weekExisting, weekDates, isEbmsp, released });
 
     const cruBlocked = await getCruBlockedSlots(safeIds, weekDates[0], weekDates[6]);
 

@@ -18,6 +18,7 @@ const ROTAS_ADMIN = [
   "src/app/api/admin/escala/lottery/route.ts",
   "src/app/api/admin/escala/cru-fixed/route.ts",
   "src/app/api/admin/escala/cru-generate/route.ts",
+  "src/app/api/admin/escala/released-slots/route.ts",
 ];
 
 const ROTAS_LIDER = [
@@ -25,6 +26,7 @@ const ROTAS_LIDER = [
   "src/app/api/leader/lottery/route.ts",
   "src/app/api/leader/cru-fixed/route.ts",
   "src/app/api/leader/cru-generate/route.ts",
+  "src/app/api/leader/released-slots/route.ts",
 ];
 
 function fonte(arquivo: string) {

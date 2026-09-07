@@ -16,6 +16,7 @@ import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, lo
 import { sessionHasRole } from "@/lib/roles";
 import { isTodayOrFutureRequest, type RequestShiftRow } from "@/features/requests/domain/request-shift-window";
 import { PendingApprovals, type PendingRequest } from "@/components/pending-approvals";
+import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
 
 type Stats = {
   totalInterns: number;
@@ -534,9 +535,12 @@ export default function LeaderDashboard() {
     <div className="space-y-6 animate-[fadeInUp_200ms_ease-out]">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-        <span className="flex items-center gap-1 text-xs text-slate-400">
-          <RefreshCw className="h-3 w-3" strokeWidth={1.5} /> 30s
-        </span>
+        <div className="flex items-center gap-3">
+          <LiberarVagasButton onChanged={() => setReloadKey((k) => k + 1)} />
+          <span className="flex items-center gap-1 text-xs text-slate-400">
+            <RefreshCw className="h-3 w-3" strokeWidth={1.5} /> 30s
+          </span>
+        </div>
       </div>
 
       {canActAsPreceptor && (

@@ -3,12 +3,13 @@
 import { Fragment, useEffect, useMemo, useState, useCallback } from "react";
 import {
   Search, Filter, ChevronLeft, ChevronRight, ChevronDown,
-  Dices, X, RotateCcw, UserX, Plus,
+  Dices, X, RotateCcw, UserX, Plus, Unlock,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { InternDrawer } from "@/components/admin/intern-drawer";
+import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
 import { addDaysToDateStr, localDateStr, startOfWeekDateStr } from "@/lib/utils";
 import { filterCruFixedCandidates } from "@/features/scheduling/domain/policies/cru-fixed-candidates";
 import { contarSemanas } from "@/features/scheduling/domain/policies/cru-fixed-window";
@@ -46,6 +47,11 @@ type Slot = {
   ruleId: string; baseId: string; baseCode: string; baseName: string; baseType: string;
   dayOfWeek: string; period: string; capacity: number; filled: number; available: number;
   nextDate: string; facultyAbbr?: string; isExtraShift?: boolean;
+};
+/** Vaga da grade fixa que a faculdade liberou para as outras (ver release-slots.ts). */
+type Released = {
+  id: string; baseId: string; baseCode: string; date: string; period: string;
+  shift: string | null; claimedBy: string | null;
 };
 type CruFixed = {
   id: string; intern_id: string; intern_name: string;
@@ -187,6 +193,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   const [bases, setBases] = useState<Base[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [released, setReleased] = useState<Released[]>([]);
+  const [releaseBusy, setReleaseBusy] = useState("");
   const [loading, setLoading] = useState(true);
 
   /* ── Week ── */
@@ -259,19 +267,21 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
         await enviarJson(`${baseApi}/cru-generate`, "POST", { weekStart }).catch(() => null);
       }
 
-      const [uRes, bRes, aRes, sRes, cfRes] = await Promise.all([
+      const [uRes, bRes, aRes, sRes, cfRes, rlRes] = await Promise.all([
         fetchJsonNoStore(`${baseApi}/interns`),
         fetchJsonNoStore("/taximetro/api/admin/bases"),
         fetchJsonNoStore(`/taximetro/api/assignments?from=${from}&to=${to}`),
         fetchJsonNoStore(`/taximetro/api/slots/available?weekStart=${weekStart}`),
         fetchJsonNoStore(`${baseApi}/cru-fixed`),
+        fetchJsonNoStore(`${baseApi}/released-slots?from=${from}&to=${to}`),
       ]);
-      const [uJson, bJson, aJson, sJson, cfJson] = await Promise.all([uRes, bRes, aRes, sRes, cfRes]);
+      const [uJson, bJson, aJson, sJson, cfJson, rlJson] = await Promise.all([uRes, bRes, aRes, sRes, cfRes, rlRes]);
       if (uJson.success) setInterns(uJson.data);
       if (bJson.success) setBases(bJson.data.filter((b: { isActive: boolean }) => b.isActive));
       if (aJson.success) setAssignments(aJson.data);
       if (sJson.success) setSlots(sJson.data);
       if (cfJson.success) setCruFixed(cfJson.data);
+      if (rlJson.success) setReleased(rlJson.data);
     } catch {
       setLotteryMsg("❌ Erro ao carregar dados da escala.");
     }
@@ -325,6 +335,20 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     }
     return m;
   }, [assignments]);
+
+  /* ── Vagas liberadas ── */
+  const releasedBySlot = useMemo(() => {
+    const m = new Map<string, Released[]>();
+    for (const r of released) {
+      const key = `${r.baseId}|${normalizeDateKey(r.date)}|${r.period}`;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(r);
+    }
+    return m;
+  }, [released]);
+  const releasedIn = (baseId: string, date: string, period: string) =>
+    releasedBySlot.get(`${baseId}|${date}|${period}`) ?? [];
+
 
   const activeInterns = useMemo(
     () => interns.filter((intern) => intern.userActive && intern.roleActive && !intern.isArchived),
@@ -496,6 +520,41 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
       setLotteryMsg(`❌ ${json.error}`);
     }
     setLotteryLoading(false);
+  }
+
+  /* ── Vagas liberadas ── */
+  async function releaseSlots(date: string, period: "DAY" | "NIGHT", baseId?: string) {
+    setReleaseBusy(`${date}|${period}|${baseId ?? ""}`);
+    try {
+      const res = await enviarJson(`${baseApi}/released-slots`, "POST", { date, period, ...(baseId ? { baseId } : {}) });
+      const json = await res.json();
+      if (!json.success) {
+        setLotteryMsg(`❌ ${json.error}`);
+      } else if (json.data.created === 0) {
+        setLotteryMsg("Nenhuma vaga aberta para liberar neste dia e turno.");
+      } else {
+        setLotteryMsg(`✅ ${json.data.created} vaga(s) liberada(s) para as outras faculdades — ficam fora do sorteio.`);
+      }
+      await load();
+    } catch {
+      setLotteryMsg("❌ Erro ao liberar vaga.");
+    }
+    setReleaseBusy("");
+  }
+
+  async function undoRelease(alvo: { id: string } | { date: string; period: "DAY" | "NIGHT"; baseId?: string }) {
+    setReleaseBusy("id" in alvo ? alvo.id : `${alvo.date}|${alvo.period}|${alvo.baseId ?? ""}`);
+    try {
+      const query = new URLSearchParams(alvo as Record<string, string>).toString();
+      const res = await enviarJson(`${baseApi}/released-slots?${query}`, "DELETE");
+      const json = await res.json();
+      if (!json.success) setLotteryMsg(`❌ ${json.error}`);
+      else setLotteryMsg(json.data.cancelled > 0 ? `✅ ${json.data.cancelled} liberação(ões) desfeita(s).` : "Nada para desfazer: vaga já pega por outra faculdade.");
+      await load();
+    } catch {
+      setLotteryMsg("❌ Erro ao desfazer liberação.");
+    }
+    setReleaseBusy("");
   }
 
   /* ── Manual allocation ── */
@@ -844,6 +903,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
       <div className="flex flex-wrap items-center gap-4">
         <h1 className="text-2xl font-bold text-slate-900">Montar Escala</h1>
         <div className="flex-1" />
+        <LiberarVagasButton facultyId={facultyId} onChanged={load} />
         <button
           onClick={openLottery}
           className="relative rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_6px_20px_rgba(16,185,129,0.4)] transition hover:shadow-[0_8px_30px_rgba(16,185,129,0.5)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-[0_2px_8px_rgba(16,185,129,0.3)] sm:px-7 sm:py-3.5 sm:text-base"
@@ -977,7 +1037,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                         .filter((assignment) => assignment.period === period)
                         .sort((left, right) => left.internName.localeCompare(right.internName));
                       const capacity = slotState?.[period].cap ?? 0;
-                      const openCount = Math.max(capacity - periodAssignments.length, 0);
+                      const releasedHere = releasedIn(base.id, d, period);
+                      const openCount = Math.max(capacity - periodAssignments.length - releasedHere.length, 0);
 
                       if (capacity === 0 && periodAssignments.length === 0) return null;
 
@@ -1027,6 +1088,29 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 </div>
                               );
                             })}
+
+                            {releasedHere.map((r) => (
+                              <div
+                                key={r.id}
+                                className="flex items-center gap-1.5 rounded-md border border-dashed border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800"
+                                title={r.claimedBy ? "Vaga liberada e já pega por outra faculdade" : "Vaga liberada para outras faculdades — fora do sorteio"}
+                              >
+                                <Unlock className="h-3 w-3 shrink-0" />
+                                <span className="truncate">{r.claimedBy ? "Liberada · em uso" : "Liberada"}</span>
+                                {!r.claimedBy && (
+                                  <button
+                                    type="button"
+                                    onClick={() => undoRelease({ id: r.id })}
+                                    disabled={releaseBusy !== ""}
+                                    className="ml-auto rounded p-0.5 text-violet-500 hover:bg-violet-100 hover:text-violet-800"
+                                    title="Desfazer liberação"
+                                    aria-label="Desfazer liberação da vaga"
+                                  >
+                                    <X className="h-2.5 w-2.5" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
 
                             {Array.from({ length: openCount }, (_, vacancyIndex) => (
                               <button
@@ -1115,7 +1199,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                   .filter((assignment) => assignment.status !== "CANCELLED")
                   .sort((left, right) => left.internName.localeCompare(right.internName));
                 const dayCapacity = slotState?.DAY.cap ?? 0;
-                const openCount = Math.max(dayCapacity - cellAssignments.filter((assignment) => assignment.period === "DAY").length, 0);
+                const openCount = Math.max(dayCapacity - cellAssignments.filter((assignment) => assignment.period === "DAY").length - releasedIn(crlBase.id, d, "DAY").length, 0);
 
                 return (
                   <div
@@ -1232,7 +1316,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                     .filter((a) => a.period === period)
                     .sort((a, b) => a.internName.localeCompare(b.internName));
                   const capacity = slotState?.[period].cap ?? 0;
-                  const openCount = Math.max(capacity - periodAssignments.length, 0);
+                  const openCount = Math.max(capacity - periodAssignments.length - releasedIn(cruBase.id, d, period).length, 0);
 
                   if (capacity === 0 && periodAssignments.length === 0) return null;
 
@@ -1849,6 +1933,16 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 )}
               </div>
               {allocMsg && <p className="text-sm">{allocMsg}</p>}
+              {allocSlot.date >= today && (
+                <button
+                  type="button"
+                  disabled={releaseBusy !== ""}
+                  onClick={async () => { await releaseSlots(allocSlot.date, allocSlot.period, allocSlot.baseId); setAllocSlot(null); }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-violet-300 bg-violet-50 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100 transition disabled:opacity-50"
+                >
+                  <Unlock className="h-4 w-4" /> Liberar esta vaga para outras faculdades
+                </button>
+              )}
             </div>
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/50 flex gap-2">
               <button

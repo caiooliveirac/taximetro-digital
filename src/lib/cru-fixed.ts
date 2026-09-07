@@ -1,6 +1,6 @@
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, bases, cruFixedAssignments, users } from "@/db/schema";
+import { assignments, bases, cruFixedAssignments, extraShiftOffers, users } from "@/db/schema";
 
 export const CRU_FIXED_NOTE = "CRU fixo semanal";
 export const CRU_FIXED_REMOVED_NOTE = "CRU fixo semanal removido";
@@ -225,6 +225,21 @@ export async function materializeCruFixedAssignments(params: {
         assignmentByKey.set(`${assignment.internId}|${assignment.date}|${assignment.period}`, assignment);
     }
 
+    // Dia/turno em que a faculdade liberou a CRU para as outras (ver
+    // release-slots.ts): o fixo não nasce ali, senão a vaga ficaria dobrada.
+    const releasedCru = new Set<string>();
+    const releasedRows = await db
+        .select({ date: extraShiftOffers.date, period: extraShiftOffers.period })
+        .from(extraShiftOffers)
+        .where(and(
+            eq(extraShiftOffers.releasedFacultyId, params.facultyId),
+            eq(extraShiftOffers.baseId, cruBaseId),
+            gte(extraShiftOffers.date, normalizedStart),
+            lte(extraShiftOffers.date, normalizedEnd),
+            isNull(extraShiftOffers.cancelledAt),
+        ));
+    for (const row of releasedRows) releasedCru.add(`${normalizeDate(row.date)}|${row.period}`);
+
     const result: CruFixedMaterializationResult = {
         plannedCount: 0,
         createdCount: 0,
@@ -249,6 +264,18 @@ export async function materializeCruFixedAssignments(params: {
             result.plannedCount += 1;
             const key = `${template.internId}|${date}|${template.period}`;
             const existing = assignmentByKey.get(key);
+
+            if (!existing && releasedCru.has(`${date}|${template.period}`)) {
+                result.skippedCount += 1;
+                result.skipped.push({
+                    internId: template.internId,
+                    internName: template.internName,
+                    date,
+                    period: template.period,
+                    status: "RELEASED",
+                });
+                continue;
+            }
 
             if (!existing) {
                 const [created] = await db
