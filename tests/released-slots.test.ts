@@ -101,3 +101,21 @@ test("liberar o dia inteiro tira da escala quem ainda não começou; liberar uma
   assert.match(repo, /inArray\(assignments\.status, \["SCHEDULED", "CONFIRMED"\]\)/);
   assert.match(repo, /eq\(assignments\.isExtraShift, false\)/);
 });
+
+test("Escala do coordenador mostra a vaga cedida e aloca pela oferta", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/components/admin-filled-schedule.tsx"), "utf8");
+  assert.match(src, /kind: "freed"/);
+  assert.match(src, /api\/admin\/released-slots\?from=/);
+  assert.match(src, /allocation\.freeOffer\s*\?\s*await fetch\(`\/taximetro\/api\/extra-offers\/\$\{allocation\.freeOffer\.id\}`/);
+  const rota = readFileSync(path.join(process.cwd(), "src/app/api/admin/released-slots/route.ts"), "utf8");
+  assert.match(rota, /user\.role !== "COORDINATOR"/);
+  const politica = readFileSync(path.join(process.cwd(), "src/features/scheduling/domain/policies/assignment-policy.ts"), "utf8");
+  assert.match(politica, /slot\.kind === "freed"/);
+});
+
+test("a vaga própria diz a sigla da faculdade; a de outra diz quem cedeu", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/components/scheduling/montar-escala.tsx"), "utf8");
+  assert.match(src, /`Vaga \$\{myAbbr\}`/);
+  assert.match(src, /Cedida pela \{f\.releasedFacultyAbbr\}/);
+  assert.doesNotMatch(src, />Vaga livre · /);
+});

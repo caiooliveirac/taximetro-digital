@@ -310,6 +310,9 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     const firstSlot = slots.find((s) => s.facultyAbbr);
     return firstSlot?.facultyAbbr === "EBMSP";
   }, [slots]);
+  // Sigla da faculdade desta escala: a vaga própria diz "Vaga UFBA" para não
+  // confundir com a "Cedida pela X" de outra faculdade.
+  const myAbbr = useMemo(() => slots.find((s) => s.facultyAbbr)?.facultyAbbr ?? "", [slots]);
 
   /* ── Vacancy matrix from slots ── */
   const vacancyByBaseDay = useMemo(() => {
@@ -1123,10 +1126,10 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               <div
                                 key={r.id}
                                 className="flex items-center gap-1.5 rounded-md border border-dashed border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800"
-                                title={r.claimedBy ? "Vaga liberada e já pega por outra faculdade" : "Vaga liberada para outras faculdades — fora do sorteio"}
+                                title={r.claimedBy ? "Vaga cedida e já usada por outra faculdade" : "Vaga cedida às outras faculdades — fora do sorteio"}
                               >
                                 <Unlock className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{r.claimedBy ? "Liberada · em uso" : "Liberada"}</span>
+                                <span className="truncate">{r.claimedBy ? "Cedida · em uso" : "Cedida a outras"}</span>
                                 {!r.claimedBy && (
                                   <button
                                     type="button"
@@ -1148,10 +1151,10 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 type="button"
                                 onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, period, false, { id: f.id, abbr: f.releasedFacultyAbbr })}
                                 className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
-                                title={`Vaga livre liberada pela ${f.releasedFacultyAbbr} — toque para escalar um interno`}
+                                title={`A ${f.releasedFacultyAbbr} cedeu esta vaga — toque para escalar um interno da sua faculdade`}
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">Vaga livre · {f.releasedFacultyAbbr}</span>
+                                <span className="truncate">Cedida pela {f.releasedFacultyAbbr}</span>
                               </button>
                             ))}
 
@@ -1162,7 +1165,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 className="flex w-full items-center gap-2 rounded-md border border-dashed border-amber-300 bg-white/90 px-2 py-1 text-left text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100"
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">Vago</span>
+                                <span className="truncate">{myAbbr ? `Vaga ${myAbbr}` : "Vago"}</span>
                                 {openCount > 1 && (
                                   <span className="ml-auto shrink-0 text-[10px] text-amber-600">
                                     {vacancyIndex + 1}/{openCount}
@@ -1297,10 +1300,10 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 type="button"
                                 onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, "DAY", false, { id: f.id, abbr: f.releasedFacultyAbbr })}
                                 className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
-                                title={`Vaga livre liberada pela ${f.releasedFacultyAbbr} — toque para escalar um interno`}
+                                title={`A ${f.releasedFacultyAbbr} cedeu esta vaga — toque para escalar um interno da sua faculdade`}
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">Vaga livre · {f.releasedFacultyAbbr}</span>
+                                <span className="truncate">Cedida pela {f.releasedFacultyAbbr}</span>
                               </button>
                             ))}
 
@@ -1310,7 +1313,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
                               >
                                 <Plus className="h-3.5 w-3.5" />
-                                {openCount === 1 ? "Vaga disponível" : `${openCount} vagas disponíveis`}
+                                {openCount === 1 ? `Vaga ${myAbbr}` : `${openCount} vagas ${myAbbr}`}
                               </button>
                             )}
                           </div>
@@ -1427,10 +1430,10 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                                 type="button"
                                 onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, period, false, { id: f.id, abbr: f.releasedFacultyAbbr })}
                                 className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
-                                title={`Vaga livre liberada pela ${f.releasedFacultyAbbr} — toque para escalar um interno`}
+                                title={`A ${f.releasedFacultyAbbr} cedeu esta vaga — toque para escalar um interno da sua faculdade`}
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">Vaga livre · {f.releasedFacultyAbbr}</span>
+                                <span className="truncate">Cedida pela {f.releasedFacultyAbbr}</span>
                               </button>
                             ))}
 
@@ -1440,7 +1443,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                             className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
                           >
                             <Plus className="h-3.5 w-3.5" />
-                            {openCount === 1 ? "Vaga disponível" : `${openCount} vagas`}
+                            {openCount === 1 ? `Vaga ${myAbbr}` : `${openCount} vagas ${myAbbr}`}
                           </button>
                         )}
                       </div>
