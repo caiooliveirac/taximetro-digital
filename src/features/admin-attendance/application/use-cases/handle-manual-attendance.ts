@@ -83,6 +83,7 @@ export async function executeManualAttendance(params: {
       date: assignments.date,
       period: assignments.period,
       status: assignments.status,
+      isExtraShift: assignments.isExtraShift,
       absenceJustification: assignments.absenceJustification,
       internName: users.name,
       baseCode: bases.code,
@@ -144,8 +145,12 @@ export async function executeManualAttendance(params: {
         });
       }
 
+      // Presença confirmada pelo admin em plantão extra vira plantão comum:
+      // passa a contar na meta e perde a cor de extra no relatório. Extras
+      // sem essa confirmação continuam fora da contagem.
       await tx.update(assignments).set({
         status: "CHECKED_IN",
+        isExtraShift: false,
         absenceJustification: null,
         absenceJustificationActor: null,
         absenceJustificationAt: null,
@@ -164,6 +169,7 @@ export async function executeManualAttendance(params: {
         internId: assignment.internId,
         facultyId: assignment.facultyId,
         retroactive: isRetroactive,
+        wasExtraShift: assignment.isExtraShift,
         syntheticCheckinAt: syntheticCheckinAt.toISOString(),
         previousCheckinAt: existingCheckin?.checkinAt ? existingCheckin.checkinAt.toISOString() : null,
       },
@@ -217,6 +223,7 @@ export async function executeManualAttendance(params: {
     await db.transaction(async (tx) => {
       await tx.update(assignments).set({
         status: "CHECKED_OUT",
+        isExtraShift: false,
         absenceJustification: null,
         absenceJustificationActor: null,
         absenceJustificationAt: null,
@@ -246,6 +253,7 @@ export async function executeManualAttendance(params: {
         internId: assignment.internId,
         facultyId: assignment.facultyId,
         retroactive: isRetroactive,
+        wasExtraShift: assignment.isExtraShift,
         syntheticCheckoutAt: syntheticCheckoutAt.toISOString(),
         checkoutConfirmedBy: confirmedById,
         checkoutOnBehalfOf: confirmedByName,
