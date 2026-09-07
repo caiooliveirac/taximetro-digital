@@ -248,6 +248,27 @@ export async function listReleasedOffers(params: { facultyId: string; from: stri
     .orderBy(extraShiftOffers.date, extraShiftOffers.period);
 }
 
+/** Todas as vagas cedidas na janela, de qualquer faculdade — a visão do coordenador. */
+export async function listReleasedOffersAll(params: { from: string; to: string }) {
+  return db
+    .select({
+      id: extraShiftOffers.id,
+      baseId: extraShiftOffers.baseId,
+      date: extraShiftOffers.date,
+      period: extraShiftOffers.period,
+      releasedFacultyId: extraShiftOffers.releasedFacultyId,
+      releasedFacultyAbbr: faculties.abbreviation,
+      claimedBy: extraShiftOffers.claimedBy,
+    })
+    .from(extraShiftOffers)
+    .innerJoin(faculties, eq(faculties.id, extraShiftOffers.releasedFacultyId))
+    .where(and(
+      gte(extraShiftOffers.date, params.from),
+      lte(extraShiftOffers.date, params.to),
+      isNull(extraShiftOffers.cancelledAt),
+    ));
+}
+
 /**
  * Vagas livres para uma faculdade usar: o que as OUTRAS liberaram na janela e
  * ninguém pegou ainda. É o que aparece como "Vaga livre" na grade dela.

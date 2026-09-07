@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, User, Users, X, Zap } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, Unlock, User, Users, X, Zap } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { AttendanceQuickActions, attendanceQuickActionsAvailable } from "@/components/attendance-quick-actions";
 import { InternDrawer } from "@/components/admin/intern-drawer";
@@ -98,6 +98,19 @@ type AllocationState = {
     facultyId: string | null;
     facultyAbbr: string | null;
     isExtraShift?: boolean;
+    /** Vaga cedida por outra faculdade: a alocação passa pela oferta (ver release-slots.ts). */
+    freeOffer?: { id: string; abbr: string };
+};
+
+/** Vaga cedida por uma faculdade na semana (oferta viva com released_faculty_id). */
+type ReleasedOffer = {
+    id: string;
+    baseId: string;
+    date: string;
+    period: "DAY" | "NIGHT";
+    releasedFacultyId: string;
+    releasedFacultyAbbr: string;
+    claimedBy: string | null;
 };
 
 type PeriodFocusState = {
@@ -154,6 +167,7 @@ const STATUS_FILTER_OPTIONS: Array<{
 type ActualPeriodGridSlot =
     | { kind: "assignment"; key: string; assignment: AssignmentDetail }
     | { kind: "vacancy"; key: string; allocation: AllocationState; facultyAbbr: string }
+    | { kind: "freed"; key: string; allocation: AllocationState; facultyAbbr: string }
     | { kind: "blocked"; key: string; facultyAbbr: string };
 
 type VisiblePeriodGridSlot =
@@ -608,6 +622,34 @@ function VacancySlotCard({ facultyAbbr, allocation, period, onOpen, onPublishExt
 }
 
 /**
+ * Vaga que a faculdade cedeu para as outras naquele dia/turno. Qualquer
+ * faculdade pode escalar um interno nela; a alocação passa pela oferta.
+ */
+function FreedSlotCard({ allocation, period, onOpen, count = 1 }: { allocation: AllocationState; period: "DAY" | "NIGHT"; onOpen: (slot: AllocationState) => void; count?: number }) {
+    const isNight = period === "NIGHT";
+    const abbr = allocation.freeOffer?.abbr ?? "outra faculdade";
+
+    return (
+        <button
+            type="button"
+            onClick={() => onOpen(allocation)}
+            className={`flex min-h-[56px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-dashed px-2.5 py-2 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_20px_rgba(15,23,42,0.1)] ${isNight ? "border-teal-300/50 bg-teal-950/40 text-teal-50" : "border-teal-400 bg-teal-50 text-teal-900"} ${getMutedSlotClass(allocation.date, "vacancy")}`}
+            title={`A ${abbr} cedeu esta vaga. Escale um interno de qualquer outra faculdade — o plantão conta para a faculdade dele.`}
+        >
+            <span className="min-w-0 flex-1">
+                <span className="block text-[12px] font-black uppercase tracking-[0.16em] opacity-80">{count > 1 ? `${count} cedidas` : "Cedida"}</span>
+                <span className={`mt-1 block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${isNight ? "text-teal-100/80" : "text-teal-700"}`}>
+                    pela {abbr} · qualquer faculdade
+                </span>
+            </span>
+            <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${isNight ? "bg-teal-100/15 text-teal-50" : "bg-teal-600 text-white"}`}>
+                <Unlock className="h-4 w-4" />
+            </span>
+        </button>
+    );
+}
+
+/**
  * Vaga que existe na grade mas está inutilizável: o turno já bateu o teto de
  * internos da base. Some do fluxo de clique de propósito — quem escala precisa
  * ver que a vaga existe e que ela só volta se alguém sair.
@@ -676,6 +718,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [rules, setRules] = useState<Rule[]>([]);
     const [faculties, setFaculties] = useState<Faculty[]>([]);
     const [assignments, setAssignments] = useState<AssignmentDetail[]>([]);
+    const [released, setReleased] = useState<ReleasedOffer[]>([]);
     const [users, setUsers] = useState<UserRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingUsers, setLoadingUsers] = useState(false);
@@ -802,6 +845,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             throw new Error(json.error ?? "Não foi possível carregar a escala preenchida.");
         }
         setAssignments(json.data);
+        const cedidas = await fetch(`/taximetro/api/admin/released-slots?from=${weekStart}&to=${weekEnd}`, { cache: "no-store" })
+            .then((r) => r.json()).catch(() => null);
+        setReleased(cedidas?.success ? cedidas.data : []);
     }, [weekEnd, weekStart]);
 
     const loadUsers = useCallback(async () => {
@@ -1125,11 +1171,33 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             const facultyAssignments = periodAssignments.filter((assignment) => assignment.faculty_id === facultyId);
             const facultyAbbr = facultyRule?.facultyAbbr ?? facultyAssignments[0]?.faculty_abbr ?? facultyById.get(facultyId)?.abbreviation ?? "—";
             const capacity = Math.max(facultyRule?.capacity ?? 0, facultyAssignments.length);
+            // Vagas que esta faculdade cedeu neste turno: a que ninguém pegou vira
+            // card "Cedida" (qualquer outra faculdade aloca); a já pega some daqui
+            // — o plantão de quem pegou já aparece na faculdade dele.
+            const cedidas = released.filter((r) =>
+                r.releasedFacultyId === facultyId && r.baseId === base.id && normalizeDateKey(r.date) === normalizeDateKey(date) && r.period === period);
+            let cedidaIndex = 0;
 
             for (let index = 0; index < capacity; index += 1) {
                 const assignment = facultyAssignments[index];
                 if (assignment) {
                     flattenedSlots.push({ kind: "assignment", key: assignment.id, assignment });
+                    continue;
+                }
+
+                const cedida = cedidas[cedidaIndex];
+                if (cedida) {
+                    cedidaIndex += 1;
+                    if (cedida.claimedBy) continue;
+                    flattenedSlots.push({
+                        kind: "freed",
+                        key: cedida.id,
+                        facultyAbbr,
+                        allocation: {
+                            baseId: base.id, baseCode: base.code, baseType: base.type, date, period,
+                            facultyId: null, facultyAbbr: null, freeOffer: { id: cedida.id, abbr: facultyAbbr },
+                        },
+                    });
                     continue;
                 }
 
@@ -1157,7 +1225,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         }
 
         return flattenedSlots;
-    }, [assignmentsByBaseDate, facultyById, filteredRules, getPeriodLoad, hasStrictContentFilter]);
+    }, [assignmentsByBaseDate, facultyById, filteredRules, getPeriodLoad, hasStrictContentFilter, released]);
 
     const buildVisiblePeriodSlots = useCallback((base: Base, date: string, period: "DAY" | "NIGHT", limit = SLOT_LIMIT_PER_PERIOD): VisiblePeriodSlots => {
         const allSlots = getPeriodSlots(base, date, period);
@@ -1394,22 +1462,30 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setMessage(null);
 
         try {
-            const response = await fetch("/taximetro/api/assignments", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    internId: allocInternId,
-                    facultyId,
-                    baseId: allocation.baseId,
-                    date: allocation.date,
-                    period: allocation.period,
-                    shift: allocShift || null,
-                    allowRetroactiveOverride: isRetroactiveAdminAllocation,
-                    allowAdminOpenAllocation: isManualOpenAllocation,
-                    isExtraShift: allocIsExtraShift,
-                    extraShiftNotes: allocIsExtraShift ? allocExtraShiftNotes || null : null,
-                }),
-            });
+            // Vaga cedida: a alocação passa pela oferta, que marca quem usou e
+            // registra na auditoria "Fulano (UFBA) foi escalado na vaga que a X cedeu".
+            const response = allocation.freeOffer
+                ? await fetch(`/taximetro/api/extra-offers/${allocation.freeOffer.id}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ internId: allocInternId, facultyId }),
+                })
+                : await fetch("/taximetro/api/assignments", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        internId: allocInternId,
+                        facultyId,
+                        baseId: allocation.baseId,
+                        date: allocation.date,
+                        period: allocation.period,
+                        shift: allocShift || null,
+                        allowRetroactiveOverride: isRetroactiveAdminAllocation,
+                        allowAdminOpenAllocation: isManualOpenAllocation,
+                        isExtraShift: allocIsExtraShift,
+                        extraShiftNotes: allocIsExtraShift ? allocExtraShiftNotes || null : null,
+                    }),
+                });
             const json = await response.json();
             if (!json.success) throw new Error(json.error ?? "Não foi possível alocar o interno.");
             setAllocation(null);
@@ -1522,6 +1598,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                                         if (slot.kind === "vacancy") {
                                             return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} />;
+                                        }
+
+                                        if (slot.kind === "freed") {
+                                            return <FreedSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} />;
                                         }
 
                                         // Vaga bloqueada não vira card aqui: virou selo no cabeçalho.
@@ -1712,6 +1792,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                     }
                                                     if (slot.kind === "blocked") {
                                                         return <BlockedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={period} />;
+                                                    }
+                                                    if (slot.kind === "freed") {
+                                                        return <FreedSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} />;
                                                     }
                                                     return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} facultyBadgeMode="faculty" showBaseCode={showBaseCode} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} count={count} />;
                                                 });
@@ -2047,9 +2130,11 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             )}
 
                             <div className={`rounded-xl px-3 py-2 text-xs ${isRetroactiveAdminAllocation ? "border border-sky-200 bg-sky-50 text-sky-800" : "border border-slate-200 bg-slate-50 text-slate-600"}`}>
-                                {allocation.facultyId
-                                    ? `Vaga reservada para ${allocation.facultyAbbr}. O plantão continuará contando como ${allocation.facultyAbbr}, mas você pode procurar internos de outras faculdades ou abrir “Todas”.`
-                                    : "Vaga livre: o plantão assumirá a faculdade do interno selecionado."}
+                                {allocation.freeOffer
+                                    ? `Vaga cedida pela ${allocation.freeOffer.abbr}. Escolha um interno de outra faculdade: o plantão conta para a faculdade dele, e a ${allocation.freeOffer.abbr} não pode usar a própria vaga cedida.`
+                                    : allocation.facultyId
+                                        ? `Vaga reservada para ${allocation.facultyAbbr}. O plantão continuará contando como ${allocation.facultyAbbr}, mas você pode procurar internos de outras faculdades ou abrir “Todas”.`
+                                        : "Vaga livre: o plantão assumirá a faculdade do interno selecionado."}
                                 {isRetroactiveAdminAllocation ? " Edição retroativa segue liberada para a coordenação e fica auditada." : ""}
                             </div>
 

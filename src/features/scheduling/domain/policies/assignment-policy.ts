@@ -78,7 +78,7 @@ export function computeCapacityFlags(params: {
  */
 export function splitPeriodSlots<T extends { kind: string }>(slots: T[], limit: number) {
   const assignmentCount = slots.filter((slot) => slot.kind === "assignment").length;
-  const hasVacancy = slots.some((slot) => slot.kind === "vacancy");
+  const hasVacancy = slots.some((slot) => slot.kind === "vacancy" || slot.kind === "freed");
   const visibleLimit = Math.max(limit, assignmentCount);
   // Uma vaga alocável sempre cabe: se a célula está cheia de card (inclusive
   // plantão cancelado, que não ocupa vaga), quem escala ainda precisa ver que
