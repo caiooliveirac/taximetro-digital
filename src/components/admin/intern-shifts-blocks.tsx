@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, Sun, Moon, Repeat } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronUp, Clock, Moon, Repeat, Sun, X } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { StatusBadge } from "@/components/status-badge";
 import { getPeriodStyle } from "@/lib/base-colors";
 import { sessionHasRole } from "@/lib/roles";
+import { summarizeGoals, type GoalKindSummary, type GoalSlotState, type GoalTargets } from "@/lib/goal-slots";
 
 /* ──────────────────────────────────────────────────────────────────
  * Tipos compartilhados
@@ -18,22 +19,10 @@ export type Assignment = {
   baseCode: string;
   baseName?: string;
   baseType?: string | null;
+  isExtraShift?: boolean | null;
   date: string;
   period: string;
   status: string;
-};
-
-/** Subconjunto da linha de compliance que esses blocos consomem. */
-export type ComplianceWeekFields = {
-  targetUSAPerWeek?: number;
-  targetCRUPerWeek?: number;
-  targetCRLPerWeek?: number;
-  thisWeekUSAPlanned?: number;
-  thisWeekCRUPlanned?: number;
-  thisWeekCRLPlanned?: number;
-  lastWeekUSACompleted?: number;
-  lastWeekCRUCompleted?: number;
-  lastWeekCRLCompleted?: number;
 };
 
 export const KIND_STYLE: Record<ShiftKind, { tile: string; num: string; label: string; chip: string }> = {
@@ -104,68 +93,132 @@ export function RealizedByTypeBoxes({ assignments, size = "md" }: RealizedBoxesP
 }
 
 /* ──────────────────────────────────────────────────────────────────
- * 2. Breakdown semanal por tipo
- *    Mostra "Esta semana" e "Semana passada" lado a lado, com
- *    CRU/USA/CRL completed/target. Vermelho quando abaixo da meta.
+ * 2. Casinhas da meta (CRU/USA/CRL)
+ *    A faculdade exige N plantões de cada tipo na rotação; cada plantão
+ *    ocupa uma casinha e o que sobra da meta fica com alerta. Passado e
+ *    futuro na mesma fileira — é a resposta visual para "vou fechar a
+ *    carga horária?". Clicável quando o consumidor passa onSelect.
  * ────────────────────────────────────────────────────────────────── */
 
-type BreakdownRow = { type: ShiftKind; completed: number; target: number; below: boolean };
+const SLOT_STATE_STYLE: Record<GoalSlotState, { box: string; icon: ReactNode; title: string }> = {
+  done: {
+    box: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    icon: <Check className="h-3.5 w-3.5" strokeWidth={2.5} />,
+    title: "Realizado",
+  },
+  pending: {
+    box: "border-amber-200 bg-amber-50 text-amber-700",
+    icon: <Clock className="h-3.5 w-3.5" strokeWidth={2} />,
+    title: "Já passou, sem checkout — conta para a meta",
+  },
+  scheduled: {
+    box: "border-sky-200 bg-sky-50 text-sky-700",
+    icon: <CalendarDays className="h-3.5 w-3.5" strokeWidth={2} />,
+    title: "Agendado",
+  },
+  missed: {
+    box: "border-red-200 bg-red-50 text-red-700",
+    icon: <X className="h-3.5 w-3.5" strokeWidth={2.5} />,
+    title: "Falta — não conta para a meta",
+  },
+  empty: {
+    box: "border-dashed border-amber-300 bg-amber-50/50 text-amber-600",
+    icon: <span className="text-sm leading-none">⚠️</span>,
+    title: "Vaga da meta sem plantão escalado",
+  },
+};
 
-function buildWeekBreakdown(c: ComplianceWeekFields, when: "thisWeek" | "lastWeek"): BreakdownRow[] {
-  const out: BreakdownRow[] = [];
-  const pickThis = when === "thisWeek";
-  const tUSA = c.targetUSAPerWeek ?? 0;
-  const tCRU = c.targetCRUPerWeek ?? 0;
-  const tCRL = c.targetCRLPerWeek ?? 0;
-  if (tCRU > 0) {
-    const completed = pickThis ? (c.thisWeekCRUPlanned ?? 0) : (c.lastWeekCRUCompleted ?? 0);
-    out.push({ type: "CRU", completed, target: tCRU, below: completed < tCRU });
-  }
-  if (tUSA > 0) {
-    const completed = pickThis ? (c.thisWeekUSAPlanned ?? 0) : (c.lastWeekUSACompleted ?? 0);
-    out.push({ type: "USA", completed, target: tUSA, below: completed < tUSA });
-  }
-  if (tCRL > 0) {
-    const completed = pickThis ? (c.thisWeekCRLPlanned ?? 0) : (c.lastWeekCRLCompleted ?? 0);
-    out.push({ type: "CRL", completed, target: tCRL, below: completed < tCRL });
-  }
-  return out;
+function slotDateLabel(date: string) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
-export function WeekBreakdownByType({ compliance }: { compliance: ComplianceWeekFields | null | undefined }) {
-  if (!compliance) return null;
-  const thisWeek = buildWeekBreakdown(compliance, "thisWeek");
-  const lastWeek = buildWeekBreakdown(compliance, "lastWeek");
-  if (thisWeek.length === 0 && lastWeek.length === 0) return null;
-  return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-xs">
-      <WeekBreakdownCell label="Esta semana" rows={thisWeek} />
-      <WeekBreakdownCell label="Semana passada" rows={lastWeek} />
-    </div>
+export type GoalBoardAssignment = Assignment;
+
+/** Frase curta do que ainda falta escalar. null quando a meta fecha. */
+export function goalAlertText(summaries: Array<Pick<GoalKindSummary, "kind" | "missing">>): string | null {
+  const faltando = summaries.filter((s) => s.missing > 0);
+  if (faltando.length === 0) return null;
+  const partes = faltando.map((s) => `${s.missing} ${s.kind}`);
+  const lista = partes.length > 1
+    ? `${partes.slice(0, -1).join(", ")} e ${partes[partes.length - 1]}`
+    : partes[0];
+  return `Faltam ${lista} para fechar a meta da faculdade.`;
+}
+
+export function GoalSlotsBoard({
+  assignments,
+  targets,
+  today,
+  onSelect,
+  selectedId,
+  compact = false,
+}: {
+  assignments: Assignment[];
+  targets: GoalTargets;
+  today: string;
+  onSelect?: (assignment: Assignment) => void;
+  selectedId?: string | null;
+  compact?: boolean;
+}) {
+  const summaries = summarizeGoals(assignments, targets, today).filter(
+    (s) => s.target > 0 || s.slots.length > 0,
   );
-}
+  if (summaries.length === 0) return null;
+  const alerta = goalAlertText(summaries);
 
-function WeekBreakdownCell({ label, rows }: { label: string; rows: BreakdownRow[] }) {
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-lg bg-slate-50 px-3 py-2">
-        <p className="text-slate-500">{label}</p>
-        <p className="mt-0.5 text-xs text-slate-400 italic">Sem meta semanal configurada</p>
-      </div>
-    );
-  }
-  const anyBelow = rows.some((r) => r.below);
   return (
-    <div className={`rounded-lg px-3 py-2 ${anyBelow ? "bg-amber-50" : "bg-slate-50"}`}>
-      <p className={anyBelow ? "text-amber-700" : "text-slate-500"}>{label}</p>
-      <p className="mt-0.5 inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-medium tabular-nums">
-        {rows.map((r, idx) => (
-          <span key={r.type} className={r.below ? "text-red-700 font-semibold" : "text-slate-800"}>
-            {idx > 0 && <span className="mx-0.5 text-slate-300">·</span>}
-            {r.type} {r.completed}/{r.target}
-          </span>
-        ))}
-      </p>
+    <div className="space-y-2">
+      {summaries.map((summary) => {
+        const style = KIND_STYLE[summary.kind];
+        return (
+          <div key={summary.kind} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1 ${style.chip}`}>
+                {summary.kind}
+              </span>
+              <span className="text-[11px] tabular-nums text-slate-500">
+                <span className={summary.missing > 0 ? "font-semibold text-amber-700" : "font-semibold text-slate-800"}>
+                  {summary.filled}
+                </span>
+                /{summary.target} {summary.missed > 0 && <span className="text-red-600">· {summary.missed} falta{summary.missed > 1 ? "s" : ""}</span>}
+              </span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {summary.slots.map((slot) => {
+                const st = SLOT_STATE_STYLE[slot.state];
+                const assignment = slot.assignment;
+                const clickable = Boolean(onSelect && assignment);
+                const selected = Boolean(assignment && selectedId === assignment.id);
+                return (
+                  <button
+                    key={slot.key}
+                    type="button"
+                    title={assignment ? `${st.title} · ${assignment.baseCode} · ${slotDateLabel(assignment.date)}` : st.title}
+                    disabled={!clickable}
+                    onClick={clickable ? () => onSelect!(assignment!) : undefined}
+                    className={`flex ${compact ? "h-9 w-9" : "h-12 w-12"} flex-col items-center justify-center gap-0.5 rounded-lg border text-[9px] font-medium leading-none transition-colors ${st.box} ${
+                      clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"
+                    } ${selected ? "ring-2 ring-slate-900 ring-offset-1" : ""}`}
+                  >
+                    {st.icon}
+                    {!compact && (
+                      <span className="tabular-nums">
+                        {assignment ? slotDateLabel(assignment.date) : "vaga"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      {alerta && (
+        <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+          {alerta}
+        </p>
+      )}
     </div>
   );
 }

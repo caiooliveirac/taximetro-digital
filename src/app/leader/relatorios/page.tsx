@@ -24,13 +24,12 @@ type ComplianceRow = {
   name: string;
   facultyAbbr: string;
   targetShifts: number;
-  targetShiftsPerWeek: number;
   totalCompleted: number;
   totalAbsent: number;
   totalHours: number;
   totalPct: number | null;
   thisWeekCompleted: number;
-  belowWeeklyTarget: boolean;
+  missingSlots: number;
   futureScheduled: number;
   rawDeficit: number;
   netDeficit: number;
@@ -218,8 +217,10 @@ export default function LeaderRelatorios() {
                         )}
                         {hasTargets && (
                           <TableCell className="text-center">
-                            {c && c.targetShiftsPerWeek > 0 ? (
-                              c.status === "ok" ? (
+                            {c && c.targetShifts > 0 ? (
+                              (c.missingSlots ?? 0) > 0 ? (
+                                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700">⚠️ {c.missingSlots}</span>
+                              ) : c.status === "ok" ? (
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700">OK</span>
                               ) : c.status === "compensating" ? (
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">Compensando</span>

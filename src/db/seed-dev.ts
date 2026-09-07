@@ -131,22 +131,23 @@ async function seedDev() {
   // 2. Faculty targets (segmented by base type: USA/CRU/CRL)
   // ============================================================
   console.log("🎯 Atualizando metas por tipo de base...");
-  const targets: Record<string, { usas: number; crus: number; crls: number; hours: number; total: number }> = {
-    ZARNS: { usas: 1, crus: 1, crls: 1, hours: 480, total: 3 },     // dev: higher targets
-    UFBA: { usas: 1, crus: 1, crls: 0, hours: 480, total: 2 },
-    AFYA: { usas: 1, crus: 1, crls: 1, hours: 480, total: 3 },
-    UNIFACS: { usas: 0, crus: 1, crls: 1, hours: 480, total: 2 },
-    EBMSP: { usas: 0, crus: 4, crls: 0, hours: 480, total: 4 },     // EBMSP: 4 CRU per week (6h shifts)
+  // Metas diretas da rotação: quantos plantões de cada tipo o interno cumpre.
+  // Cada número vira uma casinha na tela dele.
+  const targets: Record<string, { usas: number; crus: number; crls: number; hours: number }> = {
+    ZARNS: { usas: 8, crus: 8, crls: 8, hours: 480 },     // dev: metas altas
+    UFBA: { usas: 8, crus: 8, crls: 0, hours: 480 },
+    AFYA: { usas: 8, crus: 8, crls: 8, hours: 480 },
+    UNIFACS: { usas: 0, crus: 8, crls: 8, hours: 480 },
+    EBMSP: { usas: 0, crus: 32, crls: 0, hours: 480 },    // EBMSP: turnos de 6h
   };
-  
+
   for (const abbr of FAC_ABBR) {
     const t = targets[abbr];
     await db.update(faculties).set({
-      targetHours: t.hours, targetShifts: 50,
-      targetShiftsPerWeek: t.total, // backward compat
-      targetUSAsPerWeek: t.usas,
-      targetCRUsPerWeek: t.crus,
-      targetCRLsPerWeek: t.crls,
+      targetHours: t.hours,
+      targetUSAsTotal: t.usas,
+      targetCRUsTotal: t.crus,
+      targetCRLsTotal: t.crls,
       totalInterns: 40,
     }).where(eq(faculties.id, facByAbbr[abbr].id));
   }

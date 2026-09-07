@@ -12,7 +12,7 @@ import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { getFacultyStyle } from "@/lib/base-colors";
-import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr, weeksBetweenDateStr } from "@/lib/utils";
+import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr } from "@/lib/utils";
 import { sessionHasRole } from "@/lib/roles";
 import { isTodayOrFutureRequest, type RequestShiftRow } from "@/features/requests/domain/request-shift-window";
 import { PendingApprovals, type PendingRequest } from "@/components/pending-approvals";
@@ -33,12 +33,14 @@ type ComplianceRow = {
   facultyAbbr: string;
   rotationStartDate: string;
   targetShifts: number;
-  targetShiftsPerWeek: number;
-  targetUSAPerWeek: number;
   targetUSATotal: number;
-  targetCRUPerWeek: number;
   targetCRUTotal: number;
-  targetCRLPerWeek: number;
+  targetCRLTotal: number;
+  // Vagas da meta sem plantão escalado — as casinhas em aberto.
+  missingUSA: number;
+  missingCRU: number;
+  missingCRL: number;
+  missingSlots: number;
   totalCompleted: number;
   totalDeficit: number;
   totalPct: number | null;
@@ -49,11 +51,6 @@ type ComplianceRow = {
   lastWeekUSACompleted: number;
   lastWeekCRUCompleted: number;
   lastWeekCRLCompleted: number;
-  weeklyUSADeficit: number;
-  weeklyCRUDeficit: number;
-  weeklyCRLDeficit: number;
-  weeklyDeficit: number;
-  belowWeeklyTarget: boolean;
   futureScheduled: number;
   rawDeficit: number;
   netDeficit: number;
@@ -62,7 +59,7 @@ type ComplianceRow = {
 
 type ComplianceSummary = {
   totalInterns: number;
-  belowWeeklyTarget: number;
+  belowTypeTarget: number;
   belowTotalTarget: number;
   compensating: number;
 };
@@ -110,8 +107,6 @@ const CATEGORY_CONFIG: Record<WeeklyCategory, { label: string; border: string; b
 
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 const CHECKIN_DONE = new Set(["CHECKED_IN", "CHECKED_OUT"]);
-const COMPLETED_STATUSES = new Set(["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"]);
-const PROJECTABLE_FUTURE_STATUSES = new Set(["SCHEDULED", "CONFIRMED"]);
 
 function dayLabel(date: string) {
   const d = new Date(`${date}T12:00:00Z`);
@@ -388,6 +383,9 @@ export default function LeaderDashboard() {
     }
   }
 
+  // Categoria pela meta da faculdade, não por semana: falta na semana continua
+  // sendo o alarme mais urgente, mas "sub-alocado" agora é casinha em aberto —
+  // vaga da meta que ninguém escalou até o fim da rotação.
   function weeklyCategory(c: ComplianceRow): WeeklyCategory {
     const truth = weeklyTruthByIntern.get(c.userId) ?? {
       usaCount: 0,
@@ -397,8 +395,7 @@ export default function LeaderDashboard() {
       eligibleAbsent: 0,
     };
     if (truth.eligibleAbsent > 0) return "com_falta";
-    const effective = truth.eligibleScheduled - truth.eligibleAbsent;
-    if (c.targetShiftsPerWeek > 0 && effective < c.targetShiftsPerWeek) return "sub_alocado";
+    if ((c.missingSlots ?? 0) > 0) return "sub_alocado";
     return "na_meta";
   }
 
@@ -449,29 +446,11 @@ export default function LeaderDashboard() {
     const personAllRows = (monitorAssignmentsByIntern.get(row.userId) ?? []).filter((assignment) => assignment.status !== "CANCELLED");
     const rotationStart = row.rotationStartDate || startOfWeekDateStr(today);
     const relevantRows = personAllRows.filter((assignment) => assignment.date >= rotationStart);
-    const currentWeekStart = startOfWeekDateStr(today);
-    const rotationWeekStart = startOfWeekDateStr(rotationStart);
-    const elapsedWeeksIncludingCurrent = weeksBetweenDateStr(rotationWeekStart, currentWeekStart) + 1;
-    const elapsedPastWeeks = Math.max(0, elapsedWeeksIncludingCurrent - 1);
-
-    const usaTotalTarget = row.targetUSATotal > 0
-      ? row.targetUSATotal
-      : Math.max(0, (row.targetUSAPerWeek ?? 0) * 5);
-    const usaExpectedPast = Math.min(usaTotalTarget, elapsedPastWeeks * (row.targetUSAPerWeek ?? 0));
-    const usaCompletedPast = relevantRows.filter((assignment) => assignment.baseType === "USA" && assignment.date < currentWeekStart && COMPLETED_STATUSES.has(assignment.status)).length;
-    const usaFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "USA" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
-    const usaDebt = Math.max(0, usaExpectedPast - (usaCompletedPast + usaFutureScheduled));
-
-    const cruTotalTarget = row.targetCRUTotal > 0
-      ? row.targetCRUTotal
-      : Math.max(0, (row.targetCRUPerWeek ?? 0) * 5);
-    const cruCompleted = relevantRows.filter((assignment) => assignment.baseType === "CENTRAL" && COMPLETED_STATUSES.has(assignment.status)).length;
-    const cruFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "CENTRAL" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
-    const cruDebt = Math.max(0, cruTotalTarget - (cruCompleted + cruFutureScheduled));
-
-    const crlCompleted = relevantRows.filter((assignment) => assignment.baseType === "CRL" && COMPLETED_STATUSES.has(assignment.status)).length;
-    const crlFutureScheduled = relevantRows.filter((assignment) => assignment.baseType === "CRL" && assignment.date >= today && PROJECTABLE_FUTURE_STATUSES.has(assignment.status)).length;
-    const crlDebt = Math.max(0, (row.targetCRLPerWeek ?? 0) - (crlCompleted + crlFutureScheduled));
+    // Dívida por tipo = casinha em aberto. A conta é a do compliance
+    // (src/lib/goal-slots.ts), para o líder e o interno verem o mesmo número.
+    const usaDebt = row.missingUSA ?? 0;
+    const cruDebt = row.missingCRU ?? 0;
+    const crlDebt = row.missingCRL ?? 0;
 
     const unresolvedAbsence = relevantRows.filter((assignment) => assignment.status === "ABSENT" && !(assignment.absenceJustification && assignment.absenceJustification.trim().length > 0)).length;
 
@@ -846,7 +825,7 @@ export default function LeaderDashboard() {
       {/* Weekly goal tracking */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-900">Meta Semanal e Vida da Escala</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Meta da Rotação e Vida da Escala</h2>
           <div className="flex items-center gap-2">
             {(["com_falta", "sub_alocado", "na_meta"] as const).map((cat) => {
               const cfg = CATEGORY_CONFIG[cat];
@@ -903,7 +882,6 @@ export default function LeaderDashboard() {
                       eligibleScheduled: 0,
                       eligibleAbsent: 0,
                     };
-                    const effective = truth.eligibleScheduled - truth.eligibleAbsent;
                     const personAssignments = (weeklyAssignmentsByIntern.get(c.userId) ?? []).slice().sort((left, right) => {
                       const rank = (type: string) => {
                         if (type === "USA") return 0;
@@ -984,8 +962,10 @@ export default function LeaderDashboard() {
                           </div>
                         </div>
                         <div className="mt-2 flex items-center gap-3 text-xs sm:mt-0">
-                          <span className={`font-medium tabular-nums ${effective >= c.targetShiftsPerWeek ? "text-emerald-600" : "text-red-600"}`}>
-                            {effective}/{c.targetShiftsPerWeek}
+                          <span className={`font-medium tabular-nums ${(c.missingSlots ?? 0) === 0 ? "text-emerald-600" : "text-amber-700"}`}>
+                            {(c.missingSlots ?? 0) === 0
+                              ? `${c.totalCompleted}/${c.targetShifts}`
+                              : `⚠️ ${c.missingSlots} vaga${c.missingSlots > 1 ? "s" : ""} da meta`}
                           </span>
                           {truth.eligibleAbsent > 0 && (
                             <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-700 font-medium">

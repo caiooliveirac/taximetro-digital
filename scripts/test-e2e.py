@@ -341,13 +341,13 @@ check(len(comp_data) >= 35,
 
 check("totalInterns" in comp_summary,
       f"Summary: {comp_summary.get('totalInterns')} internos, "
-      f"{comp_summary.get('belowWeeklyTarget','')} abaixo meta semanal",
+      f"{comp_summary.get('belowTypeTarget','')} com vaga da meta em aberto",
       "Summary incompleto")
 
 # Required fields
 if comp_data:
     sample = comp_data[0]
-    req_fields = ["userId","name","targetShifts","targetShiftsPerWeek",
+    req_fields = ["userId","name","targetShifts","missingSlots",
                   "totalCompleted","totalAbsent","rawDeficit","netDeficit","status"]
     missing_f = [f for f in req_fields if f not in sample]
     check(len(missing_f) == 0,

@@ -370,7 +370,7 @@ export async function generateAttendanceReports(databaseUrl) {
                 f.id AS faculty_id,
                 f.abbreviation AS faculty_abbr,
                 f.name AS faculty_name,
-                f.target_shifts AS target_shifts,
+                (f.target_usas_total + f.target_crus_total + f.target_crls_total) AS target_shifts,
                 f.target_hours AS target_hours,
                 f.target_crus_total AS target_crus_total,
                 u.id AS intern_id,

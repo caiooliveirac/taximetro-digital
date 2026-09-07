@@ -7,7 +7,6 @@ export type VelocimeterData = {
   target: number;
   rotationStartDate: string | null;
   rotationEndDate: string | null;
-  weeklyTarget: number;
 };
 
 export type VelocimeterStatus = "ok" | "atencao" | "critico" | "concluido" | "neutro";
@@ -39,7 +38,7 @@ function daysBetween(from: string, to: string): number {
 
 export function computeVelocimeter(data: VelocimeterData): Computed {
   const today = operationalDateStr();
-  const { completed, target, rotationStartDate, rotationEndDate, weeklyTarget } = data;
+  const { completed, target, rotationStartDate, rotationEndDate } = data;
   const scheduled = data.scheduled ?? 0;
   const pct = target > 0 ? Math.min(100, Math.round((completed / target) * 100)) : 0;
   const projectedPct = target > 0 ? Math.min(100, Math.round(((completed + scheduled) / target) * 100)) : 0;
@@ -71,13 +70,15 @@ export function computeVelocimeter(data: VelocimeterData): Computed {
   }
 
   const ritmoNecessario = restante / weeksRemaining;
-  const cabe = weeksRemaining * weeklyTarget >= restante;
+  // Ritmo nominal da rotação: a meta direta rateada pelas semanas que a
+  // rotação tem. Substituiu a meta semanal por faculdade, que saiu do produto.
+  const ritmoNominal = target / Math.max(1, weeksElapsed + weeksRemaining);
+  const cabe = weeksRemaining * ritmoNominal >= restante;
 
   let status: VelocimeterStatus;
   // Agenda já cobre o que falta: verde, mesmo com ritmo passado abaixo da meta.
   if (faltaAgendar === 0) status = "ok";
   else if (!cabe) status = "critico";
-  else if (weeklyTarget === 0) status = "atencao";
   else if (ritmoNecessario > ritmoAtual * AMBER_THRESHOLD) status = "atencao";
   else status = "ok";
 

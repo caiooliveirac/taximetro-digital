@@ -4,24 +4,16 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   UserPlus, Link2, Copy, Check, Clock, UserCheck, UserX, Trash2, Target,
-  ChevronDown, Calendar, MapPin, ArrowRight, Plus, X,
+  ChevronRight, Calendar, ArrowRight, Plus, X,
   Archive, ArchiveRestore,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { PhotoLightbox } from "@/components/photo-lightbox";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { Button } from "@/components/ui/button";
-import { getFacultyStyle } from "@/lib/base-colors";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
-import { operationalDateStr } from "@/lib/utils";
-import {
-  RealizedByTypeBoxes,
-  ShiftListByKind,
-  WeekBreakdownByType,
-  SwapHistoryList,
-  AssignmentDetailPanel,
-} from "@/components/admin/intern-shifts-blocks";
+import { SwapHistoryList } from "@/components/admin/intern-shifts-blocks";
+import { InternHistorySection } from "@/components/admin/intern-history-section";
 
 type UserRow = {
   id: string;
@@ -54,7 +46,6 @@ type ComplianceRow = {
   userId: string;
   name: string;
   targetShifts: number;
-  targetShiftsPerWeek: number;
   totalCompleted: number;
   totalAbsent: number;
   totalDeficit: number;
@@ -62,58 +53,16 @@ type ComplianceRow = {
   thisWeekCompleted: number;
   thisWeekScheduled: number;
   thisWeekAbsent: number;
-  belowWeeklyTarget: boolean;
+  missingSlots?: number;
   futureScheduled: number;
   rawDeficit: number;
   netDeficit: number;
   status: "ok" | "compensating" | "partial" | "deficit";
   rotationStartDate: string | null;
   rotationEndDate: string | null;
-  targetUSAPerWeek?: number;
-  targetCRUPerWeek?: number;
-  targetCRLPerWeek?: number;
-  thisWeekUSAPlanned?: number;
-  thisWeekCRUPlanned?: number;
-  thisWeekCRLPlanned?: number;
-  lastWeekUSACompleted?: number;
-  lastWeekCRUCompleted?: number;
-  lastWeekCRLCompleted?: number;
-};
-
-type AssignmentRow = {
-  id: string;
-  internId: string;
-  baseCode: string;
-  baseName: string;
-  baseType?: string;
-  date: string;
-  period: string;
-  status: string;
-  checkinStatus?: string | null;
-  checkinMethod?: string | null;
-  checkinAt?: string | null;
-  totpValidatedAt?: string | null;
-  validatedBy?: string | null;
-  validatedByName?: string | null;
-  checkoutAt?: string | null;
-  checkoutConfirmedBy?: string | null;
-  checkoutConfirmedByName?: string | null;
-  checkoutNotes?: string | null;
-  internObservations?: string | null;
-  preceptorObservations?: string | null;
-  absenceJustification?: string | null;
-  absenceJustificationActor?: string | null;
-  absenceJustificationAt?: string | null;
-};
-
-type CaseRecord = {
-  id: string;
-  assignmentId: string;
-  internId: string;
-  caseNumber: string;
-  nickname: string;
-  description: string | null;
-  createdAt: string;
+  targetUSATotal?: number;
+  targetCRUTotal?: number;
+  targetCRLTotal?: number;
 };
 
 type InviteLink = {
@@ -152,9 +101,6 @@ export default function LeaderInternos() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [archivedUsers, setArchivedUsers] = useState<UserRow[]>([]);
   const [compliance, setCompliance] = useState<ComplianceRow[]>([]);
-  const [internAssignmentsById, setInternAssignmentsById] = useState<Record<string, AssignmentRow[]>>({});
-  const [caseRecordsByInternId, setCaseRecordsByInternId] = useState<Record<string, CaseRecord[]>>({});
-  const [loadingHistoryById, setLoadingHistoryById] = useState<Record<string, boolean>>({});
   const [pending, setPending] = useState<UserRow[]>([]);
   const [pendingPhotoChanges, setPendingPhotoChanges] = useState<PhotoChangeRequestRow[]>([]);
   const [links, setLinks] = useState<InviteLink[]>([]);
@@ -162,14 +108,13 @@ export default function LeaderInternos() {
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedInternId, setSelectedInternId] = useState<string | null>(null);
+  // Turma de cada interno, como o servidor devolve em /api/leader/interns.
+  const [cohortLabelById, setCohortLabelById] = useState<Record<string, string | null>>({});
   const [error, setError] = useState("");
-  const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [justificationAssignment, setJustificationAssignment] = useState<AssignmentRow | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; alt: string } | null>(null);
   const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
-  const [userNameById, setUserNameById] = useState<Record<string, string>>({});
 
   /* ── Allocation modal ── */
   const [allocIntern, setAllocIntern] = useState<{ id: string; name: string } | null>(null);
@@ -182,19 +127,34 @@ export default function LeaderInternos() {
 
   const loadData = useCallback(async () => {
     try {
-      const [usersRes, pendingRes, linksRes, complianceRes, swapRes] = await Promise.all([
+      const [usersRes, scopedRes, pendingRes, linksRes, complianceRes, swapRes] = await Promise.all([
         fetch("/taximetro/api/admin/users").then((r) => r.json()),
+        // Quem é "meu interno" quem decide é o servidor: /api/leader/interns já
+        // devolve a faculdade do líder recortada na turma dele. A lista de
+        // usuários traz o cadastro (CPF, e-mail); a turma vem daqui.
+        fetch("/taximetro/api/leader/interns").then((r) => r.json()).catch(() => ({ success: false })),
         fetch("/taximetro/api/leader/pendentes").then((r) => r.json()),
         fetch("/taximetro/api/leader/convites").then((r) => r.json()),
         fetch("/taximetro/api/compliance").then((r) => r.json()),
         fetch("/taximetro/api/requests/swap-history").then((r) => r.json()),
       ]);
+
+      type ScopedIntern = {
+        id: string; userActive: boolean; roleActive: boolean; isArchived: boolean;
+        cohortName: string | null; cohortLabel: string | null;
+      };
+      // Sem o recorte (coordenador entrando direto na tela do líder, ou falha da
+      // rota), a lista degrada para o comportamento antigo: a faculdade inteira.
+      const scoped: ScopedIntern[] | null = scopedRes?.success ? scopedRes.data : null;
+      if (scoped) {
+        setCohortLabelById(Object.fromEntries(scoped.map((r) => [r.id, r.cohortName ?? r.cohortLabel])));
+      }
+      const inScope = (id: string) => !scoped || scoped.some((r) => r.id === id && r.roleActive && r.userActive);
+
       if (usersRes.success) {
-        const usersMap = Object.fromEntries((usersRes.data as Array<{ id: string; name: string }>).map((u) => [u.id, u.name]));
-        setUserNameById(usersMap);
-        const allInterns = usersRes.data.filter((u: UserRow) => u.role === "INTERN" && u.isActive);
-        setUsers(allInterns.filter((u: UserRow) => !u.isArchived));
-        setArchivedUsers(allInterns.filter((u: UserRow) => u.isArchived));
+        const allInterns = (usersRes.data as UserRow[]).filter((u) => u.role === "INTERN" && u.isActive && inScope(u.id));
+        setUsers(allInterns.filter((u) => !u.isArchived));
+        setArchivedUsers(allInterns.filter((u) => u.isArchived));
       }
       if (pendingRes.success) {
         setPending(pendingRes.data.users ?? []);
@@ -218,48 +178,11 @@ export default function LeaderInternos() {
     setFocusInternId(internId);
   }, []);
 
-  async function loadInternAssignments(internId: string) {
-    if (internAssignmentsById[internId] || loadingHistoryById[internId]) return;
-
-    setLoadingHistoryById((current) => ({ ...current, [internId]: true }));
-    try {
-      const [assignResponse, caseRecordsResponse] = await Promise.all([
-        fetch(`/taximetro/api/assignments?internId=${internId}`),
-        fetch(`/taximetro/api/case-records?internId=${internId}`),
-      ]);
-
-      const assignJson = await assignResponse.json();
-      const caseRecordsJson = await caseRecordsResponse.json();
-
-      if (assignJson.success) {
-        const rows: AssignmentRow[] = (assignJson.data as AssignmentRow[])
-          .filter((assignment) => assignment.status !== "CANCELLED")
-          .sort((left, right) => right.date.localeCompare(left.date));
-        setInternAssignmentsById((current) => ({ ...current, [internId]: rows }));
-      } else {
-        setInternAssignmentsById((current) => ({ ...current, [internId]: [] }));
-      }
-
-      if (caseRecordsJson.success) {
-        setCaseRecordsByInternId((current) => ({ ...current, [internId]: caseRecordsJson.data as CaseRecord[] }));
-      } else {
-        setCaseRecordsByInternId((current) => ({ ...current, [internId]: [] }));
-      }
-    } catch {
-      setInternAssignmentsById((current) => ({ ...current, [internId]: [] }));
-      setCaseRecordsByInternId((current) => ({ ...current, [internId]: [] }));
-    } finally {
-      setLoadingHistoryById((current) => ({ ...current, [internId]: false }));
-    }
-  }
 
   useEffect(() => {
     if (!focusInternId || tab !== "ativos") return;
     if (!users.some((user) => user.id === focusInternId)) return;
-
-    setExpandedId(focusInternId);
-    setExpandedAssignmentId(null);
-    void loadInternAssignments(focusInternId);
+    setSelectedInternId(focusInternId);
   }, [focusInternId, tab, users]);
 
   async function generateLink() {
@@ -311,7 +234,7 @@ export default function LeaderInternos() {
       const json = await res.json();
       if (!json.success) setActionMsg({ type: "error", text: json.error || "Erro ao processar." });
       else setActionMsg({ type: "success", text: archive ? "Interno arquivado." : "Interno desarquivado." });
-      setExpandedId(null);
+      setSelectedInternId(null);
       loadData();
     } catch {
       setActionMsg({ type: "error", text: "Erro de conexão." });
@@ -390,19 +313,6 @@ export default function LeaderInternos() {
     setAllocLoading(false);
   }
 
-  function handleJustificationSaved(assignmentId: string, data: {
-    absenceJustification: string | null;
-    absenceJustificationActor: string | null;
-    absenceJustificationAt: string | null;
-  }) {
-    setInternAssignmentsById((current) => {
-      const next: Record<string, AssignmentRow[]> = {};
-      for (const [internId, assignments] of Object.entries(current)) {
-        next[internId] = assignments.map((assignment) => assignment.id === assignmentId ? { ...assignment, ...data } : assignment);
-      }
-      return next;
-    });
-  }
 
   /* ── Derive available dates from selected base ── */
   const allocDatesForBase = allocSlots
@@ -414,6 +324,11 @@ export default function LeaderInternos() {
       return { date, period: s.period as "DAY" | "NIGHT", dayLabel: DAY_LABELS[dayIdx] };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  const selectedIntern = selectedInternId ? users.find((u) => u.id === selectedInternId) ?? null : null;
+  const selectedSwaps = selectedIntern
+    ? swapHistory.filter((swap) => swap.requester.id === selectedIntern.id || swap.target.id === selectedIntern.id)
+    : [];
 
   const filtered = users.filter(
     (u) => !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.cpf.includes(search)
@@ -469,8 +384,67 @@ export default function LeaderInternos() {
         ))}
       </div>
 
-      {/* Tab: Ativos */}
-      {tab === "ativos" && (
+      {/* Tab: Ativos — ficha do interno selecionado */}
+      {tab === "ativos" && selectedIntern && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSelectedInternId(null)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                ← Voltar
+              </button>
+              <div className="min-w-0">
+                <p className="truncate text-lg font-semibold text-slate-900">{selectedIntern.name}</p>
+                <p className="text-xs text-slate-500">
+                  {[
+                    selectedIntern.facultyAbbr,
+                    cohortLabelById[selectedIntern.id],
+                    selectedIntern.cpf,
+                  ].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => openAllocModal({ id: selectedIntern.id, name: selectedIntern.name })}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2} />
+                Alocar
+              </button>
+              <Link href="/leader/escala" className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-700">
+                <Calendar className="h-4 w-4" strokeWidth={1.5} />
+                Ver escala
+                <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
+              </Link>
+              <button
+                onClick={() => handleArchive(selectedIntern.id, true)}
+                disabled={acting === selectedIntern.id}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50"
+              >
+                <Archive className="h-4 w-4" strokeWidth={1.5} />
+                Arquivar
+              </button>
+            </div>
+          </div>
+
+          {/* Mesma ficha que o coordenador vê: velocímetro, casinhas da meta,
+              plantões com detalhe de check-in/checkout e ocorrências. */}
+          <InternHistorySection internId={selectedIntern.id} />
+
+          <SwapHistoryList
+            swaps={selectedSwaps}
+            currentInternId={selectedIntern.id}
+            initialLimit={5}
+            density="compact"
+          />
+        </div>
+      )}
+
+      {/* Tab: Ativos — lista */}
+      {tab === "ativos" && !selectedIntern && (
         <div className="space-y-3">
           <input
             placeholder="Buscar por nome ou CPF..."
@@ -486,46 +460,29 @@ export default function LeaderInternos() {
                   <th className="px-4 py-3 font-medium text-center">Plantões</th>
                   <th className="px-4 py-3 font-medium text-center">Faltas</th>
                   <th className="px-4 py-3 font-medium text-center hidden sm:table-cell">Progresso</th>
-                  <th className="px-4 py-3 font-medium text-center hidden sm:table-cell">Semana</th>
+                  <th className="px-4 py-3 font-medium text-center hidden sm:table-cell">Meta</th>
                   <th className="w-8"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((u) => {
                   const c = compliance.find((cr) => cr.userId === u.id);
-                  const isExpanded = expandedId === u.id;
-                  const allAssignmentsForIntern = internAssignmentsById[u.id] ?? [];
-                  const loadingHistory = loadingHistoryById[u.id] ?? false;
-                  const today = operationalDateStr();
-                  const pastAssignmentsLeader = isExpanded
-                    ? allAssignmentsForIntern.filter((a) => a.date <= today)
-                    : [];
-                  const upcomingAssignmentsLeader = isExpanded
-                    ? allAssignmentsForIntern.filter((a) => a.date > today)
-                    : [];
-                  const internSwaps = isExpanded
-                    ? swapHistory.filter((s) => s.requester.id === u.id || s.target.id === u.id)
-                    : [];
 
                   return (
                     <tr
                       key={u.id}
-                      className={`border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${isExpanded ? "bg-slate-50" : "hover:bg-slate-50/50"}`}
-                      onClick={() => {
-                        const nextExpanded = isExpanded ? null : u.id;
-                        setExpandedId(nextExpanded);
-                        setExpandedAssignmentId(null);
-                        if (nextExpanded) {
-                          void loadInternAssignments(nextExpanded);
-                        }
-                      }}
+                      className="border-b border-slate-100 last:border-0 cursor-pointer transition-colors hover:bg-slate-50/50"
+                      onClick={() => setSelectedInternId(u.id)}
                     >
                       <td colSpan={6} className="p-0">
                         {/* Main row content */}
                         <div className="flex items-center">
                           <div className="flex-1 px-4 py-3 min-w-0">
                             <div className="font-medium text-slate-900">{u.name}</div>
-                            <div className="text-xs text-slate-400 font-mono">{u.cpf}</div>
+                            <div className="text-xs text-slate-400">
+                              <span className="font-mono">{u.cpf}</span>
+                              {cohortLabelById[u.id] && <span> · {cohortLabelById[u.id]}</span>}
+                            </div>
                           </div>
                           <div className="px-4 py-3 text-center w-20">
                             {c ? (
@@ -551,7 +508,6 @@ export default function LeaderInternos() {
                                   target: c.targetShifts,
                                   rotationStartDate: c.rotationStartDate,
                                   rotationEndDate: c.rotationEndDate,
-                                  weeklyTarget: c.targetShiftsPerWeek,
                                 }}
                               />
                             ) : (
@@ -559,10 +515,14 @@ export default function LeaderInternos() {
                             )}
                           </div>
                           <div className="px-4 py-3 text-center hidden sm:block w-28">
-                            {c && c.targetShiftsPerWeek > 0 ? (
-                              c.status === "ok" ? (
+                            {c && c.targetShifts > 0 ? (
+                              (c.missingSlots ?? 0) > 0 ? (
+                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700">
+                                  ⚠️ {c.missingSlots} vaga{(c.missingSlots ?? 0) > 1 ? "s" : ""}
+                                </span>
+                              ) : c.status === "ok" ? (
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700">
-                                  {c.thisWeekCompleted}/{c.targetShiftsPerWeek}
+                                  {c.totalCompleted}/{c.targetShifts}
                                 </span>
                               ) : c.status === "compensating" ? (
                                 <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">
@@ -584,150 +544,10 @@ export default function LeaderInternos() {
                             )}
                           </div>
                           <div className="px-2 py-3 w-8">
-                            <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} strokeWidth={1.5} />
+                            <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
                           </div>
                         </div>
 
-                        {/* Expanded detail panel */}
-                        {isExpanded && (
-                          <div className="border-t border-slate-100 px-4 py-4 space-y-4 bg-slate-50/50" onClick={(e) => e.stopPropagation()}>
-                            {c && c.targetShifts > 0 && (
-                              <VelocimeterCard
-                                variant="card"
-                                data={{
-                                  completed: c.totalCompleted,
-                                  target: c.targetShifts,
-                                  rotationStartDate: c.rotationStartDate,
-                                  rotationEndDate: c.rotationEndDate,
-                                  weeklyTarget: c.targetShiftsPerWeek,
-                                }}
-                              />
-                            )}
-                            {/* Compliance summary */}
-                            {c && (
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                  <p className="text-[10px] font-medium text-slate-500 uppercase">Esta semana</p>
-                                  <p className="text-lg font-bold text-slate-900">{c.thisWeekScheduled - c.thisWeekAbsent}<span className="text-sm text-slate-400">/{c.targetShiftsPerWeek}</span></p>
-                                </div>
-                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                  <p className="text-[10px] font-medium text-slate-500 uppercase">Realizados</p>
-                                  <p className="text-lg font-bold text-slate-900">{c.totalCompleted}<span className="text-sm text-slate-400">/{c.targetShifts}</span></p>
-                                </div>
-                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                  <p className="text-[10px] font-medium text-slate-500 uppercase">Agendados</p>
-                                  <p className="text-lg font-bold text-slate-900">{c.futureScheduled}</p>
-                                </div>
-                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                  <p className="text-[10px] font-medium text-slate-500 uppercase">Faltas</p>
-                                  <p className={`text-lg font-bold ${c.totalAbsent > 0 ? "text-red-600" : "text-slate-900"}`}>{c.totalAbsent}</p>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Breakdown semanal por tipo */}
-                            <WeekBreakdownByType compliance={c} />
-
-                            {/* Caixinhas CRU/USA/CRL realizados */}
-                            {pastAssignmentsLeader.length > 0 && (
-                              <RealizedByTypeBoxes assignments={pastAssignmentsLeader} size="sm" />
-                            )}
-
-                            {/* Próximos plantões */}
-                            <div>
-                              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Próximos plantões</h3>
-                              {loadingHistory ? (
-                                <p className="text-xs text-slate-400">Carregando...</p>
-                              ) : (
-                                <ShiftListByKind
-                                  items={upcomingAssignmentsLeader}
-                                  emptyMessage="Nenhum plantão agendado."
-                                  showStatus
-                                  initialLimit={10}
-                                />
-                              )}
-                            </div>
-
-                            {/* Swap history */}
-                            <SwapHistoryList
-                              swaps={internSwaps}
-                              currentInternId={u.id}
-                              initialLimit={5}
-                              density="compact"
-                            />
-
-                            {/* Histórico de plantões — agrupado por tipo, com expand para detalhes */}
-                            <div>
-                              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Histórico de plantões</h3>
-                              {loadingHistory ? (
-                                <p className="text-xs text-slate-400">Carregando histórico...</p>
-                              ) : (
-                                <ShiftListByKind
-                                  items={[...pastAssignmentsLeader].reverse()}
-                                  emptyMessage="Nenhum plantão registrado."
-                                  showStatus
-                                  initialLimit={10}
-                                  expandedId={expandedAssignmentId}
-                                  onToggleExpand={setExpandedAssignmentId}
-                                  renderInlineExtra={(a) =>
-                                    a.status === "ABSENT" ? (
-                                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                        <div className="min-w-0 text-xs text-slate-500">
-                                          {(a as AssignmentRow).absenceJustification ? (
-                                            <p className="truncate">{(a as AssignmentRow).absenceJustification}</p>
-                                          ) : (
-                                            <p className="text-amber-600">Sem justificativa registrada.</p>
-                                          )}
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setJustificationAssignment(a as AssignmentRow);
-                                          }}
-                                          className="shrink-0 text-xs font-medium text-accent-600 hover:text-accent-500"
-                                        >
-                                          {(a as AssignmentRow).absenceJustification ? "Ver ou editar justificativa" : "Justificar falta"}
-                                        </button>
-                                      </div>
-                                    ) : null
-                                  }
-                                  renderDetail={(a) => (
-                                    <AssignmentDetailPanel
-                                      assignment={a as AssignmentRow}
-                                      caseRecords={(caseRecordsByInternId[u.id] ?? []).filter((r) => r.assignmentId === a.id)}
-                                      userNameById={userNameById}
-                                    />
-                                  )}
-                                />
-                              )}
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex gap-2 flex-wrap">
-                              <button
-                                onClick={() => openAllocModal({ id: u.id, name: u.name })}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-                              >
-                                <Plus className="h-4 w-4" strokeWidth={2} />
-                                Alocar
-                              </button>
-                              <Link href="/leader/escala" className="inline-flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-2 text-sm font-medium text-white hover:bg-accent-700 transition-colors">
-                                <Calendar className="h-4 w-4" strokeWidth={1.5} />
-                                Ver escala
-                                <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
-                              </Link>
-                              <button
-                                onClick={() => handleArchive(u.id, true)}
-                                disabled={acting === u.id}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50"
-                              >
-                                <Archive className="h-4 w-4" strokeWidth={1.5} />
-                                Arquivar
-                              </button>
-                            </div>
-                          </div>
-                        )}
                       </td>
                     </tr>
                   );
@@ -1064,21 +884,6 @@ export default function LeaderInternos() {
         </div>
       )}
 
-      <AbsenceJustificationDialog
-        assignment={justificationAssignment ? {
-          id: justificationAssignment.id,
-          date: justificationAssignment.date,
-          period: justificationAssignment.period,
-          baseCode: justificationAssignment.baseCode,
-          baseName: justificationAssignment.baseName,
-          absenceJustification: justificationAssignment.absenceJustification,
-          absenceJustificationActor: justificationAssignment.absenceJustificationActor,
-          absenceJustificationAt: justificationAssignment.absenceJustificationAt,
-        } : null}
-        title="Justificar falta do aluno"
-        onClose={() => setJustificationAssignment(null)}
-        onSaved={handleJustificationSaved}
-      />
 
       {zoomedPhoto && (
         <PhotoLightbox

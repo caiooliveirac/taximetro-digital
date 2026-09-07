@@ -9,14 +9,11 @@ import {
 export const facultySchema = z.object({
   name: z.string().min(2).max(100),
   abbreviation: z.string().min(2).max(10),
+  // Metas diretas — quantos plantões de cada tipo e quantas horas na rotação.
   targetHours: z.number().int().min(0).default(0),
-  targetShifts: z.number().int().min(0).default(0),
-  targetShiftsPerWeek: z.number().int().min(0).default(0),
-  targetUSAsPerWeek: z.number().int().min(0).default(0),
   targetUSAsTotal: z.number().int().min(0).default(0),
-  targetCRUsPerWeek: z.number().int().min(0).default(0),
   targetCRUsTotal: z.number().int().min(0).default(0),
-  targetCRLsPerWeek: z.number().int().min(0).default(0),
+  targetCRLsTotal: z.number().int().min(0).default(0),
   totalInterns: z.number().int().min(0).default(0),
   rotationStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });

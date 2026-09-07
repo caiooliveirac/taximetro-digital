@@ -1,23 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Calendar, CheckCircle2, XCircle, Clock, Target, Activity, FileText, AlertCircle } from "lucide-react";
 import { operationalDateStr } from "@/lib/utils";
+import { canRecordManualAttendance } from "@/lib/attendance-permissions";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { ExcuseAbsenceDialog } from "@/components/excuse-absence-dialog";
 import {
   RealizedByTypeBoxes,
   ShiftListByKind,
-  WeekBreakdownByType,
+  GoalSlotsBoard,
   AssignmentDetailPanel,
   type Assignment as ShiftAssignment,
   type AssignmentDetail,
   type CaseRecordSummary,
-  type ComplianceWeekFields,
 } from "@/components/admin/intern-shifts-blocks";
 
-type Compliance = ComplianceWeekFields & {
+type Compliance = {
   userId: string;
   name: string;
   facultyAbbr: string;
@@ -30,8 +31,9 @@ type Compliance = ComplianceWeekFields & {
   thisWeekCompleted: number;
   thisWeekScheduled: number;
   status: "ok" | "compensating" | "partial" | "deficit";
-  belowWeeklyTarget: boolean;
-  targetShiftsPerWeek: number;
+  targetUSATotal?: number;
+  targetCRUTotal?: number;
+  targetCRLTotal?: number;
   lastWeekCompleted: number;
   rotationStartDate: string | null;
   rotationEndDate: string | null;
@@ -118,6 +120,10 @@ export function InternHistorySection(props: SectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [justifyAssignment, setJustifyAssignment] = useState<Assignment | null>(null);
   const [excuseAssignment, setExcuseAssignment] = useState<Assignment | null>(null);
+  // Abonar falta é da coordenação (e do preceptor na grade). O líder enxerga a
+  // mesma ficha, mas sem um botão que o servidor recusaria.
+  const { data: session } = useSession();
+  const canExcuse = canRecordManualAttendance(session);
 
   const today = operationalDateStr();
   const pastAll = assignments.filter((a) => a.date <= today);
@@ -163,13 +169,15 @@ export function InternHistorySection(props: SectionProps) {
               >
                 {full.absenceJustification ? "Editar justificativa" : "Justificar falta"}
               </button>
-              <button
-                type="button"
-                onClick={() => setExcuseAssignment(full)}
-                className="flex-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white hover:bg-violet-700"
-              >
-                Abonar falta
-              </button>
+              {canExcuse && (
+                <button
+                  type="button"
+                  onClick={() => setExcuseAssignment(full)}
+                  className="flex-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white hover:bg-violet-700"
+                >
+                  Abonar falta
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -205,7 +213,6 @@ export function InternHistorySection(props: SectionProps) {
             target: compliance.targetShifts,
             rotationStartDate: compliance.rotationStartDate,
             rotationEndDate: compliance.rotationEndDate,
-            weeklyTarget: compliance.targetShiftsPerWeek,
           }}
         />
       )}
@@ -241,7 +248,17 @@ export function InternHistorySection(props: SectionProps) {
             />
           </div>
           <div className="mt-3">
-            <WeekBreakdownByType compliance={compliance} />
+            <GoalSlotsBoard
+              assignments={assignments}
+              targets={{
+                USA: compliance.targetUSATotal ?? 0,
+                CRU: compliance.targetCRUTotal ?? 0,
+                CRL: compliance.targetCRLTotal ?? 0,
+              }}
+              today={today}
+              selectedId={expandedId}
+              onSelect={(a) => setExpandedId(expandedId === a.id ? null : a.id)}
+            />
           </div>
         </section>
       )}
