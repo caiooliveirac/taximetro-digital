@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summarizeGoals, totalMissingSlots } from "../src/lib/goal-slots";
+import { slotStatesFromCounts, summarizeGoals, totalMissingSlots } from "../src/lib/goal-slots";
 
 const today = "2026-09-07";
 
@@ -88,4 +88,14 @@ test("plantão além da meta aparece como casinha extra", () => {
   );
   assert.equal(usaGoal.slots.length, 8);
   assert.equal(usaGoal.missing, 0);
+});
+
+test("na lista, as casinhas saem da contagem do compliance", () => {
+  // 6 USA de meta: 2 realizados, 1 agendado, 3 sem ninguém escalar.
+  const states = slotStatesFromCounts({ done: 2, planned: 3, missing: 3 });
+  assert.deepEqual(states, ["done", "done", "scheduled", "empty", "empty", "empty"]);
+});
+
+test("contagem inconsistente não vira casinha negativa", () => {
+  assert.deepEqual(slotStatesFromCounts({ done: 4, planned: 2, missing: 0 }), ["done", "done", "done", "done"]);
 });

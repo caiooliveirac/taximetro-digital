@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
-  UserPlus, Link2, Copy, Check, Clock, UserCheck, UserX, Trash2, Target,
+  UserPlus, Link2, Copy, Check, Clock, UserCheck, UserX, Trash2,
   ChevronRight, Calendar, ArrowRight, Plus, X,
   Archive, ArchiveRestore,
 } from "lucide-react";
@@ -12,7 +12,7 @@ import { PhotoLightbox } from "@/components/photo-lightbox";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { Button } from "@/components/ui/button";
 import { VelocimeterCard } from "@/components/admin/velocimeter-card";
-import { SwapHistoryList } from "@/components/admin/intern-shifts-blocks";
+import { GoalSlotsStrip, SwapHistoryList } from "@/components/admin/intern-shifts-blocks";
 import { InternHistorySection } from "@/components/admin/intern-history-section";
 
 type UserRow = {
@@ -63,6 +63,15 @@ type ComplianceRow = {
   targetUSATotal?: number;
   targetCRUTotal?: number;
   targetCRLTotal?: number;
+  totalUSACompleted?: number;
+  totalCRUCompleted?: number;
+  totalCRLCompleted?: number;
+  totalUSAPlanned?: number;
+  totalCRUPlanned?: number;
+  totalCRLPlanned?: number;
+  missingUSA?: number;
+  missingCRU?: number;
+  missingCRL?: number;
 };
 
 type InviteLink = {
@@ -516,29 +525,20 @@ export default function LeaderInternos() {
                           </div>
                           <div className="px-4 py-3 text-center hidden sm:block w-28">
                             {c && c.targetShifts > 0 ? (
-                              (c.missingSlots ?? 0) > 0 ? (
-                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700">
-                                  ⚠️ {c.missingSlots} vaga{(c.missingSlots ?? 0) > 1 ? "s" : ""}
-                                </span>
-                              ) : c.status === "ok" ? (
-                                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700">
-                                  {c.totalCompleted}/{c.targetShifts}
-                                </span>
-                              ) : c.status === "compensating" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">
-                                  Compensando
-                                </span>
-                              ) : c.status === "partial" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700">
-                                  <Target className="h-3 w-3" strokeWidth={2} />
-                                  −{c.netDeficit}
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-red-50 text-red-700">
-                                  <Target className="h-3 w-3" strokeWidth={2} />
-                                  −{c.rawDeficit}
-                                </span>
-                              )
+                              <span className="inline-flex flex-col items-center gap-1">
+                                {/* As casinhas na própria lista: dá para varrer a
+                                    turma inteira sem abrir interno por interno. */}
+                                <GoalSlotsStrip counts={c} />
+                                {(c.missingSlots ?? 0) > 0 ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                    ⚠️ {c.missingSlots} vaga{(c.missingSlots ?? 0) > 1 ? "s" : ""}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                                    {c.totalCompleted}/{c.targetShifts}
+                                  </span>
+                                )}
+                              </span>
                             ) : (
                               <span className="text-xs text-slate-300">—</span>
                             )}

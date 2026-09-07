@@ -11,6 +11,7 @@ import {
 import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/table-skeleton";
+import { GoalSlotsStrip } from "@/components/admin/intern-shifts-blocks";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { addDaysToDateStr, getBrazilNowParts, isCurrentOperationalAssignment, localDateStr, startOfWeekDateStr } from "@/lib/utils";
 import { sessionHasRole } from "@/lib/roles";
@@ -41,6 +42,12 @@ type ComplianceRow = {
   missingCRU: number;
   missingCRL: number;
   missingSlots: number;
+  totalUSACompleted: number;
+  totalCRUCompleted: number;
+  totalCRLCompleted: number;
+  totalUSAPlanned: number;
+  totalCRUPlanned: number;
+  totalCRLPlanned: number;
   totalCompleted: number;
   totalDeficit: number;
   totalPct: number | null;
@@ -962,10 +969,14 @@ export default function LeaderDashboard() {
                           </div>
                         </div>
                         <div className="mt-2 flex items-center gap-3 text-xs sm:mt-0">
-                          <span className={`font-medium tabular-nums ${(c.missingSlots ?? 0) === 0 ? "text-emerald-600" : "text-amber-700"}`}>
-                            {(c.missingSlots ?? 0) === 0
-                              ? `${c.totalCompleted}/${c.targetShifts}`
-                              : `⚠️ ${c.missingSlots} vaga${c.missingSlots > 1 ? "s" : ""} da meta`}
+                          <span className="flex flex-col items-end gap-1">
+                            {/* Casinhas na linha: o líder varre a turma sem abrir um por um. */}
+                            <GoalSlotsStrip counts={c} />
+                            <span className={`font-medium tabular-nums ${(c.missingSlots ?? 0) === 0 ? "text-emerald-600" : "text-amber-700"}`}>
+                              {(c.missingSlots ?? 0) === 0
+                                ? `${c.totalCompleted}/${c.targetShifts}`
+                                : `⚠️ ${c.missingSlots} vaga${c.missingSlots > 1 ? "s" : ""} da meta`}
+                            </span>
                           </span>
                           {truth.eligibleAbsent > 0 && (
                             <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-700 font-medium">
