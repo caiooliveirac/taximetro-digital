@@ -166,6 +166,30 @@ export function AdminRulesBoard() {
 
     const totalSlots = rules.reduce((sum, rule) => sum + rule.capacity, 0);
 
+    // Plantões/semana por faculdade, separados em USA (bases tipo USA) e CRU
+    // (base CRU). Sai direto das regras, então acompanha cada edição.
+    const baseTypeById = new Map(bases.map((base) => [base.id, base.type]));
+    const baseCodeById = new Map(bases.map((base) => [base.id, base.code]));
+    const usaPorFaculdade = new Map<string, number>();
+    const cruPorFaculdade = new Map<string, number>();
+    for (const rule of rules) {
+        if (!rule.isActive) continue;
+        if (baseTypeById.get(rule.baseId) === "USA") {
+            usaPorFaculdade.set(rule.facultyAbbr, (usaPorFaculdade.get(rule.facultyAbbr) ?? 0) + rule.capacity);
+        } else if (baseCodeById.get(rule.baseId) === "CRU") {
+            cruPorFaculdade.set(rule.facultyAbbr, (cruPorFaculdade.get(rule.facultyAbbr) ?? 0) + rule.capacity);
+        }
+    }
+    const contagemPorFaculdade = faculties
+        .map((faculty) => ({
+            abbr: faculty.abbreviation,
+            usa: usaPorFaculdade.get(faculty.abbreviation) ?? 0,
+            cru: cruPorFaculdade.get(faculty.abbreviation) ?? 0,
+        }))
+        .filter((item) => item.usa > 0 || item.cru > 0);
+    const totalUsa = contagemPorFaculdade.reduce((sum, item) => sum + item.usa, 0);
+    const totalCru = contagemPorFaculdade.reduce((sum, item) => sum + item.cru, 0);
+
     return (
         <div className="space-y-4">
             <div>
@@ -176,6 +200,27 @@ export function AdminRulesBoard() {
             <div>
                 <h2 className="text-2xl font-bold text-slate-900">Regras da Semana</h2>
                 <p className="text-sm text-slate-500">{rules.length} regras · {totalSlots} vagas/semana · {bases.length} bases</p>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs" data-testid="contagem-plantoes-semana">
+                    <span className="inline-flex items-center rounded-full bg-slate-900 px-2.5 py-1 font-semibold text-white">
+                        USA {totalUsa} · CRU {totalCru} /semana
+                    </span>
+                    {contagemPorFaculdade.map((item) => {
+                        const style = getFacultyStyle(item.abbr);
+                        return (
+                            <span
+                                key={item.abbr}
+                                title={`${item.abbr}: ${item.usa} plantões USA e ${item.cru} plantões CRU por semana`}
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium ${style.pill}`}
+                            >
+                                <span className={`h-2 w-2 rounded-full ${style.dot}`} />
+                                {item.abbr}
+                                <span className="opacity-70">USA {item.usa}</span>
+                                <span className="opacity-40">·</span>
+                                <span className="opacity-70">CRU {item.cru}</span>
+                            </span>
+                        );
+                    })}
+                </div>
             </div>
 
             {/* Filtro de base como chips visíveis (sem dropdown) — 1 toque para focar a base */}
