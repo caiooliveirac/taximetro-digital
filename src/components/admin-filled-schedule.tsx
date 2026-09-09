@@ -809,6 +809,40 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         [filterDayKey, weekDates],
     );
 
+    /**
+     * Plantões reais (não cancelados) por faculdade no recorte de datas em
+     * vista, separados em USA e CRU. Ignora os filtros secundários de
+     * propósito: é o retrato da semana (ou do dia escolhido), não do filtro.
+     */
+    const contagemPlantoes = useMemo(() => {
+        const showUsa = scope === "all" || scope === "usa";
+        const showCru = scope === "all" || scope === "regulation" || scope === "cru";
+        if (!showUsa && !showCru) return null;
+        const dates = new Set(filteredWeekDates);
+        const porFaculdade = new Map<string, { usa: number; cru: number }>();
+        for (const assignment of assignments) {
+            if (assignment.status === "CANCELLED") continue;
+            if (!dates.has(normalizeDateKey(assignment.date))) continue;
+            const isUsa = assignment.base_type === "USA";
+            const isCru = assignment.base_code === "CRU";
+            if (!(isUsa && showUsa) && !(isCru && showCru)) continue;
+            const entry = porFaculdade.get(assignment.faculty_abbr) ?? { usa: 0, cru: 0 };
+            if (isUsa) entry.usa += 1;
+            if (isCru) entry.cru += 1;
+            porFaculdade.set(assignment.faculty_abbr, entry);
+        }
+        const items = [...porFaculdade.entries()]
+            .map(([abbr, counts]) => ({ abbr, ...counts }))
+            .sort((left, right) => left.abbr.localeCompare(right.abbr));
+        return {
+            showUsa,
+            showCru,
+            items,
+            totalUsa: items.reduce((sum, item) => sum + item.usa, 0),
+            totalCru: items.reduce((sum, item) => sum + item.cru, 0),
+        };
+    }, [assignments, filteredWeekDates, scope]);
+
     // No mobile, a grade abre já rolada até a coluna de hoje (uma vez por montagem);
     // no desktop a semana inteira cabe, então não faz nada.
     const autoScrollGridToToday = useCallback((node: HTMLDivElement | null) => {
@@ -1894,6 +1928,35 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                 </div>
                 </div>
+
+                {contagemPlantoes && (
+                    <div className="overflow-x-auto" data-testid="contagem-plantoes-escala">
+                        <div className="flex min-w-max items-center gap-1.5 text-xs">
+                            <span className="inline-flex items-center rounded-full bg-slate-900 px-2.5 py-1 font-semibold text-white">
+                                {contagemPlantoes.showUsa && `USA ${contagemPlantoes.totalUsa}`}
+                                {contagemPlantoes.showUsa && contagemPlantoes.showCru && " · "}
+                                {contagemPlantoes.showCru && `CRU ${contagemPlantoes.totalCru}`}
+                                {filterDayKey ? " /dia" : " /semana"}
+                            </span>
+                            {contagemPlantoes.items.map((item) => {
+                                const facultyTone = getFacultyStyle(item.abbr);
+                                return (
+                                    <span
+                                        key={item.abbr}
+                                        title={`${item.abbr}: ${item.usa} USA e ${item.cru} CRU ${filterDayKey ? "no dia" : "na semana"}`}
+                                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium ${facultyTone.pill}`}
+                                    >
+                                        <span className={`h-2 w-2 rounded-full ${facultyTone.dot}`} />
+                                        {item.abbr}
+                                        {contagemPlantoes.showUsa && <span className="opacity-70">USA {item.usa}</span>}
+                                        {contagemPlantoes.showUsa && contagemPlantoes.showCru && <span className="opacity-40">·</span>}
+                                        {contagemPlantoes.showCru && <span className="opacity-70">CRU {item.cru}</span>}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Card B — filtros secundários; no mobile ficam atrás do toggle "Filtros (N)" */}
