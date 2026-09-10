@@ -846,36 +846,44 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     }, [assignments, filteredWeekDates, scope]);
 
     /**
-     * Painel da tag de contagem: quem da faculdade ainda não tem plantão na
-     * semana (ordem alfabética) e quem tem, com onde está (ex.: SM01 Seg SD).
-     * Olha a semana inteira, independente do chip de dia — a pergunta aqui é
-     * "quem ficou de fora da semana", não do dia.
+     * Painel da tag de contagem, em dois blocos independentes — USA e
+     * CRU/CRL (regulação). Em cada bloco: quem da faculdade ainda não tem
+     * plantão daquele tipo na semana (ordem alfabética) e quem tem, com onde
+     * está (ex.: SM01 Seg SD). Um interno só com CRU aparece como "sem USA"
+     * e vice-versa. Olha a semana inteira, independente do chip de dia.
      */
     const contagemPainel = useMemo(() => {
         if (!contagemFaculty) return null;
         const faculty = faculties.find((item) => item.abbreviation === contagemFaculty) ?? null;
         const dayOrder = new Map<string, number>(DAYS.map((key, index) => [key, index]));
-        const porInterno = new Map<string, { id: string; name: string; slots: Array<{ label: string; order: number }> }>();
+        type Slot = { label: string; order: number };
+        type Alocado = { id: string; name: string; slots: Slot[] };
+        const porTipo = { usa: new Map<string, Alocado>(), cru: new Map<string, Alocado>() };
         for (const assignment of assignments) {
             if (assignment.status === "CANCELLED") continue;
             if (assignment.faculty_abbr !== contagemFaculty) continue;
+            const tipo = assignment.base_type === "USA" ? "usa" : "cru";
             const dayKey = getDayKey(assignment.date);
             const label = `${assignment.base_code} ${DAY_LABEL_BY_KEY[dayKey]} ${assignment.period === "DAY" ? "SD" : "SN"}`;
             const order = (dayOrder.get(dayKey) ?? 0) * 2 + (assignment.period === "DAY" ? 0 : 1);
-            const entry = porInterno.get(assignment.intern_id) ?? { id: assignment.intern_id, name: assignment.intern_name, slots: [] };
+            const mapa = porTipo[tipo];
+            const entry = mapa.get(assignment.intern_id) ?? { id: assignment.intern_id, name: assignment.intern_name, slots: [] };
             entry.slots.push({ label, order });
-            porInterno.set(assignment.intern_id, entry);
+            mapa.set(assignment.intern_id, entry);
         }
-        const alocados = [...porInterno.values()]
-            .map((entry) => ({ ...entry, slots: [...entry.slots].sort((left, right) => left.order - right.order) }))
-            .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
-        const semPlantao = users
+        const internos = users
             .filter((user) => hasRole(user, "INTERN") && user.isActive && !user.isArchived)
             .filter((user) => (faculty ? getInternFacultyId(user) === faculty.id : getInternFacultyAbbr(user) === contagemFaculty))
-            .filter((user) => !porInterno.has(user.id))
-            .map((user) => ({ id: user.id, name: user.name }))
-            .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
-        return { abbr: contagemFaculty, alocados, semPlantao };
+            .map((user) => ({ id: user.id, name: user.name }));
+        const bloco = (mapa: Map<string, Alocado>) => ({
+            alocados: [...mapa.values()]
+                .map((entry) => ({ ...entry, slots: [...entry.slots].sort((left, right) => left.order - right.order) }))
+                .sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
+            semPlantao: internos
+                .filter((intern) => !mapa.has(intern.id))
+                .sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
+        });
+        return { abbr: contagemFaculty, usa: bloco(porTipo.usa), cru: bloco(porTipo.cru) };
     }, [assignments, contagemFaculty, faculties, users]);
 
     // No mobile, a grade abre já rolada até a coluna de hoje (uma vez por montagem);
@@ -2359,7 +2367,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             {/* ─────────── Painel "quem está onde" da tag de contagem ─────────── */}
             {contagemPainel && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setContagemFaculty(null)}>
-                    <div className="flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                             <div className="flex min-w-0 items-center gap-2">
                                 <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${getFacultyStyle(contagemPainel.abbr).dot}`} />
@@ -2367,47 +2375,55 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             </div>
                             <button type="button" onClick={() => setContagemFaculty(null)} className="rounded-lg p-1 text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
                         </div>
-                        <div className="space-y-4 overflow-y-auto px-5 py-4">
-                            <section>
-                                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-rose-600">
-                                    Sem plantão na semana · {loadingUsers ? "…" : contagemPainel.semPlantao.length}
-                                </h3>
-                                {loadingUsers ? (
-                                    <p className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando internos...</p>
-                                ) : contagemPainel.semPlantao.length === 0 ? (
-                                    <p className="text-xs text-slate-400">Todos os internos ativos da {contagemPainel.abbr} têm plantão nesta semana.</p>
-                                ) : (
-                                    <ul className="divide-y divide-slate-100 rounded-xl border border-rose-100 bg-rose-50/40">
-                                        {contagemPainel.semPlantao.map((intern) => (
-                                            <li key={intern.id} className="flex items-center gap-2 px-3 py-2 text-sm text-slate-800">
-                                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400" />
-                                                <span className="truncate">{intern.name}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                            </section>
-                            <section>
-                                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                                    Alocados · {contagemPainel.alocados.length}
-                                </h3>
-                                {contagemPainel.alocados.length === 0 ? (
-                                    <p className="text-xs text-slate-400">Nenhum plantão da {contagemPainel.abbr} nesta semana.</p>
-                                ) : (
-                                    <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-                                        {contagemPainel.alocados.map((intern) => (
-                                            <li key={intern.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                                                <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{intern.name}</span>
-                                                <span className="flex flex-wrap gap-1">
-                                                    {intern.slots.map((slot, index) => (
-                                                        <span key={`${slot.label}-${index}`} className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700">{slot.label}</span>
-                                                    ))}
-                                                </span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                            </section>
+                        <div className="grid gap-5 overflow-y-auto px-5 py-4 sm:grid-cols-2">
+                            {([
+                                { key: "usa", titulo: "USA", bloco: contagemPainel.usa },
+                                { key: "cru", titulo: "CRU / CRL", bloco: contagemPainel.cru },
+                            ] as const).map(({ key, titulo, bloco }) => (
+                                <div key={key} className="space-y-3">
+                                    <h3 className="border-b border-slate-200 pb-1 text-xs font-black uppercase tracking-[0.14em] text-slate-900">{titulo}</h3>
+                                    <section>
+                                        <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-600">
+                                            Sem {titulo} na semana · {loadingUsers ? "…" : bloco.semPlantao.length}
+                                        </h4>
+                                        {loadingUsers ? (
+                                            <p className="flex items-center gap-2 text-xs text-slate-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando internos...</p>
+                                        ) : bloco.semPlantao.length === 0 ? (
+                                            <p className="text-xs text-slate-400">Todos os internos ativos da {contagemPainel.abbr} têm {titulo} nesta semana.</p>
+                                        ) : (
+                                            <ul className="divide-y divide-slate-100 rounded-xl border border-rose-100 bg-rose-50/40">
+                                                {bloco.semPlantao.map((intern) => (
+                                                    <li key={intern.id} className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-800">
+                                                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400" />
+                                                        <span className="truncate">{intern.name}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </section>
+                                    <section>
+                                        <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                                            Com {titulo} · {bloco.alocados.length}
+                                        </h4>
+                                        {bloco.alocados.length === 0 ? (
+                                            <p className="text-xs text-slate-400">Nenhum plantão {titulo} da {contagemPainel.abbr} nesta semana.</p>
+                                        ) : (
+                                            <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                                                {bloco.alocados.map((intern) => (
+                                                    <li key={intern.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 text-sm">
+                                                        <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{intern.name}</span>
+                                                        <span className="flex flex-wrap gap-1">
+                                                            {intern.slots.map((slot, index) => (
+                                                                <span key={`${slot.label}-${index}`} className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700">{slot.label}</span>
+                                                            ))}
+                                                        </span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </section>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
