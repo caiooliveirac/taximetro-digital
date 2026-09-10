@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MapPin, Sun, Moon, Calendar, ArrowRight, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut, FileText, XCircle } from "lucide-react";
+import { MapPin, Sun, Moon, Calendar, ArrowRight, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut, FileText, XCircle, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { GoalSlotsBoard } from "@/components/admin/intern-shifts-blocks";
+import { AvisoCoordenacao } from "@/components/intern/aviso-coordenacao";
 import { formatBrazilTime, getBrazilNowParts, getShiftShortLabel, isCurrentOperationalAssignment, isWithinAttendanceWindow, localDateStr } from "@/lib/utils";
 
 type Assignment = {
@@ -223,38 +224,6 @@ export default function InternHoje() {
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
-      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-        <p className="text-sm font-semibold text-blue-900">Lembrete</p>
-        <p className="mt-1 text-sm text-blue-800">
-          Lembrando dos atendimentos à EAPs e PCR. Qualquer dúvida seguimos à disposição.
-        </p>
-        <div className="mt-3 space-y-1 text-sm text-blue-900">
-          <p>
-            <span className="font-semibold">EAP:</span> Ana Beatriz Andrade {" "}
-            <a
-              href="https://wa.me/5571900000000"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium underline underline-offset-2"
-            >
-              +5571900000000
-            </a>
-          </p>
-          <p>
-            <span className="font-semibold">PCR:</span> Leo Copque (REDCap:{" "}
-            <a
-              href="https://redcap.link/BRAVOSALVADOR"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium underline underline-offset-2"
-            >
-              https://redcap.link/BRAVOSALVADOR
-            </a>
-            )
-          </p>
-        </div>
-      </div>
-
       {/* Header + weekly goal */}
       <div className="flex items-start justify-between">
         <div>
@@ -454,6 +423,9 @@ export default function InternHoje() {
                     <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
                   </Button>
                 </Link>
+              )}
+              {isCurrentOperationalAssignment(assignment.date, assignment.period as "DAY" | "NIGHT") && (
+                <AvisoCoordenacao assignmentId={assignment.id} icon={<Megaphone className="h-3.5 w-3.5" strokeWidth={1.8} />} />
               )}
             </div>
           ))}
