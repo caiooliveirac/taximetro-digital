@@ -18,8 +18,8 @@ export type GoalTargets = Record<GoalKind, number>;
 
 /**
  * - done: realizado (ou abonado)
- * - pending: já passou e não foi realizado nem marcado como falta — vale como
- *   plantão cumprido para a meta, mas o checkout está pendurado
+ * - pending: já começou (ou passou) sem checkout — NÃO conta para a meta; vira
+ *   falta automática quando o prazo de checkout expira
  * - scheduled: ainda vai acontecer
  * - missed: falta; não ocupa vaga da meta
  * - empty: vaga da meta que ninguém escalou ainda
@@ -45,9 +45,9 @@ export type GoalSlot<T extends GoalSlotItem> = {
 export type GoalKindSummary<T extends GoalSlotItem = GoalSlotItem> = {
   kind: GoalKind;
   target: number;
-  /** Casinhas que contam para a meta (realizadas, pendentes ou agendadas). */
+  /** Casinhas que contam para a meta (realizadas ou agendadas). */
   filled: number;
-  /** Casinhas realizadas ou já ocorridas. */
+  /** Casinhas realizadas (checkout ou abono). */
   done: number;
   /** Casinhas agendadas no futuro. */
   scheduled: number;
@@ -58,7 +58,8 @@ export type GoalKindSummary<T extends GoalSlotItem = GoalSlotItem> = {
   slots: GoalSlot<T>[];
 };
 
-const REALIZED = new Set(["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"]);
+// Checkout é a medida de presença: check-in sem checkout não é realizado.
+const REALIZED = new Set(["CHECKED_OUT", "EXCUSED"]);
 
 export function goalKindOf(baseType: string | null | undefined): GoalKind | null {
   if (baseType === "USA") return "USA";
@@ -94,7 +95,7 @@ export function buildGoalSlots<T extends GoalSlotItem>(
     assignment,
   }));
 
-  const counted = slots.filter((s) => s.state !== "missed").length;
+  const counted = slots.filter((s) => s.state !== "missed" && s.state !== "pending").length;
   for (let i = counted; i < target; i++) {
     slots.push({ key: `${kind}-empty-${i}`, kind, state: "empty", assignment: null });
   }
@@ -113,8 +114,8 @@ export function summarizeGoals<T extends GoalSlotItem>(
     return {
       kind,
       target,
-      filled: slots.filter((s) => s.state !== "missed" && s.state !== "empty").length,
-      done: count("done") + count("pending"),
+      filled: count("done") + count("scheduled"),
+      done: count("done"),
       scheduled: count("scheduled"),
       missed: count("missed"),
       missing: count("empty"),

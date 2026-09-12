@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ROLE_PREFIX, canAccessPathWithRoles, extractRoleNames } from "@/lib/role-access-policy";
 
 const APP_BASE_PATH = "/taximetro";
-const PUBLIC_PATHS = ["/login", "/esqueci-senha", "/redefinir-senha", "/api/auth", "/api/telegram", "/registro", "/api/registro", "/api/health"];
+const PUBLIC_PATHS = ["/login", "/esqueci-senha", "/redefinir-senha", "/api/auth", "/api/telegram", "/registro", "/api/registro", "/api/health", "/api/cron"];
 const FORCE_PASSWORD_CHANGE_PATH = "/trocar-senha";
 
 function stripBasePath(pathname: string) {
