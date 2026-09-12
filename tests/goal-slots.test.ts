@@ -27,11 +27,14 @@ test("faculdade que exige 6 USA sempre mostra 6 casinhas", () => {
   assert.equal(usaGoal.missing, 4);
 });
 
-test("plantão passado sem checkout conta para a meta, mas fica pendente", () => {
-  const [usaGoal] = summarizeGoals([usa("a", "2026-08-01", "SCHEDULED")], targets, today);
-  assert.equal(usaGoal.slots[0].state, "pending");
-  assert.equal(usaGoal.filled, 1);
-  assert.equal(usaGoal.missing, 5);
+test("checkout é o que vale: passado sem checkout fica pendente e NÃO conta para a meta", () => {
+  for (const status of ["SCHEDULED", "CONFIRMED", "CHECKED_IN"]) {
+    const [usaGoal] = summarizeGoals([usa("a", "2026-08-01", status)], targets, today);
+    assert.equal(usaGoal.slots[0].state, "pending", status);
+    assert.equal(usaGoal.filled, 0, status);
+    assert.equal(usaGoal.done, 0, status);
+    assert.equal(usaGoal.missing, 6, status);
+  }
 });
 
 test("falta não ocupa casinha da meta; abono ocupa", () => {

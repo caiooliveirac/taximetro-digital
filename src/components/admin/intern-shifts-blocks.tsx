@@ -109,7 +109,7 @@ const SLOT_STATE_STYLE: Record<GoalSlotState, { box: string; icon: ReactNode; ti
   pending: {
     box: "border-amber-200 bg-amber-50 text-amber-700",
     icon: <Clock className="h-3.5 w-3.5" strokeWidth={2} />,
-    title: "Já passou, sem checkout — conta para a meta",
+    title: "Sem checkout — não conta para a meta; vira falta se o prazo passar",
   },
   scheduled: {
     box: "border-sky-200 bg-sky-50 text-sky-700",

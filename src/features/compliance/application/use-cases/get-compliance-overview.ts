@@ -12,8 +12,9 @@ import {
 } from "@/features/compliance/infra/repositories/compliance-repository";
 import { summarizeGoals, totalMissingSlots } from "@/lib/goal-slots";
 
-// EXCUSED conta como cumprido: abono libera o interno da reposição.
-const COMPLETED = ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "EXCUSED"] as const;
+// Checkout é a medida de presença. EXCUSED conta como cumprido: abono libera
+// o interno da reposição.
+const COMPLETED = ["CHECKED_OUT", "EXCUSED"] as const;
 
 function weekBounds(offset: number) {
   const operationalToday = operationalDateStr();
