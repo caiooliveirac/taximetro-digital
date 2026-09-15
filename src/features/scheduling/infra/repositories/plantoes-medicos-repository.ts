@@ -18,13 +18,15 @@
  * "Está na base agora" segue o quadro do `plantoes`: chegou, não registrou
  * saída real, e a janela programada ainda não fechou. Médico que saiu sem
  * registrar continua aparecendo até o fim da janela — é o que o quadro deles
- * também mostra. "Desativada" é a janela de desativação aberta agora: o chefe
- * costuma registrar a reativação já com a hora prevista do fim do turno.
+ * também mostra. "Desativada" é a janela de desativação aberta agora (o chefe
+ * costuma registrar a reativação já com a hora prevista do fim do turno) ou a
+ * base inativa no cadastro deles.
  */
 
 import postgres from "postgres";
 
-export type Desativacao = { desde: string; motivo: string | null };
+/** `desde` nulo = base inativa de vez no cadastro do `plantoes`, sem janela. */
+export type Desativacao = { desde: string | null; motivo: string | null };
 
 export type EstadoNoPlantoes = {
   medicos: Record<string, string[]>;
@@ -63,20 +65,24 @@ export async function estadoDasBasesNoPlantoes(codigos: string[]): Promise<Estad
           AND (o.scheduled_end_at IS NULL OR o.scheduled_end_at > now())
         ORDER BY b.code, o.started_at
       `,
-      sql<Array<{ code: string; desde: string; motivo: string | null }>>`
+      sql<Array<{ code: string; desde: string | null; motivo: string | null }>>`
         SELECT DISTINCT ON (b.code) b.code, x.deactivated_at::text AS desde, x.notes AS motivo
-        FROM operations_v2.intervention_base_deactivations x
-        JOIN operations_v2.intervention_bases b ON b.id = x.base_id
+        FROM operations_v2.intervention_bases b
+        LEFT JOIN operations_v2.intervention_base_deactivations x
+          ON x.base_id = b.id
+         AND x.deactivated_at <= now()
+         AND (x.reactivated_at IS NULL OR x.reactivated_at > now())
         WHERE b.code = ANY(${codigos})
-          AND x.deactivated_at <= now()
-          AND (x.reactivated_at IS NULL OR x.reactivated_at > now())
-        ORDER BY b.code, x.deactivated_at DESC
+          AND (x.id IS NOT NULL OR NOT b.is_active)
+        ORDER BY b.code, x.deactivated_at DESC NULLS LAST
       `,
     ]);
     const medicos: Record<string, string[]> = {};
     for (const l of presentes) (medicos[l.code] ??= []).push(l.nome);
     const desativadas: Record<string, Desativacao> = {};
-    for (const l of fechadas) desativadas[l.code] = { desde: l.desde, motivo: l.motivo?.trim() || null };
+    for (const l of fechadas) {
+      desativadas[l.code] = { desde: l.desde, motivo: l.motivo?.trim() || (l.desde ? null : "base inativa no cadastro") };
+    }
     return { medicos, desativadas };
   } catch (erro) {
     console.warn(`[plantoes] leitura do estado das bases falhou: ${erro instanceof Error ? erro.message : erro}`);

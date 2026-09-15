@@ -263,6 +263,9 @@ export async function checkPeriodOccupancy(
   date: string,
   period: "DAY" | "NIGHT",
   excludeAssignmentId?: string,
+  // apenasComCheckin: interno escalado que não fez check-in não ocupa lugar.
+  // Só o remanejamento pelo interno usa, passada a tolerância do turno.
+  opts: { apenasComCheckin?: boolean } = {},
 ): Promise<ReturnType<typeof computePeriodLoad>> {
   const dayOfWeek = getDayOfWeek(date);
 
@@ -298,6 +301,7 @@ export async function checkPeriodOccupancy(
     eq(assignments.isExtraShift, false),
   ];
   if (excludeAssignmentId) conditions.push(ne(assignments.id, excludeAssignmentId));
+  if (opts.apenasComCheckin) conditions.push(inArray(assignments.status, ["CHECKED_IN", "CHECKED_OUT"]));
 
   // Turno partido (manhã/tarde) é coisa da EBMSP no CRU, que nem chega aqui.
   const [occupiedRow] = await db

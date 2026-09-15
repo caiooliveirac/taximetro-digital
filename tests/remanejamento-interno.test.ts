@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { celulasDaBase, compararCodigoDeBase, mesmoEndereco, motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
+import { celulaOcupavel, celulasDaBase, compararCodigoDeBase, horaDoTurno, mesmoEndereco, minutosDesdeInicioDoTurno, motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
 import { computePeriodLoad } from "../src/features/scheduling/domain/policies/assignment-policy";
 
 test("vaga é de grade, não do limite físico", () => {
@@ -33,27 +33,64 @@ test("células: ocupadas primeiro com o estado certo, livres depois, nunca negat
   assert.deepEqual(
     celulasDaBase(3, [{ faculdade: "EBMSP", status: "CHECKED_IN" }, { faculdade: "Zarns", status: "SCHEDULED" }]),
     [
-      { tipo: "ocupada", faculdade: "EBMSP", estado: "checkin-ok" },
-      { tipo: "ocupada", faculdade: "Zarns", estado: "sem-checkin" },
+      { tipo: "ocupada", faculdade: "EBMSP", estado: "checkin-ok", reivindicavel: false },
+      { tipo: "ocupada", faculdade: "Zarns", estado: "sem-checkin", reivindicavel: false },
       { tipo: "livre" },
     ],
   );
   assert.deepEqual(celulasDaBase(1, [{ faculdade: "A", status: "CONFIRMED" }, { faculdade: "B", status: "CHECKED_OUT" }]), [
-    { tipo: "ocupada", faculdade: "A", estado: "sem-checkin" },
-    { tipo: "ocupada", faculdade: "B", estado: "saiu" },
+    { tipo: "ocupada", faculdade: "A", estado: "sem-checkin", reivindicavel: false },
+    { tipo: "ocupada", faculdade: "B", estado: "saiu", reivindicavel: false },
   ]);
   assert.deepEqual(celulasDaBase(0, []), []);
 });
 
 test("base bloqueada (aviso ou desativada) mantém quem está lá e não oferece livre", () => {
-  assert.deepEqual(celulasDaBase(2, [{ faculdade: "AFYA", status: "SCHEDULED" }], true), [
-    { tipo: "ocupada", faculdade: "AFYA", estado: "sem-checkin" },
+  assert.deepEqual(celulasDaBase(2, [{ faculdade: "AFYA", status: "SCHEDULED" }], { bloqueada: true, reivindicarSemCheckin: true }), [
+    { tipo: "ocupada", faculdade: "AFYA", estado: "sem-checkin", reivindicavel: false },
   ]);
-  assert.deepEqual(celulasDaBase(2, [], true), []);
+  assert.deepEqual(celulasDaBase(2, [], { bloqueada: true }), []);
 });
 
 test("base irmã: mesmo endereço no cadastro, com tolerância de arredondamento", () => {
   const br05 = { latitude: -12.981668, longitude: -38.43824 };
   assert.equal(mesmoEndereco(br05, { latitude: -12.98167, longitude: -38.438241 }), true);
   assert.equal(mesmoEndereco(br05, { latitude: -12.959059, longitude: -38.48784 }), false);
+});
+
+test("passada a tolerância, só a célula sem check-in vira reivindicável", () => {
+  const celulas = celulasDaBase(
+    2,
+    [{ faculdade: "AFYA", status: "SCHEDULED" }, { faculdade: "UFBA", status: "CHECKED_IN" }],
+    { reivindicarSemCheckin: true },
+  );
+  assert.deepEqual(celulas.map(celulaOcupavel), [true, false]);
+  assert.equal(celulaOcupavel({ tipo: "livre" }), true);
+});
+
+test("cada não-comparecimento libera uma vaga só, e a livre vai primeiro", () => {
+  const r = { reivindicarSemCheckin: true };
+  const semCheckin = { faculdade: "AFYA", status: "SCHEDULED" };
+  const chegou = { faculdade: "EBMSP", status: "SCHEDULED", remanejado: true };
+
+  // livre existe: a do sem check-in fica fechada
+  assert.deepEqual(celulasDaBase(2, [semCheckin], r).map(celulaOcupavel), [false, true]);
+  // dois sem check-in, base cheia: as duas abrem
+  assert.deepEqual(celulasDaBase(2, [semCheckin, semCheckin], r).map(celulaOcupavel), [true, true]);
+  // um já chegou remanejado: sobra uma
+  assert.deepEqual(celulasDaBase(2, [semCheckin, semCheckin, chegou], r).map(celulaOcupavel), [true, false, false]);
+  // dois chegaram: fecha, mesmo com os dois sem check-in ainda na grade
+  assert.deepEqual(celulasDaBase(2, [semCheckin, semCheckin, chegou, chegou], r).map(celulaOcupavel), [false, false, false, false]);
+  // quem chegou remanejado aparece como tal, não como não-comparecimento
+  const [primeira] = celulasDaBase(2, [chegou], r);
+  assert.equal(primeira.tipo === "ocupada" ? primeira.estado : null, "remanejado");
+});
+
+test("minutos desde o início do turno: diurno às 07:00, noturno às 19:00, vira a meia-noite", () => {
+  assert.equal(minutosDesdeInicioDoTurno("DAY", { hour: 7, minute: 12 }), 12);
+  assert.equal(minutosDesdeInicioDoTurno("DAY", { hour: 6, minute: 50 }), -10, "antes do turno é negativo");
+  assert.equal(minutosDesdeInicioDoTurno("NIGHT", { hour: 19, minute: 15 }), 15);
+  assert.equal(minutosDesdeInicioDoTurno("NIGHT", { hour: 0, minute: 30 }), 330, "meia-noite e meia = 5h30 de turno");
+  assert.equal(horaDoTurno("DAY", 10), "07:10");
+  assert.equal(horaDoTurno("NIGHT", 15), "19:15");
 });
