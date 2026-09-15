@@ -15,14 +15,13 @@ import { assignments, bases, faculties, users } from "@/db/schema";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { formatBrazilTime, isCurrentOperationalAssignment } from "@/lib/utils";
-import { avisarSecretario, textoDoAviso, TIPOS_DE_AVISO } from "@/lib/aviso-tom";
+import { avisarSecretario, STATUS_NA_BASE, textoDoAviso, TIPOS_DE_AVISO } from "@/lib/aviso-tom";
 
 const schema = z.object({
   assignmentId: z.string().uuid(),
   tipo: z.enum(Object.keys(TIPOS_DE_AVISO) as [keyof typeof TIPOS_DE_AVISO, ...(keyof typeof TIPOS_DE_AVISO)[]]),
 });
 
-const STATUS_NA_BASE = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN"]);
 const REPETICAO_MS = 30 * 60_000;
 // ponytail: memória do processo; se um dia houver mais de uma réplica, mover para o audit_logs.
 const ultimos = new Map<string, number>();

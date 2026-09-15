@@ -116,6 +116,7 @@ export async function executeReassignAssignmentBase(params: {
       assignmentStatus: assignment.status,
       checkinStatus: assignment.checkinStatus,
       authorized: true,
+      actorRole: actor.role,
       reason: reason ?? null,
       ...(actor.isImpersonating ? { impersonating: actor.id, impersonateRole: actor.role } : {}),
     },
