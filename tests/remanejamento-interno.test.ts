@@ -68,6 +68,24 @@ test("passada a tolerância, só a célula sem check-in vira reivindicável", ()
   assert.equal(celulaOcupavel({ tipo: "livre" }), true);
 });
 
+test("cada não-comparecimento libera uma vaga só, e a livre vai primeiro", () => {
+  const r = { reivindicarSemCheckin: true };
+  const semCheckin = { faculdade: "AFYA", status: "SCHEDULED" };
+  const chegou = { faculdade: "EBMSP", status: "SCHEDULED", remanejado: true };
+
+  // livre existe: a do sem check-in fica fechada
+  assert.deepEqual(celulasDaBase(2, [semCheckin], r).map(celulaOcupavel), [false, true]);
+  // dois sem check-in, base cheia: as duas abrem
+  assert.deepEqual(celulasDaBase(2, [semCheckin, semCheckin], r).map(celulaOcupavel), [true, true]);
+  // um já chegou remanejado: sobra uma
+  assert.deepEqual(celulasDaBase(2, [semCheckin, semCheckin, chegou], r).map(celulaOcupavel), [true, false, false]);
+  // dois chegaram: fecha, mesmo com os dois sem check-in ainda na grade
+  assert.deepEqual(celulasDaBase(2, [semCheckin, semCheckin, chegou, chegou], r).map(celulaOcupavel), [false, false, false, false]);
+  // quem chegou remanejado aparece como tal, não como não-comparecimento
+  const [primeira] = celulasDaBase(2, [chegou], r);
+  assert.equal(primeira.tipo === "ocupada" ? primeira.estado : null, "remanejado");
+});
+
 test("minutos desde o início do turno: diurno às 07:00, noturno às 19:00, vira a meia-noite", () => {
   assert.equal(minutosDesdeInicioDoTurno("DAY", { hour: 7, minute: 12 }), 12);
   assert.equal(minutosDesdeInicioDoTurno("DAY", { hour: 6, minute: 50 }), -10, "antes do turno é negativo");

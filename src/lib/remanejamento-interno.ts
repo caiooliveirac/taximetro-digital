@@ -51,11 +51,16 @@ export function horaDoTurno(period: "DAY" | "NIGHT", maisMinutos: number): strin
   return `${String(INICIO_DO_TURNO[period]).padStart(2, "0")}:${String(maisMinutos).padStart(2, "0")}`;
 }
 
-export type Ocupante = { faculdade: string; status: string };
+export type Ocupante = { faculdade: string; status: string; remanejado?: boolean };
 
 export type Celula =
   | { tipo: "livre" }
-  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu"; reivindicavel: boolean };
+  | {
+      tipo: "ocupada";
+      faculdade: string;
+      estado: "sem-checkin" | "checkin-ok" | "saiu" | "remanejado";
+      reivindicavel: boolean;
+    };
 
 /**
  * As células de uma base no turno: primeiro quem está lá, depois as livres. Se
@@ -64,23 +69,30 @@ export type Celula =
  * - bloqueada (aviso de problema neste turno, ou desativada no `plantoes`):
  *   não oferece as livres e nada é reivindicável; quem está lá continua visível.
  * - reivindicarSemCheckin (passada a tolerância): escalado que não fez check-in
- *   continua na célula, mas ela pode ser ocupada por quem procura vaga.
+ *   continua na célula, mas ela pode ser ocupada por quem procura vaga. Cada
+ *   não-comparecimento libera **uma** vaga: quem chegou remanejado (ainda sem
+ *   check-in aqui) já conta como presente, e enquanto houver célula livre a do
+ *   sem check-in fica fechada — a livre vai primeiro.
  */
 export function celulasDaBase(
   capacity: number,
   ocupantes: Ocupante[],
   opts: { bloqueada?: boolean; reivindicarSemCheckin?: boolean } = {},
 ): Celula[] {
-  const ocupadas: Celula[] = ocupantes.map((o) => {
-    const estado = o.status === "CHECKED_IN" ? "checkin-ok" : o.status === "CHECKED_OUT" ? "saiu" : "sem-checkin";
-    return {
-      tipo: "ocupada",
-      faculdade: o.faculdade,
-      estado,
-      reivindicavel: !opts.bloqueada && opts.reivindicarSemCheckin === true && estado === "sem-checkin",
-    };
-  });
+  const estadoDe = (o: Ocupante): Exclude<Celula, { tipo: "livre" }>["estado"] =>
+    o.status === "CHECKED_IN" ? "checkin-ok" : o.status === "CHECKED_OUT" ? "saiu" : o.remanejado ? "remanejado" : "sem-checkin";
+
   const livres = opts.bloqueada ? 0 : vagasNaGrade({ capacity, occupied: ocupantes.length });
+  const presentes = ocupantes.filter((o) => estadoDe(o) !== "sem-checkin").length;
+  let reivindicaveis =
+    !opts.bloqueada && opts.reivindicarSemCheckin === true && livres === 0 ? Math.max(0, capacity - presentes) : 0;
+
+  const ocupadas: Celula[] = ocupantes.map((o) => {
+    const estado = estadoDe(o);
+    const reivindicavel = estado === "sem-checkin" && reivindicaveis > 0;
+    if (reivindicavel) reivindicaveis -= 1;
+    return { tipo: "ocupada", faculdade: o.faculdade, estado, reivindicavel };
+  });
   return [...ocupadas, ...Array.from({ length: livres }, (): Celula => ({ tipo: "livre" }))];
 }
 

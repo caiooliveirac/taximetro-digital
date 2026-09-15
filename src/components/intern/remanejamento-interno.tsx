@@ -18,7 +18,7 @@ import { useState } from "react";
  */
 type Celula =
   | { tipo: "livre" }
-  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu"; reivindicavel: boolean };
+  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu" | "remanejado"; reivindicavel: boolean };
 
 type Base = {
   id: string;
@@ -118,7 +118,7 @@ function classeDaCelula(c: Celula, atual: boolean) {
 
 function textoDaCelula(c: Celula) {
   if (c.tipo === "livre") return { titulo: "Livre", detalhe: "" };
-  const detalhe = c.estado === "checkin-ok" ? "check-in ok" : c.estado === "saiu" ? "já saiu" : "sem check-in";
+  const detalhe = { "checkin-ok": "check-in ok", saiu: "já saiu", remanejado: "remanejado, a caminho", "sem-checkin": "sem check-in" }[c.estado];
   return { titulo: `Interno ${c.faculdade}`, detalhe };
 }
 

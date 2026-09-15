@@ -177,7 +177,13 @@ async function gradeDoTurno(plantao: Plantao, reivindicarSemCheckin: boolean) {
       )
       .groupBy(slotRules.baseId),
     db
-      .select({ baseId: assignments.baseId, faculdade: faculties.abbreviation, status: assignments.status })
+      .select({
+        baseId: assignments.baseId,
+        faculdade: faculties.abbreviation,
+        status: assignments.status,
+        // O caso de uso de remanejamento anota [REMANEJADO]; quem chegou assim já conta como presente.
+        remanejado: sql<boolean>`COALESCE(${assignments.notes}, '') LIKE '%[REMANEJADO]%'`,
+      })
       .from(assignments)
       .innerJoin(faculties, eq(faculties.id, assignments.facultyId))
       .where(
