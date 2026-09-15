@@ -18,7 +18,8 @@ import { useState } from "react";
  */
 type Celula =
   | { tipo: "livre" }
-  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu" | "remanejado"; reivindicavel: boolean };
+  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu" | "remanejado"; reivindicavel: boolean }
+  | { tipo: "extra"; reservadaPara: string | null; ocupavel: boolean };
 
 type Base = {
   id: string;
@@ -42,7 +43,7 @@ type Grade = {
 };
 
 function ocupavel(c: Celula) {
-  return c.tipo === "livre" || c.reivindicavel;
+  return c.tipo === "livre" || (c.tipo === "ocupada" ? c.reivindicavel : c.ocupavel);
 }
 
 function temVaga(b: Base) {
@@ -116,8 +117,12 @@ function classeDaCelula(c: Celula, atual: boolean) {
   return CINZA;
 }
 
-function textoDaCelula(c: Celula) {
+function textoDaCelula(c: Celula, irma: boolean) {
   if (c.tipo === "livre") return { titulo: "Livre", detalhe: "" };
+  if (c.tipo === "extra") {
+    const detalhe = c.reservadaPara ? (irma ? "reserva sua, além da grade" : `reserva da ${c.reservadaPara}`) : "além da grade";
+    return { titulo: c.ocupavel ? "Livre" : "Extra", detalhe };
+  }
   const detalhe = { "checkin-ok": "check-in ok", saiu: "já saiu", remanejado: "remanejado, a caminho", "sem-checkin": "sem check-in" }[c.estado];
   return { titulo: `Interno ${c.faculdade}`, detalhe };
 }
@@ -191,7 +196,7 @@ export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejame
                   </span>
                 )}
                 {b.celulas.map((c, i) => {
-                  const { titulo, detalhe } = textoDaCelula(c);
+                  const { titulo, detalhe } = textoDaCelula(c, b.irma);
                   const clicavel = !b.atual && ocupavel(c);
                   return (
                     <button
