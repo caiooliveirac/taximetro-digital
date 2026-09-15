@@ -99,3 +99,33 @@ test("LF90 fica fora do remanejamento; as demais participam", () => {
   assert.equal(participaDoRemanejamento("LF90"), false);
   assert.equal(participaDoRemanejamento("SM01"), true);
 });
+
+test("vaga além da grade: base de uma vaga cabe dois, e quem pode usar depende da hora e da irmã", () => {
+  const ocupado = [{ faculdade: "EBMSP", status: "CHECKED_IN" }];
+  const extra = (podeUsar: boolean, reservadaPara: string | null = null) => ({ limite: 2, podeUsar, reservadaPara });
+
+  // antes dos 15 min, outro interno: a extra aparece, mas fechada
+  assert.deepEqual(celulasDaBase(1, ocupado, { extra: extra(false, "BR60") }).map(celulaOcupavel), [false, false]);
+  // o interno da irmã pode, mesmo antes dos 15 min
+  assert.deepEqual(celulasDaBase(1, ocupado, { extra: extra(true, "BR60") }).map(celulaOcupavel), [false, true]);
+  // depois dos 15 min sem reserva: qualquer um
+  assert.deepEqual(celulasDaBase(1, ocupado, { reivindicarSemCheckin: true, extra: extra(true) }).map(celulaOcupavel), [false, true]);
+  // grade de dois não tem extra
+  assert.equal(celulasDaBase(2, ocupado, { reivindicarSemCheckin: true, extra: extra(true) }).length, 2);
+  // sem grade hoje, sem extra
+  assert.equal(celulasDaBase(0, [], { reivindicarSemCheckin: true, extra: extra(true) }).length, 0);
+  // base bloqueada não oferece a extra
+  assert.deepEqual(celulasDaBase(1, ocupado, { bloqueada: true, extra: extra(true) }).map(celulaOcupavel), [false, false]);
+});
+
+test("vaga além da grade respeita o limite físico junto com a reivindicação", () => {
+  const r = { reivindicarSemCheckin: true, extra: { limite: 2, podeUsar: true, reservadaPara: null } };
+  const semCheckin = { faculdade: "AFYA", status: "SCHEDULED" };
+  const chegou = { faculdade: "UFBA", status: "SCHEDULED", remanejado: true };
+  // um sem check-in numa grade de um: a dele e a extra abrem (cabem dois de verdade)
+  assert.deepEqual(celulasDaBase(1, [semCheckin], r).map(celulaOcupavel), [true, true]);
+  // chegou um remanejado: a grade de um já está tomada por ele, sobra só o lugar físico extra
+  assert.deepEqual(celulasDaBase(1, [semCheckin, chegou], r).map(celulaOcupavel), [false, false, true]);
+  // chegaram dois: fecha tudo, e o sem check-in continua visível
+  assert.deepEqual(celulasDaBase(1, [semCheckin, chegou, chegou], r).map(celulaOcupavel), [false, false, false, false]);
+});

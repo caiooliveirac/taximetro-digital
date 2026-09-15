@@ -22,7 +22,12 @@
  * Tolerâncias, contadas do início real do turno (07:00 / 19:00): a grade só
  * abre aos 10 min, para quem ainda vai chegar fazer check-in e travar a própria
  * vaga; aos 15 min, escalado sem check-in continua visível mas a vaga dele
- * pode ser ocupada por quem procura.
+ * pode ser ocupada por quem procura, e a vaga além da grade (base com uma
+ * vaga só por estratégia, mas que cabe dois) abre para todos.
+ *
+ * A vaga além da grade tem dono preferencial: o interno da base irmã (mesmo
+ * endereço, outra viatura). Até os 15 min ela é reserva dele; depois, continua
+ * reserva se ele avisou problema neste turno — senão fica livre para quem vier.
  *
  * A vaga é ocupada dentro de um advisory lock por (base, data, turno): dois
  * internos correndo para a mesma vaga entram um de cada vez, e o segundo já
@@ -58,6 +63,7 @@ import {
   estadoDasBasesNoPlantoes,
 } from "@/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import { executeReassignAssignmentBase } from "@/features/scheduling/application/use-cases/reassign-assignment-base";
+import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
 
 type Plantao = {
   id: string;
@@ -163,7 +169,7 @@ async function avisosDoTurno(plantao: Plantao): Promise<Map<string, { tipo: stri
  * (soma de slot_rules de todas as faculdades), quem já está em cada uma, e o
  * que fecha a base para quem vem de fora. Consultas por conjunto, não por base.
  */
-async function gradeDoTurno(plantao: Plantao, reivindicarSemCheckin: boolean) {
+async function gradeDoTurno(plantao: Plantao, reivindicando: boolean) {
   const dayOfWeek = getDayOfWeek(plantao.date);
 
   const [capacidade, ocupantes, usas, avisos] = await Promise.all([
@@ -211,12 +217,25 @@ async function gradeDoTurno(plantao: Plantao, reivindicarSemCheckin: boolean) {
 
   const plantoes = await estadoDasBasesNoPlantoes(usas.map((b) => b.code));
 
-  return usas
-    .filter((b) => participaDoRemanejamento(b.code))
+  const participantes = usas.filter((b) => participaDoRemanejamento(b.code));
+
+  return participantes
     .sort((a, b) => compararCodigoDeBase(a.code, b.code))
     .map((base) => {
       const aviso = avisos.get(base.id) ?? null;
       const desativada = plantoes.desativadas[base.code] ?? null;
+      const capacity = capacidadePorBase.get(base.id) ?? 0;
+      const ocupantes = ocupantesPorBase.get(base.id) ?? [];
+
+      // A vaga além da grade e quem tem prioridade nela: o interno da irmã.
+      const irma = participantes.find((b) => b.id !== base.id && mesmoEndereco(b, base)) ?? null;
+      const souDaIrma = irma !== null && irma.id === plantao.baseId;
+      const reservada = irma !== null && (!reivindicando || avisos.has(irma.id));
+      const extra = {
+        limite: computePeriodLoad({ capacity, occupied: ocupantes.length }).limit,
+        podeUsar: souDaIrma || (reivindicando && !reservada),
+        reservadaPara: reservada ? irma.code : null,
+      };
       return {
         id: base.id,
         code: base.code,
@@ -228,9 +247,10 @@ async function gradeDoTurno(plantao: Plantao, reivindicarSemCheckin: boolean) {
           ? { ...desativada, desde: desativada.desde ? formatBrazilTime(new Date(desativada.desde)) : null }
           : null,
         medicos: plantoes.medicos[base.code] ?? [],
-        celulas: celulasDaBase(capacidadePorBase.get(base.id) ?? 0, ocupantesPorBase.get(base.id) ?? [], {
+        celulas: celulasDaBase(capacity, ocupantes, {
           bloqueada: aviso !== null || desativada !== null,
-          reivindicarSemCheckin,
+          reivindicarSemCheckin: reivindicando,
+          extra,
         }),
       };
     });
