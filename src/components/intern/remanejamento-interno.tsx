@@ -27,7 +27,7 @@ type Base = {
   atual: boolean;
   irma: boolean;
   aviso: { tipo: string; hora: string } | null;
-  desativada: { desde: string; motivo: string | null } | null;
+  desativada: { desde: string | null; motivo: string | null } | null;
   medicos: string[];
   celulas: Celula[];
 };
@@ -170,7 +170,7 @@ export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejame
               </p>
               {b.desativada && (
                 <p className="text-xs font-medium text-red-700">
-                  Desativada no plantões desde {b.desativada.desde}
+                  Desativada no plantões{b.desativada.desde ? ` desde ${b.desativada.desde}` : ""}
                   {b.desativada.motivo ? ` — ${b.desativada.motivo}` : ""}
                 </p>
               )}

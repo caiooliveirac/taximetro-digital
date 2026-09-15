@@ -219,7 +219,9 @@ async function gradeDoTurno(plantao: Plantao, reivindicarSemCheckin: boolean) {
         atual: base.id === plantao.baseId,
         irma: base.id !== plantao.baseId && mesmoEndereco(base, plantao),
         aviso,
-        desativada: desativada ? { ...desativada, desde: formatBrazilTime(new Date(desativada.desde)) } : null,
+        desativada: desativada
+          ? { ...desativada, desde: desativada.desde ? formatBrazilTime(new Date(desativada.desde)) : null }
+          : null,
         medicos: plantoes.medicos[base.code] ?? [],
         celulas: celulasDaBase(capacidadePorBase.get(base.id) ?? 0, ocupantesPorBase.get(base.id) ?? [], {
           bloqueada: aviso !== null || desativada !== null,
@@ -307,7 +309,8 @@ export async function POST(req: NextRequest) {
     const destino = (await gradeDoTurno(plantao, reivindicando)).find((b) => b.id === newBaseId);
     if (!destino) return { status: 404, body: { success: false, error: "Base de destino inválida" } } as const;
     if (destino.desativada) {
-      return { status: 409, body: { success: false, error: `A ${destino.code} está desativada no plantões desde ${destino.desativada.desde}.` } } as const;
+      const desde = destino.desativada.desde ? ` desde ${destino.desativada.desde}` : "";
+      return { status: 409, body: { success: false, error: `A ${destino.code} está desativada no plantões${desde}.` } } as const;
     }
     if (destino.aviso) {
       return { status: 409, body: { success: false, error: `A ${destino.code} tem aviso de ${destino.aviso.tipo} às ${destino.aviso.hora}.` } } as const;
