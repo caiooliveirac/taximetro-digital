@@ -38,16 +38,27 @@ export type Celula =
 /**
  * As células de uma base no turno: primeiro quem está lá (check-in feito em
  * vermelho, ainda sem check-in em cor fraca), depois as livres. Se a base está
- * acima da grade, não sobra célula livre — mas ninguém some.
+ * acima da grade, não sobra célula livre — mas ninguém some. Base bloqueada
+ * (aviso de problema neste turno, ou desativada no `plantoes`) não oferece as
+ * livres: quem está lá continua aparecendo, ninguém novo entra.
  */
-export function celulasDaBase(capacity: number, ocupantes: Ocupante[]): Celula[] {
+export function celulasDaBase(capacity: number, ocupantes: Ocupante[], bloqueada = false): Celula[] {
   const ocupadas: Celula[] = ocupantes.map((o) => ({
     tipo: "ocupada",
     faculdade: o.faculdade,
     estado: o.status === "CHECKED_IN" ? "checkin-ok" : o.status === "CHECKED_OUT" ? "saiu" : "sem-checkin",
   }));
-  const livres = vagasNaGrade({ capacity, occupied: ocupantes.length });
+  const livres = bloqueada ? 0 : vagasNaGrade({ capacity, occupied: ocupantes.length });
   return [...ocupadas, ...Array.from({ length: livres }, (): Celula => ({ tipo: "livre" }))];
+}
+
+/**
+ * BR05/BR60 e PM04/PM40 são a mesma base física com duas viaturas: o cadastro
+ * tem coordenadas idênticas. Quando uma para, o interno passa para a outra sem
+ * sair do lugar — é a sugestão natural. Tolerância de ~10 m cobre arredondamento.
+ */
+export function mesmoEndereco(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): boolean {
+  return Math.abs(a.latitude - b.latitude) < 1e-4 && Math.abs(a.longitude - b.longitude) < 1e-4;
 }
 
 export function motivoDoRemanejamento(tipo: string | null | undefined): string {

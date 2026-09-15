@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { celulasDaBase, compararCodigoDeBase, motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
+import { celulasDaBase, compararCodigoDeBase, mesmoEndereco, motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
 import { computePeriodLoad } from "../src/features/scheduling/domain/policies/assignment-policy";
 
 test("vaga é de grade, não do limite físico", () => {
@@ -43,4 +43,17 @@ test("células: ocupadas primeiro com o estado certo, livres depois, nunca negat
     { tipo: "ocupada", faculdade: "B", estado: "saiu" },
   ]);
   assert.deepEqual(celulasDaBase(0, []), []);
+});
+
+test("base bloqueada (aviso ou desativada) mantém quem está lá e não oferece livre", () => {
+  assert.deepEqual(celulasDaBase(2, [{ faculdade: "AFYA", status: "SCHEDULED" }], true), [
+    { tipo: "ocupada", faculdade: "AFYA", estado: "sem-checkin" },
+  ]);
+  assert.deepEqual(celulasDaBase(2, [], true), []);
+});
+
+test("base irmã: mesmo endereço no cadastro, com tolerância de arredondamento", () => {
+  const br05 = { latitude: -12.981668, longitude: -38.43824 };
+  assert.equal(mesmoEndereco(br05, { latitude: -12.98167, longitude: -38.438241 }), true);
+  assert.equal(mesmoEndereco(br05, { latitude: -12.959059, longitude: -38.48784 }), false);
 });

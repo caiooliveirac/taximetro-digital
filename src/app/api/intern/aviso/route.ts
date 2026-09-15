@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
   const [plantao] = await db
     .select({
       id: assignments.id,
+      baseId: assignments.baseId,
       date: assignments.date,
       period: assignments.period,
       status: assignments.status,
@@ -80,7 +81,9 @@ export async function POST(req: NextRequest) {
     action: "INTERN_ALERT_SENT",
     entity: "assignment",
     entityId: assignmentId,
-    payload: { tipo, entregue },
+    // base/data/turno ficam no payload: o plantão pode ser remanejado depois, e
+    // o aviso continua sendo da base onde foi dado (é o que bloqueia as vagas dela).
+    payload: { tipo, entregue, baseId: plantao.baseId, baseCode: plantao.baseCode, date: plantao.date, period: plantao.period },
   });
 
   return NextResponse.json({ success: true, data: { entregue } });
