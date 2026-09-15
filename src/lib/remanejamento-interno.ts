@@ -15,6 +15,17 @@
 
 import { TIPOS_DE_AVISO, type TipoDeAviso } from "@/lib/aviso-tom";
 
+/**
+ * Bases fora do remanejamento: quem está escalado nelas não vê a grade, e elas
+ * não aparecem para ninguém. LF90 (Lauro de Freitas) é outra cidade — não é
+ * para onde alguém "passa" quando a base para, nem de onde alguém sai.
+ */
+const BASES_FORA = new Set(["LF90"]);
+
+export function participaDoRemanejamento(baseCode: string): boolean {
+  return !BASES_FORA.has(baseCode);
+}
+
 export function vagasNaGrade(load: { capacity: number; occupied: number }): number {
   return Math.max(0, load.capacity - load.occupied);
 }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { celulaOcupavel, celulasDaBase, compararCodigoDeBase, horaDoTurno, mesmoEndereco, minutosDesdeInicioDoTurno, motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
+import { celulaOcupavel, celulasDaBase, compararCodigoDeBase, horaDoTurno, mesmoEndereco, minutosDesdeInicioDoTurno, motivoDoRemanejamento, participaDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
 import { computePeriodLoad } from "../src/features/scheduling/domain/policies/assignment-policy";
 
 test("vaga é de grade, não do limite físico", () => {
@@ -93,4 +93,9 @@ test("minutos desde o início do turno: diurno às 07:00, noturno às 19:00, vir
   assert.equal(minutosDesdeInicioDoTurno("NIGHT", { hour: 0, minute: 30 }), 330, "meia-noite e meia = 5h30 de turno");
   assert.equal(horaDoTurno("DAY", 10), "07:10");
   assert.equal(horaDoTurno("NIGHT", 15), "19:15");
+});
+
+test("LF90 fica fora do remanejamento; as demais participam", () => {
+  assert.equal(participaDoRemanejamento("LF90"), false);
+  assert.equal(participaDoRemanejamento("SM01"), true);
 });

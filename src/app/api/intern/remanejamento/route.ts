@@ -49,6 +49,7 @@ import {
   mesmoEndereco,
   minutosDesdeInicioDoTurno,
   motivoDoRemanejamento,
+  participaDoRemanejamento,
   textoDoRemanejamento,
   type Ocupante,
 } from "@/lib/remanejamento-interno";
@@ -102,6 +103,9 @@ async function plantaoEmAndamento(user: EffectiveUser, assignmentId: string): Pr
   }
   if (plantao.isExtraShift) {
     return { status: 409, error: "Plantão extra não pode ser remanejado pelo interno." };
+  }
+  if (!participaDoRemanejamento(plantao.baseCode)) {
+    return { status: 409, error: `A ${plantao.baseCode} fica fora do remanejamento.` };
   }
   return plantao;
 }
@@ -208,6 +212,7 @@ async function gradeDoTurno(plantao: Plantao, reivindicarSemCheckin: boolean) {
   const plantoes = await estadoDasBasesNoPlantoes(usas.map((b) => b.code));
 
   return usas
+    .filter((b) => participaDoRemanejamento(b.code))
     .sort((a, b) => compararCodigoDeBase(a.code, b.code))
     .map((base) => {
       const aviso = avisos.get(base.id) ?? null;
