@@ -425,7 +425,7 @@ export default function InternHoje() {
                 </Link>
               )}
               {isCurrentOperationalAssignment(assignment.date, assignment.period as "DAY" | "NIGHT") && (
-                <AvisoCoordenacao assignmentId={assignment.id} icon={<Megaphone className="h-3.5 w-3.5" strokeWidth={1.8} />} />
+                <AvisoCoordenacao assignmentId={assignment.id} baseCode={assignment.baseCode} icon={<Megaphone className="h-3.5 w-3.5" strokeWidth={1.8} />} />
               )}
             </div>
           ))}
