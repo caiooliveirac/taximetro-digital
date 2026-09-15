@@ -12,6 +12,8 @@ export const reassignAssignmentSchema = z.object({
   newBaseId: z.string().uuid(),
   reason: z.string().trim().max(500).optional(),
   authorized: z.literal(true),
+  /** Não contar escalado sem check-in na lotação do destino (remanejamento pelo interno, após tolerância). */
+  apenasComCheckin: z.boolean().optional(),
 });
 
 type Actor = {
@@ -27,7 +29,7 @@ export async function executeReassignAssignmentBase(params: {
   input: z.infer<typeof reassignAssignmentSchema>;
 }) {
   const { actor, input } = params;
-  const { assignmentId, newBaseId, reason } = input;
+  const { assignmentId, newBaseId, reason, apenasComCheckin } = input;
 
   const assignment = await findAssignmentForReassign(assignmentId);
   if (!assignment) return { status: 404, body: { success: false, error: "Plantão não encontrado" } } as const;
@@ -64,6 +66,7 @@ export async function executeReassignAssignmentBase(params: {
       assignment.date,
       assignment.period as "DAY" | "NIGHT",
       assignment.id,
+      { apenasComCheckin: apenasComCheckin === true },
     );
     if (load.full) {
       return {

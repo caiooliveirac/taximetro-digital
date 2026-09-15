@@ -19,6 +19,11 @@
  * no `plantoes`, não oferece célula livre: o aviso do interno já fecha a base
  * dele para os outros.
  *
+ * Tolerâncias, contadas do início real do turno (07:00 / 19:00): a grade só
+ * abre aos 10 min, para quem ainda vai chegar fazer check-in e travar a própria
+ * vaga; aos 15 min, escalado sem check-in continua visível mas a vaga dele
+ * pode ser ocupada por quem procura.
+ *
  * A vaga é ocupada dentro de um advisory lock por (base, data, turno): dois
  * internos correndo para a mesma vaga entram um de cada vez, e o segundo já
  * não a encontra. O remanejamento em si é o mesmo caso de uso do admin/líder,
@@ -32,12 +37,17 @@ import { db } from "@/db";
 import { assignments, auditLog, bases, faculties, slotRules, users } from "@/db/schema";
 import { getEffectiveUser, type EffectiveUser } from "@/lib/impersonate";
 import { getDayOfWeek } from "@/lib/slots";
-import { formatBrazilTime, isCurrentOperationalAssignment } from "@/lib/utils";
+import { formatBrazilTime, getBrazilNowParts, isCurrentOperationalAssignment } from "@/lib/utils";
 import { avisarSecretario, STATUS_NA_BASE, TIPOS_DE_AVISO, type TipoDeAviso } from "@/lib/aviso-tom";
 import {
+  ABERTURA_MIN,
+  REIVINDICACAO_MIN,
+  celulaOcupavel,
   celulasDaBase,
   compararCodigoDeBase,
+  horaDoTurno,
   mesmoEndereco,
+  minutosDesdeInicioDoTurno,
   motivoDoRemanejamento,
   textoDoRemanejamento,
   type Ocupante,
@@ -149,7 +159,7 @@ async function avisosDoTurno(plantao: Plantao): Promise<Map<string, { tipo: stri
  * (soma de slot_rules de todas as faculdades), quem já está em cada uma, e o
  * que fecha a base para quem vem de fora. Consultas por conjunto, não por base.
  */
-async function gradeDoTurno(plantao: Plantao) {
+async function gradeDoTurno(plantao: Plantao, reivindicarSemCheckin: boolean) {
   const dayOfWeek = getDayOfWeek(plantao.date);
 
   const [capacidade, ocupantes, usas, avisos] = await Promise.all([
@@ -205,11 +215,10 @@ async function gradeDoTurno(plantao: Plantao) {
         aviso,
         desativada: desativada ? { ...desativada, desde: formatBrazilTime(new Date(desativada.desde)) } : null,
         medicos: plantoes.medicos[base.code] ?? [],
-        celulas: celulasDaBase(
-          capacidadePorBase.get(base.id) ?? 0,
-          ocupantesPorBase.get(base.id) ?? [],
-          aviso !== null || desativada !== null,
-        ),
+        celulas: celulasDaBase(capacidadePorBase.get(base.id) ?? 0, ocupantesPorBase.get(base.id) ?? [], {
+          bloqueada: aviso !== null || desativada !== null,
+          reivindicarSemCheckin,
+        }),
       };
     });
 }
@@ -230,9 +239,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: SEM_AVISO }, { status: 409 });
   }
 
+  const minutos = minutosDesdeInicioDoTurno(plantao.period, getBrazilNowParts());
+  const tolerancia = {
+    abreAs: horaDoTurno(plantao.period, ABERTURA_MIN),
+    reivindicaAs: horaDoTurno(plantao.period, REIVINDICACAO_MIN),
+    aberta: minutos >= ABERTURA_MIN,
+    reivindicando: minutos >= REIVINDICACAO_MIN,
+  };
+  if (!tolerancia.aberta) {
+    return NextResponse.json({ success: true, data: { ...tolerancia, medicosDisponiveis: false, bases: [] } });
+  }
+
   return NextResponse.json({
     success: true,
-    data: { medicosDisponiveis: canalDoPlantoesConfigurado(), bases: await gradeDoTurno(plantao) },
+    data: {
+      ...tolerancia,
+      medicosDisponiveis: canalDoPlantoesConfigurado(),
+      bases: await gradeDoTurno(plantao, tolerancia.reivindicando),
+    },
   });
 }
 
@@ -258,6 +282,15 @@ export async function POST(req: NextRequest) {
   if (tipo === null) return NextResponse.json({ success: false, error: SEM_AVISO }, { status: 409 });
   const motivo = motivoDoRemanejamento(tipo);
 
+  const minutos = minutosDesdeInicioDoTurno(plantao.period, getBrazilNowParts());
+  if (minutos < ABERTURA_MIN) {
+    return NextResponse.json(
+      { success: false, error: `A grade de vagas abre às ${horaDoTurno(plantao.period, ABERTURA_MIN)}.` },
+      { status: 409 },
+    );
+  }
+  const reivindicando = minutos >= REIVINDICACAO_MIN;
+
   // O lock vive nesta transação; o caso de uso escreve pela conexão do pool,
   // mas só depois de o lock ser nosso, e o update dele já está commitado quando
   // o lock solta. Quem vier depois lê a célula já ocupada.
@@ -265,7 +298,7 @@ export async function POST(req: NextRequest) {
   const resultado = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${chave}))`);
 
-    const destino = (await gradeDoTurno(plantao)).find((b) => b.id === newBaseId);
+    const destino = (await gradeDoTurno(plantao, reivindicando)).find((b) => b.id === newBaseId);
     if (!destino) return { status: 404, body: { success: false, error: "Base de destino inválida" } } as const;
     if (destino.desativada) {
       return { status: 409, body: { success: false, error: `A ${destino.code} está desativada no plantões desde ${destino.desativada.desde}.` } } as const;
@@ -273,7 +306,7 @@ export async function POST(req: NextRequest) {
     if (destino.aviso) {
       return { status: 409, body: { success: false, error: `A ${destino.code} tem aviso de ${destino.aviso.tipo} às ${destino.aviso.hora}.` } } as const;
     }
-    if (!destino.celulas.some((c) => c.tipo === "livre")) {
+    if (!destino.celulas.some(celulaOcupavel)) {
       return { status: 409, body: { success: false, error: `A ${destino.code} já não tem vaga neste turno.` } } as const;
     }
 
@@ -290,6 +323,7 @@ export async function POST(req: NextRequest) {
         newBaseId: destino.id,
         reason: `Remanejamento pelo interno: ${motivo}`,
         authorized: true,
+        apenasComCheckin: reivindicando,
       },
     });
     return { ...remanejado, baseCode: destino.code };

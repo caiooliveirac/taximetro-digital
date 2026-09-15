@@ -10,7 +10,6 @@ import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { GoalSlotsBoard } from "@/components/admin/intern-shifts-blocks";
 import { AvisoCoordenacao } from "@/components/intern/aviso-coordenacao";
-import { RemanejamentoInterno } from "@/components/intern/remanejamento-interno";
 import { formatBrazilTime, getBrazilNowParts, getShiftShortLabel, isCurrentOperationalAssignment, isWithinAttendanceWindow, localDateStr } from "@/lib/utils";
 
 type Assignment = {
@@ -426,10 +425,7 @@ export default function InternHoje() {
                 </Link>
               )}
               {isCurrentOperationalAssignment(assignment.date, assignment.period as "DAY" | "NIGHT") && (
-                <>
-                  <AvisoCoordenacao assignmentId={assignment.id} icon={<Megaphone className="h-3.5 w-3.5" strokeWidth={1.8} />} />
-                  <RemanejamentoInterno assignmentId={assignment.id} />
-                </>
+                <AvisoCoordenacao assignmentId={assignment.id} icon={<Megaphone className="h-3.5 w-3.5" strokeWidth={1.8} />} />
               )}
             </div>
           ))}

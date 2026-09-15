@@ -29,27 +29,63 @@ export function compararCodigoDeBase(a: string, b: string): number {
   return na !== nb ? na - nb : a.localeCompare(b);
 }
 
+/**
+ * O plantão começa às 07:00 (diurno) e 19:00 (noturno). A janela operacional
+ * do app abre uma hora antes para o check-in, mas as tolerâncias daqui contam
+ * do início real do turno.
+ */
+const INICIO_DO_TURNO = { DAY: 7, NIGHT: 19 } as const;
+
+/** A grade só abre depois disto: tolerância para quem ainda vai chegar e fazer check-in, travando a própria vaga. */
+export const ABERTURA_MIN = 10;
+/** A partir daqui, escalado sem check-in continua visível, mas a vaga dele pode ser ocupada. */
+export const REIVINDICACAO_MIN = 15;
+
+export function minutosDesdeInicioDoTurno(period: "DAY" | "NIGHT", agora: { hour: number; minute: number }): number {
+  const minutos = agora.hour * 60 + agora.minute - INICIO_DO_TURNO[period] * 60;
+  // Noturno depois da meia-noite: o turno começou ontem.
+  return minutos < 0 && period === "NIGHT" ? minutos + 24 * 60 : minutos;
+}
+
+export function horaDoTurno(period: "DAY" | "NIGHT", maisMinutos: number): string {
+  return `${String(INICIO_DO_TURNO[period]).padStart(2, "0")}:${String(maisMinutos).padStart(2, "0")}`;
+}
+
 export type Ocupante = { faculdade: string; status: string };
 
 export type Celula =
   | { tipo: "livre" }
-  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu" };
+  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu"; reivindicavel: boolean };
 
 /**
- * As células de uma base no turno: primeiro quem está lá (check-in feito em
- * vermelho, ainda sem check-in em cor fraca), depois as livres. Se a base está
- * acima da grade, não sobra célula livre — mas ninguém some. Base bloqueada
- * (aviso de problema neste turno, ou desativada no `plantoes`) não oferece as
- * livres: quem está lá continua aparecendo, ninguém novo entra.
+ * As células de uma base no turno: primeiro quem está lá, depois as livres. Se
+ * a base está acima da grade, não sobra célula livre — mas ninguém some.
+ *
+ * - bloqueada (aviso de problema neste turno, ou desativada no `plantoes`):
+ *   não oferece as livres e nada é reivindicável; quem está lá continua visível.
+ * - reivindicarSemCheckin (passada a tolerância): escalado que não fez check-in
+ *   continua na célula, mas ela pode ser ocupada por quem procura vaga.
  */
-export function celulasDaBase(capacity: number, ocupantes: Ocupante[], bloqueada = false): Celula[] {
-  const ocupadas: Celula[] = ocupantes.map((o) => ({
-    tipo: "ocupada",
-    faculdade: o.faculdade,
-    estado: o.status === "CHECKED_IN" ? "checkin-ok" : o.status === "CHECKED_OUT" ? "saiu" : "sem-checkin",
-  }));
-  const livres = bloqueada ? 0 : vagasNaGrade({ capacity, occupied: ocupantes.length });
+export function celulasDaBase(
+  capacity: number,
+  ocupantes: Ocupante[],
+  opts: { bloqueada?: boolean; reivindicarSemCheckin?: boolean } = {},
+): Celula[] {
+  const ocupadas: Celula[] = ocupantes.map((o) => {
+    const estado = o.status === "CHECKED_IN" ? "checkin-ok" : o.status === "CHECKED_OUT" ? "saiu" : "sem-checkin";
+    return {
+      tipo: "ocupada",
+      faculdade: o.faculdade,
+      estado,
+      reivindicavel: !opts.bloqueada && opts.reivindicarSemCheckin === true && estado === "sem-checkin",
+    };
+  });
+  const livres = opts.bloqueada ? 0 : vagasNaGrade({ capacity, occupied: ocupantes.length });
   return [...ocupadas, ...Array.from({ length: livres }, (): Celula => ({ tipo: "livre" }))];
+}
+
+export function celulaOcupavel(c: Celula): boolean {
+  return c.tipo === "livre" || c.reivindicavel;
 }
 
 /**

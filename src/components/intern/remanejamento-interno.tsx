@@ -3,16 +3,22 @@
 import { useState } from "react";
 
 /**
- * Depois do aviso, o interno vê a grade de hoje inteira e se move sozinho.
+ * A grade de hoje para o interno que avisou um problema e procura vaga.
+ *
  * Uma linha por base, na ordem canônica (SM01, CB02, PR03...), uma célula por
- * vaga: quem está lá com check-in feito em vermelho, quem ainda não chegou em
- * cor fraca, e a célula livre em verde — só ela tem clique. A base irmã (mesmo
- * endereço, outra viatura) vem sugerida no topo. Base com aviso de problema ou
- * desativada no `plantoes` mostra o motivo e não oferece célula livre.
+ * vaga da grade, todas do mesmo tamanho. O texto diz quem está lá ("Interno
+ * EBMSP") ou "Livre"; a cor diz o que ele pode clicar: verde ocupa, vermelho
+ * é interno com check-in feito, cinza é interno sem check-in dentro da
+ * tolerância. A base irmã (mesmo endereço, outra viatura) vem sugerida no
+ * topo. Base com aviso de problema ou desativada no `plantoes` mostra o motivo
+ * e não oferece vaga.
+ *
+ * `useRemanejamento` segura os dados e as ações; quem renderiza decide quando
+ * abrir — o aviso à coordenação abre a grade sozinho.
  */
 type Celula =
   | { tipo: "livre" }
-  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu" };
+  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu"; reivindicavel: boolean };
 
 type Base = {
   id: string;
@@ -26,40 +32,42 @@ type Base = {
   celulas: Celula[];
 };
 
-const ESTADO = {
-  "sem-checkin": { rotulo: "sem check-in", classe: "border-slate-200 bg-slate-50 text-slate-400" },
-  "checkin-ok": { rotulo: "check-in ok", classe: "border-red-200 bg-red-50 text-red-700" },
-  saiu: { rotulo: "já saiu", classe: "border-slate-200 bg-slate-100 text-slate-500 line-through" },
-} as const;
+type Grade = {
+  aberta: boolean;
+  abreAs: string;
+  reivindicando: boolean;
+  reivindicaAs: string;
+  medicosDisponiveis: boolean;
+  bases: Base[];
+};
 
-function temLivre(b: Base) {
-  return b.celulas.some((c) => c.tipo === "livre");
+function ocupavel(c: Celula) {
+  return c.tipo === "livre" || c.reivindicavel;
 }
 
-export function RemanejamentoInterno({ assignmentId }: { assignmentId: string }) {
-  const [aberto, setAberto] = useState(false);
+function temVaga(b: Base) {
+  return !b.atual && b.celulas.some(ocupavel);
+}
+
+export function useRemanejamento(assignmentId: string) {
+  const [grade, setGrade] = useState<Grade | null>(null);
   const [carregando, setCarregando] = useState(false);
-  const [bases, setBases] = useState<Base[] | null>(null);
-  const [medicosDisponiveis, setMedicosDisponiveis] = useState(false);
   const [indo, setIndo] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
 
   async function buscar() {
-    setAberto(true);
     setCarregando(true);
-    setMsg(null);
+    setErro(null);
     try {
       const res = await fetch(`/taximetro/api/intern/remanejamento?assignmentId=${assignmentId}`);
       const json = await res.json();
-      if (json.success) {
-        setBases(json.data.bases);
-        setMedicosDisponiveis(json.data.medicosDisponiveis);
-      } else {
-        setBases(null);
-        setMsg({ ok: false, texto: json.error ?? "Não foi possível carregar a grade." });
+      if (json.success) setGrade(json.data);
+      else {
+        setGrade(null);
+        setErro(json.error ?? "Não foi possível carregar a grade.");
       }
     } catch {
-      setMsg({ ok: false, texto: "Erro de conexão. Tente novamente." });
+      setErro("Erro de conexão. Tente novamente.");
     }
     setCarregando(false);
   }
@@ -68,7 +76,7 @@ export function RemanejamentoInterno({ assignmentId }: { assignmentId: string })
     const medico = base.medicos.length > 0 ? `\nMédico lá agora: ${base.medicos.join(", ")}.` : "";
     if (!window.confirm(`Ir para a ${base.code} — ${base.name}?${medico}\n\nA coordenação será avisada.`)) return;
     setIndo(base.id);
-    setMsg(null);
+    setErro(null);
     try {
       const res = await fetch("/taximetro/api/intern/remanejamento", {
         method: "POST",
@@ -85,34 +93,60 @@ export function RemanejamentoInterno({ assignmentId }: { assignmentId: string })
         window.location.reload();
         return;
       }
-      setMsg({ ok: false, texto: json.error ?? "Não foi possível remanejar." });
+      setErro(json.error ?? "Não foi possível remanejar.");
       await buscar();
     } catch {
-      setMsg({ ok: false, texto: "Erro de conexão. Tente novamente." });
+      setErro("Erro de conexão. Tente novamente.");
     }
     setIndo(null);
   }
 
-  const irma = bases?.find((b) => b.irma) ?? null;
+  return { grade, carregando, indo, erro, buscar, ir };
+}
+
+const CELULA = "w-full rounded-md border px-2 py-1.5 text-left text-xs leading-tight disabled:cursor-default";
+const VERDE = "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
+const VERMELHO = "border-red-200 bg-red-50 text-red-700";
+const CINZA = "border-slate-200 bg-slate-50 text-slate-400";
+
+function classeDaCelula(c: Celula, atual: boolean) {
+  if (atual) return CINZA;
+  if (ocupavel(c)) return VERDE;
+  if (c.tipo === "ocupada" && c.estado === "checkin-ok") return VERMELHO;
+  return CINZA;
+}
+
+function textoDaCelula(c: Celula) {
+  if (c.tipo === "livre") return { titulo: "Livre", detalhe: "" };
+  const detalhe = c.estado === "checkin-ok" ? "check-in ok" : c.estado === "saiu" ? "já saiu" : "sem check-in";
+  return { titulo: `Interno ${c.faculdade}`, detalhe };
+}
+
+export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejamento> }) {
+  const { grade, indo, erro, ir } = r;
+  const irma = grade?.bases.find((b) => b.irma) ?? null;
 
   return (
     <div className="space-y-2">
-      <button
-        type="button"
-        onClick={buscar}
-        disabled={carregando}
-        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-      >
-        {carregando ? "Carregando a grade..." : aberto && bases ? "Atualizar a grade" : "Ver vaga em outra base"}
-      </button>
+      {grade && !grade.aberta && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          A grade de vagas abre às {grade.abreAs}: tolerância para quem ainda vai chegar fazer o check-in na própria base.
+        </p>
+      )}
 
-      {aberto && irma && (
+      {grade?.aberta && !grade.reivindicando && (
+        <p className="text-xs text-slate-500">
+          A partir das {grade.reivindicaAs}, interno sem check-in continua na grade, mas a vaga dele pode ser ocupada.
+        </p>
+      )}
+
+      {grade?.aberta && irma && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
           <p className="text-xs text-emerald-900">
             <span className="font-semibold">{irma.code}</span> é a mesma base física, outra viatura.
-            {temLivre(irma) ? " Tem vaga: a troca natural." : irma.desativada ? " Está desativada." : irma.aviso ? " Também está com problema." : " Está sem vaga."}
+            {temVaga(irma) ? " Tem vaga: a troca natural." : irma.desativada ? " Está desativada." : irma.aviso ? " Também está com problema." : " Está sem vaga."}
           </p>
-          {temLivre(irma) && (
+          {temVaga(irma) && (
             <button
               type="button"
               disabled={indo !== null}
@@ -125,9 +159,9 @@ export function RemanejamentoInterno({ assignmentId }: { assignmentId: string })
         </div>
       )}
 
-      {aberto && bases && (
+      {grade?.aberta && (
         <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-          {bases.map((b) => (
+          {grade.bases.map((b) => (
             <li key={b.id} className={`space-y-1.5 px-3 py-2 ${b.atual ? "bg-slate-50" : ""}`}>
               <p className="text-sm font-semibold text-slate-900">
                 {b.code} <span className="font-normal text-slate-500">— {b.name}</span>
@@ -145,40 +179,39 @@ export function RemanejamentoInterno({ assignmentId }: { assignmentId: string })
                   Aviso às {b.aviso.hora}: {b.aviso.tipo}
                 </p>
               )}
-              {medicosDisponiveis && (
+              {grade.medicosDisponiveis && (
                 <p className="text-xs text-slate-500">
                   {b.medicos.length > 0 ? `Dr(a). ${b.medicos.join(", ")}` : "sem médico registrado"}
                 </p>
               )}
-              <div className="flex flex-wrap gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 {b.celulas.length === 0 && (
-                  <span className="text-xs text-slate-400">
+                  <span className="col-span-3 text-xs text-slate-400">
                     {b.desativada || b.aviso ? "sem vaga oferecida" : "sem grade neste turno"}
                   </span>
                 )}
-                {b.celulas.map((c, i) =>
-                  c.tipo === "livre" ? (
+                {b.celulas.map((c, i) => {
+                  const { titulo, detalhe } = textoDaCelula(c);
+                  const clicavel = !b.atual && ocupavel(c);
+                  return (
                     <button
                       key={i}
                       type="button"
-                      disabled={b.atual || indo !== null}
+                      disabled={!clicavel || indo !== null}
                       onClick={() => ir(b)}
-                      className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-default disabled:opacity-60"
+                      className={`${CELULA} ${classeDaCelula(c, b.atual)} ${clicavel ? "font-semibold" : "font-medium"}`}
                     >
-                      {indo === b.id ? "Indo..." : "VAGA livre"}
+                      <span className="block">{indo === b.id && clicavel ? "Indo..." : titulo}</span>
+                      {detalhe && <span className="block text-[10px] opacity-80">{detalhe}</span>}
                     </button>
-                  ) : (
-                    <span key={i} className={`rounded-md border px-2 py-1 text-xs font-medium ${ESTADO[c.estado].classe}`}>
-                      VAGA {c.faculdade} · {ESTADO[c.estado].rotulo}
-                    </span>
-                  ),
-                )}
+                  );
+                })}
               </div>
             </li>
           ))}
         </ul>
       )}
-      {msg && <p className={`text-xs ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.texto}</p>}
+      {erro && <p className="text-xs text-red-700">{erro}</p>}
     </div>
   );
 }
