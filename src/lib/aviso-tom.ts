@@ -20,6 +20,9 @@ export const TIPOS_DE_AVISO = {
 
 export type TipoDeAviso = keyof typeof TIPOS_DE_AVISO;
 
+/** Status em que o interno pode estar fisicamente na base — aviso e remanejamento só valem aí. */
+export const STATUS_NA_BASE: ReadonlySet<string> = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN"]);
+
 export function textoDoAviso(p: {
   tipo: TipoDeAviso;
   interno: string;

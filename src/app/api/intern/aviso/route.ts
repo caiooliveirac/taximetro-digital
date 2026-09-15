@@ -15,14 +15,13 @@ import { assignments, bases, faculties, users } from "@/db/schema";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { formatBrazilTime, isCurrentOperationalAssignment } from "@/lib/utils";
-import { avisarSecretario, textoDoAviso, TIPOS_DE_AVISO } from "@/lib/aviso-tom";
+import { avisarSecretario, STATUS_NA_BASE, textoDoAviso, TIPOS_DE_AVISO } from "@/lib/aviso-tom";
 
 const schema = z.object({
   assignmentId: z.string().uuid(),
   tipo: z.enum(Object.keys(TIPOS_DE_AVISO) as [keyof typeof TIPOS_DE_AVISO, ...(keyof typeof TIPOS_DE_AVISO)[]]),
 });
 
-const STATUS_NA_BASE = new Set(["SCHEDULED", "CONFIRMED", "CHECKED_IN"]);
 const REPETICAO_MS = 30 * 60_000;
 // ponytail: memória do processo; se um dia houver mais de uma réplica, mover para o audit_logs.
 const ultimos = new Map<string, number>();
@@ -41,6 +40,7 @@ export async function POST(req: NextRequest) {
   const [plantao] = await db
     .select({
       id: assignments.id,
+      baseId: assignments.baseId,
       date: assignments.date,
       period: assignments.period,
       status: assignments.status,
@@ -81,7 +81,9 @@ export async function POST(req: NextRequest) {
     action: "INTERN_ALERT_SENT",
     entity: "assignment",
     entityId: assignmentId,
-    payload: { tipo, entregue },
+    // base/data/turno ficam no payload: o plantão pode ser remanejado depois, e
+    // o aviso continua sendo da base onde foi dado (é o que bloqueia as vagas dela).
+    payload: { tipo, entregue, baseId: plantao.baseId, baseCode: plantao.baseCode, date: plantao.date, period: plantao.period },
   });
 
   return NextResponse.json({ success: true, data: { entregue } });

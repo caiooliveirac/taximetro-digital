@@ -176,6 +176,7 @@ jobs:
               -e DB_BACKUP_ENABLED=false \
               -e TOM_AVISO_URL="http://127.0.0.1:3083/aviso" \
               -e TOM_HOOK_SECRET="${{ secrets.TOM_HOOK_SECRET }}" \
+              -e PLANTOES_READONLY_DATABASE_URL="${{ secrets.PLANTOES_READONLY_DATABASE_URL }}" \
               -e CROSS_APP_IMPORT_SECRET="${{ secrets.CROSS_APP_IMPORT_SECRET }}" \
               "$IMAGE_CANDIDATE"
 
@@ -221,6 +222,7 @@ jobs:
               -e CROSS_APP_IMPORT_SECRET="${{ secrets.CROSS_APP_IMPORT_SECRET }}" \
               -e TOM_AVISO_URL="http://127.0.0.1:3083/aviso" \
               -e TOM_HOOK_SECRET="${{ secrets.TOM_HOOK_SECRET }}" \
+              -e PLANTOES_READONLY_DATABASE_URL="${{ secrets.PLANTOES_READONLY_DATABASE_URL }}" \
               "$IMAGE_CANDIDATE"
 
             echo "=== Waiting for production healthcheck ==="
