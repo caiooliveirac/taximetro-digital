@@ -121,7 +121,10 @@ async function avisosDoTurno(plantao: Plantao): Promise<Map<string, { tipo: stri
     .select({
       baseId: sql<string | null>`${auditLog.payload}->>'baseId'`,
       tipo: sql<string | null>`${auditLog.payload}->>'tipo'`,
-      em: auditLog.createdAt,
+      // created_at é timestamp sem fuso preenchido por now() na sessão do banco
+      // (America/Sao_Paulo no servidor); lido como Date vira UTC e atrasa 3h.
+      // Formatar no SQL usa a hora como foi gravada.
+      hora: sql<string>`to_char(${auditLog.createdAt}, 'HH24:MI')`,
     })
     .from(auditLog)
     .where(
@@ -136,7 +139,7 @@ async function avisosDoTurno(plantao: Plantao): Promise<Map<string, { tipo: stri
   for (const l of linhas) {
     if (!l.baseId || porBase.has(l.baseId)) continue;
     const tipo = l.tipo && l.tipo in TIPOS_DE_AVISO ? TIPOS_DE_AVISO[l.tipo as TipoDeAviso] : "problema na base";
-    porBase.set(l.baseId, { tipo, hora: formatBrazilTime(l.em) });
+    porBase.set(l.baseId, { tipo, hora: l.hora });
   }
   return porBase;
 }
