@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
+import { celulasDaBase, compararCodigoDeBase, motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
 import { computePeriodLoad } from "../src/features/scheduling/domain/policies/assignment-policy";
 
 test("vaga é de grade, não do limite físico", () => {
@@ -22,4 +22,25 @@ test("texto do remanejamento: quem, de onde, para onde, quando, por quê", () =>
     textoDoRemanejamento({ interno: "Ana Souza", faculdade: "UNIFACS", de: "BR05", para: "SM01", hora: "19:12", motivo: "sem médico na base" }),
     "🔁 *Ana Souza* (UNIFACS) saiu da BR05 para a SM01 às 19:12: sem médico na base.",
   );
+});
+
+test("bases na ordem canônica: pelo número do código, sem número no fim", () => {
+  const codes = ["CB02", "LF90", "SM01", "GOA", "PM40", "PR03", "BR05", "CN10"];
+  assert.deepEqual(codes.sort(compararCodigoDeBase), ["SM01", "CB02", "PR03", "BR05", "CN10", "PM40", "LF90", "GOA"]);
+});
+
+test("células: ocupadas primeiro com o estado certo, livres depois, nunca negativas", () => {
+  assert.deepEqual(
+    celulasDaBase(3, [{ faculdade: "EBMSP", status: "CHECKED_IN" }, { faculdade: "Zarns", status: "SCHEDULED" }]),
+    [
+      { tipo: "ocupada", faculdade: "EBMSP", estado: "checkin-ok" },
+      { tipo: "ocupada", faculdade: "Zarns", estado: "sem-checkin" },
+      { tipo: "livre" },
+    ],
+  );
+  assert.deepEqual(celulasDaBase(1, [{ faculdade: "A", status: "CONFIRMED" }, { faculdade: "B", status: "CHECKED_OUT" }]), [
+    { tipo: "ocupada", faculdade: "A", estado: "sem-checkin" },
+    { tipo: "ocupada", faculdade: "B", estado: "saiu" },
+  ]);
+  assert.deepEqual(celulasDaBase(0, []), []);
 });

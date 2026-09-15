@@ -1,8 +1,9 @@
 /**
  * Remanejamento pelo próprio interno, no plantão em andamento.
  *
- * GET  ?assignmentId=  — bases USA com vaga de grade neste turno, com o médico
- *                        que está lá agora (quando o canal com o `plantoes` existe).
+ * GET  ?assignmentId=  — a grade de hoje inteira: cada USA com suas células
+ *                        (quem está lá, com ou sem check-in, e as livres) e o
+ *                        médico presente (quando o canal com o `plantoes` existe).
  * POST {assignmentId, newBaseId} — ocupa a vaga na hora e avisa a coordenação.
  *
  * Só depois de um aviso (sem médico / sem enfermeiro / viatura) neste mesmo
@@ -18,15 +19,15 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, notInArray, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "@/db";
-import { assignments, auditLog, bases, faculties, users } from "@/db/schema";
+import { assignments, auditLog, bases, faculties, slotRules, users } from "@/db/schema";
 import { getEffectiveUser, type EffectiveUser } from "@/lib/impersonate";
-import { checkPeriodOccupancy } from "@/lib/slots";
+import { checkPeriodOccupancy, getDayOfWeek } from "@/lib/slots";
 import { formatBrazilTime, isCurrentOperationalAssignment } from "@/lib/utils";
 import { avisarSecretario, STATUS_NA_BASE } from "@/lib/aviso-tom";
-import { motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "@/lib/remanejamento-interno";
+import { celulasDaBase, compararCodigoDeBase, motivoDoRemanejamento, textoDoRemanejamento, vagasNaGrade, type Ocupante } from "@/lib/remanejamento-interno";
 import { medicosNasBasesAgora, canalDoPlantoesConfigurado } from "@/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import { executeReassignAssignmentBase } from "@/features/scheduling/application/use-cases/reassign-assignment-base";
 
@@ -89,21 +90,57 @@ async function ultimoAviso(assignmentId: string): Promise<string | null> {
 
 const SEM_AVISO = "Avise a coordenação primeiro (sem médico, sem enfermeiro ou problema na viatura).";
 
-async function basesComVaga(plantao: Plantao) {
-  const candidatas = await db
+/**
+ * A grade de hoje, base por base: quantas células tem cada USA neste turno
+ * (soma de slot_rules de todas as faculdades) e quem já está em cada uma.
+ * Duas consultas para todas as bases, em vez de uma por base.
+ */
+async function gradeDoTurno(plantao: Plantao) {
+  const dayOfWeek = getDayOfWeek(plantao.date);
+
+  const capacidade = await db
+    .select({ baseId: slotRules.baseId, capacity: sql<number>`COALESCE(SUM(${slotRules.capacity}), 0)` })
+    .from(slotRules)
+    .where(
+      and(
+        eq(slotRules.dayOfWeek, dayOfWeek),
+        eq(slotRules.period, plantao.period),
+        eq(slotRules.isActive, true),
+        eq(slotRules.isBlocked, false),
+        eq(slotRules.isExtraShift, false),
+      ),
+    )
+    .groupBy(slotRules.baseId);
+  const capacidadePorBase = new Map(capacidade.map((c) => [c.baseId, Number(c.capacity)]));
+
+  const ocupantes = await db
+    .select({ baseId: assignments.baseId, faculdade: faculties.abbreviation, status: assignments.status })
+    .from(assignments)
+    .innerJoin(faculties, eq(faculties.id, assignments.facultyId))
+    .where(
+      and(
+        eq(assignments.date, plantao.date),
+        eq(assignments.period, plantao.period),
+        eq(assignments.isExtraShift, false),
+        notInArray(assignments.status, ["CANCELLED", "ABSENT"]),
+      ),
+    )
+    .orderBy(assignments.createdAt);
+  const ocupantesPorBase = new Map<string, Ocupante[]>();
+  for (const o of ocupantes) ocupantesPorBase.set(o.baseId, [...(ocupantesPorBase.get(o.baseId) ?? []), o]);
+
+  const usas = await db
     .select({ id: bases.id, code: bases.code, name: bases.name })
     .from(bases)
-    .where(and(eq(bases.type, "USA"), eq(bases.isActive, true), ne(bases.id, plantao.baseId)))
-    .orderBy(bases.code);
+    .where(and(eq(bases.type, "USA"), eq(bases.isActive, true)));
 
-  // ponytail: uma consulta por base (~12). Vira uma só com GROUP BY se doer.
-  const comVaga = [];
-  for (const base of candidatas) {
-    const load = await checkPeriodOccupancy(base.id, plantao.date, plantao.period);
-    const vagas = vagasNaGrade(load);
-    if (vagas > 0) comVaga.push({ ...base, vagas });
-  }
-  return comVaga;
+  return usas
+    .sort((a, b) => compararCodigoDeBase(a.code, b.code))
+    .map((base) => ({
+      ...base,
+      atual: base.id === plantao.baseId,
+      celulas: celulasDaBase(capacidadePorBase.get(base.id) ?? 0, ocupantesPorBase.get(base.id) ?? []),
+    }));
 }
 
 export async function GET(req: NextRequest) {
@@ -122,14 +159,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: SEM_AVISO }, { status: 409 });
   }
 
-  const vagas = await basesComVaga(plantao);
-  const medicos = await medicosNasBasesAgora(vagas.map((v) => v.code));
+  const grade = await gradeDoTurno(plantao);
+  const medicos = await medicosNasBasesAgora(grade.map((b) => b.code));
 
   return NextResponse.json({
     success: true,
     data: {
       medicosDisponiveis: canalDoPlantoesConfigurado(),
-      vagas: vagas.map((v) => ({ ...v, medicos: medicos[v.code] ?? [] })),
+      bases: grade.map((b) => ({ ...b, medicos: medicos[b.code] ?? [] })),
     },
   });
 }

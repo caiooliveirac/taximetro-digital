@@ -311,7 +311,7 @@ export async function checkPeriodOccupancy(
   });
 }
 
-function getDayOfWeek(dateStr: string): "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN" {
+export function getDayOfWeek(dateStr: string): "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN" {
   const day = new Date(dateStr + "T12:00:00").getDay();
   return (["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"] as const)[day];
 }

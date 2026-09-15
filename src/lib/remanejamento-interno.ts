@@ -2,8 +2,9 @@
  * Remanejamento pelo próprio interno.
  *
  * Ele avisou "sem médico" (ou enfermeiro, ou viatura) e a base está parada. Em
- * vez de esperar a coordenação acordar, ele vê onde há vaga na grade de hoje e
- * se move sozinho; a coordenação é só avisada, pelo mesmo canal do aviso.
+ * vez de esperar a coordenação acordar, ele vê a grade de hoje inteira — base
+ * por base, célula por vaga — e se move sozinho para uma célula livre; a
+ * coordenação é só avisada, pelo mesmo canal do aviso.
  *
  * Vaga aqui é vaga **de grade**, não o limite físico: `slot_rules.capacity`
  * somada de todas as faculdades da base naquele dia/turno menos quem já está
@@ -16,6 +17,37 @@ import { TIPOS_DE_AVISO, type TipoDeAviso } from "@/lib/aviso-tom";
 
 export function vagasNaGrade(load: { capacity: number; occupied: number }): number {
   return Math.max(0, load.capacity - load.occupied);
+}
+
+/**
+ * Ordem canônica das bases: pelo número do código (SM01, CB02, PR03, PM04,
+ * BR05, CN10...). Código sem número vai para o fim, em ordem alfabética.
+ */
+export function compararCodigoDeBase(a: string, b: string): number {
+  const na = Number(a.replace(/\D/g, "")) || Infinity;
+  const nb = Number(b.replace(/\D/g, "")) || Infinity;
+  return na !== nb ? na - nb : a.localeCompare(b);
+}
+
+export type Ocupante = { faculdade: string; status: string };
+
+export type Celula =
+  | { tipo: "livre" }
+  | { tipo: "ocupada"; faculdade: string; estado: "sem-checkin" | "checkin-ok" | "saiu" };
+
+/**
+ * As células de uma base no turno: primeiro quem está lá (check-in feito em
+ * vermelho, ainda sem check-in em cor fraca), depois as livres. Se a base está
+ * acima da grade, não sobra célula livre — mas ninguém some.
+ */
+export function celulasDaBase(capacity: number, ocupantes: Ocupante[]): Celula[] {
+  const ocupadas: Celula[] = ocupantes.map((o) => ({
+    tipo: "ocupada",
+    faculdade: o.faculdade,
+    estado: o.status === "CHECKED_IN" ? "checkin-ok" : o.status === "CHECKED_OUT" ? "saiu" : "sem-checkin",
+  }));
+  const livres = vagasNaGrade({ capacity, occupied: ocupantes.length });
+  return [...ocupadas, ...Array.from({ length: livres }, (): Celula => ({ tipo: "livre" }))];
 }
 
 export function motivoDoRemanejamento(tipo: string | null | undefined): string {
