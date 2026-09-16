@@ -32,6 +32,9 @@ function LoginForm() {
   const [info] = useState(() => searchParams.get("passwordChanged") === "1"
     ? "Senha alterada com sucesso. Entre novamente com a nova senha."
     : "");
+  const [aviso] = useState(() => searchParams.get("convite") === "expirado"
+    ? "O link de convite que você abriu já expirou. Se você já fez o cadastro, entre aqui com seu e-mail (ou CPF) e senha. Se ainda não se cadastrou, peça um novo link ao seu líder."
+    : "");
   const [loading, setLoading] = useState(false);
 
   function formatCpf(value: string) {
@@ -145,6 +148,12 @@ function LoginForm() {
             {info && (
               <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-600/10">
                 {info}
+              </p>
+            )}
+
+            {aviso && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-600/10">
+                {aviso}
               </p>
             )}
 
