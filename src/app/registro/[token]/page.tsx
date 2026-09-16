@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Ambulance, CheckCircle, Camera, ImagePlus, UserCircle, Eye, EyeOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,8 +24,8 @@ const ROLE_LABEL: Record<string, string> = {
 
 export default function RegistroPage() {
   const { token } = useParams<{ token: string }>();
+  const router = useRouter();
   const [faculty, setFaculty] = useState<{ targetRole: string; facultyName: string; facultyAbbr: string; baseCode: string | null; baseName: string | null } | null>(null);
-  const [invalid, setInvalid] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -70,15 +70,17 @@ export default function RegistroPage() {
   const passwordValid = PASSWORD_RULES.every((r) => r.test(password));
 
   useEffect(() => {
+    // Link expirado/inválido: manda direto para o login com aviso, em vez de
+    // deixar a pessoa presa numa tela de erro sem saída.
+    const irParaLogin = () => router.replace("/login?convite=expirado");
     fetch(`/taximetro/api/registro/${token}`)
       .then((r) => r.json())
       .then((json) => {
-        if (json.success) setFaculty(json.data);
-        else setInvalid(true);
-        setLoading(false);
+        if (json.success) { setFaculty(json.data); setLoading(false); }
+        else irParaLogin();
       })
-      .catch(() => { setInvalid(true); setLoading(false); });
-  }, [token]);
+      .catch(irParaLogin);
+  }, [token, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,20 +111,6 @@ export default function RegistroPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-slate-500">Carregando...</p>
-      </div>
-    );
-  }
-
-  if (invalid) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-[0_1px_3px_rgba(0,0,0,0.04)] text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 mx-auto mb-3">
-            <Ambulance className="h-6 w-6 text-red-500" strokeWidth={1.5} />
-          </div>
-          <h1 className="text-xl font-semibold text-slate-900">Link inválido</h1>
-          <p className="mt-2 text-sm text-slate-500">Este link de registro não existe ou já expirou.</p>
-        </div>
       </div>
     );
   }
