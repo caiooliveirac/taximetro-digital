@@ -45,6 +45,7 @@ import { assignments, bases, faculties, users } from "@/db/schema";
 import { getEffectiveUser, type EffectiveUser } from "@/lib/impersonate";
 import { formatBrazilTime, getBrazilNowParts, isCurrentOperationalAssignment } from "@/lib/utils";
 import { avisarSecretario, STATUS_NA_BASE } from "@/lib/aviso-tom";
+import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 import {
   ABERTURA_MIN,
   REIVINDICACAO_MIN,
@@ -272,16 +273,16 @@ export async function POST(req: NextRequest) {
 
   if (resultado.status !== 200) return NextResponse.json(resultado.body, { status: resultado.status });
 
-  const entregue = await avisarSecretario(
-    textoDoRemanejamento({
-      interno: plantao.interno,
-      faculdade: plantao.faculdade,
-      de: plantao.baseCode,
-      para: resultado.baseCode,
-      hora: formatBrazilTime(new Date()),
-      motivo,
-    }),
-  );
+  const texto = textoDoRemanejamento({
+    interno: plantao.interno,
+    faculdade: plantao.faculdade,
+    de: plantao.baseCode,
+    para: resultado.baseCode,
+    hora: formatBrazilTime(new Date()),
+    motivo,
+  });
+  // WhatsApp via secretário e privado do bot para a coordenação: qualquer um dos dois já é "avisada".
+  const [entregueNoTom, coordenadoresNoTelegram] = await Promise.all([avisarSecretario(texto), avisarCoordenacaoNoTelegram(texto)]);
 
-  return NextResponse.json({ success: true, data: { baseCode: resultado.baseCode, entregue } });
+  return NextResponse.json({ success: true, data: { baseCode: resultado.baseCode, entregue: entregueNoTom || coordenadoresNoTelegram > 0 } });
 }

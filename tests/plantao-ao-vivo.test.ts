@@ -117,3 +117,58 @@ test("textos para o interno no Telegram", () => {
     "🗓️ Seu plantão de hoje na BR05 foi liberado pela coordenação: a base parou e não há vaga em outra. Não conta como falta. Reponha em outro dia — as vagas abertas aparecem no app.",
   );
 });
+
+import { resumoDoTurnoParaTelegram, textoDaIntervencao } from "../src/lib/plantao-ao-vivo";
+
+test("intervenção da coordenação contada para os outros coordenadores", () => {
+  assert.equal(
+    textoDaIntervencao("Caio", { acao: "mover", interno: "Ana Souza", faculdade: "UNIFACS", de: "BR05", para: "SM01", motivo: "sem médico na base" }, "19:20"),
+    "🛠️ *Caio* (coordenação) moveu *Ana Souza* (UNIFACS) da BR05 para a SM01 às 19:20: sem médico na base.",
+  );
+  assert.equal(textoDaIntervencao("Caio", { acao: "pararBase", baseCode: "SM01", motivo: null }, "08:00"), "⛔ *Caio* (coordenação) parou a SM01 às 08:00.");
+  assert.equal(
+    textoDaIntervencao("Caio", { acao: "cancelarAviso", baseCode: "BR05", interno: "Ana Souza" }, "19:25"),
+    "🛠️ *Caio* (coordenação) cancelou o aviso da BR05 às 19:25 (dado por Ana Souza): falso alarme.",
+  );
+});
+
+test("resumo do turno para o /plantao: só o que precisa de atenção, mais as vagas", () => {
+  const base = (code: string, livres: number, extra: Partial<Parameters<typeof resumoDoTurnoParaTelegram>[0]["bases"][number]> = {}) => ({
+    code,
+    aviso: null,
+    parada: null,
+    desativada: null,
+    livres,
+    ...extra,
+  });
+  const texto = resumoDoTurnoParaTelegram({
+    period: "NIGHT",
+    dataFormatada: "16/09",
+    agora: "19:40",
+    bases: [
+      base("SM01", 0, { parada: { desde: "19:20", motivo: "viatura na oficina" } }),
+      base("BR05", 0, { aviso: { assignmentId: "a1", interno: "Ana Souza", codigo: "SEM_MEDICO", tipo: "sem médico na base", hora: "19:12" } }),
+      base("IT30", 1),
+      base("CC70", 2),
+    ],
+    liberados: [{ interno: "Bia Lima", faculdade: "AFYA", baseCode: "PR03" }],
+    url: "https://mnrs.com.br/taximetro/admin/plantao",
+  });
+  assert.equal(
+    texto,
+    [
+      "🩺 *Plantão ao vivo* · noturno 16/09 · 19:40",
+      "",
+      "⛔ SM01 — parada pela coordenação às 19:20: viatura na oficina",
+      "⚠️ BR05 — sem médico na base às 19:12 (Ana Souza)",
+      "🗓️ Liberados para repor: Bia Lima (AFYA, PR03)",
+      "🟢 Vagas na grade: IT30 1, CC70 2",
+      "",
+      "https://mnrs.com.br/taximetro/admin/plantao",
+    ].join("\n"),
+  );
+
+  const calmo = resumoDoTurnoParaTelegram({ period: "DAY", dataFormatada: "16/09", agora: "09:00", bases: [base("SM01", 0)], liberados: [], url: "u" });
+  assert.ok(calmo.includes("✅ Nenhum aviso, nenhuma base parada."));
+  assert.ok(calmo.includes("🔴 Nenhuma vaga na grade."));
+});

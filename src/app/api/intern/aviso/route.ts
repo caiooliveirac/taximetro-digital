@@ -1,6 +1,7 @@
 /**
  * POST /api/intern/aviso — o interno aperta um botão no plantão de hoje e a
- * coordenação recebe no WhatsApp, via secretário `tom`.
+ * coordenação recebe no WhatsApp, via secretário `tom`, e no privado do bot
+ * do Telegram (todo coordenador vinculado).
  *
  * Só o plantão do próprio interno, só o de hoje (operacional), e só em status
  * em que ele pode estar na base. Toque repetido do mesmo botão no mesmo
@@ -16,6 +17,7 @@ import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { formatBrazilTime, isCurrentOperationalAssignment } from "@/lib/utils";
 import { avisarSecretario, STATUS_NA_BASE, textoDoAviso, TIPOS_DE_AVISO } from "@/lib/aviso-tom";
+import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 
 const schema = z.object({
   assignmentId: z.string().uuid(),
@@ -74,7 +76,8 @@ export async function POST(req: NextRequest) {
     baseCode: plantao.baseCode,
     hora: formatBrazilTime(new Date()),
   });
-  const entregue = await avisarSecretario(texto);
+  const [entregueNoTom, coordenadoresNoTelegram] = await Promise.all([avisarSecretario(texto), avisarCoordenacaoNoTelegram(texto)]);
+  const entregue = entregueNoTom || coordenadoresNoTelegram > 0;
 
   await logAudit({
     userId: user.realUserId ?? user.id,
@@ -83,7 +86,16 @@ export async function POST(req: NextRequest) {
     entityId: assignmentId,
     // base/data/turno ficam no payload: o plantão pode ser remanejado depois, e
     // o aviso continua sendo da base onde foi dado (é o que bloqueia as vagas dela).
-    payload: { tipo, entregue, baseId: plantao.baseId, baseCode: plantao.baseCode, date: plantao.date, period: plantao.period },
+    payload: {
+      tipo,
+      entregue,
+      entregueNoTom,
+      coordenadoresNoTelegram,
+      baseId: plantao.baseId,
+      baseCode: plantao.baseCode,
+      date: plantao.date,
+      period: plantao.period,
+    },
   });
 
   return NextResponse.json({ success: true, data: { entregue } });

@@ -21,6 +21,8 @@
  *
  * Tudo é evento no audit_log (ver plantao-ao-vivo.ts); a grade do interno lê
  * os mesmos eventos, então o que a coordenação faz aqui aparece lá na hora.
+ * Cada intervenção é contada no privado do bot aos outros coordenadores
+ * vinculados — quem fez já sabe.
  * Só o turno operacional em andamento: intervenção em outro dia é a tela de
  * Remanejamento ou a Escala.
  */
@@ -43,11 +45,14 @@ import {
   MARCA_REPOR,
   notaDeReposicao,
   semNotaDeReposicao,
+  textoDaIntervencao,
   textoParaInternoRemanejado,
   textoParaInternoRepor,
   textoParaInternoReposicaoDesfeita,
+  type Intervencao,
 } from "@/lib/plantao-ao-vivo";
 import { avisarInternoNoTelegram } from "@/lib/telegram-interno";
+import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 import { basesDoTurno, type BaseDoTurno, type Periodo } from "@/features/scheduling/application/grade-do-turno";
 import { executeReassignAssignmentBase } from "@/features/scheduling/application/use-cases/reassign-assignment-base";
 import { updateAssignmentStatus } from "@/features/scheduling/infra/repositories/assignment-repository";
@@ -165,10 +170,12 @@ async function plantaoDoTurno(assignmentId: string) {
       isExtraShift: assignments.isExtraShift,
       notes: assignments.notes,
       interno: users.name,
+      faculdade: sql<string>`COALESCE(${faculties.abbreviation}, '')`,
     })
     .from(assignments)
     .innerJoin(bases, eq(bases.id, assignments.baseId))
     .innerJoin(users, eq(users.id, assignments.internId))
+    .leftJoin(faculties, eq(faculties.id, assignments.facultyId))
     .where(eq(assignments.id, assignmentId))
     .limit(1);
   if (!plantao) return falha(404, "Plantão não encontrado");
@@ -186,6 +193,14 @@ async function baseDoTurno(baseId: string, turno: { date: string; period: Period
 
 function actorDe(user: EffectiveUser) {
   return { id: user.id, role: user.role, facultyId: user.facultyId, isImpersonating: user.isImpersonating, realUserId: user.realUserId };
+}
+
+/** Conta aos outros coordenadores, no privado do bot. Nunca levanta; devolve quantos receberam. */
+async function contarAosOutros(user: EffectiveUser, intervencao: Intervencao): Promise<number> {
+  const [autor] = await db.select({ nome: users.name }).from(users).where(eq(users.id, user.realUserId ?? user.id)).limit(1);
+  return avisarCoordenacaoNoTelegram(textoDaIntervencao(autor?.nome ?? "Coordenação", intervencao, formatBrazilTime(new Date())), {
+    exceto: user.realUserId ?? user.id,
+  });
 }
 
 async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>) {
@@ -217,10 +232,10 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
       });
       if (resultado.status !== 200) return falha(resultado.status, resultado.body.error ?? "Não foi possível remanejar.");
 
-      const entregue = await avisarInternoNoTelegram(
-        plantao.internId,
-        textoParaInternoRemanejado({ de: plantao.baseCode, para: destino.code, nomeDaBase: destino.name, motivo }),
-      );
+      const [entregue] = await Promise.all([
+        avisarInternoNoTelegram(plantao.internId, textoParaInternoRemanejado({ de: plantao.baseCode, para: destino.code, nomeDaBase: destino.name, motivo })),
+        contarAosOutros(user, { acao: "mover", interno: plantao.interno, faculdade: plantao.faculdade, de: plantao.baseCode, para: destino.code, motivo }),
+      ]);
       return { interno: plantao.interno, de: plantao.baseCode, para: destino.code, entregue };
     }
 
@@ -240,6 +255,7 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
           avisos: base.estado.avisos.map((a) => ({ assignmentId: a.assignmentId, interno: a.interno, tipo: a.codigo, hora: a.hora })),
         },
       });
+      await contarAosOutros(user, { acao: "cancelarAviso", baseCode: base.code, interno: avisoDaBase(base.estado)?.interno ?? null });
       return { baseCode: base.code };
     }
 
@@ -254,6 +270,7 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
         entityId: base.id,
         payload: { ...carimbo, baseId: base.id, baseCode: base.code, motivo: pedido.motivo || null },
       });
+      await contarAosOutros(user, { acao: "pararBase", baseCode: base.code, motivo: pedido.motivo || null });
       return { baseCode: base.code };
     }
 
@@ -268,6 +285,7 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
         entityId: base.id,
         payload: { ...carimbo, baseId: base.id, baseCode: base.code },
       });
+      await contarAosOutros(user, { acao: "reabrirBase", baseCode: base.code });
       return { baseCode: base.code };
     }
 
@@ -292,7 +310,10 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
         entityId: plantao.id,
         payload: { ...carimbo, baseId: plantao.baseId, baseCode: plantao.baseCode, previousStatus: plantao.status, motivo },
       });
-      const entregue = await avisarInternoNoTelegram(plantao.internId, textoParaInternoRepor({ baseCode: plantao.baseCode, motivo }));
+      const [entregue] = await Promise.all([
+        avisarInternoNoTelegram(plantao.internId, textoParaInternoRepor({ baseCode: plantao.baseCode, motivo })),
+        contarAosOutros(user, { acao: "repor", interno: plantao.interno, faculdade: plantao.faculdade, baseCode: plantao.baseCode, motivo }),
+      ]);
       return { interno: plantao.interno, baseCode: plantao.baseCode, entregue };
     }
 
@@ -319,7 +340,10 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
         entityId: plantao.id,
         payload: { ...carimbo, baseId: plantao.baseId, baseCode: plantao.baseCode, restoredStatus: status },
       });
-      const entregue = await avisarInternoNoTelegram(plantao.internId, textoParaInternoReposicaoDesfeita({ baseCode: plantao.baseCode }));
+      const [entregue] = await Promise.all([
+        avisarInternoNoTelegram(plantao.internId, textoParaInternoReposicaoDesfeita({ baseCode: plantao.baseCode })),
+        contarAosOutros(user, { acao: "desfazerRepor", interno: plantao.interno, faculdade: plantao.faculdade, baseCode: plantao.baseCode }),
+      ]);
       return { interno: plantao.interno, baseCode: plantao.baseCode, status, entregue };
     }
   }

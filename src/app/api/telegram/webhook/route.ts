@@ -10,6 +10,7 @@ import { logAudit } from "@/lib/audit";
 import { formatBrazilTime } from "@/lib/utils";
 import { ORG_PRECEPTOR_REGISTRATION_URL } from "@/lib/branding";
 import { canTriggerPendingReminderFromTelegram, sendPendingCheckinReminder } from "@/lib/telegram-checkin-pending-reminder";
+import { resumoDoTurno } from "@/lib/telegram-coordenacao";
 import { z } from "zod/v4";
 
 /**
@@ -134,6 +135,11 @@ export async function POST(req: NextRequest) {
         return await handleReportCommand(telegramUserId, chatId);
       }
 
+      // /plantao — o turno em andamento resumido: avisos, bases paradas, vagas (gestão vinculada)
+      if (command === "plantao") {
+        return await handlePlantaoCommand(telegramUserId, chatId);
+      }
+
       // /ajuda
       if (command === "ajuda" || command === "help" || text === "/start") {
         await bot.api.sendMessage(chatId, buildPrivateHelpMessage(), { parse_mode: "Markdown" });
@@ -188,13 +194,14 @@ function buildPrivateHelpMessage() {
     "*Comandos aqui no privado:*",
     "• `/vincular 000.000.000-00` — conecta este Telegram ao seu cadastro (use seu CPF). Libera os comandos de gestão.",
     "• `/relatorio` — recebe o relatório de presenças em PDF: internos em ordem alfabética, metas, plantões com check-in/checkout e ausências (gestão vinculada)",
+    "• `/plantao` — o turno em andamento: bases com aviso de problema, bases paradas, quem foi liberado para repor e onde há vaga (gestão vinculada)",
     "• `/ajuda` — mostra este guia",
     "",
     "*Comandos no grupo:*",
     "• Código de 6 dígitos — valida check-in/checkout",
     "• `/pendencias` — dispara o aviso de check-ins pendentes (gestão vinculada)",
     "",
-    "🤖 *Automático:* lembrete de check-in pendente pela manhã e, à noite, backup do banco + relatório em PDF no privado da administração.",
+    "🤖 *Automático:* lembrete de check-in pendente pela manhã; à noite, backup do banco + relatório em PDF no privado da administração; e, na hora, aviso no privado da coordenação vinculada quando um interno relata problema na base, muda de base ou outro coordenador intervém no Plantão ao vivo.",
   ].join("\n");
 }
 
@@ -233,6 +240,21 @@ async function handleReportCommand(telegramUserId: string, chatId: string) {
     payload: { telegramUserId },
   });
 
+  return NextResponse.json({ ok: true });
+}
+
+async function handlePlantaoCommand(telegramUserId: string, chatId: string) {
+  const permission = await canTriggerPendingReminderFromTelegram(telegramUserId);
+
+  if (!permission.allowed) {
+    const message = permission.reason === "not-bound"
+      ? "Comando indisponível para este Telegram. Faça primeiro /vincular 000.000.000-00 aqui no privado."
+      : "Comando disponível apenas para coordenação, liderança ou preceptoria vinculadas.";
+    await bot.api.sendMessage(chatId, message);
+    return NextResponse.json({ ok: true });
+  }
+
+  await sendTelegramMessage(chatId, await resumoDoTurno(), { parseMode: "Markdown" });
   return NextResponse.json({ ok: true });
 }
 
