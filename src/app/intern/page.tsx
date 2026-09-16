@@ -29,6 +29,9 @@ type Assignment = {
   absenceJustificationAt?: string | null;
 };
 
+/** Plantão de hoje liberado pela coordenação para repor em outro dia (ver /api/intern/reposicao). */
+type Liberado = { id: string; baseCode: string; baseName: string; texto: string };
+
 type Slot = {
   baseCode: string;
   baseName: string;
@@ -104,6 +107,8 @@ function isDayShiftVisibleNow(assignment: Assignment, nowDate: string, nowHour: 
 
 export default function InternHoje() {
   const [todayAssignments, setTodayAssignments] = useState<Assignment[]>([]);
+  // Plantão de hoje que a coordenação liberou para repor em outro dia (Plantão ao vivo).
+  const [liberadosHoje, setLiberadosHoje] = useState<Liberado[]>([]);
   const [upcoming, setUpcoming] = useState<Assignment[]>([]);
   const [absences, setAbsences] = useState<Assignment[]>([]);
   const [justifyingAbsence, setJustifyingAbsence] = useState<Assignment | null>(null);
@@ -125,7 +130,9 @@ export default function InternHoje() {
       fetch("/taximetro/api/slots/available?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/attendance/current").then((r) => r.json()).catch(() => ({ success: false, data: null })),
-    ]).then(([assignJson, slotsJson, complianceJson, attendanceJson]) => {
+      fetch("/taximetro/api/intern/reposicao").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+    ]).then(([assignJson, slotsJson, complianceJson, attendanceJson, reposicaoJson]) => {
+      if (reposicaoJson.success) setLiberadosHoje(reposicaoJson.data);
       if (assignJson.success) {
         const active = assignJson.data.filter((a: Assignment) => a.status !== "CANCELLED");
         setAllAssignments(active);
@@ -381,6 +388,17 @@ export default function InternHoje() {
           </p>
         </div>
       )}
+
+      {liberadosHoje.map((liberado) => (
+        <div key={liberado.id} className="rounded-xl border border-sky-200 bg-sky-50 p-4 space-y-1.5">
+          <p className="flex items-center gap-2 text-sm font-semibold text-sky-900">
+            <CalendarDays className="h-4 w-4" strokeWidth={1.8} />
+            Plantão de hoje na {liberado.baseCode} liberado pela coordenação
+          </p>
+          <p className="text-sm text-sky-900">{liberado.texto}</p>
+          <p className="text-xs text-sky-800">Não conta como falta e não conta para a meta: reponha em outro dia. As vagas abertas estão mais abaixo.</p>
+        </div>
+      ))}
 
       {/* Today's assignments */}
       {todayAssignments.length > 0 ? (

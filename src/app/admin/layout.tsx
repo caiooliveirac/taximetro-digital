@@ -20,6 +20,7 @@ import {
   Zap,
   BookOpen,
   CalendarPlus,
+  Radio,
 } from "lucide-react";
 import { escalasDaInstancia } from "@/lib/instance";
 
@@ -38,6 +39,9 @@ const ESCALAS_NAV: NavItem[] = escalasDaInstancia().map(({ slug, label }) => ({
 // instância — item do grupo errado, sem erro nenhum aparecendo.
 const NAV_OPERACAO: NavItem[] = [
   { href: "/admin", label: "Cockpit", icon: LayoutDashboard },
+  // Segundo de propósito: os quatro primeiros são a barra de baixo no celular,
+  // e o Plantão ao vivo existe para ser usado do celular.
+  { href: "/admin/plantao", label: "Plantão", icon: Radio },
   { href: "/admin/presencas", label: "Presenças", icon: CheckCircle },
   { href: "/admin/faltas", label: "Faltas", icon: XCircle },
   { href: "/admin/escalas/grade", label: "Grade", icon: LayoutGrid },
