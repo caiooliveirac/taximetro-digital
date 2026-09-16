@@ -106,7 +106,8 @@ export async function findAssignmentFacultyById(id: string) {
 export async function updateAssignmentStatus(params: {
   id: string;
   status: string;
-  notes?: string;
+  /** undefined mantém a nota; null apaga. */
+  notes?: string | null;
 }) {
   const [updated] = await db
     .update(assignments)

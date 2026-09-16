@@ -10,8 +10,8 @@ import { useState } from "react";
  * EBMSP") ou "Livre"; a cor diz o que ele pode clicar: verde ocupa, vermelho
  * é interno com check-in feito, cinza é interno sem check-in dentro da
  * tolerância. A base irmã (mesmo endereço, outra viatura) vem sugerida no
- * topo. Base com aviso de problema ou desativada no `plantoes` mostra o motivo
- * e não oferece vaga.
+ * topo. Base com aviso de problema, parada pela coordenação ou desativada no
+ * `plantoes` mostra o motivo e não oferece vaga.
  *
  * `useRemanejamento` segura os dados e as ações; quem renderiza decide quando
  * abrir — o aviso à coordenação abre a grade sozinho.
@@ -28,6 +28,8 @@ type Base = {
   atual: boolean;
   irma: boolean;
   aviso: { tipo: string; hora: string } | null;
+  /** Parada pela coordenação no Plantão ao vivo, neste turno. */
+  parada: { desde: string; motivo: string | null } | null;
   desativada: { desde: string | null; motivo: string | null } | null;
   medicos: string[];
   celulas: Celula[];
@@ -149,7 +151,7 @@ export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejame
         <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
           <p className="text-xs text-emerald-900">
             <span className="font-semibold">{irma.code}</span> é a mesma base física, outra viatura.
-            {temVaga(irma) ? " Tem vaga: a troca natural." : irma.desativada ? " Está desativada." : irma.aviso ? " Também está com problema." : " Está sem vaga."}
+            {temVaga(irma) ? " Tem vaga: a troca natural." : irma.desativada || irma.parada ? " Está parada." : irma.aviso ? " Também está com problema." : " Está sem vaga."}
           </p>
           {temVaga(irma) && (
             <button
@@ -173,6 +175,12 @@ export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejame
                 {b.atual && <span className="ml-2 text-xs font-medium text-slate-400">você está aqui</span>}
                 {b.irma && <span className="ml-2 text-xs font-medium text-emerald-700">mesma base física</span>}
               </p>
+              {b.parada && (
+                <p className="text-xs font-medium text-red-700">
+                  Parada pela coordenação às {b.parada.desde}
+                  {b.parada.motivo ? ` — ${b.parada.motivo}` : ""}
+                </p>
+              )}
               {b.desativada && (
                 <p className="text-xs font-medium text-red-700">
                   Desativada no plantões{b.desativada.desde ? ` desde ${b.desativada.desde}` : ""}
@@ -192,7 +200,7 @@ export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejame
               <div className="grid grid-cols-3 gap-1.5">
                 {b.celulas.length === 0 && (
                   <span className="col-span-3 text-xs text-slate-400">
-                    {b.desativada || b.aviso ? "sem vaga oferecida" : "sem grade neste turno"}
+                    {b.desativada || b.parada || b.aviso ? "sem vaga oferecida" : "sem grade neste turno"}
                   </span>
                 )}
                 {b.celulas.map((c, i) => {
