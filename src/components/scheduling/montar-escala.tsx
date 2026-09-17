@@ -60,7 +60,7 @@ type FreeSlot = {
 };
 type CruFixed = {
   id: string; intern_id: string; intern_name: string;
-  day_of_week: string; period: string; valid_until: string;
+  day_of_week: string; period: string; valid_from: string; valid_until: string;
 };
 type CruConflictItem = {
   assignmentId: string;
@@ -760,6 +760,16 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     }
     setCruFixedLoading(false);
   }
+
+  /* A grade mostra só o fixo vigente na semana navegada. Sem isso a turma que
+   * termina dia 20 aparecia "alocada" na semana do dia 21 em diante, e a turma
+   * que ainda vai começar aparecia na semana corrente. */
+  const cruFixedDaSemana = useMemo(() => {
+    const weekEnd = addDaysToDateStr(weekStart, 6);
+    return cruFixed.filter((c) =>
+      String(c.valid_from).slice(0, 10) <= weekEnd && String(c.valid_until).slice(0, 10) >= weekStart,
+    );
+  }, [cruFixed, weekStart]);
 
   /**
    * Remover o fixo derruba a recorrência inteira de hoje em diante, e agora o X
@@ -1507,7 +1517,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 ☀️ Dia
               </div>
               {(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const).map((dow) => {
-                const cell = cruFixed.filter((c) => c.day_of_week === dow && c.period === "DAY");
+                const cell = cruFixedDaSemana.filter((c) => c.day_of_week === dow && c.period === "DAY");
                 return (
                   <div key={`day-${dow}`} className="border-b border-violet-50 px-1 py-1 min-h-[44px]">
                     {cell.map((c) => {
@@ -1547,7 +1557,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 🌙 Noite
               </div>
               {(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const).map((dow) => {
-                const cell = cruFixed.filter((c) => c.day_of_week === dow && c.period === "NIGHT");
+                const cell = cruFixedDaSemana.filter((c) => c.day_of_week === dow && c.period === "NIGHT");
                 return (
                   <div key={`night-${dow}`} className="border-b border-violet-50 px-1 py-1 min-h-[44px]">
                     {cell.map((c) => {
