@@ -142,6 +142,8 @@ export async function getBaseHistoryForInterns(params: {
     .select({
       internId: assignments.internId,
       baseCode: bases.code,
+      baseType: bases.type,
+      period: assignments.period,
     })
     .from(assignments)
     .innerJoin(bases, eq(bases.id, assignments.baseId))

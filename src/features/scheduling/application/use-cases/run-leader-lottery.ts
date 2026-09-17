@@ -9,14 +9,9 @@ import {
   getValidInternIdsForFaculty,
   insertLotteryAssignments,
 } from "@/features/scheduling/infra/repositories/lottery-repository";
-import {
-  allocatePositions,
-  applyMatchesToBaseTally,
-  applyMatchesToPeriodTally,
-  type AllocPos,
-  type BaseTally,
-  type PeriodTally,
-} from "./allocate-positions";
+import { randomInt } from "node:crypto";
+import { type AllocPos } from "./allocate-positions";
+import { sortearHorizonte, type HistoricoDoInterno } from "./lottery-horizon";
 import { temFeature } from "@/lib/instance";
 import { listReleasedOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import {
@@ -37,6 +32,12 @@ const BASE_PRIORITY = [
   "SM01", "PM04", "PM40", "CN10", "PR03", "CC70",
   "BR60", "CB02", "IT30", "CZ50", "BR05", "PP20",
 ];
+
+/** Nota da base para a justiça do sorteio: 1 = topo da BASE_PRIORITY, perto de 0 = fim. */
+export function qualidadeDaBase(baseCode: string): number | null {
+  const idx = BASE_PRIORITY.indexOf(baseCode);
+  return idx === -1 ? null : (BASE_PRIORITY.length - idx) / BASE_PRIORITY.length;
+}
 
 /**
  * Quanto tempo para trás o sorteio olha para saber em que bases o interno já
@@ -116,15 +117,6 @@ function addDays(dateStr: string, days: number): string {
   const date = new Date(dateStr + "T12:00:00Z");
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
-}
-
-function shuffle<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
 }
 
 /**
@@ -231,10 +223,12 @@ export async function executeRunLeaderLottery(params: {
   const rules = await getSlotRulesForFaculty(facultyId);
   // Existentes da janela INTEIRA de uma vez: servem para descontar vaga já
   // preenchida, contar plantão USA por semana e semear a equidade diurno/noturno.
+  // Um dia de folga em cada ponta: o plantão de domingo à noite da véspera
+  // também conta para o descanso de 12h da segunda de manhã.
   const existingAll = await getExistingAssignmentsForWeek({
     facultyId,
-    weekStart: windowStart,
-    weekEnd: windowEnd,
+    weekStart: addDays(windowStart, -1),
+    weekEnd: addDays(windowEnd, 1),
   });
 
   // Vagas que a faculdade liberou na janela ficam fora do sorteio — pegas ou
@@ -261,32 +255,88 @@ export async function executeRunLeaderLottery(params: {
     usedSlots.get(assignment.internId)!.add(slotKey);
   }
 
-  // Equidade diurno/noturno (SOFT): semeia com os plantões existentes na janela
-  // e vai acumulando entre as semanas do lote. É só reordenação de preferência —
-  // nunca impede alocação (ver allocate-positions.ts).
-  const periodTally = new Map<string, PeriodTally>();
-  for (const id of safeIds) periodTally.set(id, { day: 0, night: 0 });
-  for (const assignment of existingAll) {
-    const tally = periodTally.get(assignment.internId);
-    if (!tally) continue;
-    if (assignment.period === "DAY") tally.day += 1;
-    else tally.night += 1;
-  }
-
-  // Equidade de base (SOFT): quantas vezes cada interno já caiu em cada base no
-  // histórico recente. Também só reordena preferência — ver allocate-positions.
-  const baseHistory = await getBaseHistoryForInterns({
+  // Histórico de plantão SORTEÁVEL de cada interno (CRU/CRL fixo fica de fora:
+  // é igual para a turma toda e só distorceria a cota de noturno).
+  const historico = new Map<string, HistoricoDoInterno>();
+  for (const id of safeIds) historico.set(id, { plantoes: 0, noturnos: 0, bases: new Map() });
+  for (const row of await getBaseHistoryForInterns({
     internIds: safeIds,
     dateFrom: addDays(windowStart, -HISTORICO_DE_BASES_DIAS),
     dateTo: windowEnd,
-  });
-  const baseTally = new Map<string, BaseTally>();
-  for (const id of safeIds) baseTally.set(id, new Map());
-  for (const row of baseHistory) {
-    const porBase = baseTally.get(row.internId);
-    if (!porBase) continue;
-    porBase.set(row.baseCode, (porBase.get(row.baseCode) ?? 0) + 1);
+  })) {
+    if (!shouldIncludeRuleInLottery(row, isEbmsp)) continue;
+    const h = historico.get(row.internId);
+    if (!h) continue;
+    h.plantoes += 1;
+    if (row.period === "NIGHT") h.noturnos += 1;
+    h.bases.set(row.baseCode, (h.bases.get(row.baseCode) ?? 0) + 1);
   }
+
+  const cruBlocked = await getCruBlockedSlots(safeIds, windowStart, windowEnd);
+
+  // Indisponibilidade do interno (instância Vitalmed): o que ele declarou, o
+  // dia fixo de aula da faculdade e os plantões dele no SAMU. Onde a feature
+  // não existe, o mapa fica vazio e nada muda no sorteio.
+  const unavailable = new Map<string, Set<string>>();
+  if (usaUnavailability) {
+    const compostos = await bloqueiosCompostos({
+      internos: await internosParaBloqueio({
+        internIds: safeIds,
+        facultyAbbr: facultyAbbreviation,
+      }),
+      dateFrom: windowStart,
+      dateTo: windowEnd,
+    });
+
+    // O sorteio decide em massa e sem ninguém olhando. Se a escala do SAMU não
+    // pôde ser lida, seguir significa escalar gente que está de plantão lá —
+    // melhor recusar o lote inteiro (nada foi gravado ainda) do que criar
+    // conflito calado.
+    if (compostos.samu === "falhou") {
+      return {
+        success: false as const,
+        error:
+          "Não consegui consultar a escala do SAMU agora, e sortear sem ela pode escalar " +
+          "interno que já está de plantão lá. Tente de novo em alguns instantes.",
+      };
+    }
+
+    for (const [internId, porSlot] of compostos.mapa) {
+      unavailable.set(internId, new Set(porSlot.keys()));
+    }
+  }
+
+  // Vagas e plantões USA já existentes, semana a semana (o teto é POR semana).
+  const positionsByWeek: AllocPos[][] = [];
+  const existingUsaShiftCountByWeek: Array<Map<string, number>> = [];
+  for (const weekDates of weekWindows) {
+    const weekExisting = existingAll.filter(
+      (assignment) => assignment.date >= weekDates[0] && assignment.date <= weekDates[6],
+    );
+    positionsByWeek.push(buildWeekPositions({ rules, weekExisting, weekDates, isEbmsp, released }));
+
+    const count = new Map<string, number>(safeIds.map((id) => [id, 0]));
+    for (const assignment of weekExisting) {
+      if (assignment.baseType !== "USA" || !count.has(assignment.internId)) continue;
+      count.set(assignment.internId, (count.get(assignment.internId) ?? 0) + 1);
+    }
+    existingUsaShiftCountByWeek.push(count);
+  }
+
+  // O lote inteiro de uma vez — ver lottery-horizon.ts.
+  const sorteio = sortearHorizonte({
+    positionsByWeek,
+    internIds: safeIds,
+    maxShifts: input.maxShifts,
+    isEbmsp,
+    existingUsaShiftCountByWeek,
+    usedSlots,
+    cruBlocked,
+    unavailable,
+    historico,
+    qualidade: qualidadeDaBase,
+    seed: randomInt(2 ** 31),
+  });
 
   type LotteryInsert = {
     internId: string;
@@ -298,7 +348,20 @@ export async function executeRunLeaderLottery(params: {
     createdBy: string;
   };
 
-  const allToCreate: LotteryInsert[] = [];
+  const allToCreate: LotteryInsert[] = sorteio.matches.map(({ internId, position: pos }) => ({
+    internId,
+    facultyId,
+    baseId: pos.baseId,
+    date: pos.date,
+    period: pos.period,
+    shift: pos.shift,
+    createdBy: actor.realUserId ?? actor.id,
+  }));
+  for (const { internId, position: pos } of sorteio.matches) {
+    const slotKey = isEbmsp ? `${pos.date}|${pos.period}|${pos.shift ?? ""}` : `${pos.date}|${pos.period}`;
+    usedSlots.get(internId)?.add(slotKey);
+  }
+
   const weekResults: Array<{
     weekStart: string;
     total: number;
@@ -315,111 +378,39 @@ export async function executeRunLeaderLottery(params: {
   const aggregatedUnallocatedItems: UnallocatedDiagnosticItem[] = [];
 
   for (let w = 0; w < numWeeks; w++) {
-    const weekDates = weekWindows[w];
-    const weekExisting = existingAll.filter(
-      (assignment) => assignment.date >= weekDates[0] && assignment.date <= weekDates[6],
-    );
-
-    const positions = buildWeekPositions({ rules, weekExisting, weekDates, isEbmsp, released });
-
-    const cruBlocked = await getCruBlockedSlots(safeIds, weekDates[0], weekDates[6]);
-
-    // Indisponibilidade do interno (instância Vitalmed): o que ele declarou, o
-    // dia fixo de aula da faculdade e os plantões dele no SAMU. Onde a feature
-    // não existe, o mapa volta vazio e nada muda no sorteio.
-    const unavailable = new Map<string, Set<string>>();
-    if (usaUnavailability) {
-      const compostos = await bloqueiosCompostos({
-        internos: await internosParaBloqueio({
-          internIds: safeIds,
-          facultyAbbr: facultyAbbreviation,
-        }),
-        dateFrom: weekDates[0],
-        dateTo: weekDates[6],
-      });
-
-      // O sorteio decide em massa e sem ninguém olhando. Se a escala do SAMU não
-      // pôde ser lida, seguir significa escalar gente que está de plantão lá —
-      // melhor recusar o lote inteiro (nada foi gravado ainda) do que criar
-      // conflito calado.
-      if (compostos.samu === "falhou") {
-        return {
-          success: false as const,
-          error:
-            "Não consegui consultar a escala do SAMU agora, e sortear sem ela pode escalar " +
-            "interno que já está de plantão lá. Tente de novo em alguns instantes.",
-        };
-      }
-
-      for (const [internId, porSlot] of compostos.mapa) {
-        unavailable.set(internId, new Set(porSlot.keys()));
-      }
-    }
-
-    // Limite de plantões USA vale POR semana.
-    const existingShiftCount = new Map<string, number>();
-    for (const id of safeIds) existingShiftCount.set(id, 0);
-    for (const assignment of weekExisting) {
-      if (assignment.baseType !== "USA") continue;
-      if (!existingShiftCount.has(assignment.internId)) continue;
-      existingShiftCount.set(assignment.internId, (existingShiftCount.get(assignment.internId) ?? 0) + 1);
-    }
-
-    const { matches, unallocatedInterns, remainingPositions: remainingPos, remainingPositionsList } = allocatePositions({
-      positions,
-      internIds: shuffle(safeIds),
-      maxShifts: input.maxShifts,
-      isEbmsp,
-      existingUsaShiftCount: existingShiftCount,
-      usedSlots,
-      cruBlocked,
-      unavailable,
-      periodTally,
-      baseTally,
-    });
-
-    // Carrega a equidade para a próxima semana e registra os slots ocupados.
-    applyMatchesToPeriodTally(periodTally, matches);
-    applyMatchesToBaseTally(baseTally, matches);
-    for (const { internId, position: pos } of matches) {
-      const slotKey = isEbmsp
-        ? `${pos.date}|${pos.period}|${pos.shift ?? ""}`
-        : `${pos.date}|${pos.period}`;
-      if (!usedSlots.has(internId)) usedSlots.set(internId, new Set());
-      usedSlots.get(internId)!.add(slotKey);
-
-      allToCreate.push({
-        internId,
-        facultyId,
-        baseId: pos.baseId,
-        date: pos.date,
-        period: pos.period,
-        shift: pos.shift,
-        createdBy: actor.realUserId ?? actor.id,
-      });
-    }
+    const daSemana = sorteio.matches.filter((match) => match.week === w);
+    const alocados = new Set(daSemana.map((match) => match.internId));
 
     const weekDiagnostics = buildUnallocatedDiagnostics({
-      unallocatedInternIds: unallocatedInterns,
-      remainingPositions: remainingPositionsList,
+      unallocatedInternIds: safeIds.filter((id) => !alocados.has(id)),
+      remainingPositions: sorteio.emptyByWeek[w],
       maxShifts: input.maxShifts,
       isEbmsp,
-      existingUsaShiftCount: existingShiftCount,
+      existingUsaShiftCount: existingUsaShiftCountByWeek[w],
       usedSlots,
       cruBlocked,
     });
 
     weekResults.push({
-      weekStart: weekDates[0],
-      total: matches.length,
-      internsAllocated: new Set(matches.map((match) => match.internId)).size,
-      remainingPositions: remainingPos,
+      weekStart: weekWindows[w][0],
+      total: daSemana.length,
+      internsAllocated: alocados.size,
+      remainingPositions: sorteio.emptyByWeek[w].length,
     });
     for (const reason of Object.keys(aggregatedSummary) as UnallocatedReason[]) {
       aggregatedSummary[reason] += weekDiagnostics.summary[reason];
     }
     aggregatedUnallocatedItems.push(...weekDiagnostics.items);
   }
+
+  // O resumo vai para a tela e para o audit; o detalhe por interno não.
+  const justica = {
+    noturnosIdeal: sorteio.justica.noturnosIdeal,
+    noturnos: sorteio.justica.noturnos,
+    plantoes: sorteio.justica.plantoes,
+    qualidadeMedia: sorteio.justica.qualidadeMedia,
+    basesRepetidas: sorteio.justica.basesRepetidas,
+  };
 
   await insertLotteryAssignments(allToCreate);
 
@@ -435,6 +426,8 @@ export async function executeRunLeaderLottery(params: {
         maxShifts: input.maxShifts,
         selected: safeIds.length,
         created: allToCreate.length,
+        seed: sorteio.seed,
+        justica,
         ...(actor.isImpersonating ? { impersonating: actor.id } : {}),
       },
     });
@@ -458,6 +451,7 @@ export async function executeRunLeaderLottery(params: {
         unallocatedInterns: aggregatedUnallocatedItems,
         unallocatedSummary: aggregatedSummary,
         weeks: weekResults,
+        justica,
       },
     },
   } as const;

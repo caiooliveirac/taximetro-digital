@@ -398,10 +398,11 @@ test("interno 'devendo' diurno fura a fila e pega o DAY (independe da ordem de e
 test("com 2 plantões, ninguém fica 100% de um período (balanceia dentro da semana)", () => {
   const interns = ["A", "B"];
   const positions: AllocPos[] = [
-    makePos("D1", "2026-04-21", "DAY"),
-    makePos("N1", "2026-04-21", "NIGHT"),
-    makePos("D2", "2026-04-22", "DAY"),
-    makePos("N2", "2026-04-22", "NIGHT"),
+    // Dias espaçados: turnos colados dariam 24h seguidas, que o motor proíbe.
+    makePos("D1", "2026-04-20", "DAY"),
+    makePos("N1", "2026-04-22", "NIGHT"),
+    makePos("D2", "2026-04-24", "DAY"),
+    makePos("N2", "2026-04-26", "NIGHT"),
   ];
 
   const { matches } = allocatePositions({

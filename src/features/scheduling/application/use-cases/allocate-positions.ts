@@ -153,7 +153,7 @@ export function applyMatchesToPeriodTally(
   }
 }
 
-function canAssign(
+export function canAssign(
   internId: string,
   pos: AllocPos,
   usaShiftCount: number,
@@ -177,9 +177,31 @@ function canAssign(
   // CRU/CRL ±12h rule only applies to USA targets
   if (pos.baseType !== "CENTRAL" && pos.baseCode !== "CRL") {
     if (cruBlocked.get(internId)?.has(`${pos.date}|${pos.period}`)) return false;
+    // Mesmo descanso entre dois plantões de USA: turno colado em outro plantão
+    // do interno (já existente ou sorteado neste lote) daria 24h seguidas.
+    const ocupados = usedSlots.get(internId);
+    if (ocupados && turnosColados(pos).some((k) => temTurno(ocupados, k))) return false;
   }
 
   return true;
+}
+
+/** Turnos de 12h imediatamente antes e depois de `pos` ("date|period"). */
+export function turnosColados(pos: { date: string; period: "DAY" | "NIGHT" }): string[] {
+  const outroDia = new Date(pos.date + "T12:00:00Z");
+  outroDia.setUTCDate(outroDia.getUTCDate() + (pos.period === "DAY" ? -1 : 1));
+  const vizinho = outroDia.toISOString().slice(0, 10);
+  return pos.period === "DAY"
+    ? [`${vizinho}|NIGHT`, `${pos.date}|NIGHT`]
+    : [`${pos.date}|DAY`, `${vizinho}|DAY`];
+}
+
+/** `ocupados` guarda "date|period" ou, no EBMSP, "date|period|shift". */
+function temTurno(ocupados: Set<string>, dataPeriodo: string): boolean {
+  return ocupados.has(dataPeriodo)
+    || ocupados.has(`${dataPeriodo}|`)
+    || ocupados.has(`${dataPeriodo}|MORNING`)
+    || ocupados.has(`${dataPeriodo}|AFTERNOON`);
 }
 
 // ── core matching round ───────────────────────────────────────────────────────
