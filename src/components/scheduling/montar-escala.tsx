@@ -540,6 +540,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
       setLotteryMsg(
         `✅ ${d.total} alocações criadas${weeksLabel} — ${d.internsAllocated}/${d.internsTotal} internos alocados` +
         (d.remainingPositions > 0 ? ` · ${d.remainingPositions} vagas remanescentes` : " · Sem vagas remanescentes") +
+        (d.justica ? ` · noturnos por interno: ${d.justica.noturnos.min} a ${d.justica.noturnos.max}` : "") +
         unallocatedMsg
       );
       await load();
@@ -1792,8 +1793,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
               </div>
               {numWeeks > 1 && (
                 <p className="mb-3 text-xs text-slate-500">
-                  Sorteia {numWeeks} semanas seguidas a partir desta. O equilíbrio diurno/noturno é
-                  considerado ao longo de todas elas (1 plantão por interno por semana continua valendo).
+                  Sorteia {numWeeks} semanas seguidas a partir desta. As semanas são sorteadas juntas:
+                  noturnos e qualidade das bases são divididos por igual no lote todo (o limite por semana continua valendo).
                 </p>
               )}
               {selectedCount > 0 && (
