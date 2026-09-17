@@ -32,7 +32,7 @@ export async function findInternCohortWindow(params: {
 export async function listActiveCruFixedByFaculty(facultyId: string) {
   return db.execute(sql`
     SELECT cfa.id, cfa.intern_id, u.name AS intern_name,
-           cfa.day_of_week, cfa.period, cfa.valid_until, cfa.is_active
+           cfa.day_of_week, cfa.period, cfa.valid_from, cfa.valid_until, cfa.is_active
     FROM cru_fixed_assignments cfa
     JOIN users u ON u.id = cfa.intern_id
     WHERE cfa.faculty_id = ${facultyId}
