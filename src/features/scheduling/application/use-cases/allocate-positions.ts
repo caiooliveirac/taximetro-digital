@@ -21,6 +21,10 @@
  * o custo — e nunca muda quem foi alocado nem quantas vagas ficaram vazias.
  */
 
+import { turnosColados } from "@/shared/domain/policies/rest-policy";
+
+export { turnosColados };
+
 /**
  * Pesos do custo. Custo de um interno =
  *   PESO_BASE_REPETIDA * Σ_base (vezes na base)²  +  PESO_NOTURNO * (noturnos)²
@@ -184,16 +188,6 @@ export function canAssign(
   }
 
   return true;
-}
-
-/** Turnos de 12h imediatamente antes e depois de `pos` ("date|period"). */
-export function turnosColados(pos: { date: string; period: "DAY" | "NIGHT" }): string[] {
-  const outroDia = new Date(pos.date + "T12:00:00Z");
-  outroDia.setUTCDate(outroDia.getUTCDate() + (pos.period === "DAY" ? -1 : 1));
-  const vizinho = outroDia.toISOString().slice(0, 10);
-  return pos.period === "DAY"
-    ? [`${vizinho}|NIGHT`, `${pos.date}|NIGHT`]
-    : [`${pos.date}|DAY`, `${vizinho}|DAY`];
 }
 
 /** `ocupados` guarda "date|period" ou, no EBMSP, "date|period|shift". */

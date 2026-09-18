@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, ne, or } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import { assignments, bases, checkins, cruFixedAssignments, requests, userRoles, users } from "@/shared/db/schema";
 import { alias } from "drizzle-orm/pg-core";
@@ -466,4 +466,48 @@ export async function updateRequestReview(params: {
     .returning();
 
   return updated;
+}
+
+/** Plantão com o código da base — o que a regra de descanso precisa para nomear o conflito. */
+export async function findAssignmentTurno(assignmentId: string) {
+  const [row] = await db
+    .select({
+      id: assignments.id,
+      internId: assignments.internId,
+      date: assignments.date,
+      period: assignments.period,
+      shift: assignments.shift,
+      baseCode: bases.code,
+    })
+    .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
+    .where(eq(assignments.id, assignmentId))
+    .limit(1);
+
+  return row ?? null;
+}
+
+/** Plantões ativos do interno de `dateFrom` a `dateTo`, menos o que ele está entregando. */
+export async function findInternTurnosBetween(params: {
+  internId: string;
+  dateFrom: string;
+  dateTo: string;
+  excludeAssignmentId?: string;
+}) {
+  return db
+    .select({
+      date: assignments.date,
+      period: assignments.period,
+      shift: assignments.shift,
+      baseCode: bases.code,
+    })
+    .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
+    .where(and(
+      eq(assignments.internId, params.internId),
+      gte(assignments.date, params.dateFrom),
+      lte(assignments.date, params.dateTo),
+      ne(assignments.status, "CANCELLED"),
+      ...(params.excludeAssignmentId ? [ne(assignments.id, params.excludeAssignmentId)] : []),
+    ));
 }
