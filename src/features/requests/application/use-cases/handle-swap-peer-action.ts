@@ -9,9 +9,11 @@ import {
   findActiveCruRotationWindow,
   findAssignmentBaseType,
   findAssignmentById,
+  findAssignmentTurno,
   findAssignmentWithOwnership,
   findCompletedCruSwapDates,
   findInternFacultiesByUserId,
+  findInternTurnosBetween,
   findPendingRequestByAssignment,
   findRequestById,
   findUserNameById,
@@ -20,6 +22,8 @@ import {
   updateRequestProposal,
 } from "@/features/requests/infra/repositories/request-repository";
 import { hasUsedCruSwapQuota, resolveCruSwapWindow } from "@/shared/domain/policies/cru-swap-quota-policy";
+import { mensagemSemDescanso, plantaoSemDescanso } from "@/shared/domain/policies/rest-policy";
+import { addDaysToDateStr } from "@/lib/utils";
 
 export const swapPeerActionSchema = z.discriminatedUnion("action", [
   z.object({ id: z.string().uuid(), action: z.literal("propose"), assignmentId: z.string().uuid() }),
@@ -60,6 +64,33 @@ function cruQuotaError(internName: string) {
       error: `${internName} já trocou um plantão de CRU neste rodízio. Cada interno pode trocar o CRU uma vez por rodízio.`,
     },
   } as const;
+}
+
+/**
+ * Descanso de 12h, para os dois lados: cada um recebe o plantão do outro e
+ * entrega o próprio. Devolve a frase pronta ("Fulano ficaria com dois plantões
+ * seguidos...: X e Y") ou null se a troca pode seguir.
+ */
+async function findSwapRestConflict(assignmentIdA: string, assignmentIdB: string): Promise<string | null> {
+  const a = await findAssignmentTurno(assignmentIdA);
+  const b = await findAssignmentTurno(assignmentIdB);
+  if (!a || !b) return null;
+
+  for (const [entrega, recebe] of [[a, b], [b, a]] as const) {
+    const novo = { ...recebe, date: recebe.date.slice(0, 10) };
+    const outros = await findInternTurnosBetween({
+      internId: entrega.internId,
+      dateFrom: addDaysToDateStr(novo.date, -1),
+      dateTo: addDaysToDateStr(novo.date, 1),
+      excludeAssignmentId: entrega.id,
+    });
+    const conflito = plantaoSemDescanso(novo, outros);
+    if (conflito) {
+      const nome = (await findUserNameById(entrega.internId))?.trim() ?? "Um dos internos";
+      return `Não dá para fazer essa troca: ${mensagemSemDescanso(nome, novo, conflito)}`;
+    }
+  }
+  return null;
 }
 
 export async function executeSwapPeerAction(params: {
@@ -120,6 +151,12 @@ export async function executeSwapPeerAction(params: {
         const overQuota = await findInternOverCruQuota([request.requesterId, userId], todayStr);
         if (overQuota) return cruQuotaError(overQuota);
       }
+    }
+
+    // Avisa já na proposta, com nome e plantões — o confirm checa de novo.
+    if (request.assignmentId) {
+      const semDescanso = await findSwapRestConflict(request.assignmentId, input.assignmentId);
+      if (semDescanso) return { status: 409, body: { success: false, error: semDescanso } } as const;
     }
 
     const existingReq = await findPendingRequestByAssignment(input.assignmentId);
@@ -187,6 +224,10 @@ export async function executeSwapPeerAction(params: {
       );
       if (overQuota) return cruQuotaError(overQuota);
     }
+
+    // Entre a proposta e a confirmação a escala dos dois pode ter mudado.
+    const semDescanso = await findSwapRestConflict(origAssignment.id, targetAssignment.id);
+    if (semDescanso) return { status: 409, body: { success: false, error: semDescanso } } as const;
 
     // Troca efetivada na hora
     await cancelAssignmentForSwap(origAssignment.id);
