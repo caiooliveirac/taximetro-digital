@@ -62,7 +62,7 @@ export function useRemanejamento(assignmentId: string) {
     setCarregando(true);
     setErro(null);
     try {
-      const res = await fetch(`/taximetro/api/intern/remanejamento?assignmentId=${assignmentId}`);
+      const res = await fetch(`/taximetro/api/intern/remanejamento?assignmentId=${assignmentId}`, { headers: { "x-force-role": "INTERN" } });
       const json = await res.json();
       if (json.success) setGrade(json.data);
       else {
@@ -83,7 +83,7 @@ export function useRemanejamento(assignmentId: string) {
     try {
       const res = await fetch("/taximetro/api/intern/remanejamento", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-force-role": "INTERN" },
         body: JSON.stringify({ assignmentId, newBaseId: base.id }),
       });
       const json = await res.json();

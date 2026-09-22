@@ -36,7 +36,7 @@ export function InternPhotoChangeModal({ open, onClose }: Props) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/taximetro/api/intern/photo-change");
+      const res = await fetch("/taximetro/api/intern/photo-change", { headers: { "x-force-role": "INTERN" } });
       const json = await res.json();
       if (!json.success) {
         setError(json.error || "Erro ao carregar foto atual.");
@@ -82,7 +82,7 @@ export function InternPhotoChangeModal({ open, onClose }: Props) {
     try {
       const res = await fetch("/taximetro/api/intern/photo-change", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-force-role": "INTERN" },
         body: JSON.stringify({ selfie: selectedSelfie }),
       });
       const json = await res.json();
