@@ -10,7 +10,7 @@ import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
-import { addDaysToDateStr, localDateStr, startOfWeekDateStr } from "@/lib/utils";
+import { addDaysToDateStr, localDateStr, startOfWeekDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 import { filterCruFixedCandidates } from "@/features/scheduling/domain/policies/cru-fixed-candidates";
 import { contarSemanas } from "@/features/scheduling/domain/policies/cru-fixed-window";
 import {
@@ -308,7 +308,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   const crlBase = useMemo(() => bases.find((b) => b.type === "CRL"), [bases]);
   const isEbmsp = useMemo(() => {
     const firstSlot = slots.find((s) => s.facultyAbbr);
-    return firstSlot?.facultyAbbr === "EBMSP";
+    return usaMeioTurnoNaCru(firstSlot?.facultyAbbr);
   }, [slots]);
   // Sigla da faculdade desta escala: a vaga própria diz "Vaga UFBA" para não
   // confundir com a "Cedida pela X" de outra faculdade.

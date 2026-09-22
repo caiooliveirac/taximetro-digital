@@ -13,6 +13,7 @@ import { randomInt } from "node:crypto";
 import { type AllocPos } from "./allocate-positions";
 import { sortearHorizonte, type HistoricoDoInterno } from "./lottery-horizon";
 import { temFeature } from "@/lib/instance";
+import { usaMeioTurnoNaCru } from "@/lib/utils";
 import { listReleasedOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import {
   bloqueiosCompostos,
@@ -240,7 +241,7 @@ export async function executeRunLeaderLottery(params: {
   }
 
   const facultyAbbreviation = await getFacultyAbbreviation(facultyId);
-  const isEbmsp = facultyAbbreviation === "EBMSP";
+  const isEbmsp = usaMeioTurnoNaCru(facultyAbbreviation);
   const usaUnavailability = temFeature("internUnavailability");
 
   // Slots já ocupados na janela. As semanas são disjuntas em data, então não há

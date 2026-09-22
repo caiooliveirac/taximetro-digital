@@ -377,6 +377,19 @@ export function formatDoctorName(raw: string | null | undefined): string | null 
 
 export type EbmspShift = "MORNING" | "AFTERNOON";
 
+/**
+ * Meio turno (manhã/tarde) da EBMSP na CRU diurna. Desligado em 2026-09-22: a
+ * EBMSP voltou ao plantão de 12h na CRU, o que simplifica check-in/checkout.
+ * Para religar, basta trocar para `true` — sorteio, alocação e seletor de turno
+ * voltam juntos. Plantões antigos gravados com `shift` continuam sendo lidos.
+ */
+const EBMSP_CRU_MEIO_TURNO = false;
+
+/** A faculdade divide a CRU diurna em manhã/tarde? Hoje: ninguém. */
+export function usaMeioTurnoNaCru(facultyAbbr: string | null | undefined): boolean {
+  return EBMSP_CRU_MEIO_TURNO && facultyAbbr === "EBMSP";
+}
+
 export function getShiftLabel(shift: string | null | undefined): string {
   if (shift === "MORNING") return "Manhã (07h–13h)";
   if (shift === "AFTERNOON") return "Tarde (13h–19h)";
