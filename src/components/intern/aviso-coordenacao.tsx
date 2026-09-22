@@ -40,7 +40,7 @@ export function AvisoCoordenacao({
     try {
       const res = await fetch("/taximetro/api/intern/aviso", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-force-role": "INTERN" },
         body: JSON.stringify({ assignmentId, tipo }),
       });
       const json = await res.json();

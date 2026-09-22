@@ -130,7 +130,7 @@ export default function InternHoje() {
       fetch("/taximetro/api/slots/available?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/attendance/current").then((r) => r.json()).catch(() => ({ success: false, data: null })),
-      fetch("/taximetro/api/intern/reposicao").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      fetch("/taximetro/api/intern/reposicao", { headers: { "x-force-role": "INTERN" } }).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
     ]).then(([assignJson, slotsJson, complianceJson, attendanceJson, reposicaoJson]) => {
       if (reposicaoJson.success) setLiberadosHoje(reposicaoJson.data);
       if (assignJson.success) {
