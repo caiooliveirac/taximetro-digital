@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import { checkCruConflict, checkPeriodOccupancy, checkSlotAvailability } from "@/lib/slots";
-import { localDateStr } from "@/lib/utils";
+import { localDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { canLeaderManageFaculty } from "@/features/scheduling/domain/policies/assignment-policy";
 import {
@@ -54,7 +54,7 @@ export async function executeCreateAssignment(params: {
   }
 
   const facultyAbbreviation = await getFacultyAbbreviationById(resolvedFacultyId);
-  const shiftValue: ShiftValue = facultyAbbreviation === "EBMSP" ? (input.shift ?? null) : null;
+  const shiftValue: ShiftValue = usaMeioTurnoNaCru(facultyAbbreviation) ? (input.shift ?? null) : null;
   const allowCoordinatorRetroactiveOverride = actor.role === "COORDINATOR"
     && input.allowRetroactiveOverride === true
     && input.date < localDateStr();

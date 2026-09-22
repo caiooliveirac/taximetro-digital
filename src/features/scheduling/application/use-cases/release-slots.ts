@@ -13,7 +13,7 @@
 
 import { z } from "zod/v4";
 import { logAudit } from "@/shared/infra/logger/audit";
-import { localDateStr } from "@/lib/utils";
+import { localDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 import {
   cancelReleasedOffers,
   insertExtraOffers,
@@ -98,7 +98,7 @@ export async function executeReleaseSlots(params: {
   }
 
   const abbr = await getFacultyAbbreviation(facultyId);
-  const isEbmsp = abbr === "EBMSP";
+  const isEbmsp = usaMeioTurnoNaCru(abbr);
   const dow = dayOfWeekKey(input.date);
 
   const rules = (await getSlotRulesForFaculty(facultyId)).filter((rule) =>

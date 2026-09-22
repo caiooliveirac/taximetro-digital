@@ -10,7 +10,7 @@ import { InternDrawer } from "@/components/admin/intern-drawer";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 import { computeCapacityFlags, computePeriodLoad, splitPeriodSlots } from "@/features/scheduling/domain/policies/assignment-policy";
-import { addDaysToDateStr, checkinMethodLabel, checkinStatusLabel, formatBrazilTime, formatValidatorName, localDateStr } from "@/lib/utils";
+import { addDaysToDateStr, checkinMethodLabel, checkinStatusLabel, formatBrazilTime, formatValidatorName, localDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 
 type Rule = {
     id: string;
@@ -1527,7 +1527,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         setAllocIsExtraShift(slot.isExtraShift ?? false);
         setAllocExtraShiftNotes("");
         const isCruShift = slot.baseType === "CENTRAL" && slot.period === "DAY"
-            && (slot.facultyAbbr === "EBMSP" || faculties.find(f => f.id === slot.facultyId)?.abbreviation === "EBMSP");
+            && (usaMeioTurnoNaCru(slot.facultyAbbr) || usaMeioTurnoNaCru(faculties.find(f => f.id === slot.facultyId)?.abbreviation));
         setAllocShift(isCruShift ? "MORNING" : "");
         setMessage(null);
     }
@@ -2215,7 +2215,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 <input value={allocSearch} onChange={(event) => setAllocSearch(event.target.value)} placeholder={activeCandidateFacultyFilter ? "Buscar pelo nome dentro da faculdade" : "Buscar qualquer interno ativo"} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-accent-400 focus:bg-white" />
                             </label>
 
-                            {allocation.baseType === "CENTRAL" && allocation.period === "DAY" && (allocation.facultyAbbr === "EBMSP" || faculties.find(f => f.id === assignmentFacultyId)?.abbreviation === "EBMSP") && (
+                            {allocation.baseType === "CENTRAL" && allocation.period === "DAY" && (usaMeioTurnoNaCru(allocation.facultyAbbr) || usaMeioTurnoNaCru(faculties.find(f => f.id === assignmentFacultyId)?.abbreviation)) && (
                                 <div>
                                     <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Turno CRU (EBMSP)</p>
                                     <div className="flex gap-2">
