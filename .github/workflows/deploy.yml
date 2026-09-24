@@ -223,6 +223,7 @@ jobs:
               -e TOM_AVISO_URL="http://127.0.0.1:3083/aviso" \
               -e TOM_HOOK_SECRET="${{ secrets.TOM_HOOK_SECRET }}" \
               -e PLANTOES_READONLY_DATABASE_URL="${{ secrets.PLANTOES_READONLY_DATABASE_URL }}" \
+              -e MNRS_FEDERACAO_SECRET="${{ secrets.MNRS_FEDERACAO_SECRET }}" \
               "$IMAGE_CANDIDATE"
 
             echo "=== Waiting for production healthcheck ==="

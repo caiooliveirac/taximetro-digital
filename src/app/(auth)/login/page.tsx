@@ -26,6 +26,8 @@ function LoginForm() {
     if (err === "PendingApproval") return "Seu cadastro foi recebido, mas ainda está aguardando aprovação. Até lá, o login permanece bloqueado.";
     if (err === "NoInvite") return "Não encontramos seu cadastro. Para se cadastrar, peça o link de registro ao seu líder — não é possível criar conta direto pelo Google.";
     if (err === "OAuthAccountNotLinked") return "E-mail já cadastrado com outra forma de login. Use CPF e senha.";
+    if (err === "PortalSemAcesso") return "Seu e-mail do portal mnrs.com.br não tem acesso ao Taxímetro. Entre com e-mail ou CPF e senha daqui.";
+    if (err === "PortalTokenInvalido") return "O acesso pelo portal expirou. Volte ao portal ou entre com e-mail ou CPF e senha.";
     if (err) return "Erro no login. Tente novamente ou use CPF e senha.";
     return "";
   });
