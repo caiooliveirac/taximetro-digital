@@ -7,6 +7,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { users, userRoles, cohorts } from "@/db/schema";
 import { logAudit } from "@/lib/audit";
+import { lerTokenFederado } from "@/lib/federacao-portal";
 
 type LoginIdentifierType = "EMAIL" | "CPF";
 type CredentialLoginFailureReason =
@@ -297,6 +298,56 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           role: role.role,
         });
 
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: role.role,
+          roles,
+          facultyId: role.facultyId ?? null,
+          baseId: role.baseId ?? null,
+          cohortId: role.cohortId ?? null,
+          cohortName: role.cohortName ?? null,
+          mustChangePassword: user.forcePasswordChange,
+        };
+      },
+    }),
+    /* Entrada pelo portal mnrs.com.br (ver federacao-portal.ts): a senha já
+       foi conferida no plantoes pelo porteiro; aqui só se acha o usuário
+       ativo, com papel, pelo e-mail — a mesma régua do login por senha. */
+    Credentials({
+      id: "portal",
+      name: "Portal mnrs.com.br",
+      credentials: { token: { type: "text" } },
+      async authorize(credentials, request) {
+        const email = lerTokenFederado(String(credentials?.token ?? ""));
+        if (!email) return null;
+        const ipAddress = getRequestIp(request);
+        const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+        const role = user?.isActive ? await fetchRole(user.id) : null;
+        if (!user || !user.isActive || !role) {
+          await logAudit({
+            userId: user?.id,
+            action: "LOGIN_PORTAL_FAILED",
+            entity: "user",
+            entityId: user?.id,
+            ipAddress: ipAddress ?? undefined,
+            payload: {
+              maskedIdentifier: maskIdentifier(email, "EMAIL"),
+              reason: !user ? "USER_NOT_FOUND" : !user.isActive ? "USER_INACTIVE" : "NO_ACTIVE_ROLE",
+            },
+          }).catch(() => {});
+          return null;
+        }
+        const roles = await fetchRoles(user.id);
+        await logAudit({
+          userId: user.id,
+          action: "LOGIN_PORTAL_SUCCESS",
+          entity: "user",
+          entityId: user.id,
+          ipAddress: ipAddress ?? undefined,
+          payload: { maskedIdentifier: maskIdentifier(email, "EMAIL"), role: role.role },
+        }).catch(() => {});
         return {
           id: user.id,
           name: user.name,
