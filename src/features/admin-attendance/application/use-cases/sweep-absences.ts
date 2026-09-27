@@ -3,6 +3,7 @@ import { db } from "@/shared/db/client";
 import { assignments, checkins } from "@/shared/db/schema";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { getBrazilNowParts, localDateStr } from "@/lib/utils";
+import { AUTO_ABSENCE_CHECKOUT_NOTE } from "@/shared/domain/policies/pending-attendance";
 
 // Falta automática: checkout é a medida de presença. Plantão de dias anteriores
 // sem checkout vira ABSENT. Janela limitada para não reprocessar histórico
@@ -47,7 +48,7 @@ export async function executeAbsenceSweep() {
   await db.transaction(async (tx) => {
     await tx.update(checkins).set({
       status: "REJECTED",
-      checkoutNotes: "Falta automática: plantão encerrado sem checkout",
+      checkoutNotes: AUTO_ABSENCE_CHECKOUT_NOTE,
     }).where(inArray(checkins.assignmentId, ids));
 
     await tx.update(assignments).set({ status: "ABSENT", updatedAt: now })

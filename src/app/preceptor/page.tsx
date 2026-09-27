@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Clock, Sun, Moon, KeyRound, Send, LogOut, Loader2, Frown, Meh, Smile } from "lucide-react";
+import { CheckCircle, Clock, Sun, Moon, KeyRound, Send, LogOut, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,8 @@ import { TableSkeleton } from "@/components/table-skeleton";
 import { StatusBadge } from "@/components/status-badge";
 import { AttendanceQuickActions } from "@/components/attendance-quick-actions";
 import { usePreceptor } from "./preceptor-context";
+import { CheckoutNpsForm, type CheckoutNps } from "./checkout-nps-form";
+import { DateNavigator, PendenciasDoDia, STRIP_DAYS, fetchPendencias } from "./pendencias-por-data";
 import { baseViewIndex } from "@/lib/base-colors";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 
@@ -26,26 +28,6 @@ type Assignment = {
   facultyAbbr: string;
   checkinStatus: string | null;
 };
-
-type NpsAnswer = "SAD" | "NEUTRAL" | "HAPPY";
-
-type CheckoutNps = {
-  knowledge: NpsAnswer | null;
-  proactivity: NpsAnswer | null;
-  punctuality: NpsAnswer | null;
-};
-
-const EMPTY_NPS: CheckoutNps = {
-  knowledge: null,
-  proactivity: null,
-  punctuality: null,
-};
-
-const NPS_OPTIONS: Array<{ value: NpsAnswer; label: string; Icon: typeof Frown }> = [
-  { value: "SAD", label: "Triste", Icon: Frown },
-  { value: "NEUTRAL", label: "Neutra", Icon: Meh },
-  { value: "HAPPY", label: "Feliz", Icon: Smile },
-];
 
 function shiftLabel(shift: string) {
   if (shift === "MORNING") return "Manhã";
@@ -80,11 +62,28 @@ export default function PreceptorValidar() {
   const [validatingCode, setValidatingCode] = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [checkoutQuestionnaireId, setCheckoutQuestionnaireId] = useState<string | null>(null);
-  const [checkoutNps, setCheckoutNps] = useState<CheckoutNps>(EMPTY_NPS);
-  const [checkoutObservations, setCheckoutObservations] = useState("");
 
   const today = localDateStr();
   const fromDate = addDaysToDateStr(today, -1);
+
+  // null = plantão atual (hoje e ontem na base declarada); data = volta ao passado
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [dayCounts, setDayCounts] = useState<Record<string, { checkout: number; checkin: number }>>({});
+
+  async function loadDayCounts() {
+    try {
+      const rows = await fetchPendencias(addDaysToDateStr(today, -(STRIP_DAYS - 1)), addDaysToDateStr(today, -1));
+      const counts: Record<string, { checkout: number; checkin: number }> = {};
+      for (const r of rows) {
+        const c = (counts[r.date] ??= { checkout: 0, checkin: 0 });
+        if (r.kind === "CHECKOUT") c.checkout += 1;
+        else c.checkin += 1;
+      }
+      setDayCounts(counts);
+    } catch { /* a faixa fica sem números; a navegação continua */ }
+  }
+
+  useEffect(() => { loadDayCounts(); }, [today]);
 
   async function load() {
     if (!base || !shift) return;
@@ -179,8 +178,6 @@ export default function PreceptorValidar() {
           text: total > 1 ? `Checkout confirmado (${total} turnos encerrados)` : "Checkout confirmado",
         });
         setCheckoutQuestionnaireId(null);
-        setCheckoutNps(EMPTY_NPS);
-        setCheckoutObservations("");
         load();
       } else {
         setMsg({ type: "error", text: json.error || "Não foi possível confirmar checkout." });
@@ -193,23 +190,9 @@ export default function PreceptorValidar() {
   }
 
   function openCheckoutQuestionnaire(assignmentId: string) {
-    if (checkoutQuestionnaireId === assignmentId) {
-      setCheckoutQuestionnaireId(null);
-      setCheckoutNps(EMPTY_NPS);
-      setCheckoutObservations("");
-      return;
-    }
-    setCheckoutQuestionnaireId(assignmentId);
-    setCheckoutNps(EMPTY_NPS);
-    setCheckoutObservations("");
+    setCheckoutQuestionnaireId((current) => (current === assignmentId ? null : assignmentId));
     setMsg(null);
   }
-
-  function setNpsAnswer(question: keyof CheckoutNps, value: NpsAnswer) {
-    setCheckoutNps((prev) => ({ ...prev, [question]: value }));
-  }
-
-  const canSubmitNps = checkoutNps.knowledge && checkoutNps.proactivity && checkoutNps.punctuality;
 
   const filteredByName = assignments.filter((a) => !search || a.internName.toLowerCase().includes(search.toLowerCase()));
   const facultyOptions = Array.from(new Set(assignments.map((a) => a.facultyAbbr).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -251,6 +234,13 @@ export default function PreceptorValidar() {
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-semibold text-slate-900">Validar Presença</h1>
+
+      <DateNavigator today={today} selected={selectedDate} counts={dayCounts} onSelect={setSelectedDate} />
+
+      {selectedDate ? (
+        <PendenciasDoDia date={selectedDate} onChanged={loadDayCounts} />
+      ) : (
+      <>
 
       {/* Code validation */}
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
@@ -361,103 +351,11 @@ export default function PreceptorValidar() {
                     </div>
 
                     {checkoutQuestionnaireId === a.id && (
-                      <div className="mt-3 rounded-lg border border-blue-200 bg-white p-3">
-                        <p className="text-xs font-semibold text-slate-700">Antes de confirmar checkout, responda as 3 perguntas:</p>
-                        <div className="mt-2 space-y-3">
-                          <div>
-                            <p className="text-xs text-slate-600">Conhecimentos apresentados</p>
-                            <div className="mt-1 flex gap-2">
-                              {NPS_OPTIONS.map(({ value, label, Icon }) => (
-                                <Button
-                                  key={`knowledge-${value}`}
-                                  type="button"
-                                  size="sm"
-                                  variant={checkoutNps.knowledge === value ? "default" : "outline"}
-                                  onClick={() => setNpsAnswer("knowledge", value)}
-                                  className="min-w-24"
-                                >
-                                  <Icon className="h-3.5 w-3.5" />
-                                  {label}
-                                </Button>
-                              ))}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-600">Proatividade</p>
-                            <div className="mt-1 flex gap-2">
-                              {NPS_OPTIONS.map(({ value, label, Icon }) => (
-                                <Button
-                                  key={`proactivity-${value}`}
-                                  type="button"
-                                  size="sm"
-                                  variant={checkoutNps.proactivity === value ? "default" : "outline"}
-                                  onClick={() => setNpsAnswer("proactivity", value)}
-                                  className="min-w-24"
-                                >
-                                  <Icon className="h-3.5 w-3.5" />
-                                  {label}
-                                </Button>
-                              ))}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-600">Pontualidade</p>
-                            <div className="mt-1 flex gap-2">
-                              {NPS_OPTIONS.map(({ value, label, Icon }) => (
-                                <Button
-                                  key={`punctuality-${value}`}
-                                  type="button"
-                                  size="sm"
-                                  variant={checkoutNps.punctuality === value ? "default" : "outline"}
-                                  onClick={() => setNpsAnswer("punctuality", value)}
-                                  className="min-w-24"
-                                >
-                                  <Icon className="h-3.5 w-3.5" />
-                                  {label}
-                                </Button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-3 space-y-3">
-                          <div>
-                            <p className="text-xs text-slate-600">Observações do preceptor (opcional)</p>
-                            <textarea
-                              value={checkoutObservations}
-                              onChange={(e) => setCheckoutObservations(e.target.value)}
-                              placeholder="Ex.: conduta, intercorrências, pontos de atenção"
-                              maxLength={2000}
-                              rows={3}
-                              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-                            />
-                          </div>
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setCheckoutQuestionnaireId(null);
-                                setCheckoutNps(EMPTY_NPS);
-                                setCheckoutObservations("");
-                              }}
-                              disabled={checkingOut === a.id}
-                            >
-                              Cancelar
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => checkoutDirect(a.id, checkoutNps, checkoutObservations)}
-                              disabled={checkingOut === a.id || !canSubmitNps}
-                              className="gap-1"
-                            >
-                            {checkingOut === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> : <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />}
-                            Confirmar checkout
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                      <CheckoutNpsForm
+                        submitting={checkingOut === a.id}
+                        onCancel={() => setCheckoutQuestionnaireId(null)}
+                        onSubmit={(nps, notes) => checkoutDirect(a.id, nps, notes)}
+                      />
                     )}
                   </div>
                 ))}
@@ -570,6 +468,8 @@ export default function PreceptorValidar() {
           {checkinQueue.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Nenhum interno aguardando check-in na sua base/turno hoje.</p>}
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );

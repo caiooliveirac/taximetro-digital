@@ -12,7 +12,9 @@ import { canConfirmCheckout } from "@/lib/attendance-permissions";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { SESSION_TTL_SECONDS } from "@/lib/totp-config";
 import { getShiftLabel } from "@/lib/utils";
-import { isWithinShiftCheckoutWindow, isUnifiedShiftCheckout, resolveCheckoutAssignmentIds } from "@/shared/domain/policies/attendance-window-policy";
+import { isWithinShiftCheckoutWindow, resolvePendingCheckoutAssignmentIds } from "@/shared/domain/policies/attendance-window-policy";
+import { isAutoAbsenceAfterCheckin, isRetroactiveCheckout } from "@/shared/domain/policies/pending-attendance";
+import { pickPlausibleShiftTimes } from "@/features/admin-attendance/application/plausible-shift-times";
 import { z } from "zod/v4";
 
 // GET: return checkin details for a CHECKED_IN assignment
@@ -197,12 +199,45 @@ export async function PUT(req: NextRequest) {
     .limit(1);
 
   if (!assignment) return NextResponse.json({ success: false, error: "Plantão não encontrado" }, { status: 404 });
-  if (assignment.status !== "CHECKED_IN") {
+
+  const [existingCheckin] = await db
+    .select({
+      status: checkins.status,
+      checkinAt: checkins.checkinAt,
+      totpValidatedAt: checkins.totpValidatedAt,
+      checkoutAt: checkins.checkoutAt,
+      checkoutNotes: checkins.checkoutNotes,
+    })
+    .from(checkins)
+    .where(eq(checkins.assignmentId, assignmentId))
+    .limit(1);
+
+  // Checkout esquecido: o sweep já virou falta, mas o check-in foi validado.
+  // O preceptor fecha dias depois, pela data escolhida na tela Validar.
+  const reopensAutoAbsence = !!existingCheckin && isAutoAbsenceAfterCheckin({
+    status: assignment.status,
+    checkinStatus: existingCheckin.status,
+    totpValidatedAt: existingCheckin.totpValidatedAt,
+    checkoutAt: existingCheckin.checkoutAt,
+    checkoutNotes: existingCheckin.checkoutNotes,
+  });
+
+  if (assignment.status !== "CHECKED_IN" && !reopensAutoAbsence) {
     return NextResponse.json({ success: false, error: "Interno não está em check-in" }, { status: 400 });
   }
 
-  const assignmentIdsToCheckout = await resolveCheckoutAssignmentIds(assignment);
+  const assignmentIdsToCheckout = await resolvePendingCheckoutAssignmentIds(assignment);
   const now = new Date();
+  const retroactive = reopensAutoAbsence
+    || isRetroactiveCheckout({ date: assignment.date, period: assignment.period as "DAY" | "NIGHT", shift: assignment.shift }, now);
+
+  // Horário plausível de fim de turno no retroativo; nunca antes do check-in real.
+  let checkoutAt = now;
+  if (retroactive) {
+    checkoutAt = pickPlausibleShiftTimes({ date: assignment.date, period: assignment.period as "DAY" | "NIGHT" }).checkoutAt;
+    const checkinAt = existingCheckin?.checkinAt;
+    if (checkinAt && checkoutAt <= checkinAt) checkoutAt = new Date(checkinAt.getTime() + 6 * 60 * 60 * 1000);
+  }
 
   await db.update(assignments)
     .set({ status: "CHECKED_OUT", updatedAt: now })
@@ -215,7 +250,8 @@ export async function PUT(req: NextRequest) {
   const checkoutNotes = [normalizedNotes, serializedNps].filter(Boolean).join(" | ") || null;
 
   await db.update(checkins).set({
-    checkoutAt: now,
+    status: "VALIDATED",
+    checkoutAt,
     checkoutConfirmedBy: user.realUserId ?? user.id,
     preceptorObservations: normalizedNotes,
     checkoutNotes,
@@ -227,10 +263,11 @@ export async function PUT(req: NextRequest) {
       action: "CHECKOUT_CONFIRMED",
       entity: "assignment",
       entityId: assignmentId,
-      ...((user.isImpersonating || assignmentIdsToCheckout.length > 1 || !!nps)
+      ...((user.isImpersonating || assignmentIdsToCheckout.length > 1 || !!nps || retroactive)
         ? {
           payload: {
             ...(user.isImpersonating ? { actingAs: user.id } : {}),
+            ...(retroactive ? { retroactive: true, previousStatus: assignment.status, checkoutAt: checkoutAt.toISOString() } : {}),
             ...(assignmentIdsToCheckout.length > 1 ? { unified: true, assignmentIds: assignmentIdsToCheckout } : {}),
             ...(nps ? { nps } : {}),
           },
