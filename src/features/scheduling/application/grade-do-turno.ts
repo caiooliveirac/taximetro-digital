@@ -23,6 +23,7 @@ import {
   type Desativacao,
 } from "@/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
+import { listLiveReservations } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 
 export type Periodo = "DAY" | "NIGHT";
 
@@ -89,9 +90,9 @@ export type BaseDoTurno = {
   name: string;
   latitude: number;
   longitude: number;
-  /** Vagas de grade neste turno: soma de slot_rules de todas as faculdades. */
+  /** Vagas de grade neste turno: soma de slot_rules de todas as faculdades, menos as reservadas pela coordenação. */
   capacity: number;
-  /** Limite físico do turno (0 = sem grade, sem teto). */
+  /** Limite físico do turno (0 = sem grade, sem teto), também sem as reservadas. */
   limite: number;
   ocupantes: OcupanteDoTurno[];
   estado: EstadoDaBase;
@@ -107,7 +108,7 @@ export type BaseDoTurno = {
 export async function basesDoTurno(date: string, period: Periodo): Promise<{ bases: BaseDoTurno[]; medicosDisponiveis: boolean }> {
   const dayOfWeek = getDayOfWeek(date);
 
-  const [capacidade, ocupantes, usas, estado] = await Promise.all([
+  const [capacidade, ocupantes, usas, estado, reservas] = await Promise.all([
     db
       .select({ baseId: slotRules.baseId, capacity: sql<number>`COALESCE(SUM(${slotRules.capacity}), 0)` })
       .from(slotRules)
@@ -150,7 +151,15 @@ export async function basesDoTurno(date: string, period: Periodo): Promise<{ bas
       .from(bases)
       .where(and(eq(bases.type, "USA"), eq(bases.isActive, true))),
     estadoDasBasesNoTurno(date, period),
+    listLiveReservations({ from: date, to: date }),
   ]);
+  // Vaga reservada pela coordenação (reserve-slot.ts) não existe para quem
+  // procura remanejamento: sai da grade E do limite físico — tirando só da
+  // grade, ela voltaria como célula "além da grade".
+  const reservadasPorBase = new Map<string, number>();
+  for (const r of reservas) {
+    if (r.period === period) reservadasPorBase.set(r.baseId, (reservadasPorBase.get(r.baseId) ?? 0) + 1);
+  }
   const capacidadePorBase = new Map(capacidade.map((c) => [c.baseId, Number(c.capacity)]));
   const ocupantesPorBase = new Map<string, OcupanteDoTurno[]>();
   for (const { baseId, ...o } of ocupantes) ocupantesPorBase.set(baseId, [...(ocupantesPorBase.get(baseId) ?? []), o]);
@@ -160,13 +169,15 @@ export async function basesDoTurno(date: string, period: Periodo): Promise<{ bas
   const lista = usas
     .sort((a, b) => compararCodigoDeBase(a.code, b.code))
     .map((base): BaseDoTurno => {
-      const capacity = capacidadePorBase.get(base.id) ?? 0;
+      const grade = capacidadePorBase.get(base.id) ?? 0;
+      const reservadas = Math.min(reservadasPorBase.get(base.id) ?? 0, grade);
+      const capacity = grade - reservadas;
       const ocupantes = ocupantesPorBase.get(base.id) ?? [];
       const desativada = plantoes.desativadas[base.code] ?? null;
       return {
         ...base,
         capacity,
-        limite: computePeriodLoad({ capacity, occupied: ocupantes.length }).limit,
+        limite: Math.max(computePeriodLoad({ capacity: grade, occupied: ocupantes.length }).limit - reservadas, 0),
         ocupantes,
         estado: estado.get(base.id) ?? { avisos: [], parada: null },
         desativada: desativada
