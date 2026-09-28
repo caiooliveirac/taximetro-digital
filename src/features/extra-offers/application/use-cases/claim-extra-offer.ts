@@ -45,6 +45,9 @@ export async function executeClaimExtraOffer(params: {
   if (offer.claimedBy) {
     return { status: 409, body: { success: false, error: "Esta vaga já foi preenchida" } } as const;
   }
+  if (offer.reservedBy) {
+    return { status: 409, body: { success: false, error: "Esta vaga está reservada pela coordenação" } } as const;
+  }
 
   // Always use the intern's own faculty so the assignment appears in the
   // correct leader view and compliance report. offer.facultyId is only a display hint.

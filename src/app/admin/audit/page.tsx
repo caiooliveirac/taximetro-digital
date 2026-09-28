@@ -54,6 +54,8 @@ const ACTION_VARIANT: Record<string, "confirmed" | "pending" | "absent" | "check
 const ACTION_LABEL: Record<string, string> = {
   SLOTS_RELEASED: "Vagas liberadas",
   SLOTS_RELEASE_UNDONE: "Liberação desfeita",
+  SLOT_RESERVED: "Vaga reservada",
+  SLOT_RESERVATION_CANCELLED: "Reserva desfeita",
   FREE_SLOT_USED: "Vaga livre usada",
   "extra_offer.published": "Extra publicado",
   "extra_offer.claimed": "Extra pego",

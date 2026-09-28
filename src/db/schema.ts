@@ -385,6 +385,11 @@ export const extraShiftOffers = pgTable("extra_shift_offers", {
   // cancelada, o sorteio e a grade dessa faculdade descontam a vaga
   // (ver release-slots.ts e run-leader-lottery.ts). Extra comum fica null.
   releasedFacultyId: uuid("released_faculty_id").references(() => faculties.id),
+  // Vaga RESERVADA pela coordenação: mesma oferta de vaga liberada, mas não vai
+  // ao board nem às outras faculdades — só tira a vaga da grade daquela
+  // faculdade (líder, sorteio, interno) até o coordenador desfazer. Ver
+  // reserve-slot.ts.
+  reservedBy: uuid("reserved_by").references(() => users.id),
 }, (t) => [
   index("idx_extra_offer_date").on(t.date),
   index("idx_extra_offer_released").on(t.releasedFacultyId, t.date),

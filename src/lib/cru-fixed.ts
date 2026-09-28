@@ -237,6 +237,8 @@ export async function materializeCruFixedAssignments(params: {
             gte(extraShiftOffers.date, normalizedStart),
             lte(extraShiftOffers.date, normalizedEnd),
             isNull(extraShiftOffers.cancelledAt),
+            // Reserva da coordenação segura uma vaga aberta, não a do fixo.
+            isNull(extraShiftOffers.reservedBy),
         ));
     for (const row of releasedRows) releasedCru.add(`${normalizeDate(row.date)}|${row.period}`);
 
