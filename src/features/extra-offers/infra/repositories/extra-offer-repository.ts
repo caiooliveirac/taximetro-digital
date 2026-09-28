@@ -184,6 +184,7 @@ export type InsertExtraOffer = {
   notes?: string | null;
   publishedBy: string;
   releasedFacultyId?: string | null;
+  reservedBy?: string | null;
 };
 
 export async function insertExtraOffer(data: InsertExtraOffer) {
@@ -198,6 +199,7 @@ export async function insertExtraOffer(data: InsertExtraOffer) {
       notes: data.notes ?? null,
       publishedBy: data.publishedBy,
       releasedFacultyId: data.releasedFacultyId ?? null,
+      reservedBy: data.reservedBy ?? null,
     })
     .returning();
   return row;
@@ -236,6 +238,7 @@ export async function listReleasedOffers(params: { facultyId: string; from: stri
       period: extraShiftOffers.period,
       shift: extraShiftOffers.shift,
       claimedBy: extraShiftOffers.claimedBy,
+      reservedBy: extraShiftOffers.reservedBy,
     })
     .from(extraShiftOffers)
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
@@ -259,6 +262,7 @@ export async function listReleasedOffersAll(params: { from: string; to: string }
       releasedFacultyId: extraShiftOffers.releasedFacultyId,
       releasedFacultyAbbr: faculties.abbreviation,
       claimedBy: extraShiftOffers.claimedBy,
+      reservedBy: extraShiftOffers.reservedBy,
     })
     .from(extraShiftOffers)
     .innerJoin(faculties, eq(faculties.id, extraShiftOffers.releasedFacultyId))
@@ -296,6 +300,7 @@ export async function listFreeOffers(params: { excludeFacultyId: string; from: s
       lte(extraShiftOffers.date, params.to),
       isNull(extraShiftOffers.claimedBy),
       isNull(extraShiftOffers.cancelledAt),
+      isNull(extraShiftOffers.reservedBy),
     ))
     .orderBy(extraShiftOffers.date, extraShiftOffers.period);
 }
@@ -316,6 +321,8 @@ export async function cancelReleasedOffers(params: {
     eq(extraShiftOffers.releasedFacultyId, params.facultyId),
     isNull(extraShiftOffers.claimedBy),
     isNull(extraShiftOffers.cancelledAt),
+    // Reserva da coordenação só se desfaz por ela (cancelReservation).
+    isNull(extraShiftOffers.reservedBy),
   ];
   if (params.ids) {
     if (params.ids.length === 0) return 0;
@@ -331,6 +338,64 @@ export async function cancelReleasedOffers(params: {
     .where(and(...filtros))
     .returning({ id: extraShiftOffers.id });
   return rows.length;
+}
+
+/* ═══════════ Vagas reservadas pela coordenação ═══════════ */
+
+/** Reservas vivas numa data/turno/base de uma faculdade. */
+export async function countLiveReservations(params: { facultyId: string; baseId: string; date: string; period: "DAY" | "NIGHT" }) {
+  const [row] = await db
+    .select({ n: sql<number>`COUNT(*)` })
+    .from(extraShiftOffers)
+    .where(and(
+      eq(extraShiftOffers.releasedFacultyId, params.facultyId),
+      eq(extraShiftOffers.baseId, params.baseId),
+      eq(extraShiftOffers.date, params.date),
+      eq(extraShiftOffers.period, params.period),
+      isNull(extraShiftOffers.cancelledAt),
+      sql`${extraShiftOffers.reservedBy} is not null`,
+    ));
+  return Number(row?.n ?? 0);
+}
+
+/** Reservas vivas na janela, todas as faculdades. */
+export async function listLiveReservations(params: { from: string; to: string; facultyId?: string }) {
+  const filtros = [
+    gte(extraShiftOffers.date, params.from),
+    lte(extraShiftOffers.date, params.to),
+    isNull(extraShiftOffers.cancelledAt),
+    sql`${extraShiftOffers.reservedBy} is not null`,
+  ];
+  if (params.facultyId) filtros.push(eq(extraShiftOffers.releasedFacultyId, params.facultyId));
+  return db
+    .select({
+      id: extraShiftOffers.id,
+      baseId: extraShiftOffers.baseId,
+      date: extraShiftOffers.date,
+      period: extraShiftOffers.period,
+      facultyId: extraShiftOffers.releasedFacultyId,
+    })
+    .from(extraShiftOffers)
+    .where(and(...filtros));
+}
+
+export async function cancelReservation(params: { id: string; cancelledBy: string }) {
+  const rows = await db
+    .update(extraShiftOffers)
+    .set({ cancelledAt: new Date(), cancelledBy: params.cancelledBy })
+    .where(and(
+      eq(extraShiftOffers.id, params.id),
+      isNull(extraShiftOffers.cancelledAt),
+      sql`${extraShiftOffers.reservedBy} is not null`,
+    ))
+    .returning({
+      id: extraShiftOffers.id,
+      baseId: extraShiftOffers.baseId,
+      date: extraShiftOffers.date,
+      period: extraShiftOffers.period,
+      facultyId: extraShiftOffers.releasedFacultyId,
+    });
+  return rows[0] ?? null;
 }
 
 export async function claimExtraOffer(
@@ -350,6 +415,7 @@ export async function claimExtraOffer(
       eq(extraShiftOffers.id, offerId),
       isNull(extraShiftOffers.claimedBy),
       isNull(extraShiftOffers.cancelledAt),
+      isNull(extraShiftOffers.reservedBy),
     ))
     .returning({ id: extraShiftOffers.id });
 

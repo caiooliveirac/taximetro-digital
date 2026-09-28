@@ -111,6 +111,8 @@ type ReleasedOffer = {
     releasedFacultyId: string;
     releasedFacultyAbbr: string;
     claimedBy: string | null;
+    /** Preenchido = reserva da coordenação, não cessão (ver reserve-slot.ts). */
+    reservedBy: string | null;
 };
 
 type PeriodFocusState = {
@@ -168,6 +170,7 @@ type ActualPeriodGridSlot =
     | { kind: "assignment"; key: string; assignment: AssignmentDetail }
     | { kind: "vacancy"; key: string; allocation: AllocationState; facultyAbbr: string }
     | { kind: "freed"; key: string; allocation: AllocationState; facultyAbbr: string }
+    | { kind: "reserved"; key: string; offerId: string; facultyAbbr: string; date: string }
     | { kind: "blocked"; key: string; facultyAbbr: string };
 
 type VisiblePeriodGridSlot =
@@ -646,6 +649,37 @@ function FreedSlotCard({ allocation, period, onOpen, count = 1 }: { allocation: 
                 <Unlock className="h-4 w-4" />
             </span>
         </button>
+    );
+}
+
+/**
+ * Vaga que a coordenação reservou: some da escala do líder e do sorteio. O X
+ * desfaz e devolve a vaga para a faculdade.
+ */
+function ReservedSlotCard({ facultyAbbr, period, date, onUndo }: { facultyAbbr: string; period: "DAY" | "NIGHT"; date: string; onUndo: () => void }) {
+    const isNight = period === "NIGHT";
+
+    return (
+        <div
+            className={`flex min-h-[56px] w-full min-w-0 items-center gap-2 rounded-xl border border-dashed px-2.5 py-2 ${isNight ? "border-slate-300/40 bg-slate-800/60 text-slate-100" : "border-slate-400 bg-slate-100 text-slate-800"} ${getMutedSlotClass(date, "vacancy")}`}
+            title={`Vaga ${facultyAbbr} reservada pela coordenação — não aparece para o líder nem entra no sorteio.`}
+        >
+            <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-black uppercase tracking-[0.14em]">Reservada</span>
+                <span className={`mt-1 block truncate text-[10px] font-semibold uppercase tracking-[0.12em] ${isNight ? "text-slate-300" : "text-slate-500"}`}>
+                    {facultyAbbr} · coordenação
+                </span>
+            </span>
+            <button
+                type="button"
+                onClick={onUndo}
+                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${isNight ? "bg-white/10 text-slate-100 hover:bg-white/20" : "bg-slate-300 text-slate-800 hover:bg-slate-400"}`}
+                title="Desfazer reserva"
+                aria-label={`Desfazer reserva da vaga ${facultyAbbr}`}
+            >
+                <X className="h-4 w-4" strokeWidth={2.4} />
+            </button>
+        </div>
     );
 }
 
@@ -1265,6 +1299,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 const cedida = cedidas[cedidaIndex];
                 if (cedida) {
                     cedidaIndex += 1;
+                    if (cedida.reservedBy) {
+                        flattenedSlots.push({ kind: "reserved", key: cedida.id, offerId: cedida.id, facultyAbbr, date });
+                        continue;
+                    }
                     if (cedida.claimedBy) continue;
                     flattenedSlots.push({
                         kind: "freed",
@@ -1578,6 +1616,50 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         }
     }
 
+    /** Segura a vaga aberta da faculdade: some do líder, do sorteio e do interno. */
+    async function reserveSlot() {
+        if (!allocation?.facultyId) return;
+        setAllocLoading(true);
+        setMessage(null);
+        try {
+            const response = await fetch("/taximetro/api/admin/reserved-slots", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    baseId: allocation.baseId,
+                    date: allocation.date,
+                    period: allocation.period,
+                    facultyId: allocation.facultyId,
+                }),
+            });
+            const json = await response.json();
+            if (!json.success) throw new Error(json.error ?? "Não foi possível reservar a vaga.");
+            setAllocation(null);
+            setFocusedPeriod(null);
+            setMessage({ type: "success", text: `Vaga ${allocation.facultyAbbr ?? ""} reservada — não aparece mais para o líder.` });
+            await loadAssignments();
+        } catch (error) {
+            setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao reservar vaga." });
+        } finally {
+            setAllocLoading(false);
+        }
+    }
+
+    async function undoReservation(offerId: string) {
+        if (!window.confirm("Desfazer a reserva? A vaga volta para a escala do líder.")) return;
+        setMessage(null);
+        try {
+            const response = await fetch(`/taximetro/api/admin/reserved-slots?id=${offerId}`, { method: "DELETE" });
+            const json = await response.json();
+            if (!json.success) throw new Error(json.error ?? "Não foi possível desfazer a reserva.");
+            setFocusedPeriod(null);
+            setMessage({ type: "success", text: "Reserva desfeita — a vaga voltou para o líder." });
+            await loadAssignments();
+        } catch (error) {
+            setMessage({ type: "error", text: error instanceof Error ? error.message : "Erro ao desfazer reserva." });
+        }
+    }
+
     async function cancelAssignment(assignmentId: string) {
         setRemovingId(assignmentId);
         setMessage(null);
@@ -1679,6 +1761,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                                         if (slot.kind === "freed") {
                                             return <FreedSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} />;
+                                        }
+
+                                        if (slot.kind === "reserved") {
+                                            return <ReservedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={period} date={slot.date} onUndo={() => void undoReservation(slot.offerId)} />;
                                         }
 
                                         // Vaga bloqueada não vira card aqui: virou selo no cabeçalho.
@@ -1872,6 +1958,9 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                                     }
                                                     if (slot.kind === "freed") {
                                                         return <FreedSlotCard key={slot.key} allocation={slot.allocation} period={period} onOpen={openAllocation} />;
+                                                    }
+                                                    if (slot.kind === "reserved") {
+                                                        return <ReservedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={period} date={slot.date} onUndo={() => void undoReservation(slot.offerId)} />;
                                                     }
                                                     return <VacancySlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} allocation={slot.allocation} period={period} onOpen={openAllocation} onPublishExtra={openPublishExtra} facultyBadgeMode="faculty" showBaseCode={showBaseCode} isVirtual={facultyById.get(slot.allocation.facultyId ?? "")?.isVirtual} count={count} />;
                                                 });
@@ -2356,6 +2445,17 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 setAllocFacultyId("");
                                 setAllocCandidateFacultyFilter("ALL");
                             }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                            {allocation.facultyId && !allocation.freeOffer && !allocation.isExtraShift && !isRetroactiveAdminAllocation && (
+                                <button
+                                    type="button"
+                                    disabled={allocLoading}
+                                    onClick={reserveSlot}
+                                    className="order-first mr-auto inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                    title="Segura esta vaga: some da escala do líder e do sorteio até você desfazer"
+                                >
+                                    <Ban className="h-4 w-4" /> Reservar vaga
+                                </button>
+                            )}
                             <button type="button" disabled={allocLoading || !allocInternId || !assignmentFacultyId} onClick={createAssignment} className="inline-flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50">
                                 {allocLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Alocar na escala
                             </button>
@@ -2516,6 +2616,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
                                 if (slot.kind === "blocked") {
                                     return <BlockedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={focusedPeriod.period} />;
+                                }
+
+                                if (slot.kind === "reserved") {
+                                    return <ReservedSlotCard key={slot.key} facultyAbbr={slot.facultyAbbr} period={focusedPeriod.period} date={slot.date} onUndo={() => void undoReservation(slot.offerId)} />;
                                 }
 
                                 return (

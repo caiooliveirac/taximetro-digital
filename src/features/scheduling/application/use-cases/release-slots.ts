@@ -70,7 +70,10 @@ export async function executeListReleased(params: {
 }) {
   const facultyId = faculdadeDoAtor(params.actor, params.input);
   if (!facultyId) return { status: 403, body: { success: false, error: "Sem permissão" } } as const;
-  const rows = await listReleasedOffers({ facultyId, from: params.input.from, to: params.input.to });
+  // Reserva da coordenação não é "cedida": a grade que a tela recebe
+  // (getAvailableSlots) já veio com a vaga a menos — aqui ela só sumiria duas vezes.
+  const rows = (await listReleasedOffers({ facultyId, from: params.input.from, to: params.input.to }))
+    .filter((row) => !row.reservedBy);
   return { status: 200, body: { success: true, data: rows } } as const;
 }
 

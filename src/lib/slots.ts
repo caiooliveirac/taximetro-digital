@@ -3,6 +3,7 @@ import { slotRules, assignments, bases, faculties, requests } from "@/db/schema"
 import { eq, and, sql, ne, gte, lte, inArray } from "drizzle-orm";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
+import { countLiveReservations, listLiveReservations } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 
 function normalizeDateKey(date: string): string {
   return date.slice(0, 10);
@@ -104,6 +105,13 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
       ...row,
       filled: Number(row.filled),
     });
+  }
+
+  // Vaga reservada pela coordenação sai da grade da faculdade: some da escala
+  // do líder e da lista do interno como se a regra tivesse uma vaga a menos.
+  for (const r of await listLiveReservations({ from: rangeStart, to: rangeEnd, facultyId })) {
+    const slot = deduped.get(`${r.baseId}|${normalizeDateKey(r.date)}|${r.period}|${r.facultyId}`);
+    if (slot) slot.capacity = Math.max(slot.capacity - 1, 0);
   }
 
   return Array.from(deduped.values())
@@ -243,7 +251,9 @@ export async function checkSlotAvailability(
     .where(and(...conditions));
 
   const assigned = Number(result?.count ?? 0);
-  return { available: assigned < rule.capacity, capacity: rule.capacity, assigned };
+  const reserved = await countLiveReservations({ facultyId, baseId, date, period });
+  const capacity = Math.max(rule.capacity - reserved, 0);
+  return { available: assigned < capacity, capacity, assigned };
 }
 
 /**
