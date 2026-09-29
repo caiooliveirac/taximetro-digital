@@ -159,7 +159,7 @@ Baseado em: Probabilidade (quão fácil disparar?) × Impacto (quanto quebra?) �
 
 ## 6. Regras de Deploy
 
-- **Deploy = LIVE direto** (desde 29/09/2026): merge/push na `master` dispara o GHA, que já sobe um canário interno de validação antes do swap. Não passar pelo LAB (`~/lab/taximetro`) nem pedir segunda confirmação — LAB só quando o usuário pedir explicitamente. Voltar atrás = revert na `master`.
+- **Toda tarefa termina no LIVE** (desde 29/09/2026): terminou uma mudança, merge/push na `master` sem perguntar e sem o usuário precisar dizer "deploy" — o GHA sobe um canário interno de validação antes do swap. Não deployar só quando ele disser ("não sobe", "só local", "testa no LAB"). Voltar atrás = revert na `master`.
 - Não declarar sucesso de deploy sem validação objetiva
 - Validar sempre:
   - container em `Up`

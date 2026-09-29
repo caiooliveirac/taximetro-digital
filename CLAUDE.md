@@ -185,11 +185,11 @@ npm run db:push && npm run db:demo
 
 ## Deploy
 
-**Deploy = LIVE direto** (desde 29/09/2026): merge/push na `master` dispara o
-GHA (`.github/workflows/deploy.yml`), que valida um canário interno antes de
-trocar produção. Quando o usuário pede deploy, levar até o LIVE no mesmo fluxo,
-sem parar no LAB (`~/lab/taximetro`, porta 4002) nem pedir segunda confirmação;
-LAB só se pedido. Conferir o job e o health (`/taximetro/api/health`) depois.
+**Toda tarefa termina no LIVE** (desde 29/09/2026): terminou uma mudança,
+merge/push na `master` sem perguntar e sem o usuário precisar dizer "deploy". O
+GHA (`.github/workflows/deploy.yml`) valida um canário interno antes de trocar
+produção. Não deployar só quando ele disser ("não sobe", "só local", "testa no
+LAB" — `~/lab/taximetro`, porta 4002). Conferir o job e o health (`/taximetro/api/health`) depois.
 Voltar atrás = revert na `master`. Vitalmed segue manual
 (`scripts/deploy-vitalmed.sh`).
 
