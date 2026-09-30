@@ -8,16 +8,13 @@ Objetivo: reduzir risco de regressão, evitar quebra de deploy/versionamento e m
 - Runtime oficial: Docker
 - App oficial: Next.js com `basePath` `/taximetro`
 - Proxy oficial: Nginx service instalado no host da VM (systemd)
-- Banco oficial: PostgreSQL rodando na EC2 (acessível dentro da máquina)
+- Banco oficial: PostgreSQL do host no magalu, banco `taximetro` (só `localhost`)
 - Deploy oficial: GitHub Actions
 
 ## 2. Postura Padrão de Operação
 
-- Padrão inicial obrigatório: `read-only first`
-- Sempre analisar contexto, arquivos, impactos e fluxo atual antes de sugerir ou executar mudanças
-- Nunca editar código, config ou scripts sem pedido explicito do usuário
-- Nunca abrir PR sem pedido explicito do usuário
-- Nunca criar branch sem pedido explicito do usuário
+- Autonomia: investigar, editar, commitar e levar ao LIVE sem pedir licença (regra global do usuário); rollback é barato.
+- Portão só no que rollback de código não desfaz: migration destrutiva, mensagem real, escrita manual no banco de produção.
 
 ## 3. Análise de Riscos Reais vs Teóricos
 
