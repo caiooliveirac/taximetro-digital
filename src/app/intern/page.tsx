@@ -231,6 +231,21 @@ export default function InternHoje() {
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <p className="text-sm font-semibold text-blue-900">Protocolo BRAVo</p>
+        <p className="mt-1 text-sm text-blue-800">
+          Notifique possíveis casos de PCR pelo REDCap:{" "}
+          <a
+            href="https://redcap.link/BRAVOSALVADOR"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium underline underline-offset-2"
+          >
+            https://redcap.link/BRAVOSALVADOR
+          </a>
+        </p>
+      </div>
+
       {/* Header + weekly goal */}
       <div className="flex items-start justify-between">
         <div>
