@@ -346,8 +346,9 @@ export async function sendCohortClosingReportEmail(to: string, html: string, rep
   const transporter = await getVerifiedTransporter();
   const config = getSmtpConfig();
   const period = `${formatBrDate(report.startDate)} a ${formatBrDate(report.endDate)}`;
-  const leaders = report.leaderNames.length > 0 ? report.leaderNames.join(", ") : "sem líder cadastrado";
-  const subject = `Turma encerrada: ${report.facultyAbbr} · ${report.cohortName} (${period}) — líder: ${leaders}`;
+  const leaders = report.leaderNames.length > 0 ? report.leaderNames.map((name) => name.trim()).join(", ") : "sem líder cadastrado";
+  const leaderLabel = report.leaderNames.length > 1 ? "Líderes" : "Líder";
+  const subject = `Turma encerrada: ${report.facultyAbbr} · ${report.cohortName} (${period}) — ${leaderLabel.toLowerCase()}: ${leaders}`;
   const attachmentName = cohortClosingReportFileName(report);
   const row = (label: string, value: string) =>
     `<tr><td style="padding: 4px 12px 4px 0; color: #64748b;">${label}</td><td style="padding: 4px 0;"><strong>${escapeHtml(value)}</strong></td></tr>`;
@@ -363,11 +364,11 @@ export async function sendCohortClosingReportEmail(to: string, html: string, rep
           <h1 style="font-size: 20px; color: #1E3A5F; margin: 0;">Turma encerrada — ${escapeHtml(report.cohortName)}</h1>
           <p style="font-size: 13px; color: #64748b; margin: 4px 0 0;">Taxímetro Digital — ${ORG_NAME}</p>
         </div>
-        <p style="font-size: 15px; color: #334155; margin: 0 0 16px;">A turma chegou ao fim e foi arquivada automaticamente. O relatório completo dela segue em anexo.</p>
+        <p style="font-size: 15px; color: #334155; margin: 0 0 16px;">A turma chegou ao fim e foi arquivada. O relatório completo dela segue em anexo.</p>
         <table style="border-collapse: collapse; font-size: 14px; color: #334155; margin-bottom: 20px;">
           ${row("Faculdade", `${report.facultyName} (${report.facultyAbbr})`)}
           ${row("Turma", report.cohortName)}
-          ${row(report.leaderNames.length > 1 ? "Líderes" : "Líder", leaders)}
+          ${row(leaderLabel, leaders)}
           ${row("Início", formatBrDate(report.startDate))}
           ${row("Fim", formatBrDate(report.endDate))}
           ${row("Internos", String(report.internCount))}
