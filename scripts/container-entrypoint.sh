@@ -8,10 +8,10 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 TZ=${TZ}"
 
 write_cron_env() {
-  env | while IFS='=' read -r key value; do
-    escaped=$(printf "%s" "$value" | sed "s/'/'\\\\''/g")
-    printf "export %s='%s'\n" "$key" "$escaped"
-  done > /app/.cron-env.sh
+  # `export -p` já sai com aspas certas. O laço antigo com `IFS='=' read`
+  # comia o "=" final dos valores (AUTH_SECRET em base64) e todo cron
+  # recebia 403 — turmas nunca ativavam nem arquivavam sozinhas.
+  export -p > /app/.cron-env.sh
 
   chmod 600 /app/.cron-env.sh
 }

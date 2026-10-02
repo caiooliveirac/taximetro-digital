@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { evaluateCohortLifecycle } from "@/features/cohorts/application/use-cases/cohort-lifecycle";
+import { evaluateCohortLifecycle, sendPendingClosingReports } from "@/features/cohorts/application/use-cases/cohort-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,8 @@ function isAuthorized(req: NextRequest) {
 
 /**
  * Job diário: avalia as datas de início/fim de todas as turmas e aplica
- * as transições de status (PLANNED → ACTIVE → CLOSED + arquivamento).
+ * as transições de status (PLANNED → ACTIVE → CLOSED + arquivamento) e manda
+ * por e-mail o relatório de cada turma fechada.
  * Disparado pelo cron do container — ver scripts/container-entrypoint.sh.
  */
 export async function GET(req: NextRequest) {
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
   }
 
   const result = await evaluateCohortLifecycle({ actorUserId: null });
+  const closingReports = await sendPendingClosingReports();
 
-  return NextResponse.json({ success: true, ...result });
+  return NextResponse.json({ success: true, ...result, closingReports });
 }
