@@ -8,6 +8,7 @@ import {
   listCohortsForLifecycle,
   activateCohort,
   closeCohortAndArchiveInterns,
+  countUpcomingAssignmentsInCohort,
   listCohortsPendingClosingReport,
   listCohortLeaderNames,
   markClosingReportSent,
@@ -17,12 +18,15 @@ export type CohortLifecycleResult = {
   today: string;
   activated: Array<{ cohortId: string; label: string }>;
   closed: Array<{ cohortId: string; label: string; archivedInterns: number }>;
+  held: Array<{ cohortId: string; label: string; endDate: string; upcomingAssignments: number }>;
 };
 
 /**
  * Avalia as datas de início/fim das turmas e aplica transições de status:
  *  - PLANNED com startDate <= hoje  → ACTIVE
- *  - qualquer turma com endDate < hoje → CLOSED + arquiva todos os internos
+ *  - qualquer turma com endDate < hoje → CLOSED + arquiva todos os internos,
+ *    exceto se algum interno ainda tem plantão de hoje em diante (data de fim
+ *    cadastrada errada): aí fica em `held` e não arquiva ninguém
  *
  * Idempotente: roda diariamente via cron e também sob demanda ao salvar datas
  * de uma turma. Passe `cohortId` para avaliar apenas uma turma.
@@ -37,11 +41,21 @@ export async function evaluateCohortLifecycle(params?: {
   const actorUserId = params?.actorUserId ?? null;
   const cohorts = await listCohortsForLifecycle(params?.cohortId);
 
-  const result: CohortLifecycleResult = { today, activated: [], closed: [] };
+  const result: CohortLifecycleResult = { today, activated: [], closed: [], held: [] };
 
   for (const cohort of cohorts) {
+    const upcomingAssignments = cohort.endDate < today
+      ? await countUpcomingAssignmentsInCohort(cohort.id, today)
+      : 0;
+    if (upcomingAssignments > 0) {
+      console.warn("[cohort-lifecycle] turma passou do fim mas tem plantões por vir; não arquivada", {
+        cohortId: cohort.id, label: cohort.label, endDate: cohort.endDate, upcomingAssignments,
+      });
+      result.held.push({ cohortId: cohort.id, label: cohort.label, endDate: cohort.endDate, upcomingAssignments });
+    }
+
     // Fim já passou → fecha e arquiva (vale para PLANNED ou ACTIVE).
-    if (cohort.endDate < today) {
+    if (cohort.endDate < today && upcomingAssignments === 0) {
       const archivedInterns = await closeCohortAndArchiveInterns({
         cohortId: cohort.id,
         closedBy: actorUserId,

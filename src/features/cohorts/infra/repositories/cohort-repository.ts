@@ -1,6 +1,6 @@
 import { db } from "@/shared/db/client";
-import { cohorts, faculties, userRoles, users } from "@/db/schema";
-import { eq, and, gte, inArray, isNull, ne } from "drizzle-orm";
+import { assignments, cohorts, faculties, userRoles, users } from "@/db/schema";
+import { eq, and, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 export async function listCohorts(filters?: {
@@ -210,6 +210,33 @@ export async function closeCohortAndArchiveInterns(params: {
     .returning({ id: userRoles.id });
 
   return archived.length;
+}
+
+/**
+ * Plantões ainda por vir (data >= `today`, não cancelados nem faltas) dos
+ * internos ativos da turma. Turma com isso não está terminada de verdade,
+ * qualquer que seja a data de fim cadastrada.
+ */
+export async function countUpcomingAssignmentsInCohort(cohortId: string, today: string): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(assignments)
+    .innerJoin(
+      userRoles,
+      and(
+        eq(userRoles.userId, assignments.internId),
+        eq(userRoles.cohortId, cohortId),
+        eq(userRoles.role, "INTERN"),
+        eq(userRoles.isArchived, false),
+      ),
+    )
+    .where(
+      and(
+        gte(assignments.date, today),
+        inArray(assignments.status, ["SCHEDULED", "CONFIRMED", "CHECKED_IN"]),
+      ),
+    );
+  return row?.total ?? 0;
 }
 
 /**
