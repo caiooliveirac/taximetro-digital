@@ -4,7 +4,8 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { generateAdminReport } from "@/lib/admin-report-builder";
-import { reportFilterInputSchema, type ReportFilterInput } from "@/lib/report-filters";
+import { reportFilterInputSchema } from "@/lib/report-filters";
+import { encodeReportFilters, fetchReportHtmlForEmail } from "@/lib/report-export-html";
 import { getEmailErrorSummary, sendReportEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,11 @@ export async function POST(req: NextRequest) {
 
     const headerStore = await headers();
     const ipAddress = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() || headerStore.get("x-real-ip") || undefined;
-    const html = await fetchExportHtml(req, filters);
+    const html = await fetchReportHtmlForEmail(
+      `/taximetro/admin/relatorios/export?format=html&filters=${encodeReportFilters(filters)}`,
+      { cookie: req.headers.get("cookie") ?? "" },
+      new URL(req.url).origin,
+    );
 
     try {
       await sendReportEmail(
@@ -88,74 +93,4 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
-}
-
-async function fetchExportHtml(req: NextRequest, filters: ReportFilterInput): Promise<string> {
-  // AttendanceReportDocument é "use client"; renderToStaticMarkup direto não consegue
-  // invocar componentes client fora da pipeline RSC do Next. Reusamos a página
-  // /admin/relatorios/export, que já faz SSR correto, via fetch loopback.
-  const encodedFilters = Buffer.from(JSON.stringify(filters), "utf8").toString("base64");
-  const port = process.env.PORT ?? "3000";
-  const internalOrigin = `http://127.0.0.1:${port}`;
-  const requestOrigin = new URL(req.url).origin;
-  const exportPath = `/taximetro/admin/relatorios/export?format=html&filters=${encodeURIComponent(encodedFilters)}`;
-  const cookie = req.headers.get("cookie") ?? "";
-
-  const tryFetch = async (origin: string) => {
-    return fetch(`${origin}${exportPath}`, {
-      method: "GET",
-      headers: { cookie, accept: "text/html" },
-      redirect: "manual",
-      cache: "no-store",
-    });
-  };
-
-  let response: Response;
-  try {
-    response = await tryFetch(internalOrigin);
-  } catch {
-    response = await tryFetch(requestOrigin);
-  }
-
-  if (!response.ok) {
-    throw new Error(`Falha ao renderizar export (${response.status} ${response.statusText})`);
-  }
-  const rawHtml = await response.text();
-  return inlineAssetsForEmail(rawHtml, internalOrigin);
-}
-
-// Transforma o HTML do Next em algo abrível offline:
-// 1. Inline cada <link rel="stylesheet"> (fetch loopback do CSS e embute em <style>)
-// 2. Remove <script> e preloads de script (sem servidor pra entregá-los)
-async function inlineAssetsForEmail(html: string, origin: string): Promise<string> {
-  const linkStylesheetRegex = /<link[^>]+rel=["']stylesheet["'][^>]*>/gi;
-  const hrefRegex = /href=["']([^"']+)["']/i;
-  const stylesheetTags = html.match(linkStylesheetRegex) ?? [];
-
-  const cssChunks: string[] = [];
-  for (const tag of stylesheetTags) {
-    const hrefMatch = tag.match(hrefRegex);
-    if (!hrefMatch) continue;
-    const href = hrefMatch[1];
-    const url = href.startsWith("http") ? href : `${origin}${href.startsWith("/") ? "" : "/"}${href}`;
-    try {
-      const cssResponse = await fetch(url, { cache: "no-store" });
-      if (cssResponse.ok) cssChunks.push(await cssResponse.text());
-    } catch {
-      // se falhar, segue sem esse stylesheet
-    }
-  }
-
-  let out = html
-    .replace(linkStylesheetRegex, "")
-    .replace(/<link[^>]+rel=["']preload["'][^>]+as=["']script["'][^>]*\/?>/gi, "")
-    .replace(/<link[^>]+rel=["']manifest["'][^>]*\/?>/gi, "")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<script\b[^>]*\/>/gi, "");
-
-  if (cssChunks.length > 0) {
-    const inlineStyle = `<style>${cssChunks.join("\n")}</style>`;
-    out = out.includes("</head>") ? out.replace("</head>", `${inlineStyle}</head>`) : `${inlineStyle}${out}`;
-  }
-  return out;
 }

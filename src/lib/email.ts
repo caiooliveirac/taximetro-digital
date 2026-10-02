@@ -309,6 +309,103 @@ export async function sendReportEmail(to: string, html: string, summary: ReportE
   }
 }
 
+export type CohortClosingReportEmail = {
+  facultyName: string;
+  facultyAbbr: string;
+  cohortName: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  leaderNames: string[];
+  internCount: number;
+  assignmentCount: number;
+};
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+}
+
+function formatBrDate(isoDate: string) {
+  const [year, month, day] = isoDate.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function slugForFile(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/** Ex.: Relatorio_UFBA_Jessica-Costa_2026-07-20_a_2026-08-30.html */
+export function cohortClosingReportFileName(report: Pick<CohortClosingReportEmail, "facultyAbbr" | "cohortName" | "startDate" | "endDate">) {
+  return `Relatorio_${slugForFile(report.facultyAbbr)}_${slugForFile(report.cohortName)}_${report.startDate}_a_${report.endDate}.html`;
+}
+
+export async function sendCohortClosingReportEmail(to: string, html: string, report: CohortClosingReportEmail) {
+  const transporter = await getVerifiedTransporter();
+  const config = getSmtpConfig();
+  const period = `${formatBrDate(report.startDate)} a ${formatBrDate(report.endDate)}`;
+  const leaders = report.leaderNames.length > 0 ? report.leaderNames.join(", ") : "sem líder cadastrado";
+  const subject = `Turma encerrada: ${report.facultyAbbr} · ${report.cohortName} (${period}) — líder: ${leaders}`;
+  const attachmentName = cohortClosingReportFileName(report);
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding: 4px 12px 4px 0; color: #64748b;">${label}</td><td style="padding: 4px 0;"><strong>${escapeHtml(value)}</strong></td></tr>`;
+
+  try {
+    await transporter.sendMail({
+      from: config.from,
+      to,
+      subject,
+      html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #0f172a;">
+        <div style="margin-bottom: 24px;">
+          <h1 style="font-size: 20px; color: #1E3A5F; margin: 0;">Turma encerrada — ${escapeHtml(report.cohortName)}</h1>
+          <p style="font-size: 13px; color: #64748b; margin: 4px 0 0;">Taxímetro Digital — ${ORG_NAME}</p>
+        </div>
+        <p style="font-size: 15px; color: #334155; margin: 0 0 16px;">A turma chegou ao fim e foi arquivada automaticamente. O relatório completo dela segue em anexo.</p>
+        <table style="border-collapse: collapse; font-size: 14px; color: #334155; margin-bottom: 20px;">
+          ${row("Faculdade", `${report.facultyName} (${report.facultyAbbr})`)}
+          ${row("Turma", report.cohortName)}
+          ${row(report.leaderNames.length > 1 ? "Líderes" : "Líder", leaders)}
+          ${row("Início", formatBrDate(report.startDate))}
+          ${row("Fim", formatBrDate(report.endDate))}
+          ${row("Internos", String(report.internCount))}
+          ${row("Plantões no período", String(report.assignmentCount))}
+        </table>
+        <div style="border: 1px solid #fed7aa; background: #fff7ed; border-radius: 8px; padding: 16px;">
+          <p style="margin: 0 0 8px; font-size: 14px; color: #9a3412;"><strong>Encaminhar à faculdade:</strong> ${escapeHtml(attachmentName)}</p>
+          <p style="margin: 0; font-size: 13px; color: #64748b;">Abra o anexo no navegador para ver o relatório com a formatação original; dá para imprimir ou salvar como PDF a partir dele.</p>
+        </div>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+        <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Este email foi gerado automaticamente pelo Taxímetro Digital.</p>
+      </div>
+    `,
+      attachments: [
+        {
+          filename: attachmentName,
+          content: html,
+          contentType: "text/html; charset=utf-8",
+        },
+      ],
+    });
+  } catch (error) {
+    const normalizedError = normalizeEmailError(error, {
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      requireTls: config.requireTls,
+      user: maskEmail(config.user),
+      to: maskEmail(to),
+      kind: "cohort-closing-report",
+    });
+    logEmailEvent("send", config, normalizedError);
+    throw normalizedError;
+  }
+
+  return { subject, attachmentName };
+}
+
 export async function sendPasswordResetEmail(to: string, name: string, token: string) {
   const transporter = await getVerifiedTransporter();
   const config = getSmtpConfig();

@@ -1,6 +1,7 @@
 import { db } from "@/shared/db/client";
 import { cohorts, faculties, userRoles, users } from "@/db/schema";
-import { eq, and, inArray, isNull, ne } from "drizzle-orm";
+import { eq, and, gte, inArray, isNull, ne } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 export async function listCohorts(filters?: {
   facultyId?: string;
@@ -209,6 +210,60 @@ export async function closeCohortAndArchiveInterns(params: {
     .returning({ id: userRoles.id });
 
   return archived.length;
+}
+
+/**
+ * Turmas fechadas desde `since` cujo relatório de encerramento ainda não foi
+ * enviado (closing_report_snapshot vazio). A janela evita disparar e-mail de
+ * turmas antigas, fechadas antes de o envio existir.
+ */
+export async function listCohortsPendingClosingReport(since: Date) {
+  return db
+    .select({
+      id: cohorts.id,
+      label: cohorts.label,
+      name: cohorts.name,
+      startDate: cohorts.startDate,
+      endDate: cohorts.endDate,
+      facultyId: cohorts.facultyId,
+      facultyName: faculties.name,
+      facultyAbbr: faculties.abbreviation,
+    })
+    .from(cohorts)
+    .innerJoin(faculties, eq(faculties.id, cohorts.facultyId))
+    .where(
+      and(
+        eq(cohorts.status, "CLOSED"),
+        gte(cohorts.closedAt, since),
+        isNull(cohorts.closingReportSnapshot),
+      ),
+    );
+}
+
+/** Líder da turma = interno dela que tem papel LEADER na mesma faculdade. */
+export async function listCohortLeaderNames(cohortId: string): Promise<string[]> {
+  const leaderRoles = alias(userRoles, "leader_roles");
+  const rows = await db
+    .selectDistinct({ name: users.name })
+    .from(userRoles)
+    .innerJoin(users, eq(users.id, userRoles.userId))
+    .innerJoin(
+      leaderRoles,
+      and(
+        eq(leaderRoles.userId, userRoles.userId),
+        eq(leaderRoles.role, "LEADER"),
+        eq(leaderRoles.facultyId, userRoles.facultyId),
+      ),
+    )
+    .where(and(eq(userRoles.cohortId, cohortId), eq(userRoles.role, "INTERN")));
+  return rows.map((row) => row.name).sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+export async function markClosingReportSent(cohortId: string, snapshot: Record<string, unknown>) {
+  await db
+    .update(cohorts)
+    .set({ closingReportSnapshot: snapshot, updatedAt: new Date() })
+    .where(eq(cohorts.id, cohortId));
 }
 
 export async function findUserByCpfOrEmail(cpf: string | null, email: string) {

@@ -114,3 +114,20 @@ export const DEFAULT_REPORT_FILTERS: ReportFilterInput = {
     showHeatmap: true,
   },
 };
+/** Relatório completo de uma turma, do início ao fim — o mesmo do atalho de turma em /admin/relatorios. */
+export function buildCohortReportFilters(cohort: {
+  id: string;
+  facultyId: string;
+  startDate: string;
+  endDate: string;
+}): ReportFilterInput {
+  return {
+    ...DEFAULT_REPORT_FILTERS,
+    from: cohort.startDate,
+    to: cohort.endDate,
+    facultyId: cohort.facultyId,
+    scopeMode: "COHORT",
+    cohortGrouping: "NAMED_COHORT",
+    selectedCohorts: [cohort.id],
+  };
+}

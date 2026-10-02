@@ -5,19 +5,11 @@ import { generateAdminReport } from "@/lib/admin-report-builder";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { reportFilterInputSchema, reportFormatSchema } from "@/lib/report-filters";
+import { decodeReportFilters } from "@/lib/report-export-html";
 
 export const dynamic = "force-dynamic";
 
 type SearchParamsShape = Promise<{ format?: string; filters?: string }>;
-
-function decodeFilters(encoded: string | undefined) {
-  if (!encoded) return null;
-  try {
-    return JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
-  } catch {
-    return null;
-  }
-}
 
 export default async function AdminRelatoriosExportPage({ searchParams }: { searchParams: SearchParamsShape }) {
   const session = await auth();
@@ -27,7 +19,7 @@ export default async function AdminRelatoriosExportPage({ searchParams }: { sear
 
   const resolved = await searchParams;
   const formatParsed = reportFormatSchema.safeParse(resolved.format ?? "html");
-  const filtersParsed = reportFilterInputSchema.safeParse(decodeFilters(resolved.filters));
+  const filtersParsed = reportFilterInputSchema.safeParse(decodeReportFilters(resolved.filters));
 
   if (!formatParsed.success || !filtersParsed.success || formatParsed.data === "json") {
     return <div className="p-8 text-sm text-rose-700">Parâmetros de exportação inválidos.</div>;
