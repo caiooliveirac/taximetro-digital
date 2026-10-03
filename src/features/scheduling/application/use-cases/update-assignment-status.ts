@@ -27,6 +27,14 @@ export function removalNote(role: string, today = new Date()): string {
   return `Removido da escala ${PAPEL_NA_NOTA[role] ?? "manualmente"} em ${quando}`;
 }
 
+/**
+ * Esta rota (PUT /api/assignments, líder e coordenador) só remove da escala.
+ * Presença (CHECKED_IN/CHECKED_OUT), falta e abono têm fluxo próprio, com
+ * validador e auditoria; aceitar qualquer status aqui deixava um líder marcar
+ * presença sem check-in. Em produção ela só recebeu CANCELLED (3152 de 3152).
+ */
+export const STATUS_ACEITOS_NESTA_ROTA: readonly string[] = ["CANCELLED"];
+
 export async function executeUpdateAssignmentStatus(params: {
   actor: AssignmentActor;
   input: {
@@ -39,6 +47,10 @@ export async function executeUpdateAssignmentStatus(params: {
 
   if (!input.id) {
     return { status: 400, body: { success: false, error: "ID obrigatório" } } as const;
+  }
+
+  if (!STATUS_ACEITOS_NESTA_ROTA.includes(input.status)) {
+    return { status: 400, body: { success: false, error: "Status não permitido nesta rota" } } as const;
   }
 
   if (actor.role === "LEADER") {
