@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, Unlock, User, Users, X, Zap } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, Unlock, User, UserX, Users, X, Zap } from "lucide-react";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { AttendanceQuickActions, attendanceQuickActionsAvailable } from "@/components/attendance-quick-actions";
 import { InternDrawer } from "@/components/admin/intern-drawer";
@@ -122,6 +122,35 @@ type PeriodFocusState = {
     date: string;
     period: "DAY" | "NIGHT";
 };
+
+/** Faltas de um turno (uma ou mais bases), para o ícone que abre quem faltou. */
+type AbsencesModalState = {
+    title: string;
+    date: string;
+    period: "DAY" | "NIGHT";
+    baseIds: string[];
+};
+
+/**
+ * Selo pequeno de falta no cabeçalho do turno. A falta sai do card (libera a
+ * vaga), mas não pode sumir: o selo avisa que houve e abre quem faltou. A área
+ * de toque é maior que o desenho (py/px + min-h) para o dedo no celular.
+ */
+function AbsencesBadge({ count, onOpen }: { count: number; onOpen: () => void }) {
+    if (count === 0) return null;
+    return (
+        <button
+            type="button"
+            onClick={onOpen}
+            className="inline-flex min-h-6 touch-manipulation items-center gap-0.5 rounded-full bg-red-600 px-1.5 py-1 text-[9px] font-bold leading-none text-white transition hover:bg-red-700"
+            title={`${count} falta(s) neste turno — ver quem faltou`}
+        >
+            <UserX className="h-3 w-3" strokeWidth={2.4} />
+            {count}
+            <span className="sr-only">falta(s) neste turno</span>
+        </button>
+    );
+}
 
 type ScheduleScope = "all" | "usa" | "regulation" | "cru" | "crl";
 type FacultyBadgeMode = "neutral" | "faculty";
@@ -783,6 +812,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const [internDrawer, setInternDrawer] = useState<{ id: string; name: string; facultyAbbr?: string } | null>(null);
     const [allocation, setAllocation] = useState<AllocationState | null>(null);
     const [focusedPeriod, setFocusedPeriod] = useState<PeriodFocusState | null>(null);
+    const [absencesModal, setAbsencesModal] = useState<AbsencesModalState | null>(null);
     const [allocFacultyId, setAllocFacultyId] = useState("");
     const [allocCandidateFacultyFilter, setAllocCandidateFacultyFilter] = useState<string>("ALL");
     const [allocInternId, setAllocInternId] = useState("");
@@ -1152,6 +1182,25 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
         }
         return map;
     }, [filteredAssignments]);
+
+    // Faltas por turno, fora da grade (ver filteredAssignments). Com o filtro de
+    // falta ligado os cards já estão na grade e o selo seria repetição.
+    const absencesByCell = useMemo(() => {
+        const map = new Map<string, AssignmentDetail[]>();
+        if (filterStatus === "ABSENT" || filterMissingCheckin) return map;
+        for (const assignment of assignments) {
+            if (assignment.status !== "ABSENT") continue;
+            if (filterBase && assignment.base_id !== filterBase) continue;
+            if (filterFaculty && assignment.faculty_id !== filterFaculty) continue;
+            const key = `${assignment.base_id}|${normalizeDateKey(assignment.date)}|${assignment.period}`;
+            map.set(key, [...(map.get(key) ?? []), assignment]);
+        }
+        return map;
+    }, [assignments, filterBase, filterFaculty, filterMissingCheckin, filterStatus]);
+
+    const absencesFor = useCallback((baseIds: string[], date: string, period: "DAY" | "NIGHT") => (
+        baseIds.flatMap((baseId) => absencesByCell.get(`${baseId}|${normalizeDateKey(date)}|${period}`) ?? [])
+    ), [absencesByCell]);
 
     /**
      * Com filtro estrito, dia sem nenhum plantão que case some da grade: filtrar
@@ -1719,6 +1768,10 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                 <div className={`mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${metaClass}`}>
                                     <span className="min-w-0 truncate">{formatPeriod(period)}</span>
                                     <span className="flex shrink-0 items-center gap-1">
+                                        <AbsencesBadge
+                                            count={absencesFor([base.id], date, period).length}
+                                            onOpen={() => setAbsencesModal({ title: `${base.code} - ${base.name}`, date, period, baseIds: [base.id] })}
+                                        />
                                         {blockedCount > 0 && (
                                             <span
                                                 className="inline-flex items-center gap-0.5 rounded-full bg-slate-700 px-1 py-0.5 text-[8px] font-bold leading-none text-white"
@@ -1921,6 +1974,12 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         <div className={`mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${tone.meta}`}>
                             {period === "DAY" ? <Sun className="h-3.5 w-3.5" strokeWidth={1.8} /> : <Moon className="h-3.5 w-3.5" strokeWidth={1.8} />}
                             <span>{formatPeriod(period)}</span>
+                            <span className="ml-auto">
+                                <AbsencesBadge
+                                    count={absencesFor(rows.map((base) => base.id), date, period).length}
+                                    onOpen={() => setAbsencesModal({ title, date, period, baseIds: rows.map((base) => base.id) })}
+                                />
+                            </span>
                         </div>
 
                         <div className="space-y-3">
@@ -2581,6 +2640,39 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                             >
                                 {publishExtraLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />} Publicar Extra
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {absencesModal && (
+                <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={() => setAbsencesModal(null)}>
+                    <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl" onClick={(event) => event.stopPropagation()}>
+                        <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+                            <div>
+                                <p className="text-sm font-medium text-red-600">Faltas do turno</p>
+                                <h3 className="text-lg font-semibold text-slate-900">{absencesModal.title}</h3>
+                                <p className="text-sm text-slate-500">{formatDayMonth(absencesModal.date)} · {formatPeriod(absencesModal.period)}</p>
+                            </div>
+                            <button type="button" onClick={() => setAbsencesModal(null)} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
+                        </div>
+                        <div className="space-y-2 px-5 py-4">
+                            {absencesFor(absencesModal.baseIds, absencesModal.date, absencesModal.period).length === 0 ? (
+                                <p className="py-6 text-center text-sm text-slate-500">Nenhuma falta neste turno.</p>
+                            ) : absencesFor(absencesModal.baseIds, absencesModal.date, absencesModal.period).map((assignment) => (
+                                <AssignmentSlotCard
+                                    key={assignment.id}
+                                    assignment={assignment}
+                                    period={absencesModal.period}
+                                    onSelect={(assignmentId) => {
+                                        setAbsencesModal(null);
+                                        setSelectedAssignmentId(assignmentId);
+                                    }}
+                                    onUpdated={loadAssignments}
+                                    facultyBadgeMode="faculty"
+                                    showBaseCode
+                                />
+                            ))}
                         </div>
                     </div>
                 </div>
