@@ -1077,6 +1077,11 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
     const filteredAssignments = useMemo(() => {
         const internQuery = searchIntern.trim().toLowerCase();
         return assignments.filter((assignment) => {
+            // Falta sai do plantão e vai para a aba Faltas: o card dela não
+            // ocupa a vaga na grade, que volta a aparecer livre para alocar
+            // outro interno (o servidor já não conta ABSENT na lotação). Só
+            // volta à grade quando o filtro pede falta, para dar para desfazer.
+            if (assignment.status === "ABSENT" && filterStatus !== "ABSENT" && !filterMissingCheckin) return false;
             if (filterBase && assignment.base_id !== filterBase) return false;
             if (filterFaculty && assignment.faculty_id !== filterFaculty) return false;
             if (filterPeriod && assignment.period !== filterPeriod) return false;
