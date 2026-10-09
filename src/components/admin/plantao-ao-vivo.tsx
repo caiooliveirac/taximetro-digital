@@ -8,6 +8,7 @@ import {
   Loader2,
   Power,
   PowerOff,
+  Home,
   Radio,
   RefreshCw,
   Stethoscope,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getFacultyStyle } from "@/lib/base-colors";
+import { internosEmBaseDesativada } from "@/lib/volta-para-casa";
 
 /**
  * Plantão ao vivo: o turno em andamento, base por base, do jeito que o interno
@@ -318,6 +320,17 @@ export function PlantaoAoVivo() {
 
   // --- render ---------------------------------------------------------------
 
+  const voltaParaCasa = turno
+    ? internosEmBaseDesativada(
+        turno.bases.map((b) => ({
+          code: b.code,
+          name: b.name,
+          desativada: b.desativada,
+          ocupantes: b.celulas.flatMap((c) => (c.tipo === "ocupada" ? [{ interno: c.ocupante.interno, faculdade: c.ocupante.faculdade, status: c.ocupante.status }] : [])),
+        })),
+      )
+    : [];
+
   const resumo = turno
     ? {
         avisos: turno.bases.filter((b) => b.aviso).length,
@@ -557,6 +570,43 @@ export function PlantaoAoVivo() {
               );
             })}
           </ul>
+        </section>
+      )}
+
+      {turno && voltaParaCasa.length > 0 && (
+        <section className="overflow-hidden rounded-2xl border-2 border-red-700 bg-white shadow-sm">
+          <div className="flex items-center gap-3 bg-red-700 px-4 py-3 text-white">
+            <Home className="h-6 w-6 shrink-0" strokeWidth={2} />
+            <div>
+              <h2 className="text-lg font-bold uppercase tracking-wide">Voltam para casa</h2>
+              <p className="text-xs text-red-100">
+                {formatarData(turno.date)} · turno {turno.period === "DAY" ? "diurno" : "noturno"} · base desativada, sem remanejamento
+              </p>
+            </div>
+          </div>
+          <div className="divide-y divide-red-100">
+            {voltaParaCasa.map((g) => (
+              <div key={g.baseCode} className="p-4">
+                <p className="flex flex-wrap items-baseline gap-x-2 text-sm font-bold text-red-800">
+                  {g.baseCode} <span className="font-medium text-slate-600">{g.baseName}</span>
+                </p>
+                {(g.desde || g.motivo) && (
+                  <p className="text-xs text-slate-500">{[g.desde ? `desde ${g.desde.slice(11, 16) || g.desde}` : null, g.motivo].filter(Boolean).join(" · ")}</p>
+                )}
+                <ul className="mt-2 space-y-1.5">
+                  {g.internos.map((i) => {
+                    const fs = getFacultyStyle(i.faculdade ?? "");
+                    return (
+                      <li key={i.interno} className="flex items-center justify-between gap-3">
+                        <span className="min-w-0 truncate text-sm font-medium text-slate-900">{i.interno}</span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${fs.pill}`}>{i.faculdade}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

@@ -51,6 +51,13 @@ append_absence_sweep_cron() {
   echo "[entrypoint] varredura de faltas habilitada em ${schedule} (${TZ})"
 }
 
+append_volta_para_casa_cron() {
+  schedule="${VOLTA_PARA_CASA_CRON:-0 9 * * *}"
+
+  printf "%s\n" "${schedule} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-telegram-volta-para-casa.mjs' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  echo "[entrypoint] aviso de volta para casa habilitado em ${schedule} (${TZ})"
+}
+
 start_cron_daemon() {
   crond -l 2 -L /dev/stdout
 }
@@ -85,6 +92,14 @@ elif [ -z "${AUTH_SECRET:-}" ]; then
   echo "[entrypoint] varredura de faltas desabilitada por configuração incompleta (AUTH_SECRET)"
 else
   append_absence_sweep_cron
+fi
+
+if [ "${VOLTA_PARA_CASA_ENABLED:-true}" = "false" ]; then
+  echo "[entrypoint] aviso de volta para casa desabilitado por VOLTA_PARA_CASA_ENABLED=false"
+elif [ -z "${TELEGRAM_BOT_TOKEN_NEXT:-${TELEGRAM_BOT_TOKEN:-}}" ] || [ -z "${TELEGRAM_GROUP_ID:-}" ] || [ -z "${AUTH_SECRET:-}" ]; then
+  echo "[entrypoint] aviso de volta para casa desabilitado por configuração incompleta"
+else
+  append_volta_para_casa_cron
 fi
 
 start_cron_daemon
