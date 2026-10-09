@@ -591,7 +591,7 @@ export function PlantaoAoVivo() {
                   {g.baseCode} <span className="font-medium text-slate-600">{g.baseName}</span>
                 </p>
                 {(g.desde || g.motivo) && (
-                  <p className="text-xs text-slate-500">{[g.desde ? `desde ${g.desde.slice(11, 16) || g.desde}` : null, g.motivo].filter(Boolean).join(" · ")}</p>
+                  <p className="text-xs text-slate-500">{[g.desde ? `desde ${g.desde}` : null, g.motivo].filter(Boolean).join(" · ")}</p>
                 )}
                 <ul className="mt-2 space-y-1.5">
                   {g.internos.map((i) => {
