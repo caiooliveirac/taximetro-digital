@@ -3,7 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { assignments, bases } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { isWithinGeofence } from "@/lib/geo";
+import { checkAssignmentGeofence } from "@/lib/geo-bases";
 import { z } from "zod/v4";
 
 const schema = z.object({
@@ -52,12 +52,12 @@ export async function POST(req: NextRequest) {
     const [base] = await db.select().from(bases).where(eq(bases.id, assignment.baseId)).limit(1);
     if (!base) return NextResponse.json({ success: false, error: "Base não encontrada" }, { status: 404 });
 
-    const geo = isWithinGeofence(latitude, longitude, base.latitude, base.longitude, base.geoFenceMeters);
+    const geo = await checkAssignmentGeofence(latitude, longitude, base);
 
     return NextResponse.json({
         success: true,
         withinFence: geo.valid,
         distanceMeters: geo.distance,
-        geoFenceMeters: base.geoFenceMeters,
+        geoFenceMeters: geo.geoFenceMeters,
     });
 }

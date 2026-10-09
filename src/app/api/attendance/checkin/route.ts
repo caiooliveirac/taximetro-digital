@@ -4,7 +4,7 @@ import type { JWT } from "next-auth/jwt";
 import { db } from "@/db";
 import { assignments, bases, checkins, qrSessions, users } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
-import { isWithinGeofence } from "@/lib/geo";
+import { checkAssignmentGeofence } from "@/lib/geo-bases";
 import { GEO_VALIDATOR_NAME } from "@/lib/utils";
 import { generateTotpSecret, getCurrentCode } from "@/lib/totp";
 import { logAudit } from "@/lib/audit";
@@ -83,9 +83,9 @@ export async function POST(req: NextRequest) {
 
   // Geofence check — skip when impersonating or no GPS
   const hasGps = latitude !== 0 || longitude !== 0;
-  let geo = { valid: true, distance: 0 };
+  let geo: { valid: boolean; distance: number; matchedBaseCode?: string } = { valid: true, distance: 0 };
   if (!impersonating && hasGps) {
-    geo = isWithinGeofence(latitude, longitude, base.latitude, base.longitude, base.geoFenceMeters);
+    geo = await checkAssignmentGeofence(latitude, longitude, base);
   }
 
   // Dentro da cerca (recalculada no servidor, nunca confiando no cliente):
@@ -175,7 +175,7 @@ export async function POST(req: NextRequest) {
       entity: "checkin",
       entityId: checkinId,
       realUserId: impersonating ? (token.id as string) : undefined,
-      payload: { distance: hasGps ? geo.distance : null, geoValid: hasGps ? geo.valid : false, hasGps, reused: !!existingCheckin },
+      payload: { distance: hasGps ? geo.distance : null, matchedBase: hasGps ? geo.matchedBaseCode : null, geoValid: hasGps ? geo.valid : false, hasGps, reused: !!existingCheckin },
     }),
   );
 
