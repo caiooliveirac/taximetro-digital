@@ -141,7 +141,7 @@ export async function basesDoTurno(date: string, period: Periodo): Promise<{ bas
         and(
           eq(assignments.date, date),
           eq(assignments.period, period),
-          eq(assignments.isExtraShift, false),
+          // Interno extra também ocupa lugar na base: fora daqui sobrava vaga livre para remanejamento.
           notInArray(assignments.status, ["CANCELLED", "ABSENT"]),
         ),
       )
