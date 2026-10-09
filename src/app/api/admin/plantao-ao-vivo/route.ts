@@ -43,6 +43,7 @@ import {
   MARCA_REPOR,
   notaDeReposicao,
   semNotaDeReposicao,
+  textoParaInternoDevolvido,
   textoParaInternoRemanejado,
   textoParaInternoRepor,
   textoParaInternoReposicaoDesfeita,
@@ -142,6 +143,7 @@ const motivo = z.string().trim().max(300).optional();
 
 const acaoSchema = z.discriminatedUnion("acao", [
   z.object({ acao: z.literal("mover"), assignmentId: uuid, newBaseId: uuid, motivo }),
+  z.object({ acao: z.literal("devolver"), assignmentId: uuid }),
   z.object({ acao: z.literal("cancelarAviso"), baseId: uuid }),
   z.object({ acao: z.literal("pararBase"), baseId: uuid, motivo }),
   z.object({ acao: z.literal("reabrirBase"), baseId: uuid }),
@@ -222,6 +224,38 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
         textoParaInternoRemanejado({ de: plantao.baseCode, para: destino.code, nomeDaBase: destino.name, motivo }),
       );
       return { interno: plantao.interno, de: plantao.baseCode, para: destino.code, entregue };
+    }
+
+    case "devolver": {
+      // Desfaz o último remanejamento: volta para a base de onde saiu, mesmo
+      // desativada ou parada (a coordenação decide; o interno não escolheu ficar
+      // onde estava). Não passa pelas travas do "mover".
+      const plantao = await plantaoDoTurno(pedido.assignmentId);
+      if ("error" in plantao) return plantao;
+      const [ultimo] = await db
+        .select({ previousBaseId: sql<string | null>`${auditLog.payload}->>'previousBaseId'` })
+        .from(auditLog)
+        .where(and(eq(auditLog.action, "REASSIGN_ASSIGNMENT_BASE"), eq(auditLog.entityId, plantao.id)))
+        .orderBy(desc(auditLog.createdAt))
+        .limit(1);
+      if (!ultimo?.previousBaseId) return falha(409, "Este interno não foi remanejado: não há base de origem para devolver.");
+      const origem = await baseDoTurno(ultimo.previousBaseId, turno);
+      if (!origem) return falha(404, "Base de origem inválida");
+      const resultado = await executeReassignAssignmentBase({
+        actor: actorDe(user),
+        input: {
+          assignmentId: plantao.id,
+          newBaseId: origem.id,
+          reason: `Plantão ao vivo: devolvido à base da escala (${plantao.baseCode} não tinha lugar)`,
+          authorized: true,
+        },
+      });
+      if (resultado.status !== 200) return falha(resultado.status, resultado.body.error ?? "Não foi possível devolver.");
+      const entregue = await avisarInternoNoTelegram(
+        plantao.internId,
+        textoParaInternoDevolvido({ de: plantao.baseCode, para: origem.code, nomeDaBase: origem.name }),
+      );
+      return { interno: plantao.interno, de: plantao.baseCode, para: origem.code, entregue };
     }
 
     case "cancelarAviso": {

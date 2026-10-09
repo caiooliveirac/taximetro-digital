@@ -25,3 +25,26 @@ test("mensagem escapa HTML e traz base, faculdade e total", () => {
   assert.match(msg, /1 interno\(s\)/);
   assert.match(msg, /A &lt;b&gt; \(UFBA\)/);
 });
+
+import { celulaOcupavel, celulasDaBase } from "../src/lib/remanejamento-interno";
+
+test("extra sem check-in segura o lugar físico e não vira vaga depois da tolerância", () => {
+  // Grade de 1 (Débora, presente), limite físico 2, Karol extra sem check-in.
+  const celulas = celulasDaBase(
+    1,
+    [
+      { faculdade: "UNIFACS", status: "CHECKED_IN" },
+      { faculdade: "ZARNS", status: "SCHEDULED", extra: true },
+    ],
+    { reivindicarSemCheckin: true, extra: { limite: 2, podeUsar: true, reservadaPara: null } },
+  );
+  assert.equal(celulas.some(celulaOcupavel), false);
+});
+
+test("sem o extra, o segundo lugar físico continua ocupável", () => {
+  const celulas = celulasDaBase(1, [{ faculdade: "UNIFACS", status: "CHECKED_IN" }], {
+    reivindicarSemCheckin: true,
+    extra: { limite: 2, podeUsar: true, reservadaPara: null },
+  });
+  assert.equal(celulas.some(celulaOcupavel), true);
+});

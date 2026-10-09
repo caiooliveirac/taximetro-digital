@@ -78,6 +78,8 @@ export async function estadoDasBasesNoTurno(date: string, period: Periodo): Prom
 }
 
 export type OcupanteDoTurno = Ocupante & {
+  /** Base de onde saiu no último remanejamento, para a coordenação poder devolver. */
+  origem: string | null;
   assignmentId: string;
   internId: string;
   interno: string;
@@ -133,6 +135,8 @@ export async function basesDoTurno(date: string, period: Periodo): Promise<{ bas
         status: assignments.status,
         // O caso de uso de remanejamento anota [REMANEJADO]; quem chegou assim já conta como presente.
         remanejado: sql<boolean>`COALESCE(${assignments.notes}, '') LIKE '%[REMANEJADO]%'`,
+        extra: assignments.isExtraShift,
+        notes: assignments.notes,
       })
       .from(assignments)
       .innerJoin(faculties, eq(faculties.id, assignments.facultyId))
@@ -162,7 +166,12 @@ export async function basesDoTurno(date: string, period: Periodo): Promise<{ bas
   }
   const capacidadePorBase = new Map(capacidade.map((c) => [c.baseId, Number(c.capacity)]));
   const ocupantesPorBase = new Map<string, OcupanteDoTurno[]>();
-  for (const { baseId, ...o } of ocupantes) ocupantesPorBase.set(baseId, [...(ocupantesPorBase.get(baseId) ?? []), o]);
+  for (const { baseId, notes, ...o } of ocupantes) {
+    // Última movimentação; se ela já foi uma devolução, não há mais para onde devolver.
+    const ultima = [...(notes ?? "").matchAll(/\[REMANEJADO\] (\S+) ->[^\n]*/g)].at(-1);
+    const origem = ultima && !ultima[0].includes("devolvido à base da escala") ? ultima[1] : null;
+    ocupantesPorBase.set(baseId, [...(ocupantesPorBase.get(baseId) ?? []), { ...o, origem }]);
+  }
 
   const plantoes = await estadoDasBasesNoPlantoes(usas.map((b) => b.code));
 

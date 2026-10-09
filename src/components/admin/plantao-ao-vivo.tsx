@@ -46,6 +46,7 @@ type Ocupante = {
   facultyName: string | null;
   status: string;
   remanejado: boolean;
+  origem: string | null;
 };
 
 type Celula =
@@ -84,6 +85,7 @@ type Turno = {
 
 type Acao =
   | { acao: "mover"; assignmentId: string; newBaseId: string; motivo?: string }
+  | { acao: "devolver"; assignmentId: string }
   | { acao: "cancelarAviso"; baseId: string }
   | { acao: "pararBase"; baseId: string; motivo?: string }
   | { acao: "reabrirBase"; baseId: string }
@@ -225,6 +227,15 @@ export function PlantaoAoVivo() {
       (d) => `${d.interno} agora está na ${d.para}.${avisoDeEntrega(d)}`,
     );
     if (ok) setMovendo(null);
+  }
+
+  async function devolver(ocupante: Ocupante, base: Base) {
+    if (!window.confirm(`Devolver ${ocupante.interno} (${ocupante.faculdade}) da ${base.code} para a ${ocupante.origem}, de onde ele saiu?\n\nVale mesmo que a ${ocupante.origem} esteja desativada ou parada.`)) return;
+    const ok = await executar(
+      { acao: "devolver", assignmentId: ocupante.assignmentId },
+      (d) => `${d.interno} voltou para a ${d.para}.${avisoDeEntrega(d)}`,
+    );
+    if (ok) setFolha(null);
   }
 
   async function repor(ocupante: Ocupante, base: Base) {
@@ -651,6 +662,16 @@ export function PlantaoAoVivo() {
               >
                 <ArrowRightLeft className="h-4 w-4" /> Mover para outra base
               </Button>
+              {folha.ocupante.origem && folha.ocupante.remanejado && (
+                <Button
+                  className="w-full justify-start"
+                  variant="outline"
+                  disabled={ocupado || folha.ocupante.status === "CHECKED_OUT"}
+                  onClick={() => devolver(folha.ocupante, folha.base)}
+                >
+                  <Undo2 className="h-4 w-4" /> Devolver à {folha.ocupante.origem}
+                </Button>
+              )}
               <Button
                 className="w-full justify-start"
                 variant="outline"

@@ -143,6 +143,10 @@ export function textoParaInternoRemanejado(p: { de: string; para: string; nomeDa
   return `📍 A coordenação te remanejou da ${p.de} para a ${p.para} — ${p.nomeDaBase}${motivo}. Se ainda não fez check-in, faça lá.`;
 }
 
+export function textoParaInternoDevolvido(p: { de: string; para: string; nomeDaBase: string }): string {
+  return `📍 A coordenação te devolveu da ${p.de} para a ${p.para} — ${p.nomeDaBase}, a base da sua escala. Esse lugar na ${p.de} não estava livre. Se ainda não fez check-in, faça lá.`;
+}
+
 export function textoParaInternoRepor(p: { baseCode: string; motivo: string | null }): string {
   const motivo = p.motivo ? ` (${p.motivo})` : "";
   return `🗓️ Seu plantão de hoje na ${p.baseCode} foi liberado pela coordenação: a base parou${motivo} e não há vaga em outra. Não conta como falta. Reponha em outro dia — as vagas abertas aparecem no app.`;
