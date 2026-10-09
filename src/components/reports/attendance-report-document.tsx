@@ -35,7 +35,8 @@ function periodDetailedLabel(period: string, shift: string | null | undefined) {
   return "Dia";
 }
 
-function assignmentStatusBadge(assignment: ReportAssignmentCard, group: "done" | "scheduled" | "absent") {
+function assignmentStatusBadge(assignment: ReportAssignmentCard, group: "done" | "scheduled" | "absent" | "casa") {
+  if (group === "casa") return { label: "🏠 Em casa — reposição pendente", className: "bg-orange-100 text-orange-800" };
   if (group === "done") {
     if (assignment.status === "EXCUSED") {
       return {
@@ -66,7 +67,7 @@ function AssignmentCard({
   compactCompleted,
 }: {
   assignment: ReportAssignmentCard;
-  group: "done" | "scheduled" | "absent";
+  group: "done" | "scheduled" | "absent" | "casa";
   compactCompleted: boolean;
 }) {
   const badge = assignmentStatusBadge(assignment, group);
@@ -357,6 +358,20 @@ function AssignmentDetailModal({
                   </div>
                 </div>
 
+                {assignment.status === "CANCELLED" && assignment.notes?.includes("[REPOR]") ? (
+                  <div className="rounded-xl border-2 border-orange-300 bg-orange-50 p-4 text-sm text-orange-900">
+                    <p className="font-semibold">🏠 Em casa — reposição pendente</p>
+                    <p className="mt-1">
+                      A base {assignment.base_code} foi desativada no plantões e o interno não pôde ser remanejado. A coordenação confirmou e mandou para casa.
+                    </p>
+                    <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
+                      <li>Não é falta e não é falta abonada.</li>
+                      <li>Não conta como plantão cumprido nem entra na taxa de ausência.</li>
+                      <li>O plantão precisa ser reposto em outro dia, alocado pelo líder da faculdade.</li>
+                    </ul>
+                  </div>
+                ) : null}
+
                 <div className="rounded-xl border border-slate-200 bg-white p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Notas do plantão</p>
                   <p className="mt-2 text-sm text-slate-700">{assignment.notes || "Sem observações operacionais."}</p>
@@ -395,6 +410,7 @@ const HEATMAP_COLORS: Record<ReportHeatmapCellState, string> = {
   scheduled: "#cbd5e1",       // slate-300 — agendado futuro
   absentConfirmed: "#dc2626", // red-600 — falta lançada
   excused: "#d946ef",         // fuchsia-500 — falta abonada
+  emCasa: "repeating-linear-gradient(45deg, #ea580c 0 3px, #fff 3px 6px)", // listrado laranja — mandado para casa (o laranja liso já é "sem check-in")
   noCheckin: "#fb923c",       // orange-400 — sem check-in
   extra: "#8b5cf6",           // violet-500 — plantão extra
 };
@@ -406,6 +422,7 @@ const HEATMAP_LEGEND: Array<{ state: ReportHeatmapCellState; label: string }> = 
   { state: "scheduled", label: "Agendado" },
   { state: "absentConfirmed", label: "Falta lançada" },
   { state: "excused", label: "Falta abonada" },
+  { state: "emCasa", label: "Em casa (reposição pendente)" },
   { state: "noCheckin", label: "Sem check-in" },
   { state: "extra", label: "Plantão extra" },
 ];
@@ -425,6 +442,7 @@ const STATE_LABELS: Record<ReportHeatmapCellState, string> = {
   scheduled: "agendado",
   absentConfirmed: "falta lançada",
   excused: "falta abonada",
+  emCasa: "em casa — base desativada, reposição pendente",
   noCheckin: "sem check-in",
   extra: "plantão extra",
 };
@@ -435,6 +453,7 @@ export function Heatmap({ document, assignmentDetailPath = "/taximetro/api/admin
     for (const intern of document.interns) {
       const grouped = [
         ...intern.absences,
+        ...intern.emCasa,
         ...intern.typeSections.flatMap((section) => [...section.done, ...section.scheduled]),
       ];
       for (const assignment of grouped) {
@@ -727,6 +746,15 @@ function InternCard({ document, intern }: { document: ReportDocument; intern: Re
             {intern.absences.length > 0 ? intern.absences.map((assignment) => (
               <AssignmentCard key={assignment.assignmentId} assignment={assignment} group="absent" compactCompleted={false} />
             )) : <div className="text-sm text-slate-400">Sem ausências no período.</div>}
+          </SectionBlock>
+        ) : null}
+
+        {intern.emCasa.length > 0 ? (
+          <SectionBlock title="Em casa — reposição pendente" icon="🏠" count={intern.emCasa.length} toneClass="bg-orange-50 text-orange-800">
+            <p className="mb-2 text-xs text-slate-500">Base desativada, sem remanejamento. Não é falta nem abono; o plantão precisa ser reposto.</p>
+            {intern.emCasa.map((assignment) => (
+              <AssignmentCard key={assignment.assignmentId} assignment={assignment} group="casa" compactCompleted={false} />
+            ))}
           </SectionBlock>
         ) : null}
 

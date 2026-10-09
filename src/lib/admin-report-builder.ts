@@ -58,6 +58,8 @@ type AssignmentRow = {
   absenceJustification: string | null;
   isExtraShift: boolean;
   doctorName: string | null;
+  /** Cancelado e mandado para casa (base desativada, sem remanejamento): reposição pendente. */
+  emCasa: boolean;
 };
 
 type RequestRow = {
@@ -93,6 +95,7 @@ export type ReportAssignmentCard = {
   absenceJustification: string | null;
   isExtraShift: boolean;
   doctorName: string | null;
+  emCasa?: boolean;
 };
 
 export type ReportTypeSection = {
@@ -135,6 +138,8 @@ export type ReportInternDocument = {
   statusSummaryChips: string[];
   typeSections: ReportTypeSection[];
   absences: ReportAssignmentCard[];
+  /** Mandados para casa: não são falta nem abono, e ficam fora da meta até a reposição. */
+  emCasa: ReportAssignmentCard[];
   progress: {
     targetHours: number;
     completedHours: number;
@@ -177,6 +182,7 @@ export type ReportHeatmapCellState =
   | "scheduled"
   | "absentConfirmed"
   | "excused"
+  | "emCasa"
   | "noCheckin"
   | "extra";
 
@@ -287,10 +293,11 @@ export function classifyReportAssignment(
 }
 
 export function classifyHeatmapCell(
-  assignment: { status: string; date: string; period: string; isExtraShift: boolean; baseType: string | null },
+  assignment: { status: string; date: string; period: string; isExtraShift: boolean; baseType: string | null; emCasa?: boolean },
   todayStr: string,
   hourNow: number
 ): ReportHeatmapCellState {
+  if (assignment.emCasa) return "emCasa";
   if (assignment.isExtraShift) return "extra";
   if (assignment.status === "CHECKED_IN" || assignment.status === "CHECKED_OUT") {
     return assignment.baseType === "CRL" ? "doneCrl" : assignment.baseType === "USA" ? "doneUsa" : "doneCru";
@@ -718,6 +725,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       checkoutAt: checkins.checkoutAt,
       absenceJustification: assignments.absenceJustification,
       isExtraShift: assignments.isExtraShift,
+      emCasa: sql<boolean>`(${assignments.status} = 'CANCELLED' AND COALESCE(${assignments.notes}, '') LIKE '%[REPOR]%')`,
       doctorName: sql<string | null>`coalesce(${checkoutUsers.name}, ${checkins.checkoutConfirmedByName}, ${users.name}, nullif(${checkins.validatedByName}, ${GEO_VALIDATOR_NAME}))`,
     })
     .from(assignments)
@@ -730,7 +738,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
         inArray(assignments.internId, scopedInternIds),
         gte(assignments.date, filters.from),
         lte(assignments.date, filters.to),
-        ne(assignments.status, "CANCELLED")
+        sql`(${assignments.status} <> 'CANCELLED' OR COALESCE(${assignments.notes}, '') LIKE '%[REPOR]%')`
       )
     )
     .orderBy(assignments.date, assignments.period, bases.code);
@@ -750,6 +758,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     absenceJustification: row.absenceJustification,
     isExtraShift: row.isExtraShift,
     doctorName: row.doctorName,
+    emCasa: row.emCasa,
   }));
 
   const requestRowsRaw = await db
@@ -847,6 +856,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       absenceJustification: assignment.absenceJustification,
       isExtraShift: assignment.isExtraShift,
       doctorName: assignment.doctorName,
+      emCasa: assignment.emCasa,
     } satisfies ReportAssignmentCard));
 
     const typeSections: Record<ReportTypeKey, ReportTypeSection> = {
@@ -855,8 +865,13 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       USA: { ...TYPE_CONFIG.USA, done: [], scheduled: [] },
     };
     const absences: ReportAssignmentCard[] = [];
+    const emCasa: ReportAssignmentCard[] = [];
 
     for (const assignment of internAssignments) {
+      if (assignment.emCasa) {
+        emCasa.push(assignment);
+        continue;
+      }
       const group = classifyReportAssignment(assignment, todayStr, hourNow);
       if (group === "absent") {
         absences.push(assignment);
@@ -938,6 +953,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
       statusSummaryChips,
       typeSections: Object.values(typeSections),
       absences,
+      emCasa,
       progress: {
         targetHours: intern.targetHours,
         completedHours,
@@ -1018,6 +1034,7 @@ export async function generateAdminReport(filters: ReportFilterInput): Promise<{
     const byDate = new Map<string, ReportHeatmapCellState[]>();
     const allCards: ReportAssignmentCard[] = [
       ...intern.absences,
+      ...intern.emCasa,
       ...intern.typeSections.flatMap((section) => [...section.done, ...section.scheduled]),
     ];
     for (const card of allCards) {

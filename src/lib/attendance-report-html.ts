@@ -100,6 +100,7 @@ function buildLegacyDocument(faculty: DailyAttendanceByFaculty): ReportDocument 
         ].filter(Boolean),
         typeSections: Object.values(typeSections),
         absences,
+        emCasa: [],
         progress: {
           targetHours: 0,
           completedHours,
