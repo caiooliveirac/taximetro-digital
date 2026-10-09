@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronUp, Info, AlertCircle, ClipboardList, Clock, CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, Info, AlertCircle, ClipboardList, Clock, CheckCircle2, Home } from "lucide-react";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { AbsenceQuickModal } from "@/components/admin/absence-quick-modal";
@@ -43,10 +43,10 @@ export type CockpitData = {
 };
 
 type AlarmCardProps = {
-  id: "noCheckin" | "unreplacedAbsence";
+  id: "noCheckin" | "unreplacedAbsence" | "emCasa";
   title: string;
   items: AlarmItem[];
-  severity: "danger" | "warning" | "info";
+  severity: "danger" | "warning" | "info" | "casa";
   Icon: typeof AlertCircle;
   caveat?: string;
   expanded: boolean;
@@ -57,7 +57,7 @@ type AlarmCardProps = {
   groupByFaculty?: boolean;
 };
 
-const SEVERITY_STYLES: Record<"danger" | "warning" | "info", { ring: string; bg: string; iconBg: string; iconColor: string; numColor: string; chev: string }> = {
+const SEVERITY_STYLES: Record<"danger" | "warning" | "info" | "casa", { ring: string; bg: string; iconBg: string; iconColor: string; numColor: string; chev: string }> = {
   danger: {
     ring: "ring-red-200 hover:ring-red-300",
     bg: "bg-red-50/40",
@@ -73,6 +73,15 @@ const SEVERITY_STYLES: Record<"danger" | "warning" | "info", { ring: string; bg:
     iconColor: "text-amber-600",
     numColor: "text-amber-700",
     chev: "text-amber-400",
+  },
+  // Mandado para casa: laranja, nem falta (vermelho) nem abono (violeta).
+  casa: {
+    ring: "ring-orange-300 hover:ring-orange-400",
+    bg: "bg-orange-50/50",
+    iconBg: "bg-orange-100",
+    iconColor: "text-orange-600",
+    numColor: "text-orange-700",
+    chev: "text-orange-400",
   },
   // Informativo (não acionável por si só). Uso: meta semanal sob a ótica de
   // ritmo, em complemento ao alarme principal de saldo da rotação.
@@ -441,6 +450,29 @@ export function CockpitAlarms({
   const [allExpanded, setAllExpanded] = useState(false);
   const [modalIntern, setModalIntern] = useState<AlarmItem | null>(null);
   const [modalAbsence, setModalAbsence] = useState<AbsenceAlertItem | null>(null);
+  const [emCasa, setEmCasa] = useState<AlarmItem[]>([]);
+
+  // Mandados para casa com reposição pendente (ver /api/em-casa).
+  useEffect(() => {
+    let vivo = true;
+    fetch("/taximetro/api/em-casa", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!vivo || !j.success) return;
+        setEmCasa(
+          (j.data as Array<{ id: string; internId: string; interno: string; faculdade: string; date: string; baseCode: string }>).map((i) => ({
+            internId: i.internId,
+            internName: i.interno,
+            facultyAbbr: i.faculdade,
+            detail: `${i.date.slice(8, 10)}/${i.date.slice(5, 7)} · ${i.baseCode}`,
+          })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   function applyFilter<T extends { facultyAbbr: string }>(items: T[]): T[] {
     return facultyFilter ? items.filter((it) => it.facultyAbbr === facultyFilter) : items;
@@ -449,11 +481,12 @@ export function CockpitAlarms({
   const noCheckinFiltered = applyFilter(data.noCheckin.items);
   const unreplacedFiltered = applyFilter(data.unreplacedAbsence.items);
   const absenceAlertsFiltered = applyFilter(data.absenceAlerts.items);
+  const emCasaFiltered = applyFilter(emCasa);
   const unjustifiedCount = absenceAlertsFiltered.filter((it) => !it.hasJustification).length;
   const justifiedCount = absenceAlertsFiltered.length - unjustifiedCount;
   // "Acionáveis" = vermelhos (sem check-in agora + atraso sem cobertura
   // + faltas SEM justificativa). "A conferir" = faltas justificadas.
-  const actionableCount = noCheckinFiltered.length + unreplacedFiltered.length + unjustifiedCount;
+  const actionableCount = noCheckinFiltered.length + unreplacedFiltered.length + unjustifiedCount + emCasaFiltered.length;
   const reviewCount = justifiedCount;
   const totalShown = actionableCount + reviewCount;
 
@@ -493,7 +526,7 @@ export function CockpitAlarms({
             )}
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <AlarmCard
             id="noCheckin"
             title="Sem check-in agora"
@@ -516,6 +549,18 @@ export function CockpitAlarms({
             onItemClick={setModalIntern}
             facultyFilter={facultyFilter}
             groupByFaculty
+          />
+          <AlarmCard
+            id="emCasa"
+            title="Em casa · repor"
+            items={emCasa}
+            severity="casa"
+            Icon={Home}
+            caveat="Base desativada, sem remanejamento: não é falta nem abono. O plantão precisa ser reposto."
+            expanded={allExpanded}
+            onToggle={toggleAll}
+            onItemClick={setModalIntern}
+            facultyFilter={facultyFilter}
           />
           <AbsenceAlertsCard
             items={data.absenceAlerts.items}
