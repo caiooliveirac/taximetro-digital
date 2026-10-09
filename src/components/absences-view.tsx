@@ -15,6 +15,7 @@ import { getBaseStyle, getPeriodStyle, baseViewIndex } from "@/lib/base-colors";
 import { localDateStr } from "@/lib/utils";
 
 type Assignment = {
+  notes?: string | null;
     id: string;
     internId: string;
     internName: string;
@@ -346,7 +347,7 @@ export function AbsencesView({ scope, title, description }: AbsencesViewProps) {
                                                     {periodStyle.label}
                                                 </span>
                                             </TableCell>
-                                            <TableCell><StatusBadge status={assignment.status} /></TableCell>
+                                            <TableCell><StatusBadge status={assignment.status} notes={assignment.notes} /></TableCell>
                                             <TableCell>
                                                 <div className="space-y-1">
                                                     {assignment.absenceJustification ? (

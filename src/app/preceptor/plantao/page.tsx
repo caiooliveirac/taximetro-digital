@@ -11,6 +11,7 @@ import { baseViewIndex } from "@/lib/base-colors";
 import { localDateStr } from "@/lib/utils";
 
 type Assignment = {
+  notes?: string | null;
   id: string;
   internName: string;
   baseCode: string;
@@ -147,7 +148,7 @@ export default function PreceptorPlantao() {
                       {a.period === "DAY" ? "Diurno" : "Noturno"}
                     </span>
                   </TableCell>
-                  <TableCell><StatusBadge status={a.status} /></TableCell>
+                  <TableCell><StatusBadge status={a.status} notes={a.notes} /></TableCell>
                   <TableCell className="text-right">
                     {a.status === "CHECKED_IN" ? (
                       <Button

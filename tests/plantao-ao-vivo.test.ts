@@ -114,6 +114,6 @@ test("textos para o interno no Telegram", () => {
   );
   assert.equal(
     textoParaInternoRepor({ baseCode: "BR05", motivo: null }),
-    "🗓️ Seu plantão de hoje na BR05 foi liberado pela coordenação: a base parou e não há vaga em outra. Não conta como falta. Reponha em outro dia — as vagas abertas aparecem no app.",
+    "🏠 Seu plantão de hoje na BR05 foi liberado pela coordenação: a base parou e não conseguimos te encaixar em outra. Isso não é falta e não pesa na sua meta. Você pode voltar para casa. Seu plantão será reposto em outro dia: o líder da sua faculdade foi avisado e as vagas abertas aparecem no app.",
   );
 });

@@ -13,6 +13,7 @@ const badgeVariants = cva(
         absent: "bg-red-50 text-red-700 ring-red-600/20",
         excused: "bg-violet-50 text-violet-700 ring-violet-600/20",
         scheduled: "bg-indigo-50 text-indigo-700 ring-indigo-600/20",
+        casa: "bg-orange-50 text-orange-700 ring-orange-600/25",
         cancelled: "bg-slate-100 text-slate-500 ring-slate-400/20",
         checkedin: "bg-sky-50 text-sky-700 ring-sky-600/20",
         checkedout: "bg-blue-50 text-blue-700 ring-blue-600/20",

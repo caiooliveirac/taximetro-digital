@@ -129,7 +129,7 @@ function AssignmentCard({ assignment: a }: { assignment: CalendarAssignment }) {
       <div>
         <p className="text-xs font-medium text-slate-500">Status</p>
         <div className="mt-1">
-          <StatusBadge status={a.status} />
+          <StatusBadge status={a.status} notes={a.notes} />
         </div>
       </div>
       <NavigationLinks

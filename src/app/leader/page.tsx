@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { EmCasaCard } from "@/components/em-casa-card";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -89,6 +90,7 @@ type Incident = {
 };
 
 type WeekAssignment = {
+  notes?: string | null;
   id: string;
   internId: string;
   internName: string;
@@ -529,6 +531,8 @@ export default function LeaderDashboard() {
         </div>
       </div>
 
+      <EmCasaCard href="/leader/escala" />
+
       {canActAsPreceptor && (
         <div className="rounded-2xl border border-emerald-200 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(13,148,136,0.18))] p-5 shadow-[0_14px_28px_rgba(15,23,42,0.05)]">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -743,7 +747,7 @@ export default function LeaderDashboard() {
                                 <div className="flex items-center gap-2">
                                   <span className="font-medium text-slate-900">{assignment.baseCode}</span>
                                   <span className="text-[11px] text-slate-500">{shortDate(assignment.date)} {dayLabel(assignment.date)} {periodEmoji(assignment.period)}</span>
-                                  <span className="ml-auto"><StatusBadge status={assignment.status} /></span>
+                                  <span className="ml-auto"><StatusBadge status={assignment.status} notes={assignment.notes} /></span>
                                 </div>
                                 {assignment.status === "ABSENT" && (
                                   <p className={`mt-1 text-[11px] ${assignment.absenceJustification ? "text-slate-600" : "text-red-600"}`}>

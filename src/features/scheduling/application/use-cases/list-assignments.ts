@@ -16,6 +16,8 @@ export async function executeListAssignments(params: {
     period?: string | null;
     internId?: string | null;
     selfOnly?: boolean;
+    /** Interno também recebe o plantão cancelado que foi para casa (histórico). */
+    incluirCasa?: boolean;
   };
 }) {
   const { actor, filters } = params;
@@ -33,6 +35,7 @@ export async function executeListAssignments(params: {
     // no histórico dele sem ter o que fazer com aquilo. COORDINATOR e LEADER
     // continuam vendo (inclusive o do interno, via internId).
     excludeCancelled: actor.role === "INTERN",
+    manterCasa: filters.incluirCasa === true,
   };
 
   if (actor.role === "LEADER" && actor.facultyId) {

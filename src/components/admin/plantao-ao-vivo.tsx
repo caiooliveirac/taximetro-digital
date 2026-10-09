@@ -242,6 +242,24 @@ export function PlantaoAoVivo() {
     if (ok) setFolha(null);
   }
 
+  async function mandarParaCasa(g: { baseCode: string; internos: Array<{ interno: string; faculdade: string | null; assignmentId?: string }> }) {
+    const lista = g.internos.map((i) => `• ${i.interno} (${i.faculdade})`).join("\n");
+    if (
+      !window.confirm(
+        `Mandar para casa, na ${g.baseCode}:\n\n${lista}\n\nO plantão de hoje sai da conta sem virar falta, eles não poderão mais se remanejar, o líder da faculdade vê a reposição pendente e cada um recebe o aviso. Dá para desfazer em "Liberados".`,
+      )
+    )
+      return;
+    let feitos = 0;
+    for (const i of g.internos) {
+      if (!i.assignmentId) continue;
+      const ok = await executar({ acao: "repor", assignmentId: i.assignmentId }, () => `${i.interno} foi para casa.`);
+      if (!ok) return;
+      feitos += 1;
+    }
+    setMsg({ ok: true, texto: `${feitos} interno(s) da ${g.baseCode} em casa. O líder já vê a reposição pendente.` });
+  }
+
   async function repor(ocupante: Ocupante, base: Base) {
     const motivo = base.parada?.motivo ?? base.aviso?.tipo ?? null;
     if (
@@ -341,7 +359,7 @@ export function PlantaoAoVivo() {
           code: b.code,
           name: b.name,
           desativada: b.desativada,
-          ocupantes: b.celulas.flatMap((c) => (c.tipo === "ocupada" ? [{ interno: c.ocupante.interno, faculdade: c.ocupante.faculdade, status: c.ocupante.status }] : [])),
+          ocupantes: b.celulas.flatMap((c) => (c.tipo === "ocupada" ? [{ interno: c.ocupante.interno, faculdade: c.ocupante.faculdade, status: c.ocupante.status, assignmentId: c.ocupante.assignmentId }] : [])),
         })),
       )
     : [];
@@ -600,20 +618,20 @@ export function PlantaoAoVivo() {
       )}
 
       {turno && voltaParaCasa.length > 0 && (
-        <section className="overflow-hidden rounded-2xl border-2 border-red-700 bg-white shadow-sm">
-          <div className="flex items-center gap-3 bg-red-700 px-4 py-3 text-white">
+        <section className="overflow-hidden rounded-2xl border-2 border-orange-500 bg-white shadow-sm">
+          <div className="flex items-center gap-3 bg-orange-500 px-4 py-3 text-white">
             <Home className="h-6 w-6 shrink-0" strokeWidth={2} />
             <div>
               <h2 className="text-lg font-bold uppercase tracking-wide">Voltam para casa</h2>
-              <p className="text-xs text-red-100">
+              <p className="text-xs text-orange-50">
                 {formatarData(turno.date)} · turno {turno.period === "DAY" ? "diurno" : "noturno"} · base desativada, sem remanejamento
               </p>
             </div>
           </div>
-          <div className="divide-y divide-red-100">
+          <div className="divide-y divide-orange-100">
             {voltaParaCasa.map((g) => (
               <div key={g.baseCode} className="p-4">
-                <p className="flex flex-wrap items-baseline gap-x-2 text-sm font-bold text-red-800">
+                <p className="flex flex-wrap items-baseline gap-x-2 text-sm font-bold text-orange-700">
                   {g.baseCode} <span className="font-medium text-slate-600">{g.baseName}</span>
                 </p>
                 {(g.desde || g.motivo) && (
@@ -630,6 +648,11 @@ export function PlantaoAoVivo() {
                     );
                   })}
                 </ul>
+                {g.internos.every((i) => i.assignmentId) && (
+                  <Button size="sm" className="mt-3 w-full bg-orange-500 text-white hover:bg-orange-600" disabled={ocupado} onClick={() => mandarParaCasa(g)}>
+                    <Home className="h-4 w-4" /> Confirmar: mandar para casa
+                  </Button>
+                )}
               </div>
             ))}
           </div>

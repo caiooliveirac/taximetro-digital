@@ -12,6 +12,7 @@ import { localDateStr } from "@/lib/utils";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 
 type Assignment = {
+  notes?: string | null;
   id: string;
   internId: string;
   internName: string;
@@ -196,7 +197,7 @@ export default function AdminPresencas() {
                           {ps.label}
                         </span>
                       </TableCell>
-                      <TableCell><StatusBadge status={a.status} /></TableCell>
+                      <TableCell><StatusBadge status={a.status} notes={a.notes} /></TableCell>
                     </TableRow>
                   );
                 })}

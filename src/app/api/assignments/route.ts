@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       period,
       internId,
       selfOnly: searchParams.get("selfOnly") === "true",
+      incluirCasa: searchParams.get("incluirCasa") === "1",
     },
   });
 

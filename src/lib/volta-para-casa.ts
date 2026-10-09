@@ -9,7 +9,7 @@ export type BaseParaVolta = {
   code: string;
   name: string;
   desativada: { desde: string | null; motivo: string | null } | null;
-  ocupantes: Array<{ interno: string; faculdade: string | null; status: string }>;
+  ocupantes: Array<{ interno: string; faculdade: string | null; status: string; assignmentId?: string }>;
 };
 
 export type VoltaParaCasa = {
@@ -17,7 +17,7 @@ export type VoltaParaCasa = {
   baseName: string;
   desde: string | null;
   motivo: string | null;
-  internos: Array<{ interno: string; faculdade: string | null }>;
+  internos: Array<{ interno: string; faculdade: string | null; assignmentId?: string }>;
 };
 
 export function internosEmBaseDesativada(bases: BaseParaVolta[]): VoltaParaCasa[] {
@@ -30,7 +30,7 @@ export function internosEmBaseDesativada(bases: BaseParaVolta[]): VoltaParaCasa[
       motivo: b.desativada?.motivo ?? null,
       internos: b.ocupantes
         .filter((o) => o.status !== "CHECKED_OUT")
-        .map((o) => ({ interno: o.interno, faculdade: o.faculdade }))
+        .map((o) => ({ interno: o.interno, faculdade: o.faculdade, assignmentId: o.assignmentId }))
         .sort((a, c) => a.interno.localeCompare(c.interno, "pt-BR")),
     }))
     .filter((g) => g.internos.length > 0);

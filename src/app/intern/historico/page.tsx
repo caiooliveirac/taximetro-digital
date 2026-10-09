@@ -9,6 +9,7 @@ import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { localDateStr, sumAssignmentHours } from "@/lib/utils";
 
 type Assignment = {
+  notes?: string | null;
   id: string;
   baseCode: string;
   baseName: string;
@@ -47,7 +48,7 @@ export default function InternHistorico() {
     const to = localDateStr();
     const from = localDateStr(new Date(Date.now() - 90 * 86400000));
     Promise.all([
-      fetch(`/taximetro/api/assignments?from=${from}&to=${to}&selfOnly=true`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
+      fetch(`/taximetro/api/assignments?from=${from}&to=${to}&selfOnly=true&incluirCasa=1`).then((r) => r.json()).catch(() => ({ success: false, data: [] })),
       fetch("/taximetro/api/compliance?selfOnly=true").then((r) => r.json()).catch(() => ({ success: false, data: [] })),
     ]).then(([aJson, cJson]) => {
       if (aJson.success) setAssignments(aJson.data);
@@ -175,7 +176,7 @@ export default function InternHistorico() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <StatusBadge status={a.status} />
+                      <StatusBadge status={a.status} notes={a.notes} />
                       {a.isExtraShift && <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">EXTRA</span>}
                     </div>
                   </TableCell>

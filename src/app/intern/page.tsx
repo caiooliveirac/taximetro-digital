@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MapPin, Sun, Moon, Calendar, ArrowRight, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut, FileText, XCircle, Megaphone } from "lucide-react";
+import { MapPin, Sun, Moon, Calendar, ArrowRight, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut, FileText, XCircle, Megaphone, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AbsenceJustificationDialog } from "@/components/absence-justification-dialog";
 import { StatusBadge } from "@/components/status-badge";
@@ -103,6 +103,12 @@ function isDayShiftVisibleNow(assignment: Assignment, nowDate: string, nowHour: 
     && (assignment.shift === "MORNING" || assignment.shift === "AFTERNOON")
     && assignment.date === nowDate
     && nowHour >= 5;
+}
+
+/** "PM40 parada: SEM ENFERMEIRO. Liberado ..." vira " (SEM ENFERMEIRO)"; sem motivo, vazio. */
+function motivoDaBase(texto: string) {
+  const m = texto.match(/parada: (.+?)\. Liberado/);
+  return m ? ` (${m[1]})` : "";
 }
 
 export default function InternHoje() {
@@ -405,13 +411,20 @@ export default function InternHoje() {
       )}
 
       {liberadosHoje.map((liberado) => (
-        <div key={liberado.id} className="rounded-xl border border-sky-200 bg-sky-50 p-4 space-y-1.5">
-          <p className="flex items-center gap-2 text-sm font-semibold text-sky-900">
-            <CalendarDays className="h-4 w-4" strokeWidth={1.8} />
-            Plantão de hoje na {liberado.baseCode} liberado pela coordenação
+        <div key={liberado.id} className="rounded-xl border-2 border-orange-300 bg-orange-50 p-5 space-y-3">
+          <p className="flex items-center gap-2 text-base font-semibold text-orange-900">
+            <Home className="h-5 w-5" strokeWidth={2} />
+            Seu plantão de hoje foi liberado — você pode ir para casa
           </p>
-          <p className="text-sm text-sky-900">{liberado.texto}</p>
-          <p className="text-xs text-sky-800">Não conta como falta e não conta para a meta: reponha em outro dia. As vagas abertas estão mais abaixo.</p>
+          <p className="text-sm text-orange-900">
+            A base <strong>{liberado.baseCode}</strong> parou hoje{motivoDaBase(liberado.texto)} e não conseguimos te encaixar em outra. Isso não aconteceu por nada que você fez, e esse plantão não será cobrado de você hoje.
+          </p>
+          <ul className="space-y-1 text-sm text-orange-900">
+            <li>• Não conta como falta e não afeta a sua frequência.</li>
+            <li>• O plantão será reposto em outro dia: o líder da sua faculdade já foi avisado e vai te ajudar a escolher a data.</li>
+            <li>• Você pode olhar as vagas abertas mais abaixo, se já quiser se adiantar.</li>
+          </ul>
+          <p className="text-xs text-orange-800">Obrigado pela disponibilidade. Qualquer dúvida, fale com o seu líder.</p>
         </div>
       ))}
 

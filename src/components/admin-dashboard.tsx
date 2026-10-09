@@ -7,6 +7,7 @@ import { MetricCard } from "@/components/metric-card";
 import { InviteButton } from "@/components/invite-button";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { CockpitAlarms, type CockpitData } from "@/components/admin/cockpit-alarms";
+import { EmCasaCard } from "@/components/em-casa-card";
 import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
@@ -198,6 +199,7 @@ export function AdminDashboardClient({
 
   return (
     <div className="space-y-6 animate-[fadeInUp_200ms_ease-out]">
+      <EmCasaCard href="/admin/escalas" />
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

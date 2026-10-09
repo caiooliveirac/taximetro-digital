@@ -149,7 +149,7 @@ export function textoParaInternoDevolvido(p: { de: string; para: string; nomeDaB
 
 export function textoParaInternoRepor(p: { baseCode: string; motivo: string | null }): string {
   const motivo = p.motivo ? ` (${p.motivo})` : "";
-  return `🗓️ Seu plantão de hoje na ${p.baseCode} foi liberado pela coordenação: a base parou${motivo} e não há vaga em outra. Não conta como falta. Reponha em outro dia — as vagas abertas aparecem no app.`;
+  return `🏠 Seu plantão de hoje na ${p.baseCode} foi liberado pela coordenação: a base parou${motivo} e não conseguimos te encaixar em outra. Isso não é falta e não pesa na sua meta. Você pode voltar para casa. Seu plantão será reposto em outro dia: o líder da sua faculdade foi avisado e as vagas abertas aparecem no app.`;
 }
 
 export function textoParaInternoReposicaoDesfeita(p: { baseCode: string }): string {

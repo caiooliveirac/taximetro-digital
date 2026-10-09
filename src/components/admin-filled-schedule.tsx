@@ -2767,7 +2767,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                         <div className="grid gap-6 px-6 py-5 lg:grid-cols-[1.1fr,0.9fr]">
                             <div className="space-y-4">
                                 <div className="flex items-center gap-2">
-                                    <StatusBadge status={selectedAssignment.status} />
+                                    <StatusBadge status={selectedAssignment.status} notes={selectedAssignment.notes} />
                                     {selectedAssignment.notes?.includes("[REMANEJADO]") && <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">Remanejado</span>}
                                 </div>
 

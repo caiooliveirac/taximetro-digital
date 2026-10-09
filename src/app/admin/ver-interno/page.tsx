@@ -31,6 +31,7 @@ import {
 type Intern = { id: string; name: string; facultyAbbr: string; facultyId: string | null; isActive: boolean; cohortId: string | null; cohortName: string | null; isArchived: boolean };
 type CohortOption = { id: string; name: string | null; label: string; status: string };
 type Assignment = {
+  notes?: string | null;
   id: string; internName: string; baseCode: string; baseName: string;
   baseType?: string; date: string; period: string; status: string;
   isExtraShift?: boolean;
@@ -603,7 +604,7 @@ function AdminVerComoInterno() {
                   {todayAssignment.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
                   {getPeriodStyle(todayAssignment.period).label}
                 </span>
-                <StatusBadge status={todayAssignment.status} />
+                <StatusBadge status={todayAssignment.status} notes={todayAssignment.notes} />
               </div>
             </div>
           )}

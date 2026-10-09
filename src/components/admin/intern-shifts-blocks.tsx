@@ -15,6 +15,7 @@ import { GOAL_KINDS, slotStatesFromCounts, summarizeGoals, type GoalKind, type G
 export type ShiftKind = "CRU" | "USA" | "CRL";
 
 export type Assignment = {
+  notes?: string | null;
   id: string;
   baseCode: string;
   baseName?: string;
@@ -373,7 +374,7 @@ export function ShiftListByKind({
                           {a.period === "DAY" ? <Sun className="h-3 w-3" strokeWidth={1.5} /> : <Moon className="h-3 w-3" strokeWidth={1.5} />}
                           {ps.label}
                         </span>
-                        {showStatus && <StatusBadge status={a.status} />}
+                        {showStatus && <StatusBadge status={a.status} notes={a.notes} />}
                       </div>
                       <span className="flex items-center gap-2 text-xs tabular-nums text-slate-500">
                         {new Date(a.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}

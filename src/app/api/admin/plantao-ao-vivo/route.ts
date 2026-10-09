@@ -316,7 +316,7 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
       if (!STATUS_NA_BASE.has(plantao.status)) return falha(409, "Este plantão já foi encerrado; não há o que liberar.");
 
       const base = await baseDoTurno(plantao.baseId, turno);
-      const motivo = pedido.motivo || base?.estado.parada?.motivo || avisoDaBase(base?.estado)?.tipo || null;
+      const motivo = pedido.motivo || base?.estado.parada?.motivo || avisoDaBase(base?.estado)?.tipo || base?.desativada?.motivo || null;
       const hora = formatBrazilTime(new Date());
       const nota = notaDeReposicao({ baseCode: plantao.baseCode, hora, motivo });
       await updateAssignmentStatus({

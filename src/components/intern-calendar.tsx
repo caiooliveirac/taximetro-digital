@@ -9,6 +9,7 @@ import { getBaseStyleByCode } from "@/lib/base-colors";
 import { cn, localDateStr } from "@/lib/utils";
 
 export type CalendarAssignment = {
+  notes?: string | null;
   id: string;
   baseCode: string;
   baseName: string;
