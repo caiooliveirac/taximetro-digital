@@ -142,7 +142,7 @@ const uuid = z.string().uuid();
 const motivo = z.string().trim().max(300).optional();
 
 const acaoSchema = z.discriminatedUnion("acao", [
-  z.object({ acao: z.literal("mover"), assignmentId: uuid, newBaseId: uuid, motivo }),
+  z.object({ acao: z.literal("mover"), assignmentId: uuid, newBaseId: uuid, motivo, ignorarTravas: z.boolean().optional() }),
   z.object({ acao: z.literal("devolver"), assignmentId: uuid }),
   z.object({ acao: z.literal("cancelarAviso"), baseId: uuid }),
   z.object({ acao: z.literal("pararBase"), baseId: uuid, motivo }),
@@ -200,10 +200,14 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
       if ("error" in plantao) return plantao;
       const destino = await baseDoTurno(pedido.newBaseId, turno);
       if (!destino) return falha(404, "Base de destino inválida");
-      if (destino.estado.parada) return falha(409, `A ${destino.code} está parada pela coordenação desde ${destino.estado.parada.desde}. Reabra antes.`);
-      const avisoDoDestino = avisoDaBase(destino.estado);
-      if (avisoDoDestino) return falha(409, `A ${destino.code} tem aviso de ${avisoDoDestino.tipo} às ${avisoDoDestino.hora}. Cancele o aviso se for falso.`);
-      if (destino.desativada) return falha(409, `A ${destino.code} está desativada no plantões.`);
+      // Travas ligadas por padrão; a coordenação desliga no botão da tela.
+      const travas = pedido.ignorarTravas !== true;
+      if (travas) {
+        if (destino.estado.parada) return falha(409, `A ${destino.code} está parada pela coordenação desde ${destino.estado.parada.desde}. Reabra antes.`);
+        const avisoDoDestino = avisoDaBase(destino.estado);
+        if (avisoDoDestino) return falha(409, `A ${destino.code} tem aviso de ${avisoDoDestino.tipo} às ${avisoDoDestino.hora}. Cancele o aviso se for falso.`);
+        if (destino.desativada) return falha(409, `A ${destino.code} está desativada no plantões.`);
+      }
 
       const origem = await baseDoTurno(plantao.baseId, turno);
       const motivoDaOrigem = origem?.estado.parada?.motivo ?? avisoDaBase(origem?.estado)?.tipo ?? null;
@@ -213,8 +217,9 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
         input: {
           assignmentId: plantao.id,
           newBaseId: destino.id,
-          reason: `Plantão ao vivo: ${motivo ?? "remanejado pela coordenação"}`,
+          reason: `Plantão ao vivo: ${motivo ?? "remanejado pela coordenação"}${travas ? "" : " (travas desligadas)"}`,
           authorized: true,
+          ignorarLotacao: !travas,
         },
       });
       if (resultado.status !== 200) return falha(resultado.status, resultado.body.error ?? "Não foi possível remanejar.");

@@ -9,6 +9,8 @@ import {
   Power,
   PowerOff,
   Home,
+  Lock,
+  LockOpen,
   Radio,
   RefreshCw,
   Stethoscope,
@@ -84,7 +86,7 @@ type Turno = {
 };
 
 type Acao =
-  | { acao: "mover"; assignmentId: string; newBaseId: string; motivo?: string }
+  | { acao: "mover"; assignmentId: string; newBaseId: string; motivo?: string; ignorarTravas?: boolean }
   | { acao: "devolver"; assignmentId: string }
   | { acao: "cancelarAviso"; baseId: string }
   | { acao: "pararBase"; baseId: string; motivo?: string }
@@ -136,6 +138,8 @@ export function PlantaoAoVivo() {
   const [turno, setTurno] = useState<Turno | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [ocupado, setOcupado] = useState(false);
+  // Travas do mover (base parada/desativada/com aviso/lotada): ligadas por padrão, só a tela desliga.
+  const [semTravas, setSemTravas] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
 
   const [folha, setFolha] = useState<{ ocupante: Ocupante; base: Base } | null>(null);
@@ -217,13 +221,13 @@ export function PlantaoAoVivo() {
     data.entregue ? " Interno avisado no Telegram." : " O interno não tem Telegram vinculado — avise por outro canal.";
 
   async function mover(ocupante: Ocupante, origemCode: string, destino: Base) {
-    if (!destino.aceitaMais) {
+    if (!semTravas && !destino.aceitaMais) {
       setMsg({ ok: false, texto: `A ${destino.code} não recebe ninguém agora.` });
       return;
     }
     if (!window.confirm(`Mover ${ocupante.interno} (${ocupante.faculdade}) da ${origemCode} para a ${destino.code} — ${destino.name}?`)) return;
     const ok = await executar(
-      { acao: "mover", assignmentId: ocupante.assignmentId, newBaseId: destino.id },
+      { acao: "mover", assignmentId: ocupante.assignmentId, newBaseId: destino.id, ignorarTravas: semTravas },
       (d) => `${d.interno} agora está na ${d.para}.${avisoDeEntrega(d)}`,
     );
     if (ok) setMovendo(null);
@@ -365,9 +369,20 @@ export function PlantaoAoVivo() {
               : "O turno em andamento, base por base."}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => carregar()} disabled={carregando || ocupado} className="self-start">
-          <RefreshCw className={`h-4 w-4 ${carregando ? "animate-spin" : ""}`} /> Atualizar
-        </Button>
+        <div className="flex flex-wrap gap-2 self-start">
+          <Button
+            variant={semTravas ? "destructive" : "outline"}
+            size="sm"
+            aria-pressed={semTravas}
+            onClick={() => setSemTravas((v) => !v)}
+            title="Ligadas: o mover respeita base parada, desativada, com aviso ou lotada. Desligadas: você move para qualquer base."
+          >
+            {semTravas ? <LockOpen className="h-4 w-4" /> : <Lock className="h-4 w-4" />} Travas {semTravas ? "desligadas" : "ligadas"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => carregar()} disabled={carregando || ocupado}>
+            <RefreshCw className={`h-4 w-4 ${carregando ? "animate-spin" : ""}`} /> Atualizar
+          </Button>
+        </div>
       </div>
 
       {resumo && (
@@ -428,17 +443,17 @@ export function PlantaoAoVivo() {
                 }}
                 className={`rounded-2xl border bg-white p-3 shadow-sm transition ${
                   alvo
-                    ? b.aceitaMais
+                    ? (semTravas || b.aceitaMais)
                       ? "border-emerald-400 ring-2 ring-emerald-300"
                       : "border-red-300 ring-2 ring-red-200"
-                    : destinoPossivel && b.aceitaMais
+                    : destinoPossivel && (semTravas || b.aceitaMais)
                       ? "border-emerald-200 ring-1 ring-emerald-100"
                       : fechada
                         ? "border-red-200"
                         : b.aviso
                           ? "border-amber-200"
                           : "border-slate-200"
-                } ${movendo && b.id !== movendo.origemId && b.aceitaMais ? "cursor-pointer" : ""}`}
+                } ${movendo && b.id !== movendo.origemId && (semTravas || b.aceitaMais) ? "cursor-pointer" : ""}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -453,7 +468,7 @@ export function PlantaoAoVivo() {
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    {movendo && b.id !== movendo.origemId && b.aceitaMais && (
+                    {movendo && b.id !== movendo.origemId && (semTravas || b.aceitaMais) && (
                       <Button size="sm" disabled={ocupado} onClick={(e) => { e.stopPropagation(); void mover(movendo.ocupante, movendo.origemCode, b); }}>
                         <ArrowRightLeft className="h-4 w-4" /> Para cá
                       </Button>

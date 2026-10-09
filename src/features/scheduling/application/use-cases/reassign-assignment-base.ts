@@ -14,6 +14,8 @@ export const reassignAssignmentSchema = z.object({
   authorized: z.literal(true),
   /** Não contar escalado sem check-in na lotação do destino (remanejamento pelo interno, após tolerância). */
   apenasComCheckin: z.boolean().optional(),
+  /** Coordenação com as travas desligadas: não barra por lotação do destino. */
+  ignorarLotacao: z.boolean().optional(),
 });
 
 type Actor = {
@@ -29,7 +31,7 @@ export async function executeReassignAssignmentBase(params: {
   input: z.infer<typeof reassignAssignmentSchema>;
 }) {
   const { actor, input } = params;
-  const { assignmentId, newBaseId, reason, apenasComCheckin } = input;
+  const { assignmentId, newBaseId, reason, apenasComCheckin, ignorarLotacao } = input;
 
   const assignment = await findAssignmentForReassign(assignmentId);
   if (!assignment) return { status: 404, body: { success: false, error: "Plantão não encontrado" } } as const;
@@ -60,7 +62,7 @@ export async function executeReassignAssignmentBase(params: {
 
   // Remanejar não podia estourar a base de destino: era o caminho mais curto
   // para três internos no mesmo turno. Só vale para USA (ver checkPeriodOccupancy).
-  if (!assignment.isExtraShift) {
+  if (!assignment.isExtraShift && ignorarLotacao !== true) {
     const load = await checkPeriodOccupancy(
       targetBase.id,
       assignment.date,

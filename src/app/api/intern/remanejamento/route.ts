@@ -157,7 +157,8 @@ async function gradeDoTurno(plantao: Plantao, reivindicando: boolean) {
       desativada: base.desativada,
       medicos: base.medicos,
       celulas: celulasDaBase(base.capacity, base.ocupantes, {
-        bloqueada: aviso !== null || parada !== null || base.desativada !== null,
+        // Extra não faz check-in: base com extra no turno não recebe quem procura vaga.
+        bloqueada: aviso !== null || parada !== null || base.desativada !== null || base.ocupantes.some((o) => o.extra),
         reivindicarSemCheckin: reivindicando,
         extra,
       }),

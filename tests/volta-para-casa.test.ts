@@ -48,3 +48,11 @@ test("sem o extra, o segundo lugar físico continua ocupável", () => {
   });
   assert.equal(celulas.some(celulaOcupavel), true);
 });
+
+test("base com extra fica bloqueada para quem procura vaga (bloqueada zera as livres)", () => {
+  const celulas = celulasDaBase(2, [{ faculdade: "ZARNS", status: "SCHEDULED", extra: true }], {
+    bloqueada: true,
+    extra: { limite: 3, podeUsar: true, reservadaPara: null },
+  });
+  assert.equal(celulas.some(celulaOcupavel), false);
+});
