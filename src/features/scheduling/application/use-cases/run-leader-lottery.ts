@@ -13,7 +13,7 @@ import { randomInt } from "node:crypto";
 import { type AllocPos } from "./allocate-positions";
 import { sortearHorizonte, type HistoricoDoInterno } from "./lottery-horizon";
 import { temFeature } from "@/lib/instance";
-import { usaMeioTurnoNaCru } from "@/lib/utils";
+import { startOfWeekDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 import { listReleasedOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import {
   bloqueiosCompostos,
@@ -61,6 +61,12 @@ export const runLeaderLotterySchema = z.object({
    * acompanhada ao longo de todas as semanas do lote.
    */
   numWeeks: z.number().int().min(1).max(8).default(1),
+  /**
+   * Primeiro dia que o sorteio pode preencher. Sem ele, a primeira semana entra
+   * inteira; com ele, os dias anteriores ficam de fora (turma que começa no
+   * meio da semana). As semanas continuam sendo de segunda a domingo.
+   */
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   /**
    * Faculdade alvo. O líder não manda (usa a dele); o COORDINATOR precisa
    * mandar, porque não é vinculado a nenhuma e as regras de vaga são por
@@ -212,11 +218,15 @@ export async function executeRunLeaderLottery(params: {
   }
 
   const numWeeks = input.numWeeks;
+  // As regras de vaga são por dia da semana contado a partir da segunda: uma
+  // data que não fosse segunda deslocaria todas elas.
+  const weekStart = startOfWeekDateStr(input.weekStart);
+  const startDate = input.startDate;
 
   // Janelas de cada semana do lote (disjuntas, +7 dias uma da outra).
   const weekWindows: string[][] = [];
   for (let w = 0; w < numWeeks; w++) {
-    weekWindows.push(weekDatesFrom(addDays(input.weekStart, 7 * w)));
+    weekWindows.push(weekDatesFrom(addDays(weekStart, 7 * w)));
   }
   const windowStart = weekWindows[0][0];
   const windowEnd = weekWindows[numWeeks - 1][6];
@@ -314,7 +324,10 @@ export async function executeRunLeaderLottery(params: {
     const weekExisting = existingAll.filter(
       (assignment) => assignment.date >= weekDates[0] && assignment.date <= weekDates[6],
     );
-    positionsByWeek.push(buildWeekPositions({ rules, weekExisting, weekDates, isEbmsp, released }));
+    positionsByWeek.push(
+      buildWeekPositions({ rules, weekExisting, weekDates, isEbmsp, released })
+        .filter((position) => !startDate || position.date >= startDate),
+    );
 
     const count = new Map<string, number>(safeIds.map((id) => [id, 0]));
     for (const assignment of weekExisting) {
@@ -422,7 +435,8 @@ export async function executeRunLeaderLottery(params: {
       entity: "assignment",
       entityId: allToCreate[0].internId,
       payload: {
-        weekStart: input.weekStart,
+        weekStart,
+        ...(startDate ? { startDate } : {}),
         numWeeks,
         maxShifts: input.maxShifts,
         selected: safeIds.length,
@@ -443,7 +457,7 @@ export async function executeRunLeaderLottery(params: {
       success: true,
       data: {
         total: allToCreate.length,
-        weekStart: input.weekStart,
+        weekStart,
         numWeeks,
         maxShifts: input.maxShifts,
         internsAllocated,

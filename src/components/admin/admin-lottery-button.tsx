@@ -34,10 +34,9 @@ type Resultado = {
   unallocatedInterns?: Array<{ internId: string; reasonLabel: string }>;
 };
 
-/** Segunda-feira da semana de hoje, no fuso local. */
-function segundaDaSemana(): string {
+/** Hoje, no fuso local. */
+function hojeLocal(): string {
   const hoje = new Date();
-  hoje.setDate(hoje.getDate() - ((hoje.getDay() + 6) % 7));
   const mes = String(hoje.getMonth() + 1).padStart(2, "0");
   const dia = String(hoje.getDate()).padStart(2, "0");
   return `${hoje.getFullYear()}-${mes}-${dia}`;
@@ -48,7 +47,7 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
   const [faculdades, setFaculdades] = useState<Faculty[]>([]);
   const [internos, setInternos] = useState<UserRow[]>([]);
   const [faculdadeId, setFaculdadeId] = useState("");
-  const [weekStart, setWeekStart] = useState(segundaDaSemana);
+  const [startDate, setStartDate] = useState(hojeLocal);
   const [maxShifts, setMaxShifts] = useState(1);
   const [numWeeks, setNumWeeks] = useState(1);
   const [carregando, setCarregando] = useState(false);
@@ -89,7 +88,9 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          weekStart,
+          // O servidor recua weekStart para a segunda; startDate corta os dias antes.
+          weekStart: startDate,
+          startDate,
           facultyId: faculdadeId,
           internIds: elegiveis.map((i) => i.id),
           maxShifts,
@@ -105,7 +106,7 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
     } finally {
       setRodando(false);
     }
-  }, [weekStart, faculdadeId, elegiveis, maxShifts, numWeeks, onDone]);
+  }, [startDate, faculdadeId, elegiveis, maxShifts, numWeeks, onDone]);
 
   if (!aberto) {
     return (
@@ -149,11 +150,11 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
             </label>
 
             <label className="text-xs font-medium text-slate-600">
-              Semana (segunda)
+              Data de início
               <input
                 type="date"
-                value={weekStart}
-                onChange={(e) => setWeekStart(e.target.value)}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
                 className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
               />
             </label>
@@ -191,7 +192,7 @@ export function AdminLotteryButton({ onDone }: { onDone?: () => void }) {
 
           <Button
             onClick={sortear}
-            disabled={!faculdadeId || elegiveis.length === 0 || rodando}
+            disabled={!faculdadeId || !startDate || elegiveis.length === 0 || rodando}
             className="gap-1.5"
           >
             {rodando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Dices className="h-4 w-4" strokeWidth={1.5} />}
