@@ -120,11 +120,14 @@ export function buildCohortReportFilters(cohort: {
   facultyId: string;
   startDate: string;
   endDate: string;
+  /** Último plantão de interno da turma; reposição depois do fim estende o período. */
+  lastShiftDate?: string | null;
 }): ReportFilterInput {
+  const lastShift = cohort.lastShiftDate ?? null;
   return {
     ...DEFAULT_REPORT_FILTERS,
     from: cohort.startDate,
-    to: cohort.endDate,
+    to: lastShift && lastShift > cohort.endDate ? lastShift : cohort.endDate,
     facultyId: cohort.facultyId,
     scopeMode: "COHORT",
     cohortGrouping: "NAMED_COHORT",

@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { localDateStr } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import {
   listCohorts,
@@ -12,7 +13,9 @@ import {
   listInternsByCohort,
   unassignCohort,
   closeCohortAndArchiveInterns,
+  listActiveInternsWithLastShift,
 } from "@/features/cohorts/infra/repositories/cohort-repository";
+import { internsBeyondEnd } from "@/features/cohorts/domain/cohort-closure";
 import { evaluateCohortLifecycle } from "@/features/cohorts/application/use-cases/cohort-lifecycle";
 
 export const cohortCreateSchema = z.object({
@@ -34,11 +37,30 @@ export const cohortUpdateSchema = z.object({
   notes: z.string().optional(),
 });
 
+/**
+ * Lista as turmas e, nas que ainda não fecharam, os internos com plantão
+ * marcado depois do fim — esses seguram o arquivamento da turma até o último
+ * plantão, e a tela avisa antes de o rodízio acabar.
+ */
 export async function executeListCohorts(filters?: {
   facultyId?: string;
   status?: ("PLANNED" | "ACTIVE" | "CLOSED")[];
 }) {
-  return listCohorts(filters);
+  const rows = await listCohorts(filters);
+  const open = rows.filter((cohort) => cohort.status !== "CLOSED");
+  const interns = await listActiveInternsWithLastShift(open.map((cohort) => cohort.id));
+  const today = localDateStr();
+  return rows.map((cohort) => {
+    const late = cohort.status === "CLOSED"
+      ? []
+      : internsBeyondEnd(cohort.endDate, today, interns.filter((intern) => intern.cohortId === cohort.id));
+    return {
+      ...cohort,
+      internsBeyondEnd: late
+        .map((intern) => ({ name: intern.name, lastShiftDate: intern.lastShiftDate! }))
+        .sort((a, b) => b.lastShiftDate.localeCompare(a.lastShiftDate) || a.name.localeCompare(b.name, "pt-BR")),
+    };
+  });
 }
 
 export async function executeGetCohort(id: string) {

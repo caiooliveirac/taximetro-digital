@@ -181,8 +181,18 @@ export async function activateCohort(cohortId: string) {
     .where(eq(cohorts.id, cohortId));
 }
 
+/** Marca a turma como CLOSED, sem mexer nos internos. */
+export async function closeCohort(cohortId: string, closedBy: string | null) {
+  const now = new Date();
+  await db
+    .update(cohorts)
+    .set({ status: "CLOSED", closedAt: now, closedBy, updatedAt: now })
+    .where(eq(cohorts.id, cohortId));
+}
+
 /**
- * Fecha uma turma e arquiva todos os internos ainda ativos nela.
+ * Fecha uma turma e arquiva todos os internos ainda ativos nela (fechamento
+ * manual pelo coordenador — o automático arquiva interno por interno).
  * Idempotente: internos já arquivados não são tocados.
  * Retorna a quantidade de internos arquivados nesta chamada.
  */
@@ -192,10 +202,7 @@ export async function closeCohortAndArchiveInterns(params: {
 }): Promise<number> {
   const now = new Date();
 
-  await db
-    .update(cohorts)
-    .set({ status: "CLOSED", closedAt: now, closedBy: params.closedBy, updatedAt: now })
-    .where(eq(cohorts.id, params.cohortId));
+  await closeCohort(params.cohortId, params.closedBy);
 
   const archived = await db
     .update(userRoles)
@@ -212,14 +219,58 @@ export async function closeCohortAndArchiveInterns(params: {
   return archived.length;
 }
 
+/** Plantões que ainda valem: o que já virou falta, saída ou cancelamento não segura o interno. */
+const LIVE_SHIFT_STATUSES = ["SCHEDULED", "CONFIRMED", "CHECKED_IN"] as const;
+
 /**
- * Plantões ainda por vir (data >= `today`, não cancelados nem faltas) dos
- * internos ativos da turma. Turma com isso não está terminada de verdade,
- * qualquer que seja a data de fim cadastrada.
+ * Internos ainda não arquivados das turmas, com a data do último plantão que
+ * ainda vale (null se não tiver nenhum). Base do arquivamento por interno e do
+ * aviso de plantão marcado depois do fim da turma.
  */
-export async function countUpcomingAssignmentsInCohort(cohortId: string, today: string): Promise<number> {
+export async function listActiveInternsWithLastShift(cohortIds: string[]) {
+  if (cohortIds.length === 0) return [];
+  const rows = await db
+    .select({
+      cohortId: userRoles.cohortId,
+      userRoleId: userRoles.id,
+      name: users.name,
+      lastShiftDate: sql<string | null>`max(${assignments.date})::text`,
+    })
+    .from(userRoles)
+    .innerJoin(users, eq(users.id, userRoles.userId))
+    .leftJoin(
+      assignments,
+      and(
+        eq(assignments.internId, userRoles.userId),
+        inArray(assignments.status, [...LIVE_SHIFT_STATUSES]),
+      ),
+    )
+    .where(
+      and(
+        inArray(userRoles.cohortId, cohortIds),
+        eq(userRoles.role, "INTERN"),
+        eq(userRoles.isArchived, false),
+      ),
+    )
+    .groupBy(userRoles.cohortId, userRoles.id, users.name);
+  return rows.map((row) => ({ ...row, cohortId: row.cohortId! }));
+}
+
+/** Arquiva os vínculos de interno indicados. Idempotente: os já arquivados não são tocados. */
+export async function archiveInternRoles(userRoleIds: string[], archivedBy: string | null): Promise<number> {
+  if (userRoleIds.length === 0) return 0;
+  const archived = await db
+    .update(userRoles)
+    .set({ isArchived: true, archivedAt: new Date(), archivedBy })
+    .where(and(inArray(userRoles.id, userRoleIds), eq(userRoles.isArchived, false)))
+    .returning({ id: userRoles.id });
+  return archived.length;
+}
+
+/** Último plantão (não cancelado) de qualquer interno da turma — o relatório de encerramento vai até ele. */
+export async function getCohortLastShiftDate(cohortId: string): Promise<string | null> {
   const [row] = await db
-    .select({ total: sql<number>`count(*)::int` })
+    .select({ last: sql<string | null>`max(${assignments.date})::text` })
     .from(assignments)
     .innerJoin(
       userRoles,
@@ -227,16 +278,10 @@ export async function countUpcomingAssignmentsInCohort(cohortId: string, today: 
         eq(userRoles.userId, assignments.internId),
         eq(userRoles.cohortId, cohortId),
         eq(userRoles.role, "INTERN"),
-        eq(userRoles.isArchived, false),
       ),
     )
-    .where(
-      and(
-        gte(assignments.date, today),
-        inArray(assignments.status, ["SCHEDULED", "CONFIRMED", "CHECKED_IN"]),
-      ),
-    );
-  return row?.total ?? 0;
+    .where(ne(assignments.status, "CANCELLED"));
+  return row?.last ?? null;
 }
 
 /**

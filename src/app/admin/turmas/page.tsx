@@ -16,6 +16,8 @@ type Cohort = {
   closedAt: string | null;
   notes: string | null;
   createdAt: string;
+  /** Internos com plantão escalado depois do fim: a turma só arquiva depois do último. */
+  internsBeyondEnd?: { name: string; lastShiftDate: string }[];
 };
 
 type Faculty = { id: string; name: string; abbreviation: string };
@@ -103,7 +105,11 @@ export default function AdminTurmas() {
   async function save() {
     if (!editing) return;
     if (editing.status === "CLOSED") {
-      if (!confirm("Arquivar esta turma? O status vai para Fechada e TODOS os interns ainda ativos nela serão arquivados. Essa ação não pode ser desfeita pela tela de turmas.")) return;
+      const late = editing.internsBeyondEnd ?? [];
+      const lateWarning = late.length
+        ? `\n\nAtenção: ${late.length} interno(s) ainda têm plantão escalado depois do fim (último em ${fmtDate(late[0].lastShiftDate)}). Fechando agora, eles são arquivados antes desses plantões.`
+        : "";
+      if (!confirm(`Arquivar esta turma? O status vai para Fechada e TODOS os interns ainda ativos nela serão arquivados. Essa ação não pode ser desfeita pela tela de turmas.${lateWarning}`)) return;
     }
     setError("");
     try {
@@ -119,11 +125,14 @@ export default function AdminTurmas() {
       if (!json.success) { setError(json.error); return; }
       if (typeof json.archivedInterns === "number") {
         alert(`Turma fechada. ${json.archivedInterns} interno(s) arquivado(s).`);
-      } else if (json.lifecycle && (json.lifecycle.activated?.length || json.lifecycle.closed?.length)) {
+      } else if (json.lifecycle && (json.lifecycle.activated?.length || json.lifecycle.closed?.length || json.lifecycle.held?.length)) {
         const closed = json.lifecycle.closed?.reduce((sum: number, c: { archivedInterns: number }) => sum + c.archivedInterns, 0) ?? 0;
         const parts: string[] = [];
         if (json.lifecycle.activated?.length) parts.push(`${json.lifecycle.activated.length} turma(s) ativada(s)`);
         if (json.lifecycle.closed?.length) parts.push(`${json.lifecycle.closed.length} turma(s) fechada(s), ${closed} interno(s) arquivado(s)`);
+        for (const h of json.lifecycle.held ?? []) {
+          parts.push(`${h.label}: ${h.archivedInterns} interno(s) arquivado(s); ${h.pending.length} segue(m) ativo(s) até o último plantão`);
+        }
         if (parts.length) alert(`Datas aplicadas automaticamente: ${parts.join("; ")}.`);
       }
       setEditing(null);
@@ -303,6 +312,7 @@ export default function AdminTurmas() {
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[c.status]}`}>
                     {STATUS_LABEL[c.status]}
                   </span>
+                  <BeyondEndWarning cohort={c} />
                 </td>
                 <td className="py-2 flex gap-3">
                   {c.status !== "CLOSED" && (
@@ -389,6 +399,39 @@ export default function AdminTurmas() {
       )}
     </div>
   );
+}
+
+/**
+ * Aviso de interno com plantão depois do fim da turma. Antes do fim, alerta que
+ * a turma não vai arquivar na data; depois, explica por que ainda não arquivou.
+ */
+function BeyondEndWarning({ cohort }: { cohort: Cohort }) {
+  const late = cohort.internsBeyondEnd ?? [];
+  if (late.length === 0) return null;
+  const ended = cohort.endDate < localToday();
+  const last = late[0].lastShiftDate;
+  return (
+    <details className="mt-1 max-w-xs text-xs text-amber-800">
+      <summary className="cursor-pointer rounded-md bg-amber-50 px-2 py-0.5 font-medium">
+        {ended
+          ? `Aberta: ${late.length} interno(s) com plantão até ${fmtDate(last)}`
+          : `${late.length} interno(s) com plantão após o fim (até ${fmtDate(last)})`}
+      </summary>
+      <p className="mt-1 text-amber-700">
+        Cada um só é arquivado depois do próprio último plantão; a turma fecha quando o último sair.
+      </p>
+      <ul className="mt-1 list-disc pl-4">
+        {late.map((i, idx) => (
+          <li key={idx}>{i.name} — {fmtDate(i.lastShiftDate)}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function localToday() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function fmtDate(d: string) {

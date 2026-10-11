@@ -7,26 +7,37 @@ import { getEmailErrorSummary, sendCohortClosingReportEmail } from "@/lib/email"
 import {
   listCohortsForLifecycle,
   activateCohort,
-  closeCohortAndArchiveInterns,
-  countUpcomingAssignmentsInCohort,
+  closeCohort,
+  archiveInternRoles,
+  listActiveInternsWithLastShift,
+  getCohortLastShiftDate,
   listCohortsPendingClosingReport,
   listCohortLeaderNames,
   markClosingReportSent,
 } from "@/features/cohorts/infra/repositories/cohort-repository";
+import { planCohortClosure, type ClosureIntern } from "@/features/cohorts/domain/cohort-closure";
 
 export type CohortLifecycleResult = {
   today: string;
   activated: Array<{ cohortId: string; label: string }>;
   closed: Array<{ cohortId: string; label: string; archivedInterns: number }>;
-  held: Array<{ cohortId: string; label: string; endDate: string; upcomingAssignments: number }>;
+  /** Turma vencida que segue aberta porque há interno com plantão de hoje em diante. */
+  held: Array<{
+    cohortId: string;
+    label: string;
+    endDate: string;
+    archivedInterns: number;
+    pending: Array<{ name: string; lastShiftDate: string }>;
+  }>;
 };
 
 /**
  * Avalia as datas de início/fim das turmas e aplica transições de status:
  *  - PLANNED com startDate <= hoje  → ACTIVE
- *  - qualquer turma com endDate < hoje → CLOSED + arquiva todos os internos,
- *    exceto se algum interno ainda tem plantão de hoje em diante (data de fim
- *    cadastrada errada): aí fica em `held` e não arquiva ninguém
+ *  - turma com endDate < hoje → arquiva cada interno que não tem mais plantão
+ *    de hoje em diante; quem tem (reposição escalada depois do fim) fica ativo
+ *    e é arquivado na primeira rodada depois do último plantão. A turma vira
+ *    CLOSED quando o último interno é arquivado; até lá aparece em `held`.
  *
  * Idempotente: roda diariamente via cron e também sob demanda ao salvar datas
  * de uma turma. Passe `cohortId` para avaliar apenas uma turma.
@@ -43,32 +54,53 @@ export async function evaluateCohortLifecycle(params?: {
 
   const result: CohortLifecycleResult = { today, activated: [], closed: [], held: [] };
 
-  for (const cohort of cohorts) {
-    const upcomingAssignments = cohort.endDate < today
-      ? await countUpcomingAssignmentsInCohort(cohort.id, today)
-      : 0;
-    if (upcomingAssignments > 0) {
-      console.warn("[cohort-lifecycle] turma passou do fim mas tem plantões por vir; não arquivada", {
-        cohortId: cohort.id, label: cohort.label, endDate: cohort.endDate, upcomingAssignments,
-      });
-      result.held.push({ cohortId: cohort.id, label: cohort.label, endDate: cohort.endDate, upcomingAssignments });
-    }
+  const endedIds = cohorts.filter((cohort) => cohort.endDate < today).map((cohort) => cohort.id);
+  const internsByCohort = new Map<string, ClosureIntern[]>();
+  for (const intern of await listActiveInternsWithLastShift(endedIds)) {
+    const list = internsByCohort.get(intern.cohortId) ?? [];
+    list.push(intern);
+    internsByCohort.set(intern.cohortId, list);
+  }
 
-    // Fim já passou → fecha e arquiva (vale para PLANNED ou ACTIVE).
-    if (cohort.endDate < today && upcomingAssignments === 0) {
-      const archivedInterns = await closeCohortAndArchiveInterns({
-        cohortId: cohort.id,
-        closedBy: actorUserId,
+  for (const cohort of cohorts) {
+    const plan = planCohortClosure({
+      endDate: cohort.endDate,
+      today,
+      interns: internsByCohort.get(cohort.id) ?? [],
+    });
+
+    // Fim já passou → arquiva quem não tem mais plantão (vale para PLANNED ou ACTIVE).
+    if (plan.ended) {
+      const archivedInterns = await archiveInternRoles(plan.toArchive.map((i) => i.userRoleId), actorUserId);
+      const pending = plan.pending.map((i) => ({ name: i.name, lastShiftDate: i.lastShiftDate! }));
+
+      if (plan.closeCohort) {
+        await closeCohort(cohort.id, actorUserId);
+        result.closed.push({ cohortId: cohort.id, label: cohort.label, archivedInterns });
+        await logAudit({
+          userId: actorUserId ?? undefined,
+          action: "AUTO_CLOSE_COHORT",
+          entity: "cohort",
+          entityId: cohort.id,
+          payload: { endDate: cohort.endDate, today, archivedInterns },
+        });
+        continue;
+      }
+
+      console.warn("[cohort-lifecycle] turma passou do fim mas tem interno com plantão por vir; segue aberta", {
+        cohortId: cohort.id, label: cohort.label, endDate: cohort.endDate, archivedInterns, pending,
       });
-      result.closed.push({ cohortId: cohort.id, label: cohort.label, archivedInterns });
-      await logAudit({
-        userId: actorUserId ?? undefined,
-        action: "AUTO_CLOSE_COHORT",
-        entity: "cohort",
-        entityId: cohort.id,
-        payload: { endDate: cohort.endDate, today, archivedInterns },
-      });
-      continue;
+      result.held.push({ cohortId: cohort.id, label: cohort.label, endDate: cohort.endDate, archivedInterns, pending });
+      if (archivedInterns > 0) {
+        await logAudit({
+          userId: actorUserId ?? undefined,
+          action: "AUTO_ARCHIVE_COHORT_INTERNS",
+          entity: "cohort",
+          entityId: cohort.id,
+          payload: { endDate: cohort.endDate, today, archivedInterns, pending },
+        });
+      }
+      // Turma vencida ainda PLANNED (cadastrada atrasada) também vira ACTIVE abaixo.
     }
 
     // Início já chegou e ainda está PLANNED → ativa.
@@ -117,7 +149,8 @@ export async function sendPendingClosingReports(): Promise<ClosingReportResult> 
 
   for (const cohort of pending) {
     try {
-      const filters = buildCohortReportFilters(cohort);
+      // Reposição escalada depois do fim entra no relatório.
+      const filters = buildCohortReportFilters({ ...cohort, lastShiftDate: await getCohortLastShiftDate(cohort.id) });
       const [{ document }, leaderNames, html] = await Promise.all([
         generateAdminReport(filters),
         listCohortLeaderNames(cohort.id),
