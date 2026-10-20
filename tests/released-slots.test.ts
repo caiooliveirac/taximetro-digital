@@ -20,7 +20,7 @@ const regras = [
 ];
 
 function vagas(released?: Map<string, number>) {
-  return buildWeekPositions({ rules: regras, weekExisting: [], weekDates: semana, isEbmsp: false, released })
+  return buildWeekPositions({ rules: regras, weekExisting: [], weekDates: semana, sorteiaCru: false, meioTurno: false, released })
     .map((p) => `${p.baseCode}|${p.date}|${p.period}`);
 }
 
@@ -43,14 +43,14 @@ test("liberar uma vaga de base com capacidade 2 deixa a outra no sorteio", () =>
 test("liberação somada a plantão já marcado nunca fica negativa", () => {
   const released = new Map([["b1|2026-09-10|DAY", 2]]);
   const existente = [{ baseId: "b1", baseType: "USA", date: "2026-09-10", period: "DAY", shift: null }];
-  const lista = buildWeekPositions({ rules: regras, weekExisting: existente, weekDates: semana, isEbmsp: false, released });
+  const lista = buildWeekPositions({ rules: regras, weekExisting: existente, weekDates: semana, sorteiaCru: false, meioTurno: false, released });
   assert.equal(lista.filter((p) => p.baseId === "b1" && p.period === "DAY").length, 0);
 });
 
 test("o sorteio desconta as liberações da faculdade na janela", () => {
   const src = readFileSync(path.join(process.cwd(), "src/features/scheduling/application/use-cases/run-leader-lottery.ts"), "utf8");
   assert.match(src, /listReleasedOffers\(\{ facultyId, from: windowStart, to: windowEnd \}\)/);
-  assert.match(src, /buildWeekPositions\(\{ rules, weekExisting, weekDates, isEbmsp, released \}\)/);
+  assert.match(src, /buildWeekPositions\(\{ rules, weekExisting, weekDates, sorteiaCru, meioTurno, released \}\)/);
 });
 
 test("interno não pega vaga que a própria faculdade liberou", () => {
@@ -61,7 +61,7 @@ test("interno não pega vaga que a própria faculdade liberou", () => {
 test("liberar aceita escopo: só intervenção (padrão) ou regulação também", () => {
   const src = readFileSync(path.join(process.cwd(), "src/features/scheduling/application/use-cases/release-slots.ts"), "utf8");
   assert.match(src, /scope: z\.enum\(\["USA", "ALL"\]\)\.default\("USA"\)/);
-  assert.match(src, /input\.scope === "ALL" \|\| shouldIncludeRuleInLottery\(rule, isEbmsp\)/);
+  assert.match(src, /input\.scope === "ALL" \|\| shouldIncludeRuleInLottery\(rule, sorteiaCru\)/);
 });
 
 test("CRU fixo não nasce em dia/turno que a faculdade liberou", () => {

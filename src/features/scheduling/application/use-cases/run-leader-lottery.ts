@@ -13,7 +13,7 @@ import { randomInt } from "node:crypto";
 import { type AllocPos } from "./allocate-positions";
 import { sortearHorizonte, type HistoricoDoInterno } from "./lottery-horizon";
 import { temFeature } from "@/lib/instance";
-import { startOfWeekDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
+import { sorteiaCruDiurna, startOfWeekDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 import { listReleasedOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import {
   bloqueiosCompostos,
@@ -88,11 +88,12 @@ type SlotRuleLite = {
   period: string;
 };
 
-export function shouldIncludeRuleInLottery(rule: SlotRuleLite, isEbmsp: boolean) {
+export function shouldIncludeRuleInLottery(rule: SlotRuleLite, sorteiaCru: boolean) {
   // Lottery sorteia apenas USA (intervenção).
-  // Exceção: EBMSP usa CENTRAL no período DAY por split MORNING/AFTERNOON.
+  // Exceção: a EBMSP também sorteia a CENTRAL diurna (ver sorteiaCruDiurna) —
+  // inteira (12h) ou em manhã/tarde, conforme usaMeioTurnoNaCru.
   const isCentralDay = rule.period === "DAY" && rule.baseType === "CENTRAL";
-  return rule.baseType === "USA" || (isEbmsp && isCentralDay);
+  return rule.baseType === "USA" || (sorteiaCru && isCentralDay);
 }
 
 type SlotRuleRow = {
@@ -128,18 +129,21 @@ function addDays(dateStr: string, days: number): string {
 
 /**
  * Monta as vagas sorteáveis de UMA semana: capacidade menos o que já está
- * preenchido, filtradas para USA (e CENTRAL/DAY no EBMSP com split manhã/tarde),
- * ordenadas DAY-first e então por BASE_PRIORITY.
+ * preenchido, filtradas para USA (e CENTRAL/DAY quando `sorteiaCru`, partida em
+ * manhã/tarde só quando `meioTurno`), ordenadas DAY-first e então por BASE_PRIORITY.
  */
 export function buildWeekPositions(params: {
   rules: SlotRuleRow[];
   weekExisting: WeekExistingRow[];
   weekDates: string[];
-  isEbmsp: boolean;
+  /** CENTRAL/DAY entra no sorteio (sorteiaCruDiurna). */
+  sorteiaCru: boolean;
+  /** CENTRAL/DAY partida em manhã/tarde (usaMeioTurnoNaCru); senão, 12h com `shift = null`. */
+  meioTurno: boolean;
   /** Vagas liberadas pela faculdade, por `${baseId}|${date}|${period}` (ver release-slots.ts). */
   released?: Map<string, number>;
 }): AllocPos[] {
-  const { rules, weekExisting, weekDates, isEbmsp, released } = params;
+  const { rules, weekExisting, weekDates, sorteiaCru, meioTurno, released } = params;
   const positions: AllocPos[] = [];
 
   for (const rule of rules) {
@@ -148,7 +152,7 @@ export function buildWeekPositions(params: {
     const dateStr = weekDates[dayIdx];
     if (!dateStr) continue;
 
-    if (!shouldIncludeRuleInLottery(rule, isEbmsp)) continue;
+    if (!shouldIncludeRuleInLottery(rule, sorteiaCru)) continue;
 
     const filled = weekExisting.filter(
       (assignment) => assignment.baseId === rule.baseId && assignment.date === dateStr && assignment.period === rule.period,
@@ -157,7 +161,7 @@ export function buildWeekPositions(params: {
     const releasedCount = released?.get(`${rule.baseId}|${dateStr}|${rule.period}`) ?? 0;
     const openCount = rule.capacity - filled - releasedCount;
 
-    if (isEbmsp && rule.period === "DAY" && rule.baseType === "CENTRAL") {
+    if (meioTurno && rule.period === "DAY" && rule.baseType === "CENTRAL") {
       const morningCount = Math.ceil(openCount / 2);
       const afternoonCount = openCount - morningCount;
       for (let j = 0; j < morningCount; j++) {
@@ -251,7 +255,11 @@ export async function executeRunLeaderLottery(params: {
   }
 
   const facultyAbbreviation = await getFacultyAbbreviation(facultyId);
-  const isEbmsp = usaMeioTurnoNaCru(facultyAbbreviation);
+  // Duas decisões separadas (STAX-18): a CRU diurna entra no sorteio? E entra
+  // partida em manhã/tarde? Nos motores, `isEbmsp` é só o meio turno (chave de
+  // slot com `shift`).
+  const sorteiaCru = sorteiaCruDiurna(facultyAbbreviation);
+  const meioTurno = usaMeioTurnoNaCru(facultyAbbreviation);
   const usaUnavailability = temFeature("internUnavailability");
 
   // Slots já ocupados na janela. As semanas são disjuntas em data, então não há
@@ -260,7 +268,7 @@ export async function executeRunLeaderLottery(params: {
   for (const id of safeIds) usedSlots.set(id, new Set());
   for (const assignment of existingAll) {
     if (!usedSlots.has(assignment.internId)) continue;
-    const slotKey = isEbmsp
+    const slotKey = meioTurno
       ? `${assignment.date}|${assignment.period}|${(assignment as { shift?: string | null }).shift ?? ""}`
       : `${assignment.date}|${assignment.period}`;
     usedSlots.get(assignment.internId)!.add(slotKey);
@@ -275,7 +283,7 @@ export async function executeRunLeaderLottery(params: {
     dateFrom: addDays(windowStart, -HISTORICO_DE_BASES_DIAS),
     dateTo: windowEnd,
   })) {
-    if (!shouldIncludeRuleInLottery(row, isEbmsp)) continue;
+    if (!shouldIncludeRuleInLottery(row, sorteiaCru)) continue;
     const h = historico.get(row.internId);
     if (!h) continue;
     h.plantoes += 1;
@@ -325,7 +333,7 @@ export async function executeRunLeaderLottery(params: {
       (assignment) => assignment.date >= weekDates[0] && assignment.date <= weekDates[6],
     );
     positionsByWeek.push(
-      buildWeekPositions({ rules, weekExisting, weekDates, isEbmsp, released })
+      buildWeekPositions({ rules, weekExisting, weekDates, sorteiaCru, meioTurno, released })
         .filter((position) => !startDate || position.date >= startDate),
     );
 
@@ -342,7 +350,7 @@ export async function executeRunLeaderLottery(params: {
     positionsByWeek,
     internIds: safeIds,
     maxShifts: input.maxShifts,
-    isEbmsp,
+    isEbmsp: meioTurno,
     existingUsaShiftCountByWeek,
     usedSlots,
     cruBlocked,
@@ -372,7 +380,7 @@ export async function executeRunLeaderLottery(params: {
     createdBy: actor.realUserId ?? actor.id,
   }));
   for (const { internId, position: pos } of sorteio.matches) {
-    const slotKey = isEbmsp ? `${pos.date}|${pos.period}|${pos.shift ?? ""}` : `${pos.date}|${pos.period}`;
+    const slotKey = meioTurno ? `${pos.date}|${pos.period}|${pos.shift ?? ""}` : `${pos.date}|${pos.period}`;
     usedSlots.get(internId)?.add(slotKey);
   }
 
@@ -399,7 +407,7 @@ export async function executeRunLeaderLottery(params: {
       unallocatedInternIds: safeIds.filter((id) => !alocados.has(id)),
       remainingPositions: sorteio.emptyByWeek[w],
       maxShifts: input.maxShifts,
-      isEbmsp,
+      isEbmsp: meioTurno,
       existingUsaShiftCount: existingUsaShiftCountByWeek[w],
       usedSlots,
       cruBlocked,

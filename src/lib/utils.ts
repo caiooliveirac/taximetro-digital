@@ -390,6 +390,16 @@ export function usaMeioTurnoNaCru(facultyAbbr: string | null | undefined): boole
   return EBMSP_CRU_MEIO_TURNO && facultyAbbr === "EBMSP";
 }
 
+/**
+ * A CRU diurna da faculdade entra no sorteio, junto com as USA? Só a EBMSP — com
+ * plantão de 12h (`shift = null`) ou com meio turno. É decisão separada de
+ * `usaMeioTurnoNaCru`: desligar o meio turno em 2026-09-22 tirou, sem querer, a
+ * CRU da EBMSP do sorteio (STAX-18).
+ */
+export function sorteiaCruDiurna(facultyAbbr: string | null | undefined): boolean {
+  return facultyAbbr === "EBMSP";
+}
+
 export function getShiftLabel(shift: string | null | undefined): string {
   if (shift === "MORNING") return "Manhã (07h–13h)";
   if (shift === "AFTERNOON") return "Tarde (13h–19h)";

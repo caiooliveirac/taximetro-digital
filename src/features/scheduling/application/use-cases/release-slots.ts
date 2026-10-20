@@ -13,7 +13,7 @@
 
 import { z } from "zod/v4";
 import { logAudit } from "@/shared/infra/logger/audit";
-import { localDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
+import { localDateStr, sorteiaCruDiurna } from "@/lib/utils";
 import {
   cancelReleasedOffers,
   insertExtraOffers,
@@ -101,7 +101,7 @@ export async function executeReleaseSlots(params: {
   }
 
   const abbr = await getFacultyAbbreviation(facultyId);
-  const isEbmsp = usaMeioTurnoNaCru(abbr);
+  const sorteiaCru = sorteiaCruDiurna(abbr);
   const dow = dayOfWeekKey(input.date);
 
   const rules = (await getSlotRulesForFaculty(facultyId)).filter((rule) =>
@@ -109,7 +109,7 @@ export async function executeReleaseSlots(params: {
     && rule.period === input.period
     && (input.baseId
       ? rule.baseId === input.baseId
-      : input.scope === "ALL" || shouldIncludeRuleInLottery(rule, isEbmsp)),
+      : input.scope === "ALL" || shouldIncludeRuleInLottery(rule, sorteiaCru)),
   );
 
   // Liberar o dia/turno inteiro tira da escala quem já estava marcado e ainda

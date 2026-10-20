@@ -181,8 +181,12 @@ export function canAssign(
   // CRU/CRL ±12h rule only applies to USA targets
   if (pos.baseType !== "CENTRAL" && pos.baseCode !== "CRL") {
     if (cruBlocked.get(internId)?.has(`${pos.date}|${pos.period}`)) return false;
-    // Mesmo descanso entre dois plantões de USA: turno colado em outro plantão
-    // do interno (já existente ou sorteado neste lote) daria 24h seguidas.
+  }
+
+  // Descanso de 12h (rest-policy): turno colado em outro plantão do interno (já
+  // existente ou sorteado neste lote) daria 24h seguidas. Vale para a USA e para
+  // a CRU sorteada de 12h (EBMSP, `shift = null`); meio turno de 6h fica fora.
+  if (!pos.shift) {
     const ocupados = usedSlots.get(internId);
     if (ocupados && turnosColados(pos).some((k) => temTurno(ocupados, k))) return false;
   }
