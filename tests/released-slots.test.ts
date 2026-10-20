@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { buildWeekPositions } from "../src/features/scheduling/application/use-cases/run-leader-lottery";
+import { bloqueiaDataPassada } from "../src/features/extra-offers/application/use-cases/claim-extra-offer";
 
 const semana = ["2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-12", "2026-09-13"];
 const regras = [
@@ -118,4 +119,32 @@ test("a vaga própria diz a sigla da faculdade; a de outra diz quem cedeu", () =
   assert.match(src, /`Vaga \$\{myAbbr\}`/);
   assert.match(src, /Cedida pela \{f\.releasedFacultyAbbr\}/);
   assert.doesNotMatch(src, />Vaga livre · /);
+});
+
+// S2OUT-68: a lista de vagas livres não tinha corte de data e o claim não tinha
+// trava — o líder escalava interno em data passada pela vaga cedida, por fora
+// do override retroativo, que é só da coordenação.
+test("vaga cedida de data passada: o líder não usa; a coordenação só com o override", () => {
+  const hoje = "2026-10-20";
+  assert.equal(bloqueiaDataPassada({ offerDate: "2026-10-19", actorRole: "LEADER", today: hoje }), true);
+  assert.equal(bloqueiaDataPassada({ offerDate: "2026-10-19", actorRole: "LEADER", allowRetroactiveOverride: true, today: hoje }), true);
+  assert.equal(bloqueiaDataPassada({ offerDate: "2026-10-19", actorRole: "INTERN", today: hoje }), true);
+  assert.equal(bloqueiaDataPassada({ offerDate: "2026-10-19", actorRole: "COORDINATOR", today: hoje }), true);
+  assert.equal(bloqueiaDataPassada({ offerDate: "2026-10-19", actorRole: "COORDINATOR", allowRetroactiveOverride: true, today: hoje }), false);
+  // Hoje e futuro seguem livres para todo mundo.
+  assert.equal(bloqueiaDataPassada({ offerDate: hoje, actorRole: "LEADER", today: hoje }), false);
+  assert.equal(bloqueiaDataPassada({ offerDate: "2026-10-27", actorRole: "INTERN", today: hoje }), false);
+});
+
+test("a trava de data passada está no claim, e a lista de vagas livres corta o passado", () => {
+  const claim = readFileSync(path.join(process.cwd(), "src/features/extra-offers/application/use-cases/claim-extra-offer.ts"), "utf8");
+  assert.match(claim, /if \(bloqueiaDataPassada\(\{ offerDate: offer\.date, actorRole: actor\.role, allowRetroactiveOverride: params\.allowRetroactiveOverride, today \}\)\)/);
+  const repo = readFileSync(path.join(process.cwd(), "src/features/extra-offers/infra/repositories/extra-offer-repository.ts"), "utf8");
+  const listFree = repo.slice(repo.indexOf("export async function listFreeOffers"), repo.indexOf("export async function cancelReleasedOffers"));
+  assert.match(listFree, /gte\(extraShiftOffers\.date, localDateStr\(\)\)/);
+  // A grade do coordenador manda o override quando a data é passada.
+  const grade = readFileSync(path.join(process.cwd(), "src/components/admin-filled-schedule.tsx"), "utf8");
+  assert.match(grade, /JSON\.stringify\(\{ internId: allocInternId, facultyId, allowRetroactiveOverride: isRetroactiveAdminAllocation \}\)/);
+  const rota = readFileSync(path.join(process.cwd(), "src/app/api/extra-offers/[id]/route.ts"), "utf8");
+  assert.match(rota, /allowRetroactiveOverride: body\.allowRetroactiveOverride === true/);
 });

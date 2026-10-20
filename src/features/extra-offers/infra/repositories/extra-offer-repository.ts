@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { hasShiftStarted } from "@/lib/utils";
+import { hasShiftStarted, localDateStr } from "@/lib/utils";
 import {
   assignments,
   bases,
@@ -276,6 +276,8 @@ export async function listReleasedOffersAll(params: { from: string; to: string }
 /**
  * Vagas livres para uma faculdade usar: o que as OUTRAS liberaram na janela e
  * ninguém pegou ainda. É o que aparece como "Vaga livre" na grade dela.
+ * Data passada não entra: escalar retroativo é só da coordenação, pela grade
+ * dela, com o override auditado (claim-extra-offer.ts).
  */
 export async function listFreeOffers(params: { excludeFacultyId: string; from: string; to: string }) {
   return db
@@ -297,6 +299,7 @@ export async function listFreeOffers(params: { excludeFacultyId: string; from: s
       sql`${extraShiftOffers.releasedFacultyId} is not null`,
       sql`${extraShiftOffers.releasedFacultyId} <> ${params.excludeFacultyId}`,
       gte(extraShiftOffers.date, params.from),
+      gte(extraShiftOffers.date, localDateStr()),
       lte(extraShiftOffers.date, params.to),
       isNull(extraShiftOffers.claimedBy),
       isNull(extraShiftOffers.cancelledAt),

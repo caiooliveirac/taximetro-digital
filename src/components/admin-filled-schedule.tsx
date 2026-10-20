@@ -1637,7 +1637,7 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                 ? await fetch(`/taximetro/api/extra-offers/${allocation.freeOffer.id}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ internId: allocInternId, facultyId }),
+                    body: JSON.stringify({ internId: allocInternId, facultyId, allowRetroactiveOverride: isRetroactiveAdminAllocation }),
                 })
                 : await fetch("/taximetro/api/assignments", {
                     method: "POST",

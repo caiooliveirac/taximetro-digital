@@ -8,6 +8,23 @@ import {
 import { logAudit } from "@/shared/infra/logger/audit";
 import { findAssignmentByInternSlot } from "@/features/scheduling/infra/repositories/assignment-repository";
 import { getValidInternIdsForFaculty } from "@/features/scheduling/infra/repositories/lottery-repository";
+import { localDateStr } from "@/lib/utils";
+
+/**
+ * Oferta de data passada não se pega. O board e a grade já não mostram; isto é
+ * a trava no servidor para quem chama a rota direto. A exceção é a mesma de
+ * create-assignment: a coordenação, com o override retroativo explícito, que
+ * fica na auditoria.
+ */
+export function bloqueiaDataPassada(params: {
+  offerDate: string;
+  actorRole: string;
+  allowRetroactiveOverride?: boolean;
+  today?: string;
+}): boolean {
+  if (params.offerDate >= (params.today ?? localDateStr())) return false;
+  return !(params.actorRole === "COORDINATOR" && params.allowRetroactiveOverride === true);
+}
 
 /**
  * Duas situações passam por aqui:
@@ -24,6 +41,8 @@ export async function executeClaimExtraOffer(params: {
   internId?: string;
   /** Coordenador precisa dizer a faculdade do interno; o líder usa a dele. */
   facultyId?: string;
+  /** Coordenador escalando em data passada pela grade dele. Ver bloqueiaDataPassada. */
+  allowRetroactiveOverride?: boolean;
 }) {
   const { actor, offerId } = params;
 
@@ -48,6 +67,11 @@ export async function executeClaimExtraOffer(params: {
   if (offer.reservedBy) {
     return { status: 409, body: { success: false, error: "Esta vaga está reservada pela coordenação" } } as const;
   }
+  const today = localDateStr();
+  if (bloqueiaDataPassada({ offerDate: offer.date, actorRole: actor.role, allowRetroactiveOverride: params.allowRetroactiveOverride, today })) {
+    return { status: 400, body: { success: false, error: "Não dá para usar vaga de data passada" } } as const;
+  }
+  const retroativo = offer.date < today;
 
   // Always use the intern's own faculty so the assignment appears in the
   // correct leader view and compliance report. offer.facultyId is only a display hint.
@@ -142,6 +166,7 @@ export async function executeClaimExtraOffer(params: {
         baseCode: bs?.code ?? null,
         date: offer.date,
         period: offer.period,
+        ...(retroativo ? { allowRetroactiveOverride: true } : {}),
       },
     });
   } else {
@@ -150,7 +175,7 @@ export async function executeClaimExtraOffer(params: {
       action: "extra_offer.claimed",
       entity: "extra_shift_offers",
       entityId: offerId,
-      payload: { assignmentId, date: offer.date, baseId: offer.baseId },
+      payload: { assignmentId, date: offer.date, baseId: offer.baseId, ...(retroativo ? { allowRetroactiveOverride: true } : {}) },
     });
   }
 

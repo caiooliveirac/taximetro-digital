@@ -12,6 +12,8 @@
  * o que o abono significa.
  */
 
+import { hasShiftStarted } from "@/lib/utils";
+
 export const GOAL_KINDS = ["USA", "CRU", "CRL"] as const;
 export type GoalKind = (typeof GOAL_KINDS)[number];
 export type GoalTargets = Record<GoalKind, number>;
@@ -33,6 +35,9 @@ export type GoalSlotItem = {
   baseType?: string | null;
   /** Plantão extra não conta para a meta — mesma regra do compliance. */
   isExtraShift?: boolean | null;
+  /** Turno: decide se o plantão de hoje já começou. */
+  period?: string | null;
+  shift?: string | null;
 };
 
 export type GoalSlot<T extends GoalSlotItem> = {
@@ -68,10 +73,18 @@ export function goalKindOf(baseType: string | null | undefined): GoalKind | null
   return null;
 }
 
-function stateOf(item: GoalSlotItem, today: string): Exclude<GoalSlotState, "empty"> {
+// Pendente é o plantão que já começou sem checkout (#83). O de hoje que ainda
+// não começou é agendado e ocupa a casinha, como qualquer plantão futuro.
+function hasStarted(item: GoalSlotItem, today: string, now: Date): boolean {
+  if (item.date !== today) return item.date < today;
+  if (!item.period) return true;
+  return hasShiftStarted(item.date, item.period === "NIGHT" ? "NIGHT" : "DAY", item.shift ?? null, now);
+}
+
+function stateOf(item: GoalSlotItem, today: string, now: Date): Exclude<GoalSlotState, "empty"> {
   if (item.status === "ABSENT") return "missed";
   if (REALIZED.has(item.status)) return "done";
-  return item.date <= today ? "pending" : "scheduled";
+  return hasStarted(item, today, now) ? "pending" : "scheduled";
 }
 
 /**
@@ -83,6 +96,7 @@ export function buildGoalSlots<T extends GoalSlotItem>(
   kind: GoalKind,
   target: number,
   today: string,
+  now: Date = new Date(),
 ): GoalSlot<T>[] {
   const mine = items
     .filter((i) => i.status !== "CANCELLED" && !i.isExtraShift && goalKindOf(i.baseType) === kind)
@@ -91,7 +105,7 @@ export function buildGoalSlots<T extends GoalSlotItem>(
   const slots: GoalSlot<T>[] = mine.map((assignment) => ({
     key: assignment.id,
     kind,
-    state: stateOf(assignment, today),
+    state: stateOf(assignment, today, now),
     assignment,
   }));
 
@@ -106,10 +120,11 @@ export function summarizeGoals<T extends GoalSlotItem>(
   items: T[],
   targets: GoalTargets,
   today: string,
+  now: Date = new Date(),
 ): GoalKindSummary<T>[] {
   return GOAL_KINDS.map((kind) => {
     const target = targets[kind] ?? 0;
-    const slots = buildGoalSlots(items, kind, target, today);
+    const slots = buildGoalSlots(items, kind, target, today, now);
     const count = (state: GoalSlotState) => slots.filter((s) => s.state === state).length;
     return {
       kind,

@@ -6,6 +6,8 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { slotStatesFromCounts, summarizeGoals, totalMissingSlots } from "../src/lib/goal-slots";
 
 const today = "2026-09-07";
@@ -101,4 +103,45 @@ test("na lista, as casinhas saem da contagem do compliance", () => {
 
 test("contagem inconsistente não vira casinha negativa", () => {
   assert.deepEqual(slotStatesFromCounts({ done: 4, planned: 2, missing: 0 }), ["done", "done", "done", "done"]);
+});
+
+// S2OUT-72: hoje antes do início não é pendência (#83: pendente é o que já
+// começou sem checkout). Antes, o plantão de hoje que ainda não começou abria
+// uma casinha vazia na meta.
+test("plantão de hoje que ainda não começou é agendado e ocupa a casinha", () => {
+  const cedo = new Date("2026-09-07T08:00:00Z"); // 05:00 em Salvador
+  const [usaGoal] = summarizeGoals([{ ...usa("a", today, "SCHEDULED"), period: "DAY" }], targets, today, cedo);
+  assert.equal(usaGoal.slots[0].state, "scheduled");
+  assert.equal(usaGoal.filled, 1);
+  assert.equal(usaGoal.missing, 5);
+
+  const tarde = new Date("2026-09-07T18:00:00Z"); // 15:00: o noturno ainda não começou
+  const [noturno] = summarizeGoals([{ ...usa("b", today, "CONFIRMED"), period: "NIGHT" }], targets, today, tarde);
+  assert.equal(noturno.slots[0].state, "scheduled");
+  assert.equal(noturno.missing, 5);
+
+  const manha = new Date("2026-09-07T13:00:00Z"); // 10:00: CRU da tarde (EBMSP) começa às 13:00
+  const cru = summarizeGoals(
+    [{ id: "c", date: today, status: "SCHEDULED", baseType: "CENTRAL", period: "DAY", shift: "AFTERNOON" }],
+    targets,
+    today,
+    manha,
+  ).find((s) => s.kind === "CRU")!;
+  assert.equal(cru.slots[0].state, "scheduled");
+  assert.equal(cru.missing, 0);
+});
+
+test("plantão de hoje que já começou sem checkout continua pendente", () => {
+  const depois = new Date("2026-09-07T12:00:00Z"); // 09:00: diurno em curso
+  const [usaGoal] = summarizeGoals([{ ...usa("a", today, "CHECKED_IN"), period: "DAY" }], targets, today, depois);
+  assert.equal(usaGoal.slots[0].state, "pending");
+  assert.equal(usaGoal.filled, 0);
+  assert.equal(usaGoal.missing, 6);
+});
+
+test("o compliance manda o turno para as casinhas", () => {
+  const repo = readFileSync(path.join(process.cwd(), "src/features/compliance/infra/repositories/compliance-repository.ts"), "utf8");
+  const fn = repo.slice(repo.indexOf("export async function listNonCancelledAssignmentsForInterns"));
+  assert.match(fn, /period: assignments\.period/);
+  assert.match(fn, /shift: assignments\.shift/);
 });
