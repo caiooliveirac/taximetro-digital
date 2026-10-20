@@ -4,7 +4,8 @@
  *
  * Só o plantão do próprio interno, só o de hoje (operacional), e só em status
  * em que ele pode estar na base. Toque repetido do mesmo botão no mesmo
- * plantão dentro de 30 min é ignorado com sucesso: o dedo tremeu, não a base.
+ * plantão e na mesma base dentro de 30 min é ignorado com sucesso: o dedo
+ * tremeu, não a base (ver `avisoRepetido`).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -15,14 +16,13 @@ import { assignments, bases, faculties, users } from "@/db/schema";
 import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { formatBrazilTime, isCurrentOperationalAssignment } from "@/lib/utils";
-import { avisarSecretario, STATUS_NA_BASE, textoDoAviso, TIPOS_DE_AVISO } from "@/lib/aviso-tom";
+import { avisarSecretario, avisoRepetido, STATUS_NA_BASE, textoDoAviso, TIPOS_DE_AVISO } from "@/lib/aviso-tom";
 
 const schema = z.object({
   assignmentId: z.string().uuid(),
   tipo: z.enum(Object.keys(TIPOS_DE_AVISO) as [keyof typeof TIPOS_DE_AVISO, ...(keyof typeof TIPOS_DE_AVISO)[]]),
 });
 
-const REPETICAO_MS = 30 * 60_000;
 // ponytail: memória do processo; se um dia houver mais de uma réplica, mover para o audit_logs.
 const ultimos = new Map<string, number>();
 
@@ -60,12 +60,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "O aviso só vale para o plantão em andamento." }, { status: 409 });
   }
 
-  const chave = `${assignmentId}:${tipo}`;
-  const agora = Date.now();
-  if (agora - (ultimos.get(chave) ?? 0) < REPETICAO_MS) {
+  if (avisoRepetido(ultimos, { assignmentId, baseId: plantao.baseId, tipo }, Date.now())) {
     return NextResponse.json({ success: true, data: { entregue: true, repetido: true } });
   }
-  ultimos.set(chave, agora);
 
   const texto = textoDoAviso({
     tipo,

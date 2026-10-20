@@ -34,6 +34,25 @@ export function textoDoAviso(p: {
   return `🧑‍⚕️ ${quem} na ${p.baseCode} às ${p.hora}: ${TIPOS_DE_AVISO[p.tipo]}.`;
 }
 
+const REPETICAO_MS = 30 * 60_000;
+
+/**
+ * Toque repetido do mesmo botão, no mesmo plantão e na MESMA base, dentro de
+ * 30 min: o dedo tremeu, não a base. Em outra base (o interno foi remanejado) é
+ * aviso novo — sem a base na chave, ele era engolido sem registro (STAX-12).
+ * Marca o toque em `ultimos` quando ele vale.
+ */
+export function avisoRepetido(
+  ultimos: Map<string, number>,
+  p: { assignmentId: string; baseId: string; tipo: string },
+  agora: number,
+): boolean {
+  const chave = `${p.assignmentId}:${p.baseId}:${p.tipo}`;
+  if (agora - (ultimos.get(chave) ?? 0) < REPETICAO_MS) return true;
+  ultimos.set(chave, agora);
+  return false;
+}
+
 const TIMEOUT_MS = 5_000;
 
 export async function avisarSecretario(texto: string): Promise<boolean> {
