@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
   const hasGps = latitude !== 0 || longitude !== 0;
   let geo: { valid: boolean; distance: number; matchedBaseCode?: string } = { valid: true, distance: 0 };
   if (!impersonating && hasGps) {
-    geo = await checkAssignmentGeofence(latitude, longitude, base);
+    geo = await checkAssignmentGeofence(latitude, longitude, base, assignment);
   }
 
   // Dentro da cerca (recalculada no servidor, nunca confiando no cliente):

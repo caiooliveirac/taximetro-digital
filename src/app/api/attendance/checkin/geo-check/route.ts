@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     const [base] = await db.select().from(bases).where(eq(bases.id, assignment.baseId)).limit(1);
     if (!base) return NextResponse.json({ success: false, error: "Base não encontrada" }, { status: 404 });
 
-    const geo = await checkAssignmentGeofence(latitude, longitude, base);
+    const geo = await checkAssignmentGeofence(latitude, longitude, base, assignment);
 
     return NextResponse.json({
         success: true,

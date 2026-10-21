@@ -23,13 +23,24 @@ export function isWithinGeofence(
 }
 
 /**
- * Bases cujo check-in também vale dentro da cerca de outra base.
- * Escalado no CRU, o interno que está na faculdade (base FACULDADE: Zarns/UNIFACS,
- * ou ADAB: Bahiana de Brotas) valida por GPS.
+ * Bases cujo check-in também vale dentro da cerca de outra base — só para o
+ * plantão na base CRU (nunca USA/CRL) e só para interno das faculdades listadas:
+ * Zarns/UNIFACS na base FACULDADE, EBMSP na ADAB (Bahiana de Brotas).
  */
-export const ALTERNATE_GEOFENCE_BASES: Record<string, string[]> = {
-  CRU: ["FACULDADE", "ADAB"],
+export const ALTERNATE_GEOFENCE_BASES: Record<string, { code: string; faculties: string[] }[]> = {
+  CRU: [
+    { code: "FACULDADE", faculties: ["ZARNS", "UNIFACS"] },
+    { code: "ADAB", faculties: ["EBMSP"] },
+  ],
 };
+
+/** Códigos das bases alternativas que valem para este plantão (base + faculdade do interno). */
+export function alternateBaseCodes(baseCode: string, facultyAbbr: string | null | undefined): string[] {
+  const abbr = facultyAbbr?.toUpperCase();
+  return (ALTERNATE_GEOFENCE_BASES[baseCode] ?? [])
+    .filter((a) => abbr !== undefined && a.faculties.includes(abbr))
+    .map((a) => a.code);
+}
 
 type FenceBase = { code: string; latitude: number; longitude: number; geoFenceMeters: number };
 

@@ -33,3 +33,14 @@ test("com várias alternativas, vale a que acerta (ADAB)", () => {
   assert.equal(r.valid, true);
   assert.equal(r.matchedBaseCode, "ADAB");
 });
+
+test("alternativa só para CRU e só para a faculdade certa", async () => {
+  const { alternateBaseCodes } = await import("../src/lib/geo");
+  assert.deepEqual(alternateBaseCodes("CRU", "ZARNS"), ["FACULDADE"]);
+  assert.deepEqual(alternateBaseCodes("CRU", "unifacs"), ["FACULDADE"]);
+  assert.deepEqual(alternateBaseCodes("CRU", "EBMSP"), ["ADAB"]);
+  assert.deepEqual(alternateBaseCodes("CRU", "UFBA"), []);
+  assert.deepEqual(alternateBaseCodes("CRU", null), []);
+  assert.deepEqual(alternateBaseCodes("SM01", "EBMSP"), []);
+  assert.deepEqual(alternateBaseCodes("CRL", "ZARNS"), []);
+});
