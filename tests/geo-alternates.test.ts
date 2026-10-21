@@ -26,3 +26,10 @@ test("sem alternativas, só a base do plantão conta", () => {
   const r = checkGeofenceWithAlternates(fac.latitude, fac.longitude, cru, []);
   assert.equal(r.valid, false);
 });
+
+test("com várias alternativas, vale a que acerta (ADAB)", () => {
+  const adab = { code: "ADAB", latitude: -12.9908276, longitude: -38.4886242, geoFenceMeters: 300 };
+  const r = checkGeofenceWithAlternates(adab.latitude, adab.longitude, cru, [fac, adab]);
+  assert.equal(r.valid, true);
+  assert.equal(r.matchedBaseCode, "ADAB");
+});

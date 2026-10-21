@@ -24,10 +24,11 @@ export function isWithinGeofence(
 
 /**
  * Bases cujo check-in também vale dentro da cerca de outra base.
- * Escalado no CRU, o interno que está na faculdade (base FACULDADE) valida por GPS.
+ * Escalado no CRU, o interno que está na faculdade (base FACULDADE: Zarns/UNIFACS,
+ * ou ADAB: Bahiana de Brotas) valida por GPS.
  */
-export const ALTERNATE_GEOFENCE_BASES: Record<string, string> = {
-  CRU: "FACULDADE",
+export const ALTERNATE_GEOFENCE_BASES: Record<string, string[]> = {
+  CRU: ["FACULDADE", "ADAB"],
 };
 
 type FenceBase = { code: string; latitude: number; longitude: number; geoFenceMeters: number };
