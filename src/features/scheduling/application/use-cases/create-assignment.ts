@@ -40,6 +40,14 @@ export async function executeCreateAssignment(params: {
 }) {
   const { actor, input } = params;
   const isExtra = input.isExtraShift ?? false;
+  const today = localDateStr();
+
+  // Data passada é só da coordenação (o override retroativo abaixo fica na
+  // auditoria). O líder chamando a rota direto é recusado aqui — mesma trava do
+  // claim de vaga cedida (claim-extra-offer.ts, bloqueiaDataPassada).
+  if (input.date < today && actor.role !== "COORDINATOR") {
+    return { status: 400, body: { success: false, error: "Não dá para criar plantão em data passada" } } as const;
+  }
 
   // input.facultyId = faculdade da vaga na grade (usado para checagem de capacidade e permissão do líder)
   // resolvedFacultyId = faculdade real do interno (gravada no assignment, determina visibilidade e compliance)
@@ -57,7 +65,7 @@ export async function executeCreateAssignment(params: {
   const shiftValue: ShiftValue = usaMeioTurnoNaCru(facultyAbbreviation) ? (input.shift ?? null) : null;
   const allowCoordinatorRetroactiveOverride = actor.role === "COORDINATOR"
     && input.allowRetroactiveOverride === true
-    && input.date < localDateStr();
+    && input.date < today;
   const allowCoordinatorOpenAllocation = actor.role === "COORDINATOR" && input.allowAdminOpenAllocation === true;
 
   const existingAssignment = await findAssignmentByInternSlot({
