@@ -304,7 +304,9 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
 
   /* ── Derived ── */
   const sortedBases = useMemo(() => [...bases].sort(compareBaseOrder), [bases]);
-  const cruBase = useMemo(() => bases.find((b) => b.type === "CENTRAL"), [bases]);
+  // Pelo código, não pelo tipo: ADAB/FACULDADE também são CENTRAL, mas só valem
+  // como cerca de GPS do CRU (ver ALTERNATE_GEOFENCE_BASES) — nunca viram escala.
+  const cruBase = useMemo(() => bases.find((b) => b.code === "CRU"), [bases]);
   const crlBase = useMemo(() => bases.find((b) => b.type === "CRL"), [bases]);
   const isEbmsp = useMemo(() => {
     const firstSlot = slots.find((s) => s.facultyAbbr);
