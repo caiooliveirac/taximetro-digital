@@ -57,6 +57,7 @@ jobs:
       # Runner self-hosted no Mac do Caio (label mac-deploy): a porta 22 do magalu só
       # aceita as redes de trabalho e o tailnet, então a VM do GitHub não entra mais.
       # HOME isolado para o job não gravar chave nem known_hosts no ~/.ssh real do Mac.
+      # O ssh lê ~/.ssh pelo usuário, não pelo $HOME: por isso todo ssh/rsync passa -i.
       - name: Isolar HOME do job
         run: |
           mkdir -p "$RUNNER_TEMP/home"
@@ -73,14 +74,14 @@ jobs:
 
       - name: Send source to server
         run: |
-          rsync -az --delete \
+          rsync -az --delete -e "ssh -i $HOME/.ssh/id_ed25519" \
             --exclude node_modules --exclude .next --exclude .git \
             --exclude '.env*' --include '.env.example' \
             ./ ${{ env.REMOTE }}:${{ env.DEPLOY_DIR }}/
 
       - name: Apply schema changes (manual only)
         run: |
-          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=180 ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
+          ssh -i "$HOME/.ssh/id_ed25519" -o ServerAliveInterval=20 -o ServerAliveCountMax=180 ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
             set -euo pipefail
             cd ${{ env.DEPLOY_DIR }}
 
@@ -126,6 +127,7 @@ jobs:
       # Runner self-hosted no Mac do Caio (label mac-deploy): a porta 22 do magalu só
       # aceita as redes de trabalho e o tailnet, então a VM do GitHub não entra mais.
       # HOME isolado para o job não gravar chave nem known_hosts no ~/.ssh real do Mac.
+      # O ssh lê ~/.ssh pelo usuário, não pelo $HOME: por isso todo ssh/rsync passa -i.
       - name: Isolar HOME do job
         run: |
           mkdir -p "$RUNNER_TEMP/home"
@@ -142,14 +144,14 @@ jobs:
 
       - name: Send source to server
         run: |
-          rsync -az --delete \
+          rsync -az --delete -e "ssh -i $HOME/.ssh/id_ed25519" \
             --exclude node_modules --exclude .next --exclude .git \
             --exclude '.env*' --include '.env.example' \
             ./ ${{ env.REMOTE }}:${{ env.DEPLOY_DIR }}/
 
       - name: Build and deploy on server
         run: |
-          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=180 ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
+          ssh -i "$HOME/.ssh/id_ed25519" -o ServerAliveInterval=20 -o ServerAliveCountMax=180 ${{ env.REMOTE }} bash -s << 'REMOTE_SCRIPT'
             set -euo pipefail
             cd ${{ env.DEPLOY_DIR }}
 
