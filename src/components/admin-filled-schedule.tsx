@@ -1048,10 +1048,11 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
             .sort((left, right) => left.abbreviation.localeCompare(right.abbreviation));
     }, [assignments, faculties, rules]);
 
+    // Alocar busca interno de qualquer faculdade, inclusive recém-criada sem
+    // regra nem plantão na semana (ex.: PósUE) — por isso não usa visibleFacultyOptions.
     const allocationFacultyOptions = useMemo(() => {
-        const source = visibleFacultyOptions.length > 0 ? visibleFacultyOptions : faculties;
-        return [...source].filter((f) => !f.isVirtual).sort((left, right) => left.abbreviation.localeCompare(right.abbreviation));
-    }, [faculties, visibleFacultyOptions]);
+        return faculties.filter((f) => !f.isVirtual).sort((left, right) => left.abbreviation.localeCompare(right.abbreviation));
+    }, [faculties]);
 
     /**
      * Turnos em aviso, medidos na escala real (sem passar pelos filtros da tela):
