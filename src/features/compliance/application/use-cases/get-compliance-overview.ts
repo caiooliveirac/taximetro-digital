@@ -29,10 +29,13 @@ type Actor = {
   id: string;
   role: string;
   facultyId: string | null;
+  /** Turma do vínculo de líder: o líder com turma só vê os internos dela. */
+  cohortId?: string | null;
 };
 
 export type ComplianceScope = {
   facultyId: string | null;
+  cohortId: string | null;
   personOnly: string | null;
   roleFilter: Array<"INTERN" | "LEADER">;
 };
@@ -52,8 +55,10 @@ export function resolveComplianceScope(params: {
   const { actor, selfOnly = false, internId = null } = params;
   let facultyId = params.facultyId ?? null;
 
+  let cohortId: string | null = null;
   if (actor.role === "LEADER" && actor.facultyId && !selfOnly) {
     facultyId = actor.facultyId;
+    cohortId = actor.cohortId ?? null;
   }
 
   let personOnly: string | null = null;
@@ -68,7 +73,7 @@ export function resolveComplianceScope(params: {
     personOnly = internId;
   }
 
-  return { facultyId, personOnly, roleFilter };
+  return { facultyId, cohortId, personOnly, roleFilter };
 }
 
 export async function executeGetComplianceOverview(params: {
@@ -77,11 +82,12 @@ export async function executeGetComplianceOverview(params: {
   facultyId?: string | null;
   internId?: string | null;
 }) {
-  const { facultyId, personOnly, roleFilter } = resolveComplianceScope(params);
+  const { facultyId, cohortId, personOnly, roleFilter } = resolveComplianceScope(params);
 
   const rawInternRows = await listActiveComplianceSubjects({
     roleFilter,
     facultyId: facultyId ?? undefined,
+    cohortId: cohortId ?? undefined,
     personOnly: personOnly ?? undefined,
   });
 

@@ -5,6 +5,7 @@ import { assignments, bases, cohorts, faculties, facultyTargetShifts, userRoles,
 export async function listActiveComplianceSubjects(params: {
   roleFilter: Array<"INTERN" | "LEADER">;
   facultyId?: string;
+  cohortId?: string;
   personOnly?: string;
 }) {
   const conditions = [
@@ -15,6 +16,10 @@ export async function listActiveComplianceSubjects(params: {
 
   if (params.facultyId) {
     conditions.push(eq(userRoles.facultyId, params.facultyId));
+  }
+
+  if (params.cohortId) {
+    conditions.push(eq(userRoles.cohortId, params.cohortId));
   }
 
   if (params.personOnly) {

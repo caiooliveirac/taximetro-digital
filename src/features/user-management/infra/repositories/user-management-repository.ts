@@ -88,6 +88,7 @@ export async function listPendingUsersRows() {
       createdAt: users.createdAt,
       role: userRoles.role,
       facultyId: userRoles.facultyId,
+      cohortId: userRoles.cohortId,
       facultyAbbr: faculties.abbreviation,
     })
     .from(users)
@@ -101,7 +102,7 @@ export async function listPendingUsersRows() {
 
 export async function findUserRoleFaculty(userId: string) {
   const [role] = await db
-    .select({ facultyId: userRoles.facultyId })
+    .select({ facultyId: userRoles.facultyId, cohortId: userRoles.cohortId })
     .from(userRoles)
     .where(eq(userRoles.userId, userId))
     .limit(1);

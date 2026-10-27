@@ -448,6 +448,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             .where(eq(users.id, token.id as string))
             .limit(1);
           if (!dbUser || !dbUser.isActive) return null;
+          // Papel, faculdade e turma vêm do banco a cada checagem: mudança feita
+          // pelo admin (turma do líder, líder virando interno) vale sem novo login.
+          const [role, roles] = await Promise.all([fetchRole(dbUser.id), fetchRoles(dbUser.id)]);
+          if (role) {
+            token.role = role.role;
+            token.facultyId = role.facultyId ?? null;
+            token.baseId = role.baseId ?? null;
+            token.cohortId = role.cohortId ?? null;
+            token.cohortName = role.cohortName ?? null;
+            token.roles = roles;
+          }
         } catch (error) {
           console.error("[auth] jwt callback: failed to verify user existence", error);
         }

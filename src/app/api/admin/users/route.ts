@@ -445,9 +445,14 @@ export async function GET(req: NextRequest) {
   const aggregated = aggregateUsers(rows as UserRoleRow[]);
   const visibleUsers = aggregated.filter((row) => row.mergedIntoUserId === null);
 
-  // Leader can only see their faculty's users
+  // Leader can only see their faculty's users — e, tendo turma, só os da turma dele.
+  const leaderCohortId = (token.cohortId as string | null | undefined) ?? null;
   const filtered = token.role === "LEADER"
-    ? visibleUsers.filter((row) => row.facultyId === token.facultyId)
+    ? visibleUsers.filter((row) => row.facultyId === token.facultyId && (
+      !leaderCohortId
+      || row.id === token.id
+      || row.allRoles.some((role) => role.facultyId === token.facultyId && role.cohortId === leaderCohortId)
+    ))
     : visibleUsers;
 
   return NextResponse.json({ success: true, data: selectedId ? filtered.filter((row) => row.id === selectedId) : filtered });

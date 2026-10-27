@@ -3,13 +3,16 @@ import { listPendingPhotoChangeRequestsRows, listPendingUsersRows } from "@/feat
 type Actor = {
   role: string;
   facultyId: string | null;
+  cohortId?: string | null;
 };
 
 export async function executeListPendingUsers(actor: Actor) {
   const rows = await listPendingUsersRows();
 
   if (actor.role === "LEADER") {
-    return rows.filter((r) => r.facultyId === actor.facultyId && r.role === "INTERN");
+    // Líder com turma só aprova a turma dele.
+    return rows.filter((r) => r.facultyId === actor.facultyId && r.role === "INTERN"
+      && (!actor.cohortId || r.cohortId === actor.cohortId));
   }
 
   return rows;

@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
       id: user.id,
       role: user.role,
       facultyId: user.facultyId,
+      cohortId: user.cohortId,
     },
     selfOnly: searchParams.get("selfOnly") === "true",
     facultyId: searchParams.get("facultyId"),

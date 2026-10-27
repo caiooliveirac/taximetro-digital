@@ -101,6 +101,16 @@ export async function executeRegisterWithInvite(params: {
     baseId: normalizedScope.baseId,
     cohortId: normalizedScope.cohortId,
   });
+  // Líder de escala é interno da turma que lidera: cumpre plantão e entra no sorteio.
+  if (assignedRole === "LEADER" && normalizedScope.facultyId) {
+    await createUserRole({
+      userId: user.id,
+      role: "INTERN",
+      facultyId: normalizedScope.facultyId,
+      baseId: null,
+      cohortId: normalizedScope.cohortId,
+    });
+  }
 
   await logAudit({
     action: "SELF_REGISTER",

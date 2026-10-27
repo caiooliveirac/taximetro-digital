@@ -49,3 +49,11 @@ test("interno só vê a si, mesmo pedindo outro internId", () => {
   const scope = resolveComplianceScope({ actor: INTERN, internId: "intern-9" });
   assert.equal(scope.personOnly, "intern-1");
 });
+
+test("líder com turma vê só a turma dele; sem turma, a faculdade inteira", () => {
+  const comTurma = resolveComplianceScope({ actor: { ...LEADER, cohortId: "afya-6" } });
+  assert.equal(comTurma.cohortId, "afya-6");
+  assert.equal(comTurma.facultyId, "fac-unifacs");
+  assert.equal(resolveComplianceScope({ actor: LEADER }).cohortId, null);
+  assert.equal(resolveComplianceScope({ actor: { ...LEADER, cohortId: "afya-6" }, selfOnly: true }).cohortId, null);
+});

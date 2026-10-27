@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
   const actor = {
     role: user.role,
     facultyId: user.facultyId,
+    cohortId: user.cohortId,
   };
 
   const [pendingUsers, photoChanges] = await Promise.all([
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
       id: user.id,
       role: user.role,
       facultyId: user.facultyId,
+      cohortId: user.cohortId,
       realUserId: user.realUserId,
     },
     input: parsed.data,

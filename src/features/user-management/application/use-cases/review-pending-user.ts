@@ -15,6 +15,7 @@ type Actor = {
   id: string;
   role: string;
   facultyId: string | null;
+  cohortId?: string | null;
   realUserId: string | null;
 };
 
@@ -26,7 +27,7 @@ export async function executeReviewPendingUser(params: {
 
   if (actor.role === "LEADER") {
     const role = await findUserRoleFaculty(input.userId);
-    if (!role || role.facultyId !== actor.facultyId) {
+    if (!role || role.facultyId !== actor.facultyId || (actor.cohortId && role.cohortId !== actor.cohortId)) {
       return { status: 403, body: { success: false, error: "Sem permissão para este usuário" } } as const;
     }
   }
