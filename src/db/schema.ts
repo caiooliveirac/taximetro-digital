@@ -390,6 +390,13 @@ export const extraShiftOffers = pgTable("extra_shift_offers", {
   // faculdade (líder, sorteio, interno) até o coordenador desfazer. Ver
   // reserve-slot.ts.
   reservedBy: uuid("reserved_by").references(() => users.id),
+  // Vaga liberada PELO SISTEMA (ver auto-release-slots.ts):
+  // - "PRAZO": a faculdade (releasedFacultyId) não escalou a vaga da grade
+  //   dentro do prazo do início da turma; segue como vaga liberada comum.
+  // - "SEM_DONO": capacidade da base que nenhuma faculdade tem na grade;
+  //   releasedFacultyId fica null e qualquer líder pode usar.
+  // Liberação manual fica null.
+  autoRelease: varchar("auto_release", { length: 10 }),
 }, (t) => [
   index("idx_extra_offer_date").on(t.date),
   index("idx_extra_offer_released").on(t.releasedFacultyId, t.date),
@@ -475,3 +482,18 @@ export const internUnavailability = pgTable("intern_unavailability", {
   index("idx_unavailability_intern_date").on(t.internId, t.date),
   index("idx_unavailability_date").on(t.date),
 ]);
+
+// ── Liberação automática de vagas, por faculdade ──────────────────────────────
+// A turma tem `deadlineDays` dias, contados do início dela (ou de quando o
+// mecanismo foi ligado, o que vier depois), para escalar os internos nas vagas
+// da grade. Passado o prazo, o que sobrou vira vaga liberada para os líderes
+// das outras faculdades. Sem linha aqui = ligado, prazo padrão. Ver
+// src/features/scheduling/domain/policies/auto-release-policy.ts.
+export const vacancyReleaseSettings = pgTable("vacancy_release_settings", {
+  facultyId: uuid("faculty_id").primaryKey().references(() => faculties.id),
+  enabled: boolean("enabled").notNull().default(true),
+  deadlineDays: integer("deadline_days").notNull().default(3),
+  enabledSince: date("enabled_since").notNull().defaultNow(),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

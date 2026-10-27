@@ -56,8 +56,24 @@ type Released = {
 /** Vaga que OUTRA faculdade liberou e esta pode usar. */
 type FreeSlot = {
   id: string; baseId: string; baseCode: string; baseType: string; date: string; period: string;
-  shift: string | null; releasedFacultyAbbr: string;
+  shift: string | null; releasedFacultyAbbr: string | null;
+  /** Liberada pelo sistema: PRAZO (turma não usou no prazo) ou SEM_DONO. Ver auto-release-slots.ts. */
+  autoRelease: "PRAZO" | "SEM_DONO" | null;
 };
+function rotuloVagaLivre(f: FreeSlot) {
+  return f.autoRelease === "SEM_DONO" ? "Vaga sem dono" : `Cedida pela ${f.releasedFacultyAbbr}`;
+}
+function origemVagaLivre(f: FreeSlot) {
+  return f.autoRelease === "SEM_DONO" ? "sem dono" : `da ${f.releasedFacultyAbbr}`;
+}
+function dicaVagaLivre(f: FreeSlot) {
+  const motivo = f.autoRelease === "SEM_DONO"
+    ? "Nenhuma faculdade tem esta vaga na grade"
+    : f.autoRelease === "PRAZO"
+      ? `A ${f.releasedFacultyAbbr} não usou esta vaga no prazo da turma`
+      : `A ${f.releasedFacultyAbbr} cedeu esta vaga`;
+  return `${motivo} — toque para escalar um interno da sua faculdade`;
+}
 type CruFixed = {
   id: string; intern_id: string; intern_name: string;
   day_of_week: string; period: string; valid_from: string; valid_until: string;
@@ -390,6 +406,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     for (const assignment of assignments) {
       if (assignment.status !== "CANCELLED") baseIds.add(assignment.baseId);
     }
+    // Vaga livre em base fora da grade desta faculdade (sem dono, ou de outra).
+    for (const free of freeSlots) baseIds.add(free.baseId);
 
     const internQuery = searchIntern.trim().toLowerCase();
     const baseQuery = searchBase.trim().toLowerCase();
@@ -409,7 +427,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
           return periods.some((period) => {
             const periodAssignments = cellAssignments.filter((assignment) => assignment.period === period);
             const cap = slotState?.[period].cap ?? 0;
-            return cap > 0 || periodAssignments.length > 0;
+            return cap > 0 || periodAssignments.length > 0 || freeBySlot.has(`${base.id}|${date}|${period}`);
           });
         });
 
@@ -422,7 +440,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
         });
       })
       .sort(compareBaseOrder);
-  }, [assignments, assignmentsByBaseDate, bases, filterBase, filterPeriod, searchBase, searchIntern, slots, vacancyByBaseDay, weekDates]);
+  }, [assignments, assignmentsByBaseDate, bases, filterBase, filterPeriod, freeSlots, freeBySlot, searchBase, searchIntern, slots, vacancyByBaseDay, weekDates]);
 
   const mainScheduleBases = useMemo(
     () => visibleScheduleBases.filter((base) => base.type === "USA"),
@@ -1162,12 +1180,12 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               <button
                                 key={f.id}
                                 type="button"
-                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, period, false, { id: f.id, abbr: f.releasedFacultyAbbr })}
+                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, period, false, { id: f.id, abbr: origemVagaLivre(f) })}
                                 className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
-                                title={`A ${f.releasedFacultyAbbr} cedeu esta vaga — toque para escalar um interno da sua faculdade`}
+                                title={dicaVagaLivre(f)}
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">Cedida pela {f.releasedFacultyAbbr}</span>
+                                <span className="truncate">{rotuloVagaLivre(f)}</span>
                               </button>
                             ))}
 
@@ -1311,12 +1329,12 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               <button
                                 key={f.id}
                                 type="button"
-                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, "DAY", false, { id: f.id, abbr: f.releasedFacultyAbbr })}
+                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, "DAY", false, { id: f.id, abbr: origemVagaLivre(f) })}
                                 className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
-                                title={`A ${f.releasedFacultyAbbr} cedeu esta vaga — toque para escalar um interno da sua faculdade`}
+                                title={dicaVagaLivre(f)}
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">Cedida pela {f.releasedFacultyAbbr}</span>
+                                <span className="truncate">{rotuloVagaLivre(f)}</span>
                               </button>
                             ))}
 
@@ -1441,12 +1459,12 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               <button
                                 key={f.id}
                                 type="button"
-                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, period, false, { id: f.id, abbr: f.releasedFacultyAbbr })}
+                                onClick={() => openAllocModal(f.baseId, f.baseCode, f.baseType, d, period, false, { id: f.id, abbr: origemVagaLivre(f) })}
                                 className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-teal-400 bg-teal-50 px-2 py-1 text-left text-[11px] font-semibold text-teal-800 transition hover:bg-teal-100"
-                                title={`A ${f.releasedFacultyAbbr} cedeu esta vaga — toque para escalar um interno da sua faculdade`}
+                                title={dicaVagaLivre(f)}
                               >
                                 <Plus className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">Cedida pela {f.releasedFacultyAbbr}</span>
+                                <span className="truncate">{rotuloVagaLivre(f)}</span>
                               </button>
                             ))}
 
@@ -1928,7 +1946,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 </h2>
                 <p className="text-sm text-blue-100">
                   {allocSlot.baseCode} · {formatDateLabel(allocSlot.date, { day: "2-digit", month: "2-digit", year: "numeric" })} · {allocSlot.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
-                  {allocSlot.free && ` · vaga livre da ${allocSlot.free.abbr}`}
+                  {allocSlot.free && ` · vaga livre ${allocSlot.free.abbr}`}
                 </p>
               </div>
               <button onClick={() => setAllocSlot(null)} className="rounded-lg p-1.5 hover:bg-white/20 transition">

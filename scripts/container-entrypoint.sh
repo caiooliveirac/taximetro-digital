@@ -58,6 +58,13 @@ append_volta_para_casa_cron() {
   echo "[entrypoint] aviso de volta para casa habilitado em ${schedule} (${TZ})"
 }
 
+append_vagas_livres_cron() {
+  schedule="${VAGAS_LIVRES_CRON:-10 * * * *}"
+
+  printf "%s\n" "${schedule} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-vagas-livres.mjs' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  echo "[entrypoint] liberação automática de vagas habilitada em ${schedule} (${TZ})"
+}
+
 start_cron_daemon() {
   crond -l 2 -L /dev/stdout
 }
@@ -100,6 +107,14 @@ elif [ -z "${TELEGRAM_BOT_TOKEN_NEXT:-${TELEGRAM_BOT_TOKEN:-}}" ] || [ -z "${TEL
   echo "[entrypoint] aviso de volta para casa desabilitado por configuração incompleta"
 else
   append_volta_para_casa_cron
+fi
+
+if [ "${VAGAS_LIVRES_ENABLED:-true}" = "false" ]; then
+  echo "[entrypoint] liberação automática de vagas desabilitada por VAGAS_LIVRES_ENABLED=false"
+elif [ -z "${AUTH_SECRET:-}" ]; then
+  echo "[entrypoint] liberação automática de vagas desabilitada por configuração incompleta (AUTH_SECRET)"
+else
+  append_vagas_livres_cron
 fi
 
 start_cron_daemon

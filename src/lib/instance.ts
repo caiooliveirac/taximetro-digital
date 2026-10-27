@@ -39,7 +39,13 @@ export type Feature =
    */
   | "adminLottery"
   /** Interno marca indisponibilidade num plantão, e o sorteio respeita isso. */
-  | "internUnavailability";
+  | "internUnavailability"
+  /**
+   * Vaga da grade não usada no prazo da turma, e vaga que nenhuma faculdade
+   * tem, viram vaga livre para qualquer líder. O teto por base é do SAMU
+   * (auto-release-policy.ts); a Vitalmed não tem essa tabela.
+   */
+  | "liberacaoAutomatica";
 
 /**
  * A fonte da verdade. Ligar algo para o SAMU aqui é uma decisão explícita e
@@ -50,10 +56,12 @@ const FEATURES: Record<Instancia, Record<Feature, boolean>> = {
   samu: {
     adminLottery: false,
     internUnavailability: false,
+    liberacaoAutomatica: true,
   },
   vitalmed: {
     adminLottery: true,
     internUnavailability: true,
+    liberacaoAutomatica: false,
   },
 };
 

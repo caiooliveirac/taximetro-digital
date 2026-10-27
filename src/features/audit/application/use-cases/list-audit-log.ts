@@ -73,7 +73,26 @@ function formatVagaLivre(action: string, payload: Record<string, unknown> | null
     const de = texto(payload?.facultyAbbr, "outra faculdade");
     const liberou = texto(payload?.releasedByAbbr, "outra faculdade");
     const base = texto(payload?.baseCode, "base");
-    return `${interno} (${de}) foi escalado na vaga livre que a ${liberou} liberou: ${base}, ${quando}.`;
+    if (payload?.autoRelease === "SEM_DONO") return `${interno} (${de}) foi escalado numa vaga sem dono na grade: ${base}, ${quando}.`;
+    const prazo = payload?.autoRelease === "PRAZO" ? " (liberada pelo prazo da turma)" : "";
+    return `${interno} (${de}) foi escalado na vaga livre que a ${liberou} liberou${prazo}: ${base}, ${quando}.`;
+  }
+  if (action === "SLOTS_AUTO_RELEASED") {
+    const porFac = payload?.byFaculty && typeof payload.byFaculty === "object"
+      ? Object.entries(payload.byFaculty as Record<string, number>).map(([abbr, n]) => `${abbr} ${n}`).join(", ")
+      : "";
+    const partes = [
+      porFac && `pelo prazo da turma: ${porFac}`,
+      Number(payload?.semDono ?? 0) > 0 && `sem dono na grade: ${payload?.semDono}`,
+      Number(payload?.withdrawn ?? 0) > 0 && `${payload?.withdrawn} voltaram para a faculdade`,
+    ].filter(Boolean);
+    return `O sistema liberou vagas para os líderes — ${partes.join("; ")}.`;
+  }
+  if (action === "AUTO_RELEASE_SETTINGS") {
+    const depois = (payload?.depois ?? {}) as { enabled?: boolean; deadlineDays?: number };
+    return depois.enabled
+      ? `${fac}: liberação automática ligada, prazo de ${depois.deadlineDays} dia(s) do início da turma.`
+      : `${fac}: liberação automática desligada.`;
   }
   return null;
 }

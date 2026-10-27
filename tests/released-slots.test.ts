@@ -117,7 +117,9 @@ test("Escala do coordenador mostra a vaga cedida e aloca pela oferta", () => {
 test("a vaga própria diz a sigla da faculdade; a de outra diz quem cedeu", () => {
   const src = readFileSync(path.join(process.cwd(), "src/components/scheduling/montar-escala.tsx"), "utf8");
   assert.match(src, /`Vaga \$\{myAbbr\}`/);
-  assert.match(src, /Cedida pela \{f\.releasedFacultyAbbr\}/);
+  assert.match(src, /`Cedida pela \$\{f\.releasedFacultyAbbr\}`/);
+  // Vaga sem dono (liberada pelo sistema) não tem faculdade para nomear.
+  assert.match(src, /"Vaga sem dono"/);
   assert.doesNotMatch(src, />Vaga livre · /);
 });
 

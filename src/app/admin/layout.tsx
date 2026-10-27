@@ -21,8 +21,9 @@ import {
   BookOpen,
   CalendarPlus,
   Radio,
+  Unlock,
 } from "lucide-react";
-import { escalasDaInstancia } from "@/lib/instance";
+import { escalasDaInstancia, temFeature } from "@/lib/instance";
 
 // Ícone de cada escala por slug — o rótulo vem da instância (SAMU: USA/CRU/CRL,
 // Vitalmed: APH/CCO, sem CRL). Ver src/lib/instance.ts.
@@ -64,6 +65,7 @@ const NAV_ESTRUTURA: NavItem[] = [
 const NAV_GOVERNANCA: NavItem[] = [
   { href: "/admin/audit", label: "Atividades", icon: FileSearch },
   { href: "/admin/plantoes-extras", label: "Extras", icon: Zap },
+  ...(temFeature("liberacaoAutomatica") ? [{ href: "/admin/vagas-livres", label: "Vagas livres", icon: Unlock }] : []),
 ];
 
 const NAV: NavItem[] = [...NAV_OPERACAO, ...NAV_ESTRUTURA, ...NAV_GOVERNANCA];

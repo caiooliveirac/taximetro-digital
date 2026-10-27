@@ -105,7 +105,9 @@ export async function executeClaimExtraOffer(params: {
     return { status: 409, body: { success: false, error: alocandoOutro ? "Este interno já tem um plantão neste dia e turno" : "Você já tem um plantão neste dia e turno" } } as const;
   }
 
-  const vagaLivre = Boolean(offer.releasedFacultyId);
+  // Vaga sem dono (auto-release-slots.ts) também é vaga livre: vira plantão
+  // normal do interno, só não tem faculdade que liberou.
+  const vagaLivre = Boolean(offer.releasedFacultyId) || offer.autoRelease === "SEM_DONO";
   const [quemLiberou] = vagaLivre
     ? await db.select({ abbr: faculties.abbreviation }).from(faculties).where(eq(faculties.id, offer.releasedFacultyId!)).limit(1)
     : [null];
@@ -127,7 +129,9 @@ export async function executeClaimExtraOffer(params: {
         extraShiftNotes: vagaLivre ? null : offer.notes ?? null,
         createdBy: actor.id,
         notes: vagaLivre
-          ? `Vaga livre liberada pela ${quemLiberou?.abbr ?? "outra faculdade"}`
+          ? offer.releasedFacultyId
+            ? `Vaga livre liberada pela ${quemLiberou?.abbr ?? "outra faculdade"}`
+            : "Vaga livre sem dono na grade"
           : `Plantão extra — oferta pública #${offerId.slice(0, 8)}`,
       })
       .returning({ id: assignments.id });
@@ -163,6 +167,7 @@ export async function executeClaimExtraOffer(params: {
         internName: interno?.name ?? null,
         facultyAbbr: fac?.abbr ?? null,
         releasedByAbbr: quemLiberou?.abbr ?? null,
+        autoRelease: offer.autoRelease ?? null,
         baseCode: bs?.code ?? null,
         date: offer.date,
         period: offer.period,
