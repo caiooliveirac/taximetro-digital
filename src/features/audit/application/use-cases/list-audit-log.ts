@@ -77,6 +77,12 @@ function formatVagaLivre(action: string, payload: Record<string, unknown> | null
     const prazo = payload?.autoRelease === "PRAZO" ? " (liberada pelo prazo da turma)" : "";
     return `${interno} (${de}) foi escalado na vaga livre que a ${liberou} liberou${prazo}: ${base}, ${quando}.`;
   }
+  if (action === "FREE_SLOT_REQUESTED") {
+    const interno = texto(payload?.internName, "um interno");
+    const base = texto(payload?.baseCode, "base");
+    const tipo = texto(payload?.metaKind, "do tipo");
+    return `Pedido para escalar ${interno} na vaga livre ${base}, ${quando}: a meta de ${tipo} dele já está coberta. Aguarda a coordenação.`;
+  }
   if (action === "SLOTS_AUTO_RELEASED") {
     const porFac = payload?.byFaculty && typeof payload.byFaculty === "object"
       ? Object.entries(payload.byFaculty as Record<string, number>).map(([abbr, n]) => `${abbr} ${n}`).join(", ")

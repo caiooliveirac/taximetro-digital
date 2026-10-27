@@ -60,6 +60,7 @@ const ACTION_LABEL: Record<string, string> = {
   SLOT_RESERVED: "Vaga reservada",
   SLOT_RESERVATION_CANCELLED: "Reserva desfeita",
   FREE_SLOT_USED: "Vaga livre usada",
+  FREE_SLOT_REQUESTED: "Pedido de vaga livre acima da meta",
   "extra_offer.published": "Extra publicado",
   "extra_offer.claimed": "Extra pego",
   "extra_offer.cancelled": "Extra cancelado",

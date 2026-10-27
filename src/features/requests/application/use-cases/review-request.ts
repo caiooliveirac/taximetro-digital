@@ -9,6 +9,7 @@ import {
 } from "@/features/requests/infra/repositories/request-repository";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { checkPeriodOccupancy } from "@/lib/slots";
+import { executeClaimExtraOffer } from "@/features/extra-offers/application/use-cases/claim-extra-offer";
 
 type ReviewActor = {
   id: string;
@@ -44,6 +45,11 @@ export async function executeReviewRequest(params: {
       status: 409,
       body: { success: false, error: `Solicitação já processada (${request.status})` },
     } as const;
+  }
+
+  // Vaga livre acima da meta: o pedido é do líder, a decisão é só da coordenação.
+  if (request.type === "FREE_SLOT" && actor.role !== "COORDINATOR") {
+    return { status: 403, body: { success: false, error: "Só a coordenação aprova vaga livre acima da meta" } } as const;
   }
 
   if (actor.role === "LEADER" && actor.facultyId) {
@@ -125,6 +131,24 @@ export async function executeReviewRequest(params: {
           });
         }
 
+        finalStatus = "COMPLETED";
+      }
+
+      if (request.type === "FREE_SLOT") {
+        if (!request.extraOfferId || !request.targetInternId) {
+          return { status: 400, body: { success: false, error: "Pedido de vaga livre incompleto" } } as const;
+        }
+        const internRole = await findRequesterFacultyRole(request.targetInternId);
+        // Mesmo caminho do líder, como coordenação: sem trava de meta, e o
+        // plantão fica no nome do líder que pediu (é ele no KPI do cockpit).
+        const claim = await executeClaimExtraOffer({
+          actor: { id: actor.realUserId ?? actor.id, role: "COORDINATOR", facultyId: null },
+          offerId: request.extraOfferId,
+          internId: request.targetInternId,
+          facultyId: internRole?.facultyId ?? undefined,
+          createdBy: request.requesterId,
+        });
+        if (claim.status !== 200) return claim;
         finalStatus = "COMPLETED";
       }
     }
