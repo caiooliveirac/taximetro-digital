@@ -258,6 +258,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
   const [allocSearch, setAllocSearch] = useState("");
   const [allocLoading, setAllocLoading] = useState(false);
   const [allocMsg, setAllocMsg] = useState("");
+  /** Interno acima da meta numa vaga livre: o líder pode deixar o pedido para a coordenação. */
+  const [allocPedir, setAllocPedir] = useState(false);
   const [allocShift, setAllocShift] = useState<"MORNING" | "AFTERNOON" | "">("");
   const [allocIsExtraShift, setAllocIsExtraShift] = useState(false);
   const [allocExtraShiftNotes, setAllocExtraShiftNotes] = useState("");
@@ -611,13 +613,14 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     setAllocInternId("");
     setAllocSearch("");
     setAllocMsg("");
+    setAllocPedir(false);
     setAllocIsExtraShift(isExtra ?? false);
     setAllocExtraShiftNotes("");
     const isCruShift = isEbmsp && baseType === "CENTRAL" && period === "DAY";
     setAllocShift(isCruShift ? "MORNING" : "");
   }
 
-  async function submitAllocation() {
+  async function submitAllocation(pedirAutorizacao = false) {
     if (!allocSlot || !allocInternId || !effectiveFacultyId) return;
     const isCruShift = isEbmsp && allocSlot.baseType === "CENTRAL" && allocSlot.period === "DAY";
     if (isCruShift && !allocShift) {
@@ -631,6 +634,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
         ? await enviarJson(`/taximetro/api/extra-offers/${allocSlot.free.id}`, "POST", {
           internId: allocInternId,
           facultyId: effectiveFacultyId,
+          ...(pedirAutorizacao ? { pedirAutorizacao: true } : {}),
         })
         : await enviarJson("/taximetro/api/assignments", "POST", {
           internId: allocInternId,
@@ -645,10 +649,16 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
       const contentType = res.headers.get("content-type") ?? "";
       const json = contentType.includes("application/json") ? await res.json() : null;
 
-      if (json.success) {
+      if (json?.success && json.data?.requested) {
+        setAllocPedir(false);
+        setAllocMsg("📝 Pedido enviado à coordenação. O interno entra na vaga quando for aprovado — se ninguém pegar antes.");
+      } else if (json?.success) {
         setAllocMsg(json.reusedCancelled ? "✅ Plantão cancelado reativado com sucesso!" : "✅ Alocado com sucesso!");
         await load();
         setTimeout(() => setAllocSlot(null), 800);
+      } else if (json?.code === "META_CUMPRIDA") {
+        setAllocPedir(true);
+        setAllocMsg(`⚠️ ${json.error}`);
       } else {
         const fallback = res.ok
           ? "Falha ao processar a alocação."
@@ -1996,7 +2006,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                     <button
                       key={intern.id}
                       type="button"
-                      onClick={() => setAllocInternId(intern.id)}
+                      onClick={() => { setAllocInternId(intern.id); setAllocPedir(false); setAllocMsg(""); }}
                       className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${allocInternId === intern.id ? "bg-blue-50 text-blue-700 ring-1 ring-blue-300" : "bg-white text-slate-700 hover:bg-slate-100"}`}
                     >
                       <span>{intern.name}</span>
@@ -2037,6 +2047,16 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 )}
               </div>}
               {allocMsg && <p className="text-sm">{allocMsg}</p>}
+              {allocPedir && (
+                <button
+                  type="button"
+                  disabled={allocLoading}
+                  onClick={() => submitAllocation(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 transition disabled:opacity-50"
+                >
+                  Pedir autorização à coordenação
+                </button>
+              )}
               {allocSlot.date >= today && !allocSlot.free && (
                 <button
                   type="button"
@@ -2056,7 +2076,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 Cancelar
               </button>
               <button
-                onClick={submitAllocation}
+                onClick={() => submitAllocation()}
                 disabled={allocLoading || !allocInternId}
                 className="flex-1 rounded-lg bg-blue-600 py-2 text-sm font-bold text-white hover:bg-blue-700 transition disabled:opacity-50"
               >

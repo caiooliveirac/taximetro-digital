@@ -12,7 +12,7 @@
  * o que o abono significa.
  */
 
-import { hasShiftStarted } from "@/lib/utils";
+import { hasCheckoutDeadlinePassed, hasShiftStarted } from "@/lib/utils";
 
 export const GOAL_KINDS = ["USA", "CRU", "CRL"] as const;
 export type GoalKind = (typeof GOAL_KINDS)[number];
@@ -20,13 +20,16 @@ export type GoalTargets = Record<GoalKind, number>;
 
 /**
  * - done: realizado (ou abonado)
- * - pending: já começou (ou passou) sem checkout — NÃO conta para a meta; vira
- *   falta automática quando o prazo de checkout expira
+ * - ongoing: em andamento — já começou e o prazo de checkout ainda não passou
+ *   (com ou sem check-in). Conta para a meta, como o agendado: o interno está
+ *   no plantão, não precisa de outro
+ * - pending: prazo de checkout passou sem checkout — NÃO conta para a meta;
+ *   vira falta automática na varredura
  * - scheduled: ainda vai acontecer
  * - missed: falta; não ocupa vaga da meta
  * - empty: vaga da meta que ninguém escalou ainda
  */
-export type GoalSlotState = "done" | "pending" | "scheduled" | "missed" | "empty";
+export type GoalSlotState = "done" | "ongoing" | "pending" | "scheduled" | "missed" | "empty";
 
 export type GoalSlotItem = {
   id: string;
@@ -84,7 +87,10 @@ function hasStarted(item: GoalSlotItem, today: string, now: Date): boolean {
 function stateOf(item: GoalSlotItem, today: string, now: Date): Exclude<GoalSlotState, "empty"> {
   if (item.status === "ABSENT") return "missed";
   if (REALIZED.has(item.status)) return "done";
-  return hasStarted(item, today, now) ? "pending" : "scheduled";
+  if (!hasStarted(item, today, now)) return "scheduled";
+  // Sem turno não dá para saber o prazo: segue a regra antiga (pendente).
+  if (!item.period) return "pending";
+  return hasCheckoutDeadlinePassed(item.date, item.period === "NIGHT" ? "NIGHT" : "DAY", now) ? "pending" : "ongoing";
 }
 
 /**
@@ -129,9 +135,10 @@ export function summarizeGoals<T extends GoalSlotItem>(
     return {
       kind,
       target,
-      filled: count("done") + count("scheduled"),
+      filled: count("done") + count("ongoing") + count("scheduled"),
       done: count("done"),
-      scheduled: count("scheduled"),
+      // Em andamento entra junto com o agendado: ainda não é realizado.
+      scheduled: count("ongoing") + count("scheduled"),
       missed: count("missed"),
       missing: count("empty"),
       slots,

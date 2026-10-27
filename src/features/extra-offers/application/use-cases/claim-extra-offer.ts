@@ -10,6 +10,8 @@ import { findAssignmentByInternSlot } from "@/features/scheduling/infra/reposito
 import { getValidInternIdsForFaculty } from "@/features/scheduling/infra/repositories/lottery-repository";
 import { localDateStr } from "@/lib/utils";
 import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
+import { findPendingFreeSlotRequest, insertRequest } from "@/features/requests/infra/repositories/request-repository";
+import { metaDoInternoNoTipo, textoMetaCumprida } from "./free-slot-goal";
 
 /**
  * Oferta de data passada não se pega. O board e a grade já não mostram; isto é
@@ -69,6 +71,12 @@ export async function executeClaimExtraOffer(params: {
   facultyId?: string;
   /** Coordenador escalando em data passada pela grade dele. Ver bloqueiaDataPassada. */
   allowRetroactiveOverride?: boolean;
+  /** Coordenador visitando a tela do líder: não passa pela trava da meta. */
+  isImpersonating?: boolean;
+  /** Interno acima da meta: em vez de alocar, deixa o pedido para a coordenação. */
+  pedirAutorizacao?: boolean;
+  /** Aprovação de pedido (review-request.ts): o plantão fica no nome do líder que pediu. */
+  createdBy?: string;
 }) {
   const { actor, offerId } = params;
 
@@ -138,6 +146,23 @@ export async function executeClaimExtraOffer(params: {
     ? await db.select({ abbr: faculties.abbreviation }).from(faculties).where(eq(faculties.id, offer.releasedFacultyId!)).limit(1)
     : [null];
 
+  // Vaga livre é para quem precisa: o líder só escala sozinho interno abaixo
+  // da meta do tipo da vaga. Acima disso, só com aprovação da coordenação.
+  if (vagaLivre && actor.role === "LEADER" && !params.isImpersonating) {
+    const [baseDaVaga] = await db.select({ type: bases.type }).from(bases).where(eq(bases.id, offer.baseId)).limit(1);
+    const meta = baseDaVaga ? await metaDoInternoNoTipo(internId, baseDaVaga.type) : null;
+    if (meta?.cumprida) {
+      const [interno] = await db.select({ name: users.name }).from(users).where(eq(users.id, internId)).limit(1);
+      if (!params.pedirAutorizacao) {
+        return {
+          status: 409,
+          body: { success: false, code: "META_CUMPRIDA", error: textoMetaCumprida(interno?.name ?? "O interno", meta) },
+        } as const;
+      }
+      return pedirVagaLivre({ actor, offer, internId, internName: interno?.name ?? "interno", meta });
+    }
+  }
+
   // Create the assignment inside a transaction
   let assignmentId: string;
   try {
@@ -153,7 +178,7 @@ export async function executeClaimExtraOffer(params: {
         status: "SCHEDULED",
         isExtraShift: !vagaLivre,
         extraShiftNotes: vagaLivre ? null : offer.notes ?? null,
-        createdBy: actor.id,
+        createdBy: params.createdBy ?? actor.id,
         notes: vagaLivre
           ? offer.releasedFacultyId
             ? `Vaga livre liberada pela ${quemLiberou?.abbr ?? "outra faculdade"}`
@@ -200,7 +225,8 @@ export async function executeClaimExtraOffer(params: {
         ...(retroativo ? { allowRetroactiveOverride: true } : {}),
       },
     });
-    if (offer.autoRelease) {
+    // A coordenação não precisa ser avisada do que ela mesma fez.
+    if (offer.autoRelease && actor.role !== "COORDINATOR") {
       const [ator] = await db.select({ name: users.name }).from(users).where(eq(users.id, actor.id)).limit(1);
       // Sem await: o aviso nunca atrasa nem derruba a alocação.
       void avisarCoordenacaoNoTelegram(textoVagaAutomaticaUsada({
@@ -229,4 +255,48 @@ export async function executeClaimExtraOffer(params: {
     status: 200,
     body: { success: true, data: { assignmentId, offerId } },
   } as const;
+}
+
+/** Pedido do líder para escalar acima da meta. Não segura a vaga: quem pegar antes, leva. */
+async function pedirVagaLivre(p: {
+  actor: { id: string; role: string };
+  offer: { id: string; baseId: string; date: string; period: "DAY" | "NIGHT" };
+  internId: string;
+  internName: string;
+  meta: { kind: string; target: number };
+}) {
+  const jaPedido = await findPendingFreeSlotRequest({ offerId: p.offer.id, internId: p.internId });
+  if (jaPedido) {
+    return { status: 200, body: { success: true, data: { requested: true, requestId: jaPedido.id, already: true } } } as const;
+  }
+  const pedido = await insertRequest({
+    type: "FREE_SLOT",
+    requesterId: p.actor.id,
+    assignmentId: null,
+    targetInternId: p.internId,
+    targetAssignmentId: null,
+    extraBaseId: p.offer.baseId,
+    extraDate: p.offer.date,
+    extraPeriod: p.offer.period,
+    extraOfferId: p.offer.id,
+    status: "PENDING",
+  });
+
+  const [[lider], [bs]] = await Promise.all([
+    db.select({ name: users.name }).from(users).where(eq(users.id, p.actor.id)).limit(1),
+    db.select({ code: bases.code }).from(bases).where(eq(bases.id, p.offer.baseId)).limit(1),
+  ]);
+  await logAudit({
+    userId: p.actor.id,
+    action: "FREE_SLOT_REQUESTED",
+    entity: "request",
+    entityId: pedido.id,
+    payload: { offerId: p.offer.id, internName: p.internName, baseCode: bs?.code ?? null, date: p.offer.date, period: p.offer.period, metaKind: p.meta.kind, metaTarget: p.meta.target },
+  });
+  const data = `${p.offer.date.slice(8, 10)}/${p.offer.date.slice(5, 7)}`;
+  void avisarCoordenacaoNoTelegram(
+    `📝 Pedido de vaga livre acima da meta\n${bs?.code ?? "base"} · ${data} ${p.offer.period === "NIGHT" ? "noturno" : "diurno"}\n`
+    + `Interno: ${p.internName} (meta de ${p.meta.kind} já coberta)\nPedido por: ${lider?.name ?? "líder"}\nAprove em Admin → Solicitações.`,
+  );
+  return { status: 200, body: { success: true, data: { requested: true, requestId: pedido.id } } } as const;
 }

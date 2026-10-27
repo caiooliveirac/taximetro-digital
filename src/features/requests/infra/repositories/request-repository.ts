@@ -249,7 +249,7 @@ export async function findPendingExtraRequest(params: {
 }
 
 export async function insertRequest(values: {
-  type: "SWAP" | "EXTRA_SHIFT" | "DROP_SHIFT";
+  type: "SWAP" | "EXTRA_SHIFT" | "DROP_SHIFT" | "FREE_SLOT";
   requesterId: string;
   assignmentId: string | null;
   targetInternId: string | null;
@@ -257,10 +257,26 @@ export async function insertRequest(values: {
   extraBaseId: string | null;
   extraDate: string | null;
   extraPeriod: "DAY" | "NIGHT" | null;
+  extraOfferId?: string | null;
   status: "OPEN" | "PENDING";
 }) {
   const [created] = await db.insert(requests).values(values).returning();
   return created;
+}
+
+/** Pedido de vaga livre ainda aberto para a mesma vaga e o mesmo interno. */
+export async function findPendingFreeSlotRequest(params: { offerId: string; internId: string }) {
+  const [row] = await db
+    .select({ id: requests.id })
+    .from(requests)
+    .where(and(
+      eq(requests.type, "FREE_SLOT"),
+      eq(requests.extraOfferId, params.offerId),
+      eq(requests.targetInternId, params.internId),
+      eq(requests.status, "PENDING"),
+    ))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function findRequestById(id: string) {

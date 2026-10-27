@@ -62,7 +62,8 @@ export async function executeListRequests(params: {
     filtered = rows.filter((r) => r.requesterId === actor.id || r.targetInternId === actor.id);
   } else if (actor.role === "LEADER" && actor.facultyId) {
     const facultyInternIds = await findFacultyInternIds(actor.facultyId);
-    filtered = rows.filter((r) => facultyInternIds.has(r.requesterId));
+    // Pedido de vaga livre acima da meta é decisão da coordenação, não do líder.
+    filtered = rows.filter((r) => facultyInternIds.has(r.requesterId) && r.type !== "FREE_SLOT");
   }
 
   if (actor.role === "COORDINATOR" && internId) {

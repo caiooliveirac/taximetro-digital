@@ -35,6 +35,9 @@ export const checkinMethodEnum = pgEnum("checkin_method", [
 
 export const requestTypeEnum = pgEnum("request_type", [
   "SWAP", "EXTRA_SHIFT", "DROP_SHIFT",
+  // FREE_SLOT: o líder quis escalar numa vaga livre um interno que já fechou
+  // a meta daquele tipo; só a coordenação aprova (claim-extra-offer.ts).
+  "FREE_SLOT",
 ]);
 
 export const requestStatusEnum = pgEnum("request_status", [
@@ -219,6 +222,8 @@ export const requests = pgTable("requests", {
   extraBaseId: uuid("extra_base_id").references(() => bases.id),
   extraDate: date("extra_date"),
   extraPeriod: shiftPeriodEnum("extra_period"),
+  // FREE_SLOT: a vaga livre (oferta) que o líder pediu para usar.
+  extraOfferId: uuid("extra_offer_id").references(() => extraShiftOffers.id),
   status: requestStatusEnum("status").notNull().default("PENDING"),
   reviewedBy: uuid("reviewed_by").references(() => users.id),
   reviewedAt: timestamp("reviewed_at"),

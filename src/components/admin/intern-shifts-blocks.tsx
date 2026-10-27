@@ -107,10 +107,15 @@ const SLOT_STATE_STYLE: Record<GoalSlotState, { box: string; icon: ReactNode; ti
     icon: <Check className="h-3.5 w-3.5" strokeWidth={2.5} />,
     title: "Realizado",
   },
+  ongoing: {
+    box: "border-sky-300 bg-sky-50 text-sky-700",
+    icon: <Clock className="h-3.5 w-3.5" strokeWidth={2} />,
+    title: "Em andamento — conta para a meta; falta o checkout",
+  },
   pending: {
     box: "border-amber-200 bg-amber-50 text-amber-700",
     icon: <Clock className="h-3.5 w-3.5" strokeWidth={2} />,
-    title: "Sem checkout — não conta para a meta; vira falta se o prazo passar",
+    title: "Prazo de checkout passou sem checkout — não conta para a meta; vira falta",
   },
   scheduled: {
     box: "border-sky-200 bg-sky-50 text-sky-700",
@@ -159,6 +164,7 @@ export type GoalStripCounts = {
 
 const STRIP_STATE_CLASS: Record<GoalSlotState, string> = {
   done: "bg-emerald-500",
+  ongoing: "bg-sky-500",
   pending: "bg-amber-400",
   scheduled: "bg-sky-400",
   missed: "bg-red-500",

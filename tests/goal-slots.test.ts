@@ -131,9 +131,27 @@ test("plantão de hoje que ainda não começou é agendado e ocupa a casinha", (
   assert.equal(cru.missing, 0);
 });
 
-test("plantão de hoje que já começou sem checkout continua pendente", () => {
+test("plantão em andamento (com ou sem check-in) ocupa a casinha: o interno não precisa de outro", () => {
   const depois = new Date("2026-09-07T12:00:00Z"); // 09:00: diurno em curso
-  const [usaGoal] = summarizeGoals([{ ...usa("a", today, "CHECKED_IN"), period: "DAY" }], targets, today, depois);
+  for (const status of ["SCHEDULED", "CONFIRMED", "CHECKED_IN"]) {
+    const [usaGoal] = summarizeGoals([{ ...usa("a", today, status), period: "DAY" }], targets, today, depois);
+    assert.equal(usaGoal.slots[0].state, "ongoing", status);
+    assert.equal(usaGoal.filled, 1, status);
+    assert.equal(usaGoal.done, 0, status);
+    assert.equal(usaGoal.missing, 5, status);
+  }
+});
+
+test("noturno de ontem segue em andamento de madrugada, até o prazo de checkout", () => {
+  const madrugada = new Date("2026-09-08T09:00:00Z"); // 06:00 do dia seguinte
+  const [usaGoal] = summarizeGoals([{ ...usa("a", today, "CHECKED_IN"), period: "NIGHT" }], targets, "2026-09-08", madrugada);
+  assert.equal(usaGoal.slots[0].state, "ongoing");
+  assert.equal(usaGoal.missing, 5);
+});
+
+test("passou o prazo de checkout sem checkout: pendente, não conta para a meta", () => {
+  const diaSeguinte = new Date("2026-09-08T12:00:00Z"); // diurno de ontem: prazo era 00:00
+  const [usaGoal] = summarizeGoals([{ ...usa("a", today, "CHECKED_IN"), period: "DAY" }], targets, "2026-09-08", diaSeguinte);
   assert.equal(usaGoal.slots[0].state, "pending");
   assert.equal(usaGoal.filled, 0);
   assert.equal(usaGoal.missing, 6);

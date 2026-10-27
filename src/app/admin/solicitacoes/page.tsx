@@ -10,10 +10,22 @@ type Request = {
   status: string;
   reviewNotes: string | null;
   createdAt: string;
+  targetInternName?: string | null;
+  extraBaseCode?: string | null;
+  extraDate?: string | null;
+  extraPeriod?: string | null;
 };
 
+/** O que o pedido é, em uma linha. Só vaga livre e extra têm vaga para mostrar. */
+function detalhe(r: Request) {
+  if (!r.extraBaseCode || !r.extraDate) return "";
+  const quando = `${r.extraBaseCode} · ${r.extraDate.slice(8, 10)}/${r.extraDate.slice(5, 7)} ${r.extraPeriod === "NIGHT" ? "noturno" : "diurno"}`;
+  if (r.type === "FREE_SLOT") return `${r.targetInternName ?? "interno"} em vaga livre (${quando}) — meta do tipo já coberta`;
+  return quando;
+}
+
 const STATUS_LABEL: Record<string, string> = { PENDING: "Pendente", APPROVED: "Aprovado", REJECTED: "Rejeitado", ESCALATED: "Escalado", COMPLETED: "Concluído" };
-const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra", DROP_SHIFT: "Descarte" };
+const TYPE_LABEL: Record<string, string> = { SWAP: "Troca", EXTRA_SHIFT: "Extra", DROP_SHIFT: "Descarte", FREE_SLOT: "Vaga livre acima da meta" };
 
 export default function AdminSolicitacoes() {
   const [requests, setRequests] = useState<Request[]>([]);
@@ -92,6 +104,7 @@ export default function AdminSolicitacoes() {
             <tr className="border-b border-slate-200 text-left text-slate-500">
               <th className="pb-2 pr-4">Tipo</th>
               <th className="pb-2 pr-4">Solicitante</th>
+              <th className="pb-2 pr-4">Detalhe</th>
               <th className="pb-2 pr-4">Status</th>
               <th className="pb-2 pr-4">Data</th>
               <th className="pb-2">Ações</th>
@@ -102,6 +115,7 @@ export default function AdminSolicitacoes() {
               <tr key={r.id} className="border-b border-slate-100">
                 <td className="py-2 pr-4">{TYPE_LABEL[r.type] ?? r.type}</td>
                 <td className="py-2 pr-4">{r.requesterName}</td>
+                <td className="py-2 pr-4 text-xs text-slate-600">{detalhe(r)}</td>
                 <td className="py-2 pr-4">
                   <span className={`rounded px-2 py-0.5 text-xs font-medium ${r.status === "PENDING" ? "bg-amber-50 text-amber-700" :
                     r.status === "APPROVED" ? "bg-emerald-50 text-emerald-700" :

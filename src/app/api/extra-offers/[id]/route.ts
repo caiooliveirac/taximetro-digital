@@ -14,7 +14,7 @@ export async function POST(
 
   const { id } = await params;
   // Corpo opcional: líder/coordenador alocando um interno numa vaga livre.
-  const body = await req.json().catch(() => ({})) as { internId?: unknown; facultyId?: unknown; allowRetroactiveOverride?: unknown };
+  const body = await req.json().catch(() => ({})) as { internId?: unknown; facultyId?: unknown; allowRetroactiveOverride?: unknown; pedirAutorizacao?: unknown };
   const uuid = /^[0-9a-f-]{36}$/i;
   const internId = typeof body.internId === "string" && uuid.test(body.internId) ? body.internId : undefined;
   const facultyId = typeof body.facultyId === "string" && uuid.test(body.facultyId) ? body.facultyId : undefined;
@@ -25,6 +25,8 @@ export async function POST(
     internId,
     facultyId,
     allowRetroactiveOverride: body.allowRetroactiveOverride === true,
+    isImpersonating: user.isImpersonating,
+    pedirAutorizacao: body.pedirAutorizacao === true,
   });
 
   return NextResponse.json(result.body, { status: result.status });

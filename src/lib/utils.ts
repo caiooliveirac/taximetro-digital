@@ -159,6 +159,15 @@ function shiftCheckoutStartPoint(dateStr: string, period: ShiftPeriod): LocalDat
   };
 }
 
+/** O prazo de checkout do plantão já passou (sem checkout até aqui, vira falta). */
+export function hasCheckoutDeadlinePassed(
+  dateStr: string,
+  period: ShiftPeriod,
+  date: Date = new Date(),
+): boolean {
+  return compareLocalDateTime(currentLocalPoint(date), shiftCheckoutDeadlinePoint(dateStr, period)) > 0;
+}
+
 export function addDaysToDateStr(dateStr: string, days: number): string {
   const date = utcDateFromDateStr(dateStr);
   date.setUTCDate(date.getUTCDate() + days);
