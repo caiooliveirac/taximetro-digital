@@ -3,7 +3,7 @@
 import { useState, useEffect, useTransition } from "react";
 import { Link2, X, Copy, Check, Loader2 } from "lucide-react";
 import { createInviteLinkAction } from "@/app/admin/actions";
-import { pickOpenCohort } from "@/features/cohorts/domain/intern-cohort";
+import { defaultInviteCohortId, nextCohortStart } from "@/features/cohorts/domain/intern-cohort";
 import { localDateStr } from "@/lib/utils";
 
 type Faculty = { id: string; abbreviation: string };
@@ -43,8 +43,7 @@ export function InviteButton() {
             .then((cRes) => {
                 if (!cRes.success) return;
                 setCohorts(cRes.data);
-                // Padrão: a turma em curso; sem nenhuma aberta, nasce uma nova.
-                setCohortId(pickOpenCohort(cRes.data as Cohort[], localDateStr())?.id ?? "");
+                setCohortId(defaultInviteCohortId(cRes.data as Cohort[], localDateStr()));
             });
     }, [facultyId, role]);
 
@@ -105,6 +104,11 @@ export function InviteButton() {
     const roleName = ROLES.find((r) => r.value === role)?.label ?? role;
     const facultyName = faculties.find((f) => f.id === facultyId)?.abbreviation;
     const cohortLabel = cohorts.find((c) => c.id === cohortId)?.label;
+    const today = localDateStr();
+    // Mesma conta do servidor (planNextCohort): começa quando a em curso termina.
+    const latest = cohorts.reduce<Cohort | null>((acc, c) => (!acc || c.endDate > acc.endDate ? c : acc), null);
+    const newCohortStart = nextCohortStart(latest, today)
+        .split("-").reverse().join("/");
 
     return (
         <>
@@ -180,10 +184,10 @@ export function InviteButton() {
                                             onChange={(e) => setCohortId(e.target.value)}
                                             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                                         >
+                                            <option value="">+ Nova turma (começa {newCohortStart})</option>
                                             {cohorts.map((c) => (
                                                 <option key={c.id} value={c.id}>{c.label}</option>
                                             ))}
-                                            <option value="">+ Nova turma (começa hoje)</option>
                                         </select>
                                     </div>
                                 )}
@@ -196,7 +200,7 @@ export function InviteButton() {
                                         <> — Faculdade <span className="font-semibold text-slate-900">{facultyName}</span></>
                                     )}
                                     {role === "INTERN" && facultyId && (
-                                        <> — Turma <span className="font-semibold text-slate-900">{cohortLabel ?? "nova, criada ao gerar"}</span></>
+                                        <> — Turma <span className="font-semibold text-slate-900">{cohortLabel ?? `nova, começa ${newCohortStart}`}</span></>
                                     )}
                                     <br />
                                     <span className="text-xs text-slate-400">Válido por 7 dias</span>

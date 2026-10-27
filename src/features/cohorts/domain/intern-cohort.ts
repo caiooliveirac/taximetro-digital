@@ -37,21 +37,50 @@ function addDays(dateStr: string, days: number): string {
 }
 
 /**
- * Próxima turma da faculdade: começa hoje e dura o mesmo que a última
- * (o coordenador ajusta as datas depois, na tela de Turmas).
+ * Início da próxima turma: o dia seguinte ao fim da turma em curso — os
+ * internos novos costumam se cadastrar na última semana da atual —, ou hoje
+ * se nenhuma está em curso.
+ */
+export function nextCohortStart(current: { status: string; endDate: string } | null, today: string): string {
+  if (!current || current.status === "CLOSED" || current.endDate < today) return today;
+  return addDays(current.endDate, 1);
+}
+
+/** A partir da 4ª semana da turma em curso, o convite já é para a próxima. */
+const NEW_COHORT_DEFAULT_AFTER_DAYS = 21;
+
+/**
+ * Turma pré-selecionada no convite de interno ("" = nova turma). Turma
+ * futura já criada vence (é o grupo que está chegando); a em curso só até
+ * a 3ª semana; depois disso, ou sem nenhuma aberta, nova turma.
+ */
+export function defaultInviteCohortId(cohorts: OpenCohortCandidate[], today: string): string {
+  const upcoming = cohorts
+    .filter((c) => c.status !== "CLOSED" && c.startDate > today)
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  if (upcoming) return upcoming.id;
+  const current = pickOpenCohort(cohorts, today);
+  if (current && today < addDays(current.startDate, NEW_COHORT_DEFAULT_AFTER_DAYS)) return current.id;
+  return "";
+}
+
+/**
+ * Próxima turma da faculdade: começa quando a em curso termina (ou hoje) e
+ * dura o mesmo que a última (o coordenador ajusta as datas na tela de Turmas).
  */
 export function planNextCohort(params: {
   facultyAbbr: string;
   today: string;
-  last: { rotationNumber: number; startDate: string; endDate: string } | null;
+  last: { rotationNumber: number; status: string; startDate: string; endDate: string } | null;
 }) {
   const rotationNumber = (params.last?.rotationNumber ?? 0) + 1;
   const length = params.last ? Math.max(daysBetween(params.last.startDate, params.last.endDate), 7) : DEFAULT_ROTATION_DAYS;
+  const startDate = nextCohortStart(params.last, params.today);
   const name = `${params.facultyAbbr} ${rotationNumber}`;
   return {
     rotationNumber,
-    startDate: params.today,
-    endDate: addDays(params.today, length),
+    startDate,
+    endDate: addDays(startDate, length),
     name,
     label: name,
   };

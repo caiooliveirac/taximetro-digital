@@ -14,16 +14,17 @@ function isUniqueViolation(err: unknown) {
   return msg.includes("23505") || msg.includes("unique") || msg.includes("uq_cohort");
 }
 
-/** Cria a próxima turma da faculdade, já ACTIVE (começa hoje). */
+/** Cria a próxima turma da faculdade; ACTIVE se começa hoje, senão PLANNED (o cron ativa). */
 export async function createNextCohort(params: { facultyId: string; createdBy: string; reason: string }) {
   const data = await listFacultyCohortsWithAbbr(params.facultyId);
   if (!data) throw new InternCohortError("Faculdade não encontrada");
   const last = data.cohorts.reduce<(typeof data.cohorts)[number] | null>(
     (acc, c) => (!acc || c.rotationNumber > acc.rotationNumber ? c : acc), null);
-  const plan = planNextCohort({ facultyAbbr: data.facultyAbbr, today: localDateStr(), last });
+  const today = localDateStr();
+  const plan = planNextCohort({ facultyAbbr: data.facultyAbbr, today, last });
 
   const created = await createCohort({ ...plan, facultyId: params.facultyId, createdBy: params.createdBy });
-  await activateCohort(created.id);
+  if (plan.startDate <= today) await activateCohort(created.id);
   await logAudit({
     userId: params.createdBy,
     action: "AUTO_CREATE_COHORT",
