@@ -82,3 +82,15 @@ test("extra escalado além da grade ocupa o espaço da vaga sem dono", () => {
   const plano = planejarVaga({ cap: 2, faculdades: [fac({ facultyId: "A", assigned: 1 })], totalAssigned: 2, openOffers: 0, semDonoExistentes: 0 });
   assert.equal(plano.semDono, 0);
 });
+
+test("aviso no Telegram: sem dono e prazo dizem de onde veio a vaga e quem escalou", async () => {
+  const { textoVagaAutomaticaUsada } = await import("../src/features/extra-offers/application/use-cases/claim-extra-offer");
+  const base = { baseCode: "PR03", date: "2026-11-03", period: "NIGHT", internName: "Fulano", facultyAbbr: "UFBA", actorName: "Líder X", actorRole: "LEADER" };
+  const semDono = textoVagaAutomaticaUsada({ ...base, autoRelease: "SEM_DONO", releasedByAbbr: null });
+  assert.match(semDono, /Vaga sem dono usada/);
+  assert.match(semDono, /PR03 · 03\/11 noturno/);
+  assert.match(semDono, /Escalado por: Líder X \(líder UFBA\)/);
+  const prazo = textoVagaAutomaticaUsada({ ...base, autoRelease: "PRAZO", releasedByAbbr: "EBMSP", actorRole: "COORDINATOR" });
+  assert.match(prazo, /prazo da EBMSP/);
+  assert.match(prazo, /\(coordenação\)/);
+});

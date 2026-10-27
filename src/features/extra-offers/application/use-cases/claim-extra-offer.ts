@@ -9,6 +9,7 @@ import { logAudit } from "@/shared/infra/logger/audit";
 import { findAssignmentByInternSlot } from "@/features/scheduling/infra/repositories/assignment-repository";
 import { getValidInternIdsForFaculty } from "@/features/scheduling/infra/repositories/lottery-repository";
 import { localDateStr } from "@/lib/utils";
+import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 
 /**
  * Oferta de data passada não se pega. O board e a grade já não mostram; isto é
@@ -24,6 +25,31 @@ export function bloqueiaDataPassada(params: {
 }): boolean {
   if (params.offerDate >= (params.today ?? localDateStr())) return false;
   return !(params.actorRole === "COORDINATOR" && params.allowRetroactiveOverride === true);
+}
+
+/**
+ * Aviso no privado da coordenação quando alguém usa vaga liberada pelo
+ * sistema (auto-release-slots.ts) — para acompanhar quem está pegando o quê.
+ * Liberação manual não avisa: foi a faculdade que decidiu ceder.
+ */
+export function textoVagaAutomaticaUsada(p: {
+  autoRelease: string;
+  releasedByAbbr: string | null;
+  baseCode: string;
+  date: string;
+  period: string;
+  internName: string;
+  facultyAbbr: string;
+  actorName: string;
+  actorRole: string;
+}) {
+  const data = `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`;
+  const turno = p.period === "NIGHT" ? "noturno" : "diurno";
+  const origem = p.autoRelease === "SEM_DONO"
+    ? "Vaga sem dono usada"
+    : `Vaga liberada pelo prazo da ${p.releasedByAbbr ?? "outra faculdade"} usada`;
+  const quem = p.actorRole === "COORDINATOR" ? `${p.actorName} (coordenação)` : `${p.actorName} (líder ${p.facultyAbbr})`;
+  return `🔓 ${origem}\n${p.baseCode} · ${data} ${turno}\nInterno: ${p.internName} (${p.facultyAbbr})\nEscalado por: ${quem}`;
 }
 
 /**
@@ -174,6 +200,21 @@ export async function executeClaimExtraOffer(params: {
         ...(retroativo ? { allowRetroactiveOverride: true } : {}),
       },
     });
+    if (offer.autoRelease) {
+      const [ator] = await db.select({ name: users.name }).from(users).where(eq(users.id, actor.id)).limit(1);
+      // Sem await: o aviso nunca atrasa nem derruba a alocação.
+      void avisarCoordenacaoNoTelegram(textoVagaAutomaticaUsada({
+        autoRelease: offer.autoRelease,
+        releasedByAbbr: quemLiberou?.abbr ?? null,
+        baseCode: bs?.code ?? "base",
+        date: offer.date,
+        period: offer.period,
+        internName: interno?.name ?? "interno",
+        facultyAbbr: fac?.abbr ?? "?",
+        actorName: ator?.name ?? "alguém",
+        actorRole: actor.role,
+      }));
+    }
   } else {
     await logAudit({
       userId: actor.id,
