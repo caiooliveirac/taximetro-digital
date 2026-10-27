@@ -28,6 +28,7 @@ export function InviteButton() {
     const [error, setError] = useState("");
     const [generatedUrl, setGeneratedUrl] = useState("");
     const [copied, setCopied] = useState(false);
+    const needsCohort = role === "INTERN" || role === "LEADER";
 
     useEffect(() => {
         if (!open) return;
@@ -37,7 +38,7 @@ export function InviteButton() {
     }, [open]);
 
     useEffect(() => {
-        if (!facultyId || role !== "INTERN") { setCohorts([]); setCohortId(""); return; }
+        if (!facultyId || !needsCohort) { setCohorts([]); setCohortId(""); return; }
         fetch(`/taximetro/api/admin/cohorts?facultyId=${facultyId}&status=ACTIVE&status=PLANNED`)
             .then((r) => r.json())
             .then((cRes) => {
@@ -45,7 +46,7 @@ export function InviteButton() {
                 setCohorts(cRes.data);
                 setCohortId(defaultInviteCohortId(cRes.data as Cohort[], localDateStr()));
             });
-    }, [facultyId, role]);
+    }, [facultyId, needsCohort]);
 
     function reset() {
         setRole("INTERN");
@@ -73,7 +74,7 @@ export function InviteButton() {
                 const body: Record<string, string> = { targetRole: role };
                 if (needsFaculty) body.facultyId = facultyId;
                 // Sem cohortId o servidor cria a próxima turma da faculdade.
-                if (role === "INTERN" && cohortId) body.cohortId = cohortId;
+                if (needsCohort && cohortId) body.cohortId = cohortId;
 
                 const result = await createInviteLinkAction(body);
                 if (!result.success) {
@@ -173,8 +174,8 @@ export function InviteButton() {
                                     </div>
                                 )}
 
-                                {/* Cohort selector for INTERN: interno sempre entra numa turma */}
-                                {role === "INTERN" && facultyId && (
+                                {/* Cohort selector for INTERN / LEADER: sempre entram numa turma */}
+                                {needsCohort && facultyId && (
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1.5">
                                             Turma
@@ -199,7 +200,7 @@ export function InviteButton() {
                                     {needsFaculty && facultyName && (
                                         <> — Faculdade <span className="font-semibold text-slate-900">{facultyName}</span></>
                                     )}
-                                    {role === "INTERN" && facultyId && (
+                                    {needsCohort && facultyId && (
                                         <> — Turma <span className="font-semibold text-slate-900">{cohortLabel ?? `nova, começa ${newCohortStart}`}</span></>
                                     )}
                                     <br />

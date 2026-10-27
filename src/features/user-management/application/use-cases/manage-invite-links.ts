@@ -36,7 +36,7 @@ export async function executeCreateInviteLink(params: {
   }
 
   const createdBy = actor.realUserId ?? actor.id;
-  const cohortId = targetRole === "INTERN"
+  const cohortId = targetRole === "INTERN" || targetRole === "LEADER"
     ? await ensureInternCohort({ facultyId, createdBy, reason: "invite" })
     : null;
 

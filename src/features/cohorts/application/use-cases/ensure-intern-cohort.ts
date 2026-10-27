@@ -36,7 +36,7 @@ export async function createNextCohort(params: { facultyId: string; createdBy: s
 }
 
 /**
- * Turma onde um interno da faculdade deve entrar. Com `cohortId`, valida que
+ * Turma onde um interno (ou líder) da faculdade deve entrar. Com `cohortId`, valida que
  * é da faculdade e não está fechada. Sem ela (ou se a pedida fechou), usa a
  * turma aberta da faculdade; sem nenhuma aberta, cria a próxima.
  */

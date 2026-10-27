@@ -1,6 +1,6 @@
 import { db } from "@/shared/db/client";
 import { assignments, cohorts, faculties, userRoles, users } from "@/db/schema";
-import { eq, and, gte, inArray, isNull, ne, sql } from "drizzle-orm";
+import { eq, and, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 export async function listCohorts(filters?: {
@@ -230,6 +230,31 @@ export async function closeCohortAndArchiveInterns(params: {
     )
     .returning({ id: userRoles.id });
 
+  return archived.length;
+}
+
+/**
+ * Arquiva os líderes da turma: o vínculo LEADER com essa turma, e o LEADER
+ * sem turma de quem foi interno dela (líderes cadastrados antes de o convite
+ * de líder levar turma). Roda quando a turma fecha. Retorna quantos arquivou.
+ */
+export async function archiveCohortLeaders(cohortId: string, archivedBy: string | null): Promise<number> {
+  const internsOfCohort = db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .where(and(eq(userRoles.cohortId, cohortId), eq(userRoles.role, "INTERN")));
+  const archived = await db
+    .update(userRoles)
+    .set({ isArchived: true, archivedAt: new Date(), archivedBy })
+    .where(and(
+      eq(userRoles.role, "LEADER"),
+      eq(userRoles.isArchived, false),
+      or(
+        eq(userRoles.cohortId, cohortId),
+        and(isNull(userRoles.cohortId), inArray(userRoles.userId, internsOfCohort)),
+      ),
+    ))
+    .returning({ id: userRoles.id });
   return archived.length;
 }
 

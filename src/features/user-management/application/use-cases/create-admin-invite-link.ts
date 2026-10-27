@@ -51,9 +51,10 @@ export async function executeCreateAdminInviteLink(params: {
     }
   }
 
-  // Link de interno sempre leva turma: a escolhida (aberta, da faculdade) ou
-  // uma turma nova criada agora. Sem turma o interno some das telas por turma.
-  if (targetRole === "INTERN" && normalizedFacultyId) {
+  // Link de interno e de líder sempre leva turma: a escolhida (aberta, da
+  // faculdade) ou uma turma nova criada agora. Sem turma o interno some das
+  // telas por turma, e o líder nunca é arquivado quando a turma fecha.
+  if ((targetRole === "INTERN" || targetRole === "LEADER") && normalizedFacultyId) {
     try {
       normalizedCohortId = cohortId
         ? await ensureInternCohort({ facultyId: normalizedFacultyId, cohortId, createdBy: params.actorUserId, reason: "invite", strict: true })

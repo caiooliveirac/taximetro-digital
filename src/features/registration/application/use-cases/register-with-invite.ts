@@ -34,7 +34,7 @@ function normalizeInviteScope(invite: Awaited<ReturnType<typeof findValidInviteB
   }
 
   if (invite.targetRole === "LEADER") {
-    return { facultyId: invite.facultyId ?? null, baseId: null, cohortId: null };
+    return { facultyId: invite.facultyId ?? null, baseId: null, cohortId: invite.cohortId ?? null };
   }
 
   return { facultyId: null, baseId: null, cohortId: null };
@@ -85,7 +85,7 @@ export async function executeRegisterWithInvite(params: {
   const normalizedScope = normalizeInviteScope(invite);
   // Link antigo sem turma, ou cuja turma já fechou: entra na turma aberta da
   // faculdade (ou na próxima, criada agora).
-  if (assignedRole === "INTERN" && normalizedScope.facultyId) {
+  if ((assignedRole === "INTERN" || assignedRole === "LEADER") && normalizedScope.facultyId) {
     normalizedScope.cohortId = await ensureInternCohort({
       facultyId: normalizedScope.facultyId,
       cohortId: normalizedScope.cohortId,

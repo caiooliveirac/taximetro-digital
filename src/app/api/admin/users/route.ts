@@ -147,13 +147,13 @@ async function applyRoleDiff(userId: string, desired: RoleAssignment[], actorUse
   const diff = computeRoleDiff(existing, desired);
 
   if (diff.toInsert.length > 0) {
-    // Interno nasce dentro de uma turma (a aberta da faculdade, ou a próxima).
+    // Interno e líder nascem dentro de uma turma (a aberta da faculdade, ou a próxima).
     const values = await Promise.all(diff.toInsert.map(async (r) => ({
       userId,
       role: r.role,
       facultyId: r.facultyId,
       baseId: r.baseId,
-      cohortId: r.role === "INTERN" && r.facultyId
+      cohortId: (r.role === "INTERN" || r.role === "LEADER") && r.facultyId
         ? await ensureInternCohort({ facultyId: r.facultyId, createdBy: actorUserId, reason: "admin-user" })
         : null,
     })));

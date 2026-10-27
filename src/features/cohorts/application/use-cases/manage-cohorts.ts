@@ -12,6 +12,7 @@ import {
   getUserRoleFacultyIds,
   listInternsByCohort,
   closeCohortAndArchiveInterns,
+  archiveCohortLeaders,
   listActiveInternsWithLastShift,
 } from "@/features/cohorts/infra/repositories/cohort-repository";
 import { internsBeyondEnd } from "@/features/cohorts/domain/cohort-closure";
@@ -154,12 +155,13 @@ export async function executeUpdateCohort(params: {
       cohortId: params.cohortId,
       closedBy: params.actorUserId,
     });
+    const archivedLeaders = await archiveCohortLeaders(params.cohortId, params.actorUserId);
     await logAudit({
       userId: params.actorUserId,
       action: "CLOSE_COHORT",
       entity: "cohort",
       entityId: params.cohortId,
-      payload: { archivedInterns },
+      payload: { archivedInterns, archivedLeaders },
     });
     const fresh = await getCohortById(params.cohortId);
     return { status: 200, body: { success: true, data: fresh ?? updated, archivedInterns } } as const;

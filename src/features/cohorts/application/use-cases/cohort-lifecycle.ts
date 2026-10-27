@@ -9,6 +9,7 @@ import {
   activateCohort,
   closeCohort,
   archiveInternRoles,
+  archiveCohortLeaders,
   listActiveInternsWithLastShift,
   getCohortLastShiftDate,
   listCohortsPendingClosingReport,
@@ -37,7 +38,8 @@ export type CohortLifecycleResult = {
  *  - turma com endDate < hoje → arquiva cada interno que não tem mais plantão
  *    de hoje em diante; quem tem (reposição escalada depois do fim) fica ativo
  *    e é arquivado na primeira rodada depois do último plantão. A turma vira
- *    CLOSED quando o último interno é arquivado; até lá aparece em `held`.
+ *    CLOSED quando o último interno é arquivado — e aí os líderes dela também
+ *    são arquivados; até lá aparece em `held`.
  *
  * Idempotente: roda diariamente via cron e também sob demanda ao salvar datas
  * de uma turma. Passe `cohortId` para avaliar apenas uma turma.
@@ -76,13 +78,14 @@ export async function evaluateCohortLifecycle(params?: {
 
       if (plan.closeCohort) {
         await closeCohort(cohort.id, actorUserId);
+        const archivedLeaders = await archiveCohortLeaders(cohort.id, actorUserId);
         result.closed.push({ cohortId: cohort.id, label: cohort.label, archivedInterns });
         await logAudit({
           userId: actorUserId ?? undefined,
           action: "AUTO_CLOSE_COHORT",
           entity: "cohort",
           entityId: cohort.id,
-          payload: { endDate: cohort.endDate, today, archivedInterns },
+          payload: { endDate: cohort.endDate, today, archivedInterns, archivedLeaders },
         });
         continue;
       }
