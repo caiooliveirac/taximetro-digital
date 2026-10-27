@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 import { logAudit } from "@/shared/infra/logger/audit";
+import { ensureInternCohort } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
 import {
   createInviteLink,
   deactivateInviteLink,
@@ -34,11 +35,17 @@ export async function executeCreateInviteLink(params: {
     return { status: 400, body: { success: false, error: "facultyId obrigatório" } } as const;
   }
 
+  const createdBy = actor.realUserId ?? actor.id;
+  const cohortId = targetRole === "INTERN"
+    ? await ensureInternCohort({ facultyId, createdBy, reason: "invite" })
+    : null;
+
   const link = await createInviteLink({
     token: randomBytes(12).toString("base64url"),
     targetRole,
-    createdBy: actor.realUserId ?? actor.id,
+    createdBy,
     facultyId,
+    cohortId,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 
@@ -47,7 +54,7 @@ export async function executeCreateInviteLink(params: {
     action: "CREATE_INVITE",
     entity: "invite_link",
     entityId: link.id,
-    payload: { targetRole, facultyId, ...(actor.isImpersonating ? { impersonating: actor.id } : {}) },
+    payload: { targetRole, facultyId, cohortId, ...(actor.isImpersonating ? { impersonating: actor.id } : {}) },
   });
 
   return { status: 201, body: { success: true, data: link } } as const;

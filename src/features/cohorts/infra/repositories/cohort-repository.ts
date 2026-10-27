@@ -42,6 +42,27 @@ export async function getCohortById(id: string) {
   return rows[0] ?? null;
 }
 
+/** Turmas da faculdade (todas) e a sigla dela — insumo de ensureInternCohort. */
+export async function listFacultyCohortsWithAbbr(facultyId: string) {
+  const [faculty] = await db
+    .select({ abbreviation: faculties.abbreviation })
+    .from(faculties)
+    .where(eq(faculties.id, facultyId))
+    .limit(1);
+  if (!faculty) return null;
+  const rows = await db
+    .select({
+      id: cohorts.id,
+      status: cohorts.status,
+      rotationNumber: cohorts.rotationNumber,
+      startDate: cohorts.startDate,
+      endDate: cohorts.endDate,
+    })
+    .from(cohorts)
+    .where(eq(cohorts.facultyId, facultyId));
+  return { facultyAbbr: faculty.abbreviation, cohorts: rows };
+}
+
 export async function createCohort(input: {
   facultyId: string;
   rotationNumber: number;
@@ -145,13 +166,6 @@ export async function listInternsByCohort(cohortId: string) {
     .innerJoin(users, eq(userRoles.userId, users.id))
     .where(eq(userRoles.cohortId, cohortId))
     .orderBy(users.name);
-}
-
-export async function unassignCohort(userRoleId: string) {
-  await db
-    .update(userRoles)
-    .set({ cohortId: null })
-    .where(eq(userRoles.id, userRoleId));
 }
 
 // F3: lifecycle por datas (start/end)

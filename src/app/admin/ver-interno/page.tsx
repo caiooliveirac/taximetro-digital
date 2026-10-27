@@ -255,7 +255,7 @@ function AdminVerComoInterno() {
   }, [selected]);
 
   async function saveCohort() {
-    if (!selected) return;
+    if (!selected || !cohortSelectValue) return;
     setCohortSaving(true);
     const res = await fetch(`/taximetro/api/admin/users?id=${selected.id}`);
     const json = await res.json();
@@ -515,7 +515,7 @@ function AdminVerComoInterno() {
                     onChange={(e) => setCohortSelectValue(e.target.value)}
                     className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-900"
                   >
-                    <option value="">Sem turma</option>
+                    <option value="" disabled>Escolha a turma</option>
                     {cohortOptions.map((c) => (
                       <option key={c.id} value={c.id}>{c.name ?? c.label}</option>
                     ))}

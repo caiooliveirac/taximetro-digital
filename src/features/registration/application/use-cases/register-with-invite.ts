@@ -1,6 +1,7 @@
 import { hash } from "bcryptjs";
 import { z } from "zod/v4";
 import { logAudit } from "@/shared/infra/logger/audit";
+import { ensureInternCohort } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
 import {
   createPendingUser,
   createUserRole,
@@ -82,6 +83,16 @@ export async function executeRegisterWithInvite(params: {
 
   const assignedRole = (invite.targetRole as "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") ?? "INTERN";
   const normalizedScope = normalizeInviteScope(invite);
+  // Link antigo sem turma, ou cuja turma já fechou: entra na turma aberta da
+  // faculdade (ou na próxima, criada agora).
+  if (assignedRole === "INTERN" && normalizedScope.facultyId) {
+    normalizedScope.cohortId = await ensureInternCohort({
+      facultyId: normalizedScope.facultyId,
+      cohortId: normalizedScope.cohortId,
+      createdBy: invite.createdBy,
+      reason: "self-register",
+    });
+  }
 
   await createUserRole({
     userId: user.id,

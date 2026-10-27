@@ -2,6 +2,11 @@ import { randomBytes } from "crypto";
 import { z } from "zod/v4";
 import { logAudit } from "@/shared/infra/logger/audit";
 import {
+  InternCohortError,
+  createNextCohort,
+  ensureInternCohort,
+} from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
+import {
   createInviteLink,
   findBaseById,
   findFacultyById,
@@ -30,7 +35,7 @@ export async function executeCreateAdminInviteLink(params: {
   const { targetRole, facultyId, baseId, cohortId } = params.input;
   const normalizedFacultyId = targetRole === "INTERN" || targetRole === "LEADER" ? (facultyId ?? null) : null;
   const normalizedBaseId = targetRole === "PRECEPTOR" ? null : (baseId ?? null);
-  const normalizedCohortId = targetRole === "INTERN" ? (cohortId ?? null) : null;
+  let normalizedCohortId: string | null = null;
 
   if (normalizedFacultyId) {
     const faculty = await findFacultyById(normalizedFacultyId);
@@ -43,6 +48,21 @@ export async function executeCreateAdminInviteLink(params: {
     const base = await findBaseById(normalizedBaseId);
     if (!base) {
       return { status: 400, body: { success: false, error: "Base não encontrada" } } as const;
+    }
+  }
+
+  // Link de interno sempre leva turma: a escolhida (aberta, da faculdade) ou
+  // uma turma nova criada agora. Sem turma o interno some das telas por turma.
+  if (targetRole === "INTERN" && normalizedFacultyId) {
+    try {
+      normalizedCohortId = cohortId
+        ? await ensureInternCohort({ facultyId: normalizedFacultyId, cohortId, createdBy: params.actorUserId, reason: "invite", strict: true })
+        : await createNextCohort({ facultyId: normalizedFacultyId, createdBy: params.actorUserId, reason: "invite" });
+    } catch (err) {
+      if (err instanceof InternCohortError) {
+        return { status: 400, body: { success: false, error: err.message } } as const;
+      }
+      throw err;
     }
   }
 

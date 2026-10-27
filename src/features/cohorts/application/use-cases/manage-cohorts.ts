@@ -11,7 +11,6 @@ import {
   bulkAssignCohort,
   getUserRoleFacultyIds,
   listInternsByCohort,
-  unassignCohort,
   closeCohortAndArchiveInterns,
   listActiveInternsWithLastShift,
 } from "@/features/cohorts/infra/repositories/cohort-repository";
@@ -248,28 +247,12 @@ export async function executeListInternsByCohort(cohortId: string) {
   return listInternsByCohort(cohortId);
 }
 
-export async function executeUnassignCohort(params: {
+export async function executeUnassignCohort(_params: {
   actorUserId: string;
   userRoleId: string;
   cohortId: string;
 }) {
-  const cohort = await getCohortById(params.cohortId);
-  if (!cohort) {
-    return { status: 404, body: { success: false, error: "Turma não encontrada" } } as const;
-  }
-  if (cohort.status === "CLOSED") {
-    return { status: 409, body: { success: false, error: "Não é possível remover interns de turma fechada" } } as const;
-  }
-
-  await unassignCohort(params.userRoleId);
-
-  await logAudit({
-    userId: params.actorUserId,
-    action: "UNASSIGN_COHORT",
-    entity: "cohort",
-    entityId: params.cohortId,
-    payload: { userRoleId: params.userRoleId },
-  });
-
-  return { status: 200, body: { success: true } } as const;
+  // Interno sem turma some do sorteio e das telas por turma: troca-se de
+  // turma atribuindo a outra, nunca deixando sem.
+  return { status: 409, body: { success: false, error: "Interno não pode ficar sem turma. Para trocar, atribua a outra turma." } } as const;
 }

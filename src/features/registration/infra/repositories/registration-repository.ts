@@ -14,6 +14,7 @@ export async function findValidInviteByToken(token: string) {
       baseCode: bases.code,
       baseName: bases.name,
       cohortId: inviteLinks.cohortId,
+      createdBy: inviteLinks.createdBy,
       isActive: inviteLinks.isActive,
       expiresAt: inviteLinks.expiresAt,
     })

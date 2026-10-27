@@ -3,9 +3,11 @@
 import { useState, useEffect, useTransition } from "react";
 import { Link2, X, Copy, Check, Loader2 } from "lucide-react";
 import { createInviteLinkAction } from "@/app/admin/actions";
+import { pickOpenCohort } from "@/features/cohorts/domain/intern-cohort";
+import { localDateStr } from "@/lib/utils";
 
 type Faculty = { id: string; abbreviation: string };
-type Cohort = { id: string; label: string; status: string };
+type Cohort = { id: string; label: string; status: "PLANNED" | "ACTIVE" | "CLOSED"; startDate: string; endDate: string };
 
 const ROLES = [
     { value: "INTERN", label: "Interno" },
@@ -38,7 +40,12 @@ export function InviteButton() {
         if (!facultyId || role !== "INTERN") { setCohorts([]); setCohortId(""); return; }
         fetch(`/taximetro/api/admin/cohorts?facultyId=${facultyId}&status=ACTIVE&status=PLANNED`)
             .then((r) => r.json())
-            .then((cRes) => { if (cRes.success) setCohorts(cRes.data); });
+            .then((cRes) => {
+                if (!cRes.success) return;
+                setCohorts(cRes.data);
+                // Padrão: a turma em curso; sem nenhuma aberta, nasce uma nova.
+                setCohortId(pickOpenCohort(cRes.data as Cohort[], localDateStr())?.id ?? "");
+            });
     }, [facultyId, role]);
 
     function reset() {
@@ -66,6 +73,7 @@ export function InviteButton() {
             try {
                 const body: Record<string, string> = { targetRole: role };
                 if (needsFaculty) body.facultyId = facultyId;
+                // Sem cohortId o servidor cria a próxima turma da faculdade.
                 if (role === "INTERN" && cohortId) body.cohortId = cohortId;
 
                 const result = await createInviteLinkAction(body);
@@ -161,21 +169,21 @@ export function InviteButton() {
                                     </div>
                                 )}
 
-                                {/* Cohort selector for INTERN (optional) */}
+                                {/* Cohort selector for INTERN: interno sempre entra numa turma */}
                                 {role === "INTERN" && facultyId && (
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                                            Turma <span className="text-xs font-normal text-slate-400">(opcional)</span>
+                                            Turma
                                         </label>
                                         <select
                                             value={cohortId}
                                             onChange={(e) => setCohortId(e.target.value)}
                                             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                                         >
-                                            <option value="">Sem turma definida</option>
                                             {cohorts.map((c) => (
                                                 <option key={c.id} value={c.id}>{c.label}</option>
                                             ))}
+                                            <option value="">+ Nova turma (começa hoje)</option>
                                         </select>
                                     </div>
                                 )}
@@ -187,8 +195,8 @@ export function InviteButton() {
                                     {needsFaculty && facultyName && (
                                         <> — Faculdade <span className="font-semibold text-slate-900">{facultyName}</span></>
                                     )}
-                                    {cohortLabel && (
-                                        <> — Turma <span className="font-semibold text-slate-900">{cohortLabel}</span></>
+                                    {role === "INTERN" && facultyId && (
+                                        <> — Turma <span className="font-semibold text-slate-900">{cohortLabel ?? "nova, criada ao gerar"}</span></>
                                     )}
                                     <br />
                                     <span className="text-xs text-slate-400">Válido por 7 dias</span>

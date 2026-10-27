@@ -8,10 +8,11 @@ import { z } from "zod/v4";
 
 const schema = z.object({
   userRoleId: z.string().uuid(),
-  cohortId: z.string().uuid().nullable(),
+  // Sem null: interno ativo não fica sem turma (ver ensure-intern-cohort).
+  cohortId: z.string().uuid(),
 });
 
-/** PATCH — reassign an intern's cohort (or clear it with cohortId: null) */
+/** PATCH — reassign an intern's cohort */
 export async function PATCH(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token || token.role !== "COORDINATOR") {
@@ -41,7 +42,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   // Validate cohort belongs to same faculty
-  if (cohortId) {
+  {
     const [cohort] = await db
       .select({ id: cohorts.id, facultyId: cohorts.facultyId, status: cohorts.status })
       .from(cohorts)
@@ -63,7 +64,7 @@ export async function PATCH(req: NextRequest) {
 
   await logAudit({
     userId: token.id as string,
-    action: cohortId ? "ASSIGN_COHORT" : "UNASSIGN_COHORT",
+    action: "ASSIGN_COHORT",
     entity: "user_role",
     entityId: userRoleId,
     payload: { userId: role.userId, previousCohortId: role.cohortId, newCohortId: cohortId },

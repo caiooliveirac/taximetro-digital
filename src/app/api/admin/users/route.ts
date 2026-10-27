@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { users, userRoles, faculties, bases, cohorts, assignments, checkins, requests, caseRecords, qrSessions, telegramBindings, auditLog, inviteLinks, passwordResetTokens, cruFixedAssignments, userMergeEvents } from "@/db/schema";
+import { ensureInternCohort } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
 import { eq, and, inArray, ne, sql } from "drizzle-orm";
 import { hash } from "bcryptjs";
 import { logAudit } from "@/lib/audit";
@@ -141,17 +142,22 @@ async function fetchExistingRoles(userId: string): Promise<ExistingRoleRow[]> {
  * audit_log. Remocoes viram `isActive = false`; reativacoes evitam violar
  * o unique constraint (userId, role, facultyId).
  */
-async function applyRoleDiff(userId: string, desired: RoleAssignment[]) {
+async function applyRoleDiff(userId: string, desired: RoleAssignment[], actorUserId: string) {
   const existing = await fetchExistingRoles(userId);
   const diff = computeRoleDiff(existing, desired);
 
   if (diff.toInsert.length > 0) {
-    await db.insert(userRoles).values(diff.toInsert.map((r) => ({
+    // Interno nasce dentro de uma turma (a aberta da faculdade, ou a próxima).
+    const values = await Promise.all(diff.toInsert.map(async (r) => ({
       userId,
       role: r.role,
       facultyId: r.facultyId,
       baseId: r.baseId,
+      cohortId: r.role === "INTERN" && r.facultyId
+        ? await ensureInternCohort({ facultyId: r.facultyId, createdBy: actorUserId, reason: "admin-user" })
+        : null,
     })));
+    await db.insert(userRoles).values(values);
   }
 
   if (diff.toReactivate.length > 0) {
@@ -483,7 +489,7 @@ export async function POST(req: NextRequest) {
 
   const [user] = await db.insert(users).values({ ...userData, passwordHash }).returning();
 
-  await applyRoleDiff(user.id, desiredRoles);
+  await applyRoleDiff(user.id, desiredRoles, token.id as string);
 
   const primaryRole = desiredRoles[0];
   const alsoPreceptorOut = desiredRoles.some((r) => r.role === "PRECEPTOR") && primaryRole.role !== "PRECEPTOR";
@@ -560,7 +566,7 @@ export async function PUT(req: NextRequest) {
 
     let appliedDiff: { toInsert: RoleAssignment[]; toDeactivate: string[]; toReactivate: string[] } | null = null;
     if (desiredRoles) {
-      appliedDiff = await applyRoleDiff(id, desiredRoles);
+      appliedDiff = await applyRoleDiff(id, desiredRoles, token.id as string);
     }
 
     if (isArchived !== undefined) {
@@ -879,6 +885,7 @@ export async function PATCH(req: NextRequest) {
           role: sourceRole.role,
           facultyId: sourceRole.facultyId,
           baseId: sourceRole.baseId,
+          cohortId: sourceRole.cohortId,
           isActive: sourceRole.isActive,
         }));
 

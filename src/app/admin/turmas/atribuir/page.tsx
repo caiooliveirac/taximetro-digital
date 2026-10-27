@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Users, UserCheck, UserMinus } from "lucide-react";
+import { Users, UserCheck } from "lucide-react";
 
 type Cohort = {
   id: string;
@@ -90,20 +90,6 @@ export default function AdminAtribuirTurmas() {
     if (uRes.success) setUnassigned(uRes.data);
     if (aRes.success) setAssigned(aRes.data);
     setSaving(false);
-  }
-
-  async function unassign(userRoleId: string) {
-    if (!confirm("Remover este interno da turma?")) return;
-    const res = await fetch(`/taximetro/api/admin/cohorts/${selectedCohortId}/assign`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userRoleId }),
-    });
-    const json = await res.json();
-    if (!json.success) { alert(json.error); return; }
-    setAssigned((prev) => prev.filter((i) => i.userRoleId !== userRoleId));
-    const uRes = await fetch(`/taximetro/api/admin/cohorts/${selectedCohortId}/interns?mode=unassigned`).then((r) => r.json());
-    if (uRes.success) setUnassigned(uRes.data);
   }
 
   const selectedCohort = cohorts.find((c) => c.id === selectedCohortId);
@@ -200,15 +186,6 @@ export default function AdminAtribuirTurmas() {
                     <p className="text-sm font-medium text-slate-900 truncate">{i.name}</p>
                     <p className="text-xs text-slate-400 truncate">{i.email}</p>
                   </div>
-                  {!isClosed && (
-                    <button
-                      onClick={() => unassign(i.userRoleId)}
-                      title="Remover da turma"
-                      className="flex-shrink-0 rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                    >
-                      <UserMinus className="h-4 w-4" />
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
