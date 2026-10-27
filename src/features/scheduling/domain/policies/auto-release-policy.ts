@@ -12,7 +12,8 @@
  *    dias que alguma turma aberta cobre (do início ao fim do rodízio dela).
  *
  * Teto por base (CAPACIDADE_USA): é o que trava a liberação. Diurno cabem dois
- * em toda USA, menos BR60 e BR05, que nunca liberam a segunda vaga. Noturno
+ * em toda USA, menos BR60, BR05, PM04 e PM40, que têm um interno por turno e
+ * nunca abrem a segunda vaga. Noturno
  * cabe um, e dois só nas bases de NOITE_DUPLA. Base fora da tabela (LF90, que
  * só abre em dias escolhidos) não ganha vaga sem dono: o teto dela é a grade.
  */
@@ -31,7 +32,7 @@ export const PRAZO_PADRAO_DIAS = 3;
 export const LIBERACAO_AUTOMATICA_DESDE = "2026-10-27";
 
 
-const DIURNO_UMA_VAGA = new Set(["BR60", "BR05"]);
+const DIURNO_UMA_VAGA = new Set(["BR60", "BR05", "PM04", "PM40"]);
 const NOITE_DUPLA = new Set(["SM01", "CB02", "PR03", "CN10", "CC70"]);
 const FORA_DA_TABELA = new Set(["LF90"]);
 
@@ -55,6 +56,11 @@ function somaDias(dateStr: string, dias: number) {
 export function dataDeLiberacao(params: { cohortStart: string; enabledSince: string; deadlineDays: number }) {
   const inicio = params.cohortStart > params.enabledSince ? params.cohortStart : params.enabledSince;
   return somaDias(inicio, Math.max(params.deadlineDays, 0));
+}
+
+/** Vagas da base que nenhuma faculdade tem na grade. */
+export function vagasSemDono(cap: number | null, somaGrade: number) {
+  return cap === null ? 0 : Math.max(cap - somaGrade, 0);
 }
 
 export type FaculdadeNaVaga = {
@@ -116,7 +122,7 @@ export function planejarVaga(params: {
     }
   }
 
-  const semDonoCap = params.cap === null ? 0 : Math.max(params.cap - somaGrade, 0);
+  const semDonoCap = vagasSemDono(params.cap, somaGrade);
   const semDono = Math.max(Math.min(semDonoCap - params.semDonoExistentes, room), 0);
 
   return { porFaculdade, semDono };

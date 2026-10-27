@@ -40,7 +40,7 @@ function resumoRun(run: Run) {
   if (run.skipped) return `Não rodou: ${run.skipped}.`;
   if (run.created === 0 && run.withdrawn === 0) return "Nada novo para liberar.";
   const partes = [`${run.created - run.semDono} pelo prazo`, `${run.semDono} sem dono`];
-  if (run.withdrawn > 0) partes.push(`${run.withdrawn} devolvidas à faculdade`);
+  if (run.withdrawn > 0) partes.push(`${run.withdrawn} retiradas (voltaram à faculdade ou passaram do teto da base)`);
   return `Liberadas agora: ${partes.join(", ")}.`;
 }
 
@@ -126,7 +126,7 @@ export function VagasLivresConfig() {
         <p className="mt-1">
           Capacidade da base que nenhuma faculdade tem na grade fica livre desde já, nos dias do rodízio das turmas abertas
           {data.semDono.ate ? <> (hoje até <span className="font-semibold text-slate-900">{br(data.semDono.ate)}</span>, fim da última turma)</> : " (nenhuma turma aberta agora)"}.
-          Diurno: duas por USA, menos BR60 e BR05 (só uma). Noturno: uma, e duas só na SM01, CB02, PR03, CN10 e CC70.
+          Diurno: duas por USA, menos BR60, BR05, PM04 e PM40 (só uma). Noturno: uma, e duas só na SM01, CB02, PR03, CN10 e CC70.
         </p>
         <p className="mt-2 text-slate-900">
           <span className="font-semibold">{data.semDono.abertas}</span> abertas ·{" "}

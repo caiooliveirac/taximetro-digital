@@ -34,6 +34,7 @@ import {
   LIBERACAO_AUTOMATICA_DESDE,
   planejarVaga,
   PRAZO_PADRAO_DIAS,
+  vagasSemDono,
   type FaculdadeNaVaga,
   type Periodo,
 } from "@/features/scheduling/domain/policies/auto-release-policy";
@@ -240,6 +241,18 @@ export async function executeAutoReleaseSlots(params: { now?: Date; dryRun?: boo
           const regrasAqui = regras.filter((r) => r.baseId === base.id && r.dayOfWeek === dow && r.period === period);
           const cap = capacidadeDaBase(base.code, period);
           if (regrasAqui.length === 0 && cap === null) continue;
+
+          // Sem dono além do teto (teto baixou, ou faculdade ganhou a vaga na
+          // grade) sai do ar, se ninguém pegou.
+          const semDonoVivas = ofertasAqui.filter((o) => o.autoRelease === "SEM_DONO" && !o.cancelledAt);
+          let sobra = semDonoVivas.length - vagasSemDono(cap, regrasAqui.reduce((n, r) => n + r.capacity, 0));
+          for (const o of semDonoVivas) {
+            if (sobra <= 0) break;
+            if (o.claimedBy) continue;
+            retirar.push(o.id);
+            o.cancelledAt = now;
+            sobra--;
+          }
 
           const plantoesAqui = plantoesPor.get(k) ?? [];
           const vivas = ofertasAqui.filter((o) => !o.cancelledAt);
