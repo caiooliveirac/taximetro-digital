@@ -31,7 +31,6 @@ import { temFeature } from "@/lib/instance";
 import {
   capacidadeDaBase,
   dataDeLiberacao,
-  HORIZONTE_SEM_DONO_DIAS,
   LIBERACAO_AUTOMATICA_DESDE,
   planejarVaga,
   PRAZO_PADRAO_DIAS,
@@ -132,11 +131,15 @@ export async function executeAutoReleaseSlots(params: { now?: Date; dryRun?: boo
   const abbrDe = new Map(facs.map((f) => [f.id, f.abbr]));
   const configDe = (facultyId: string) => configs.get(facultyId) ?? configPadrao(facultyId);
 
+  // Tudo é dentro do rodízio: até o fim da última turma aberta.
   const fimTurmas = turmas.reduce((max, t) => (String(t.endDate) > max ? String(t.endDate) : max), today);
   const limite = addDaysToDateStr(today, HORIZONTE_MAXIMO_DIAS);
-  const ultimoDia = [fimTurmas, addDaysToDateStr(today, HORIZONTE_SEM_DONO_DIAS - 1)].sort().at(-1)!;
-  const to = ultimoDia > limite ? limite : ultimoDia;
-  const horizonteSemDono = addDaysToDateStr(today, HORIZONTE_SEM_DONO_DIAS - 1);
+  const to = fimTurmas > limite ? limite : fimTurmas;
+
+  /** Vaga sem dono só existe em dia que alguma turma aberta cobre. */
+  function emRodizio(date: string) {
+    return turmas.some((t) => String(t.startDate) <= date && String(t.endDate) >= date);
+  }
 
   /** A data está numa turma da faculdade cujo prazo já venceu, com o mecanismo ligado. */
   function elegivel(facultyId: string, date: string) {
@@ -271,7 +274,7 @@ export async function executeAutoReleaseSlots(params: { now?: Date; dryRun?: boo
               });
             }
           }
-          if (date <= horizonteSemDono) {
+          if (emRodizio(date)) {
             semDonoTotal += plano.semDono;
             for (let i = 0; i < plano.semDono; i++) {
               criar.push({
@@ -358,10 +361,15 @@ export async function getAutoReleaseOverview() {
   });
 
   const semDono = contagem.filter((c) => c.autoRelease === "SEM_DONO");
+  const fimRodizio = turmas.reduce<string | null>((max, t) => {
+    const fim = String(t.endDate).slice(0, 10);
+    return !max || fim > max ? fim : max;
+  }, null);
   return {
     today,
     faculdades,
     semDono: {
+      ate: fimRodizio,
       abertas: semDono.reduce((n, c) => n + c.abertas, 0),
       usadas: semDono.reduce((n, c) => n + c.usadas, 0),
     },

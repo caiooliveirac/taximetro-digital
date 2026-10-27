@@ -8,7 +8,8 @@
  *    vaga que ninguém ocupou vira vaga liberada (como se o líder tivesse
  *    liberado à mão) e qualquer outro líder pode usar.
  * 2. SEM_DONO — a base comporta mais internos do que a soma da grade de todas
- *    as faculdades naquele dia/turno. O que sobra fica livre desde já.
+ *    as faculdades naquele dia/turno. O que sobra fica livre desde já, nos
+ *    dias que alguma turma aberta cobre (do início ao fim do rodízio dela).
  *
  * Teto por base (CAPACIDADE_USA): é o que trava a liberação. Diurno cabem dois
  * em toda USA, menos BR60 e BR05, que nunca liberam a segunda vaga. Noturno
@@ -29,8 +30,6 @@ export const PRAZO_PADRAO_DIAS = 3;
  */
 export const LIBERACAO_AUTOMATICA_DESDE = "2026-10-27";
 
-/** Quantos dias à frente a vaga sem dono aparece para os líderes. */
-export const HORIZONTE_SEM_DONO_DIAS = 28;
 
 const DIURNO_UMA_VAGA = new Set(["BR60", "BR05"]);
 const NOITE_DUPLA = new Set(["SM01", "CB02", "PR03", "CN10", "CC70"]);
