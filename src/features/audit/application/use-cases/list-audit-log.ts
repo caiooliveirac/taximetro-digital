@@ -84,7 +84,7 @@ function formatVagaLivre(action: string, payload: Record<string, unknown> | null
     const partes = [
       porFac && `pelo prazo da turma: ${porFac}`,
       Number(payload?.semDono ?? 0) > 0 && `sem dono na grade: ${payload?.semDono}`,
-      Number(payload?.withdrawn ?? 0) > 0 && `${payload?.withdrawn} voltaram para a faculdade`,
+      Number(payload?.withdrawn ?? 0) > 0 && `${payload?.withdrawn} retiradas (voltaram à faculdade ou passaram do teto da base)`,
     ].filter(Boolean);
     return `O sistema liberou vagas para os líderes — ${partes.join("; ")}.`;
   }
