@@ -34,9 +34,13 @@ function LoginForm() {
   const [info] = useState(() => searchParams.get("passwordChanged") === "1"
     ? "Senha alterada com sucesso. Entre novamente com a nova senha."
     : "");
-  const [aviso] = useState(() => searchParams.get("convite") === "expirado"
-    ? "O link de convite que você abriu já expirou. Se você já fez o cadastro, entre aqui com seu e-mail (ou CPF) e senha. Se ainda não se cadastrou, peça um novo link ao seu líder."
-    : "");
+  const [aviso] = useState(() => {
+    const convite = searchParams.get("convite");
+    // "expirado" é de links antigos: hoje o convite só deixa de valer quando é desativado.
+    if (convite === "desativado" || convite === "expirado") return "Este link de convite não está mais ativo. Se você já fez o cadastro, entre aqui com seu e-mail (ou CPF) e senha. Se ainda não se cadastrou, peça um novo link ao seu líder.";
+    if (convite === "cadastrado") return "Você já tem cadastro. Entre com seu e-mail (ou CPF) e senha.";
+    return "";
+  });
   const [loading, setLoading] = useState(false);
 
   function formatCpf(value: string) {

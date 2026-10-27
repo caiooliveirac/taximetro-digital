@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { users, userRoles, faculties, bases, cohorts, assignments, checkins, requests, caseRecords, qrSessions, telegramBindings, auditLog, inviteLinks, passwordResetTokens, cruFixedAssignments, userMergeEvents } from "@/db/schema";
-import { ensureInternCohort } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
+import { cohortHasLeaderRoom, ensureInternCohort, peekInternCohort } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
+import { MAX_LEADERS_PER_COHORT } from "@/features/cohorts/domain/intern-cohort";
 import { eq, and, inArray, ne, sql } from "drizzle-orm";
 import { hash } from "bcryptjs";
 import { logAudit } from "@/lib/audit";
@@ -61,6 +62,8 @@ const updateUserSchema = z.object({
   // Caminho novo:
   roles: rolesArraySchema.optional(),
   isArchived: z.boolean().optional(),
+  // Troca de um toque: true vira líder da turma em que é interno; false volta a só interno.
+  lider: z.boolean().optional(),
 });
 
 const mergeUsersSchema = z.object({
@@ -137,6 +140,38 @@ async function fetchExistingRoles(userId: string): Promise<ExistingRoleRow[]> {
   return rows as ExistingRoleRow[];
 }
 
+/** Turma em que o usuário é interno na faculdade — é nela que ele lidera. */
+async function internCohortOf(userId: string, facultyId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ cohortId: userRoles.cohortId })
+    .from(userRoles)
+    .where(and(
+      eq(userRoles.userId, userId),
+      eq(userRoles.role, "INTERN"),
+      eq(userRoles.facultyId, facultyId),
+      eq(userRoles.isActive, true),
+    ))
+    .limit(1);
+  return row?.cohortId ?? null;
+}
+
+/**
+ * Barra quem viraria o 3º líder da turma. Só olha os LEADER que o usuário
+ * ainda não tem ativos: quem já é líder segue líder.
+ */
+async function leaderLimitError(userId: string | null, desired: RoleAssignment[]): Promise<string | null> {
+  const current = userId ? await fetchExistingRoles(userId) : [];
+  for (const r of desired) {
+    if (r.role !== "LEADER" || !r.facultyId) continue;
+    if (current.some((c) => c.role === "LEADER" && c.facultyId === r.facultyId && c.isActive)) continue;
+    const cohortId = (userId && await internCohortOf(userId, r.facultyId)) || await peekInternCohort(r.facultyId);
+    if (!(await cohortHasLeaderRoom(cohortId, userId ?? undefined))) {
+      return `A turma já tem ${MAX_LEADERS_PER_COHORT} líderes. Tire um deles antes de pôr outro.`;
+    }
+  }
+  return null;
+}
+
 /**
  * Aplica o diff de roles sem nunca deletar linhas — preserva historico em
  * audit_log. Remocoes viram `isActive = false`; reativacoes evitam violar
@@ -154,7 +189,8 @@ async function applyRoleDiff(userId: string, desired: RoleAssignment[], actorUse
       facultyId: r.facultyId,
       baseId: r.baseId,
       cohortId: (r.role === "INTERN" || r.role === "LEADER") && r.facultyId
-        ? await ensureInternCohort({ facultyId: r.facultyId, createdBy: actorUserId, reason: "admin-user" })
+        ? (r.role === "LEADER" && await internCohortOf(userId, r.facultyId))
+          || await ensureInternCohort({ facultyId: r.facultyId, createdBy: actorUserId, reason: "admin-user" })
         : null,
     })));
     await db.insert(userRoles).values(values);
@@ -165,6 +201,15 @@ async function applyRoleDiff(userId: string, desired: RoleAssignment[], actorUse
       .update(userRoles)
       .set({ isActive: true })
       .where(inArray(userRoles.id, diff.toReactivate));
+    // Líder que volta lidera a turma em que é interno hoje, não a de quando saiu.
+    for (const row of existing.filter((r) => r.role === "LEADER" && r.facultyId && diff.toReactivate.includes(r.id))) {
+      const cohortId = await internCohortOf(userId, row.facultyId!);
+      if (cohortId) {
+        await db.update(userRoles)
+          .set({ cohortId, isArchived: false, archivedAt: null, archivedBy: null })
+          .where(eq(userRoles.id, row.id));
+      }
+    }
   }
 
   if (diff.toDeactivate.length > 0) {
@@ -490,6 +535,9 @@ export async function POST(req: NextRequest) {
   const [existingEmail] = await db.select({ id: users.id }).from(users).where(eq(users.email, userData.email)).limit(1);
   if (existingEmail) return NextResponse.json({ success: false, error: "Este email já está em uso por outro usuário" }, { status: 409 });
 
+  const limitError = await leaderLimitError(null, desiredRoles);
+  if (limitError) return NextResponse.json({ success: false, error: limitError }, { status: 409 });
+
   const passwordHash = await hash(password, 12);
 
   const [user] = await db.insert(users).values({ ...userData, passwordHash }).returning();
@@ -529,7 +577,7 @@ export async function PUT(req: NextRequest) {
     const parsed = updateUserSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ success: false, error: parsed.error.message }, { status: 400 });
 
-    const { id, password, forcePasswordChange, role, facultyId, baseId, alsoPreceptor, roles: rolesInput, isArchived, ...userData } = parsed.data;
+    const { id, password, forcePasswordChange, role, facultyId, baseId, alsoPreceptor, roles: rolesInput, isArchived, lider, ...userData } = parsed.data;
 
     if (userData.email) {
       const [existingEmail] = await db
@@ -542,15 +590,9 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    const updateData: Record<string, unknown> = { ...userData, updatedAt: new Date() };
-    if (password) updateData.passwordHash = await hash(password, 12);
-    if (forcePasswordChange !== undefined) updateData.forcePasswordChange = forcePasswordChange;
-
-    const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
-    if (!updated) return NextResponse.json({ success: false, error: "Usuário não encontrado" }, { status: 404 });
-
     // Resolve lista de roles desejadas quando o payload muda roles.
-    // `roles[]` tem precedencia; `role` singular e' o caminho legacy.
+    // `roles[]` tem precedencia; `role` singular e' o caminho legacy; `lider`
+    // liga/desliga o LEADER na faculdade em que ele é interno.
     let desiredRoles: RoleAssignment[] | null = null;
     if (rolesInput !== undefined) {
       if (rolesInput.length === 0) {
@@ -567,7 +609,29 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ success: false, error: legacy.error }, { status: 400 });
       }
       desiredRoles = legacy.roles;
+    } else if (lider !== undefined) {
+      const active = (await fetchExistingRoles(id)).filter((r) => r.isActive);
+      const intern = active.find((r) => r.role === "INTERN" && r.facultyId);
+      if (!intern) {
+        return NextResponse.json({ success: false, error: "Só interno com faculdade pode ser líder" }, { status: 400 });
+      }
+      desiredRoles = active
+        .filter((r) => r.role !== "LEADER")
+        .map(({ role: r, facultyId: f, baseId: b }) => ({ role: r, facultyId: f, baseId: b }));
+      if (lider) desiredRoles.push({ role: "LEADER", facultyId: intern.facultyId, baseId: null });
     }
+
+    if (desiredRoles) {
+      const limitError = await leaderLimitError(id, desiredRoles);
+      if (limitError) return NextResponse.json({ success: false, error: limitError }, { status: 409 });
+    }
+
+    const updateData: Record<string, unknown> = { ...userData, updatedAt: new Date() };
+    if (password) updateData.passwordHash = await hash(password, 12);
+    if (forcePasswordChange !== undefined) updateData.forcePasswordChange = forcePasswordChange;
+
+    const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
+    if (!updated) return NextResponse.json({ success: false, error: "Usuário não encontrado" }, { status: 404 });
 
     let appliedDiff: { toInsert: RoleAssignment[]; toDeactivate: string[]; toReactivate: string[] } | null = null;
     if (desiredRoles) {
@@ -600,6 +664,7 @@ export async function PUT(req: NextRequest) {
         forcePasswordChange: forcePasswordChange ?? null,
         alsoPreceptor: role ? (role === "COORDINATOR" ? true : Boolean(alsoPreceptor && role !== "PRECEPTOR")) : Boolean(alsoPreceptor),
         isArchived: isArchived ?? null,
+        lider: lider ?? null,
         rolesDesired: desiredRoles,
         rolesDiff: appliedDiff,
       },

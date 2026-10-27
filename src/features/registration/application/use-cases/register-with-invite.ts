@@ -1,7 +1,11 @@
 import { hash } from "bcryptjs";
 import { z } from "zod/v4";
 import { logAudit } from "@/shared/infra/logger/audit";
-import { ensureInternCohort } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
+import {
+  cohortHasLeaderRoom,
+  ensureInternCohort,
+  peekInternCohort,
+} from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
 import {
   createPendingUser,
   createUserRole,
@@ -46,7 +50,7 @@ export async function executeRegisterWithInvite(params: {
 }) {
   const invite = await findValidInviteByToken(params.token);
   if (!invite) {
-    return { status: 404, body: { success: false, error: "Link inválido ou expirado" } } as const;
+    return { status: 404, body: { success: false, error: "Link inválido ou desativado" } } as const;
   }
 
   const normalizedEmail = params.input.email.toLowerCase().trim();
@@ -64,6 +68,7 @@ export async function executeRegisterWithInvite(params: {
       status: 409,
       body: {
         success: false,
+        jaCadastrado: true,
         error: existingEmail.isActive
           ? "Este e-mail ja esta cadastrado. Se voce ja criou sua senha, entre pelo login."
           : "Seu cadastro ja foi enviado e ainda esta aguardando aprovacao. Se voce ja criou sua senha, use o login e aguarde liberacao.",
@@ -81,7 +86,7 @@ export async function executeRegisterWithInvite(params: {
     selfie: params.input.selfie,
   });
 
-  const assignedRole = (invite.targetRole as "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") ?? "INTERN";
+  let assignedRole = (invite.targetRole as "COORDINATOR" | "LEADER" | "PRECEPTOR" | "INTERN") ?? "INTERN";
   const normalizedScope = normalizeInviteScope(invite);
   // Link antigo sem turma, ou cuja turma já fechou: entra na turma aberta da
   // faculdade (ou na próxima, criada agora).
@@ -93,6 +98,9 @@ export async function executeRegisterWithInvite(params: {
       reason: "self-register",
     });
   }
+  // Turma já com dois líderes: o convite de líder vale como convite de interno.
+  const leaderInviteFull = assignedRole === "LEADER" && !(await cohortHasLeaderRoom(normalizedScope.cohortId));
+  if (leaderInviteFull) assignedRole = "INTERN";
 
   await createUserRole({
     userId: user.id,
@@ -122,6 +130,7 @@ export async function executeRegisterWithInvite(params: {
       facultyId: normalizedScope.facultyId,
       baseId: normalizedScope.baseId,
       cohortId: normalizedScope.cohortId,
+      ...(leaderInviteFull ? { leaderInviteFull: true } : {}),
     },
   });
 
@@ -131,7 +140,15 @@ export async function executeRegisterWithInvite(params: {
 export async function executeGetInviteRegistrationInfo(token: string) {
   const invite = await findValidInviteByToken(token);
   if (!invite) {
-    return { status: 404, body: { success: false, error: "Link inválido ou expirado" } } as const;
+    return { status: 404, body: { success: false, error: "Link inválido ou desativado" } } as const;
+  }
+
+  let targetRole = invite.targetRole ?? "INTERN";
+  let leaderInviteFull = false;
+  if (targetRole === "LEADER" && invite.facultyId) {
+    const cohortId = await peekInternCohort(invite.facultyId, invite.cohortId);
+    leaderInviteFull = !(await cohortHasLeaderRoom(cohortId));
+    if (leaderInviteFull) targetRole = "INTERN";
   }
 
   return {
@@ -139,7 +156,8 @@ export async function executeGetInviteRegistrationInfo(token: string) {
     body: {
       success: true,
       data: {
-        targetRole: invite.targetRole ?? "INTERN",
+        targetRole,
+        leaderInviteFull,
         facultyName: invite.facultyName,
         facultyAbbr: invite.facultyAbbr,
         baseCode: invite.targetRole === "PRECEPTOR" ? null : invite.baseCode,

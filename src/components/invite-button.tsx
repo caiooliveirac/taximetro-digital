@@ -203,8 +203,6 @@ export function InviteButton() {
                                     {needsCohort && facultyId && (
                                         <> — Turma <span className="font-semibold text-slate-900">{cohortLabel ?? `nova, começa ${newCohortStart}`}</span></>
                                     )}
-                                    <br />
-                                    <span className="text-xs text-slate-400">Válido por 7 dias</span>
                                 </div>
 
                                 {error && (

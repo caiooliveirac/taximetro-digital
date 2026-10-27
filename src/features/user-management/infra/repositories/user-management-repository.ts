@@ -313,7 +313,6 @@ export async function createInviteLink(params: {
   facultyId: string | null;
   baseId?: string | null;
   cohortId?: string | null;
-  expiresAt: Date;
 }) {
   const [link] = await db.insert(inviteLinks).values({
     token: params.token,
@@ -322,7 +321,6 @@ export async function createInviteLink(params: {
     facultyId: params.facultyId,
     baseId: params.baseId ?? null,
     cohortId: params.cohortId ?? null,
-    expiresAt: params.expiresAt,
   }).returning();
 
   return link;

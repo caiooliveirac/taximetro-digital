@@ -46,7 +46,6 @@ export async function executeCreateInviteLink(params: {
     createdBy,
     facultyId,
     cohortId,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 
   await logAudit({

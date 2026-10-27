@@ -74,7 +74,6 @@ export async function executeCreateAdminInviteLink(params: {
     facultyId: normalizedFacultyId,
     baseId: normalizedBaseId,
     cohortId: normalizedCohortId,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 
   await logAudit({

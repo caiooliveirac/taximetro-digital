@@ -258,6 +258,31 @@ export async function archiveCohortLeaders(cohortId: string, archivedBy: string 
   return archived.length;
 }
 
+/**
+ * Quantos líderes a turma tem: vínculo LEADER ativo da turma, ou LEADER sem
+ * turma de quem é interno dela (mesmo critério do arquivamento acima).
+ */
+export async function countCohortLeaders(cohortId: string, exceptUserId?: string): Promise<number> {
+  const internsOfCohort = db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .where(and(eq(userRoles.cohortId, cohortId), eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true)));
+  const [row] = await db
+    .select({ n: sql<number>`count(distinct ${userRoles.userId})::int` })
+    .from(userRoles)
+    .where(and(
+      eq(userRoles.role, "LEADER"),
+      eq(userRoles.isActive, true),
+      eq(userRoles.isArchived, false),
+      exceptUserId ? ne(userRoles.userId, exceptUserId) : undefined,
+      or(
+        eq(userRoles.cohortId, cohortId),
+        and(isNull(userRoles.cohortId), inArray(userRoles.userId, internsOfCohort)),
+      ),
+    ));
+  return row?.n ?? 0;
+}
+
 /** Plantões que ainda valem: o que já virou falta, saída ou cancelamento não segura o interno. */
 const LIVE_SHIFT_STATUSES = ["SCHEDULED", "CONFIRMED", "CHECKED_IN"] as const;
 

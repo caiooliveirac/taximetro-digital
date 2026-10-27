@@ -25,7 +25,7 @@ const ROLE_LABEL: Record<string, string> = {
 export default function RegistroPage() {
   const { token } = useParams<{ token: string }>();
   const router = useRouter();
-  const [faculty, setFaculty] = useState<{ targetRole: string; facultyName: string; facultyAbbr: string; baseCode: string | null; baseName: string | null } | null>(null);
+  const [faculty, setFaculty] = useState<{ targetRole: string; leaderInviteFull?: boolean; facultyName: string; facultyAbbr: string; baseCode: string | null; baseName: string | null } | null>(null);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -70,9 +70,9 @@ export default function RegistroPage() {
   const passwordValid = PASSWORD_RULES.every((r) => r.test(password));
 
   useEffect(() => {
-    // Link expirado/inválido: manda direto para o login com aviso, em vez de
+    // Link desativado/inválido: manda direto para o login com aviso, em vez de
     // deixar a pessoa presa numa tela de erro sem saída.
-    const irParaLogin = () => router.replace("/login?convite=expirado");
+    const irParaLogin = () => router.replace("/login?convite=desativado");
     fetch(`/taximetro/api/registro/${token}`)
       .then((r) => r.json())
       .then((json) => {
@@ -95,7 +95,9 @@ export default function RegistroPage() {
         body: JSON.stringify({ name, cpf: cpf || undefined, email, phone, password, selfie }),
       });
       const json = await res.json();
-      if (!json.success) {
+      if (json.jaCadastrado) {
+        router.replace("/login?convite=cadastrado");
+      } else if (!json.success) {
         setError(json.error ?? "Erro ao registrar");
       } else {
         setSuccess(true);
@@ -149,6 +151,13 @@ export default function RegistroPage() {
               </p>
             )}
           </div>
+
+          {faculty?.leaderInviteFull && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-semibold">Este convite é para líder de escala.</p>
+              <p className="mt-1">A turma já tem dois líderes, então seu cadastro será como interno.</p>
+            </div>
+          )}
 
           <div className="mb-5 rounded-xl border border-accent-200 bg-accent-50 px-4 py-4 text-center">
             <p className="text-sm font-semibold text-accent-900">

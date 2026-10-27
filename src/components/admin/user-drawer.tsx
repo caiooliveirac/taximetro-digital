@@ -272,6 +272,7 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
   const needsFaculty = selected.has("LEADER") || selected.has("INTERN");
   const needsBase = selected.has("PRECEPTOR");
   const internRole = detail?.allRoles?.find((r) => r.role === "INTERN");
+  const isLeader = detail?.allRoles?.some((r) => r.role === "LEADER") ?? false;
 
   return (
     <>
@@ -373,6 +374,15 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
                 <button onClick={startEdit} className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 px-3 py-2 text-sm font-medium text-white hover:bg-accent-600">
                   <Pencil className="h-3.5 w-3.5" /> Editar
                 </button>
+                {internRole?.facultyId && (
+                  <button
+                    onClick={() => patchUser({ lider: !isLeader })}
+                    disabled={busy}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60 ${isLeader ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+                  >
+                    {isLeader ? "Tornar só interno" : "Tornar líder"}
+                  </button>
+                )}
                 {!detail.isActive && (
                   <button onClick={() => patchUser({ isActive: true })} disabled={busy} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
                     Aprovar

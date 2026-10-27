@@ -2,10 +2,11 @@ import { localDateStr } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import {
   activateCohort,
+  countCohortLeaders,
   createCohort,
   listFacultyCohortsWithAbbr,
 } from "@/features/cohorts/infra/repositories/cohort-repository";
-import { pickOpenCohort, planNextCohort } from "@/features/cohorts/domain/intern-cohort";
+import { MAX_LEADERS_PER_COHORT, pickOpenCohort, planNextCohort } from "@/features/cohorts/domain/intern-cohort";
 
 export class InternCohortError extends Error {}
 
@@ -72,4 +73,19 @@ export async function ensureInternCohort(params: {
     if (raced) return raced.id;
     throw err;
   }
+}
+
+/** Turma que `ensureInternCohort` daria, sem criar nada (null = ela criaria a próxima). */
+export async function peekInternCohort(facultyId: string, cohortId?: string | null): Promise<string | null> {
+  const data = await listFacultyCohortsWithAbbr(facultyId);
+  if (!data) return null;
+  const wanted = cohortId ? data.cohorts.find((c) => c.id === cohortId) : null;
+  if (wanted && wanted.status !== "CLOSED") return wanted.id;
+  return pickOpenCohort(data.cohorts, localDateStr())?.id ?? null;
+}
+
+/** A turma ainda cabe mais um líder? Turma que nem existe ainda cabe. */
+export async function cohortHasLeaderRoom(cohortId: string | null, exceptUserId?: string): Promise<boolean> {
+  if (!cohortId) return true;
+  return (await countCohortLeaders(cohortId, exceptUserId)) < MAX_LEADERS_PER_COHORT;
 }

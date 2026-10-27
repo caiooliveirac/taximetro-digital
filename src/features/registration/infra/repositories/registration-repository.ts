@@ -16,16 +16,15 @@ export async function findValidInviteByToken(token: string) {
       cohortId: inviteLinks.cohortId,
       createdBy: inviteLinks.createdBy,
       isActive: inviteLinks.isActive,
-      expiresAt: inviteLinks.expiresAt,
     })
     .from(inviteLinks)
     .leftJoin(faculties, eq(faculties.id, inviteLinks.facultyId))
     .leftJoin(bases, eq(bases.id, inviteLinks.baseId))
     .where(and(eq(inviteLinks.token, token), eq(inviteLinks.isActive, true)));
 
-  if (!invite) return null;
-  if (invite.expiresAt && invite.expiresAt < new Date()) return null;
-  return invite;
+  // Convite não expira: só deixa de valer quando é desativado. Turma que já
+  // fechou não trava o link — o cadastro cai na turma aberta da faculdade.
+  return invite ?? null;
 }
 
 export async function findUserByCpf(cpf: string) {

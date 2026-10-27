@@ -4,6 +4,9 @@
  * cai na turma aberta dela; se não houver nenhuma, nasce a próxima.
  */
 
+/** Cada turma tem no máximo dois líderes de escala. */
+export const MAX_LEADERS_PER_COHORT = 2;
+
 /** Rodízio padrão quando a faculdade ainda não tem turma para servir de molde. */
 const DEFAULT_ROTATION_DAYS = 41;
 
