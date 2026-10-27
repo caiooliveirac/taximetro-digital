@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AvisoDatasTurma, resumoDatasDaTurma, useConfigLiberacao } from "@/components/admin/aviso-datas-turma";
 
 type Cohort = {
   id: string;
@@ -52,6 +53,7 @@ export default function AdminTurmas() {
   const [loading, setLoading] = useState(true);
   const [filterFaculty, setFilterFaculty] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const configLiberacao = useConfigLiberacao();
 
   const [importingCohort, setImportingCohort] = useState<Cohort | null>(null);
   const [samuCohorts, setSamuCohorts] = useState<SamuCohort[]>([]);
@@ -104,6 +106,19 @@ export default function AdminTurmas() {
 
   async function save() {
     if (!editing) return;
+    if (editing.startDate && editing.endDate && editing.endDate < editing.startDate) {
+      setError("O fim da turma está antes do início.");
+      return;
+    }
+    // As datas decidem quando a vaga não usada é liberada para as outras
+    // faculdades: turma nova, ou data mexida, pede confirmação explícita.
+    const original = cohorts.find((c) => c.id === editing.id);
+    const mexeuNasDatas = isNew || editing.startDate !== original?.startDate || editing.endDate !== original?.endDate;
+    if (mexeuNasDatas && editing.status !== "CLOSED" && editing.startDate && editing.endDate) {
+      const frase = resumoDatasDaTurma(configLiberacao?.get(editing.facultyId ?? ""), editing.startDate, editing.endDate);
+      const fmt = (d: string) => d.split("-").reverse().join("/");
+      if (!confirm(`Confira as datas da turma: início ${fmt(editing.startDate)}, fim ${fmt(editing.endDate)}.${frase ? `\n\n${frase}` : ""}\n\nAs datas estão certas?`)) return;
+    }
     if (editing.status === "CLOSED") {
       const late = editing.internsBeyondEnd ?? [];
       const lateWarning = late.length
@@ -248,6 +263,9 @@ export default function AdminTurmas() {
             <Input label="Label" value={editing.label ?? ""} onChange={(v) => setEditing({ ...editing, label: v })} />
             <Input label="Início" type="date" value={editing.startDate ?? ""} onChange={(v) => setEditing({ ...editing, startDate: v })} />
             <Input label="Fim" type="date" value={editing.endDate ?? ""} onChange={(v) => setEditing({ ...editing, endDate: v })} />
+            <div className="col-span-2 sm:col-span-3">
+              <AvisoDatasTurma config={configLiberacao?.get(editing.facultyId ?? "")} startDate={editing.startDate} endDate={editing.endDate} />
+            </div>
             {!isNew && (
               <label className="block">
                 <span className="text-xs text-slate-400">Status</span>

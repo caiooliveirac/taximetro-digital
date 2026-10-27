@@ -205,6 +205,15 @@ export function InviteButton() {
                                     )}
                                 </div>
 
+                                {/* Turma nova nasce com as datas previstas; elas decidem quando a
+                                    vaga não usada vai para as outras faculdades (auto-release-slots.ts). */}
+                                {needsCohort && facultyId && !cohortId && (
+                                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                        A turma nova começa em <span className="font-semibold">{newCohortStart}</span>. Confira início e fim em
+                                        Admin → Turmas: a vaga da grade que a turma não escalar nos primeiros dias é liberada para as outras faculdades.
+                                    </p>
+                                )}
+
                                 {error && (
                                     <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-600/10">
                                         {error}

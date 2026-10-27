@@ -22,7 +22,7 @@ type Faculdade = {
   liberadasAbertas: number;
   liberadasUsadas: number;
 };
-type Overview = { today: string; faculdades: Faculdade[]; semDono: { abertas: number; usadas: number } };
+type Overview = { today: string; faculdades: Faculdade[]; semDono: { ate: string | null; abertas: number; usadas: number } };
 type Run = { skipped?: string; created: number; semDono: number; withdrawn: number };
 
 const API = "/taximetro/api/admin/vagas-livres";
@@ -124,7 +124,8 @@ export function VagasLivresConfig() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
         <p className="font-semibold text-slate-900">Vagas sem dono</p>
         <p className="mt-1">
-          Capacidade da base que nenhuma faculdade tem na grade fica livre desde já, até 4 semanas à frente.
+          Capacidade da base que nenhuma faculdade tem na grade fica livre desde já, nos dias do rodízio das turmas abertas
+          {data.semDono.ate ? <> (hoje até <span className="font-semibold text-slate-900">{br(data.semDono.ate)}</span>, fim da última turma)</> : " (nenhuma turma aberta agora)"}.
           Diurno: duas por USA, menos BR60 e BR05 (só uma). Noturno: uma, e duas só na SM01, CB02, PR03, CN10 e CC70.
         </p>
         <p className="mt-2 text-slate-900">
@@ -175,11 +176,16 @@ export function VagasLivresConfig() {
                   type="button"
                   role="switch"
                   aria-checked={f.enabled}
+                  aria-label={`Liberação automática da ${f.abbreviation}`}
                   disabled={busy !== ""}
                   onClick={() => salvar(f, { enabled: !f.enabled })}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition disabled:opacity-50 ${f.enabled ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                  className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  title={f.enabled ? "Toque para desligar: as vagas desta faculdade não são mais liberadas" : "Toque para ligar: o prazo recomeça a contar de hoje"}
                 >
-                  {f.enabled ? "Ligada" : "Desligada"}
+                  <span className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition ${f.enabled ? "bg-emerald-500" : "bg-slate-300"}`}>
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${f.enabled ? "left-[18px]" : "left-0.5"}`} />
+                  </span>
+                  <span className="font-medium">{f.enabled ? "Liberação ligada" : "Liberação desligada"}</span>
                 </button>
               </div>
 
