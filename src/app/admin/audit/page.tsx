@@ -19,6 +19,7 @@ type AuditEntry = {
 
 const ACTION_VARIANT: Record<string, "confirmed" | "pending" | "absent" | "checkedout" | "default"> = {
   SLOTS_RELEASED: "pending",
+  SLOTS_AUTO_RELEASED: "pending",
   FREE_SLOT_USED: "confirmed",
   LOGIN_CREDENTIALS_SUCCESS: "confirmed",
   LOGIN_CREDENTIALS_FAILED: "absent",
@@ -54,6 +55,8 @@ const ACTION_VARIANT: Record<string, "confirmed" | "pending" | "absent" | "check
 const ACTION_LABEL: Record<string, string> = {
   SLOTS_RELEASED: "Vagas liberadas",
   SLOTS_RELEASE_UNDONE: "Liberação desfeita",
+  SLOTS_AUTO_RELEASED: "Vagas liberadas pelo sistema",
+  AUTO_RELEASE_SETTINGS: "Prazo de liberação alterado",
   SLOT_RESERVED: "Vaga reservada",
   SLOT_RESERVATION_CANCELLED: "Reserva desfeita",
   FREE_SLOT_USED: "Vaga livre usada",
@@ -111,6 +114,7 @@ const ACTION_LABEL: Record<string, string> = {
 
 const ENTITY_LABEL: Record<string, string> = {
   extra_shift_offers: "Vaga",
+  vacancy_release_settings: "Liberação automática",
   assignment: "Alocação",
   checkin: "Check-in",
   checkout: "Check-out",

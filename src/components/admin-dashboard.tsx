@@ -9,6 +9,7 @@ import { AdminManualAttendanceActions } from "@/components/admin-manual-attendan
 import { CockpitAlarms, type CockpitData } from "@/components/admin/cockpit-alarms";
 import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
 import { InternDrawer } from "@/components/admin/intern-drawer";
+import { VagasLivresUso, type UsoVagaLivre } from "@/components/admin/vagas-livres-uso";
 import { getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 import { formatBrazilTime, localDateStr } from "@/lib/utils";
 
@@ -92,11 +93,13 @@ export function AdminDashboardClient({
   cockpit,
   facultyOptions,
   facultyFilter,
+  usoVagasLivres,
 }: {
   data: DashboardData;
   cockpit: CockpitData;
   facultyOptions: FacultyOption[];
   facultyFilter: string | null;
+  usoVagasLivres: UsoVagaLivre[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -338,6 +341,8 @@ export function AdminDashboardClient({
           })}
         </div>
       </div>
+
+      <VagasLivresUso rows={usoVagasLivres} />
 
       {/* Detail Modal */}
       {modal && (() => {

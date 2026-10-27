@@ -32,6 +32,11 @@ test("Vitalmed tem sorteio no admin e indisponibilidade do interno", () => {
   assert.equal(temFeature("internUnavailability", "vitalmed"), true);
 });
 
+test("liberação automática de vagas: só no SAMU, que tem o teto por base", () => {
+  assert.equal(temFeature("liberacaoAutomatica", "samu"), true);
+  assert.equal(temFeature("liberacaoAutomatica", "vitalmed"), false);
+});
+
 test("toda feature está declarada em todas as instâncias", () => {
   // Sem isto, uma feature nova declarada só na Vitalmed viraria `undefined` no
   // SAMU — que é falsy, funciona por acidente, e para de funcionar no dia em que

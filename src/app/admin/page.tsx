@@ -5,6 +5,7 @@ import { fetchDashboardData } from "@/features/reporting/infra/repositories/dash
 import { buildCockpitData, fetchNoCheckinNow, fetchAbsenceAlerts } from "@/features/reporting/application/build-cockpit";
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import { listFaculties } from "@/features/faculties/infra/repositories/faculty-repository";
+import { listFreeSlotUsage } from "@/features/scheduling/application/use-cases/auto-release-slots";
 import { auth } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -93,9 +94,10 @@ async function AdminDashboardContent({ searchParams }: { searchParams: SearchPar
     listFaculties(),
   ]);
 
-  const [noCheckinRows, absenceAlertRows] = await Promise.all([
+  const [noCheckinRows, absenceAlertRows, usoVagasLivres] = await Promise.all([
     fetchNoCheckinNow(),
     fetchAbsenceAlerts(),
+    listFreeSlotUsage(30),
   ]);
   const cockpit = buildCockpitData({
     complianceInterns: compliance.data,
@@ -113,6 +115,7 @@ async function AdminDashboardContent({ searchParams }: { searchParams: SearchPar
       cockpit={cockpit}
       facultyOptions={facultyOptions}
       facultyFilter={facultyFilter}
+      usoVagasLivres={usoVagasLivres}
     />
   );
 }

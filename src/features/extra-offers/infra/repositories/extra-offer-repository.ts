@@ -48,11 +48,11 @@ export async function listExtraOffers(opts: { includeUnavailable?: boolean } = {
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .innerJoin(users, eq(users.id, extraShiftOffers.publishedBy))
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.facultyId))
-    // Vaga liberada por faculdade não é extra: aparece como vaga livre na grade
-    // das outras faculdades (listFreeOffers), não no board.
-    .where(opts.includeUnavailable ? and(fromToday, isNull(extraShiftOffers.releasedFacultyId)) : and(
+    // Vaga liberada por faculdade (ou sem dono, liberada pelo sistema) não é
+    // extra: aparece como vaga livre na grade dos líderes (listFreeOffers).
+    .where(opts.includeUnavailable ? and(fromToday, isNull(extraShiftOffers.releasedFacultyId), isNull(extraShiftOffers.autoRelease)) : and(
       fromToday,
-      isNull(extraShiftOffers.releasedFacultyId),
+      isNull(extraShiftOffers.releasedFacultyId), isNull(extraShiftOffers.autoRelease),
       isNull(extraShiftOffers.claimedBy),
       isNull(extraShiftOffers.cancelledAt),
     ))
@@ -94,7 +94,7 @@ export async function listExtraOffersForAdmin() {
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .innerJoin(users, eq(users.id, extraShiftOffers.publishedBy))
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.facultyId))
-    .where(and(fromToday, isNull(extraShiftOffers.releasedFacultyId)))
+    .where(and(fromToday, isNull(extraShiftOffers.releasedFacultyId), isNull(extraShiftOffers.autoRelease)))
     .orderBy(desc(extraShiftOffers.publishedAt));
 
   return rows.filter(stillUpcoming);
@@ -115,12 +115,12 @@ export async function getExtraOffersAnalytics(fromDate?: string, toDate?: string
   const dateFilter = fromDate && toDate
     ? and(
         fromToday,
-        isNull(extraShiftOffers.releasedFacultyId),
+        isNull(extraShiftOffers.releasedFacultyId), isNull(extraShiftOffers.autoRelease),
         sql`${extraShiftOffers.date} >= ${fromDate}`,
         sql`${extraShiftOffers.date} <= ${toDate}`,
         isNull(extraShiftOffers.cancelledAt),
       )
-    : and(fromToday, isNull(extraShiftOffers.releasedFacultyId), isNull(extraShiftOffers.cancelledAt));
+    : and(fromToday, isNull(extraShiftOffers.releasedFacultyId), isNull(extraShiftOffers.autoRelease), isNull(extraShiftOffers.cancelledAt));
 
   // By faculty
   const byFaculty = await db
@@ -291,13 +291,14 @@ export async function listFreeOffers(params: { excludeFacultyId: string; from: s
       shift: extraShiftOffers.shift,
       releasedFacultyId: extraShiftOffers.releasedFacultyId,
       releasedFacultyAbbr: faculties.abbreviation,
+      autoRelease: extraShiftOffers.autoRelease,
     })
     .from(extraShiftOffers)
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
-    .innerJoin(faculties, eq(faculties.id, extraShiftOffers.releasedFacultyId))
+    // Vaga sem dono (auto-release-slots.ts) não tem faculdade que liberou.
+    .leftJoin(faculties, eq(faculties.id, extraShiftOffers.releasedFacultyId))
     .where(and(
-      sql`${extraShiftOffers.releasedFacultyId} is not null`,
-      sql`${extraShiftOffers.releasedFacultyId} <> ${params.excludeFacultyId}`,
+      sql`(${extraShiftOffers.releasedFacultyId} <> ${params.excludeFacultyId} or (${extraShiftOffers.releasedFacultyId} is null and ${extraShiftOffers.autoRelease} = 'SEM_DONO'))`,
       gte(extraShiftOffers.date, params.from),
       gte(extraShiftOffers.date, localDateStr()),
       lte(extraShiftOffers.date, params.to),
