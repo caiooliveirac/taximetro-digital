@@ -1,17 +1,20 @@
 import { hash } from "bcryptjs";
 import { z } from "zod/v4";
 import { logAudit } from "@/shared/infra/logger/audit";
+import { localDateStr } from "@/lib/utils";
+import { decidirRecadastro } from "@/features/registration/domain/recadastro";
 import {
   cohortHasLeaderRoom,
   ensureInternCohort,
   peekInternCohort,
 } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
 import {
+  arquivarContaParaRecadastro,
   createPendingUser,
   createUserRole,
-  findUserByCpf,
-  findUserByEmail,
+  findUsersByEmailOrCpf,
   findValidInviteByToken,
+  loadContaExistente,
 } from "@/features/registration/infra/repositories/registration-repository";
 
 export const registerWithInviteSchema = z.object({
@@ -55,25 +58,58 @@ export async function executeRegisterWithInvite(params: {
 
   const normalizedEmail = params.input.email.toLowerCase().trim();
 
-  if (params.input.cpf) {
-    const existingCpf = await findUserByCpf(params.input.cpf);
-    if (existingCpf) {
-      return { status: 409, body: { success: false, error: "CPF já cadastrado" } } as const;
+  // Quem já tem conta (aluno que roda de novo) começa do zero: a conta antiga
+  // é arquivada e libera e-mail/CPF. Ver domain/recadastro.ts.
+  const existentes = await findUsersByEmailOrCpf(normalizedEmail, params.input.cpf ?? null);
+  if (existentes.length > 0) {
+    const turmaDoConvite = invite.facultyId && (invite.targetRole === "INTERN" || invite.targetRole === "LEADER")
+      ? await peekInternCohort(invite.facultyId, invite.cohortId)
+      : null;
+    const today = localDateStr();
+    const aArquivar: typeof existentes = [];
+    for (const conta of existentes) {
+      const decisao = decidirRecadastro(await loadContaExistente(conta.id, today), turmaDoConvite);
+      if (decisao.tipo === "arquivar") {
+        aArquivar.push(conta);
+        continue;
+      }
+      if (decisao.tipo === "plantao-pendente") {
+        const [y, m, d] = decisao.ate.split("-");
+        return {
+          status: 409,
+          body: {
+            success: false,
+            error: `Sua conta atual ainda tem plantão marcado até ${d}/${m}/${y}. Termine esses plantões e faça o cadastro novo depois, ou peça à coordenação para tirar os plantões que restam.`,
+          },
+        } as const;
+      }
+      return {
+        status: 409,
+        body: {
+          success: false,
+          jaCadastrado: true,
+          error: conta.isActive
+            ? "Este e-mail ja esta cadastrado. Se voce ja criou sua senha, entre pelo login."
+            : "Seu cadastro ja foi enviado e ainda esta aguardando aprovacao. Se voce ja criou sua senha, use o login e aguarde liberacao.",
+        },
+      } as const;
     }
-  }
-
-  const existingEmail = await findUserByEmail(normalizedEmail);
-  if (existingEmail) {
-    return {
-      status: 409,
-      body: {
-        success: false,
-        jaCadastrado: true,
-        error: existingEmail.isActive
-          ? "Este e-mail ja esta cadastrado. Se voce ja criou sua senha, entre pelo login."
-          : "Seu cadastro ja foi enviado e ainda esta aguardando aprovacao. Se voce ja criou sua senha, use o login e aguarde liberacao.",
-      },
-    } as const;
+    for (const conta of aArquivar) {
+      const telegram = await arquivarContaParaRecadastro(conta.id);
+      await logAudit({
+        action: "ARCHIVE_USER_FOR_REREGISTER",
+        entity: "user",
+        entityId: conta.id,
+        payload: {
+          inviteLinkId: invite.id,
+          cohortId: turmaDoConvite,
+          name: conta.name,
+          email: conta.email,
+          cpf: conta.cpf,
+          ...telegram,
+        },
+      });
+    }
   }
 
   const passwordHash = await hash(params.input.password, 12);

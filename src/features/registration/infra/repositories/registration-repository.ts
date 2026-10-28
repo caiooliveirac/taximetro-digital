@@ -1,6 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, inArray, max, or } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { bases, faculties, inviteLinks, userRoles, users } from "@/shared/db/schema";
+import { assignments, bases, faculties, inviteLinks, telegramBindings, userRoles, users } from "@/shared/db/schema";
+import { emailDeContaArquivada, type ContaExistente } from "@/features/registration/domain/recadastro";
 
 export async function findValidInviteByToken(token: string) {
   const [invite] = await db
@@ -27,14 +28,50 @@ export async function findValidInviteByToken(token: string) {
   return invite ?? null;
 }
 
-export async function findUserByCpf(cpf: string) {
-  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.cpf, cpf)).limit(1);
-  return user;
+/** Contas que já ocupam o e-mail ou o CPF do cadastro (podem ser duas). */
+export async function findUsersByEmailOrCpf(email: string, cpf: string | null) {
+  return db
+    .select({ id: users.id, name: users.name, email: users.email, cpf: users.cpf, isActive: users.isActive })
+    .from(users)
+    .where(cpf ? or(eq(users.email, email), eq(users.cpf, cpf)) : eq(users.email, email));
 }
 
-export async function findUserByEmail(email: string) {
-  const [user] = await db.select({ id: users.id, isActive: users.isActive }).from(users).where(eq(users.email, email)).limit(1);
-  return user;
+export async function loadContaExistente(userId: string, today: string): Promise<ContaExistente> {
+  const roles = await db
+    .select({ role: userRoles.role, cohortId: userRoles.cohortId, isActive: userRoles.isActive })
+    .from(userRoles)
+    .where(eq(userRoles.userId, userId));
+  const [pendente] = await db
+    .select({ ate: max(assignments.date) })
+    .from(assignments)
+    .where(and(
+      eq(assignments.internId, userId),
+      gte(assignments.date, today),
+      inArray(assignments.status, ["SCHEDULED", "CONFIRMED", "CHECKED_IN"]),
+    ));
+  return { roles, ultimoPlantaoPendente: pendente?.ate ?? null };
+}
+
+/**
+ * Tira a conta do ar e libera e-mail, CPF, Google e Telegram para o cadastro
+ * novo. Plantões, check-ins e papéis ficam na conta antiga (papéis arquivados).
+ */
+export async function arquivarContaParaRecadastro(userId: string) {
+  const now = new Date();
+  return db.transaction(async (tx) => {
+    const [binding] = await tx.delete(telegramBindings).where(eq(telegramBindings.userId, userId)).returning();
+    await tx.update(userRoles)
+      .set({ isActive: false, isArchived: true, archivedAt: now })
+      .where(eq(userRoles.userId, userId));
+    await tx.update(users).set({
+      isActive: false,
+      email: emailDeContaArquivada(userId),
+      cpf: null,
+      googleId: null,
+      updatedAt: now,
+    }).where(eq(users.id, userId));
+    return { telegramUserId: binding?.telegramUserId ?? null, telegramName: binding?.telegramName ?? null };
+  });
 }
 
 export async function createPendingUser(params: {

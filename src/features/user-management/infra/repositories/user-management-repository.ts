@@ -94,7 +94,8 @@ export async function listPendingUsersRows() {
     .from(users)
     .innerJoin(userRoles, eq(userRoles.userId, users.id))
     .leftJoin(faculties, eq(faculties.id, userRoles.facultyId))
-    .where(eq(users.isActive, false))
+    // Conta arquivada por recadastro também fica inativa, mas não é pendência.
+    .where(and(eq(users.isActive, false), eq(userRoles.isArchived, false)))
     .orderBy(users.createdAt);
 
   return rows;
