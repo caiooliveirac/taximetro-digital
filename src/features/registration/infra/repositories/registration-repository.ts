@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, max, or } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, bases, faculties, inviteLinks, telegramBindings, userRoles, users } from "@/shared/db/schema";
+import { assignments, bases, cohorts, faculties, inviteLinks, telegramBindings, userRoles, users } from "@/shared/db/schema";
 import { emailDeContaArquivada, type ContaExistente } from "@/features/registration/domain/recadastro";
 
 export async function findValidInviteByToken(token: string) {
@@ -38,8 +38,9 @@ export async function findUsersByEmailOrCpf(email: string, cpf: string | null) {
 
 export async function loadContaExistente(userId: string, today: string): Promise<ContaExistente> {
   const roles = await db
-    .select({ role: userRoles.role, cohortId: userRoles.cohortId, isActive: userRoles.isActive })
+    .select({ role: userRoles.role, cohortStatus: cohorts.status, isActive: userRoles.isActive })
     .from(userRoles)
+    .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
     .where(eq(userRoles.userId, userId));
   const [pendente] = await db
     .select({ ate: max(assignments.date) })

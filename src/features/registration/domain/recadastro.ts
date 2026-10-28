@@ -4,29 +4,31 @@
  * histórico de plantões fica nela, e o e-mail/CPF/Google/Telegram ficam livres
  * para a conta nova.
  *
- * Só não arquiva quando isso tiraria alguém do ar ou duplicaria o cadastro.
+ * Só arquiva conta de turma já fechada (ou sem turma). Conta de turma em
+ * andamento ou planejada colide como antes: a coordenação resolve à mão.
  */
 
 export type ContaExistente = {
-  roles: { role: string; cohortId: string | null; isActive: boolean }[];
+  roles: { role: string; cohortStatus: "PLANNED" | "ACTIVE" | "CLOSED" | null; isActive: boolean }[];
   /** Último plantão ainda por cumprir (hoje em diante), YYYY-MM-DD. */
   ultimoPlantaoPendente: string | null;
 };
 
 export type DecisaoRecadastro =
   | { tipo: "arquivar" }
-  | { tipo: "ja-na-turma" }
+  | { tipo: "turma-aberta" }
   | { tipo: "conta-de-equipe" }
   | { tipo: "plantao-pendente"; ate: string };
 
-export function decidirRecadastro(conta: ContaExistente, turmaDoConvite: string | null): DecisaoRecadastro {
+export function decidirRecadastro(conta: ContaExistente): DecisaoRecadastro {
   // Coordenação e preceptoria não são turma: conta deles não se arquiva por convite.
   if (conta.roles.some((r) => r.isActive && (r.role === "COORDINATOR" || r.role === "PRECEPTOR"))) {
     return { tipo: "conta-de-equipe" };
   }
-  // Já se cadastrou nesta turma (inclusive cadastro ainda aguardando aprovação).
-  if (turmaDoConvite && conta.roles.some((r) => r.cohortId === turmaDoConvite)) {
-    return { tipo: "ja-na-turma" };
+  // Turma atual, a do próprio link (cadastro repetido ou aguardando aprovação)
+  // ou outra ainda aberta: não arquiva.
+  if (conta.roles.some((r) => r.cohortStatus !== null && r.cohortStatus !== "CLOSED")) {
+    return { tipo: "turma-aberta" };
   }
   // Arquivar agora deixaria plantão marcado sem dono.
   if (conta.ultimoPlantaoPendente) {

@@ -58,17 +58,14 @@ export async function executeRegisterWithInvite(params: {
 
   const normalizedEmail = params.input.email.toLowerCase().trim();
 
-  // Quem já tem conta (aluno que roda de novo) começa do zero: a conta antiga
-  // é arquivada e libera e-mail/CPF. Ver domain/recadastro.ts.
+  // Quem já tem conta de turma fechada (aluno que roda de novo) começa do zero:
+  // a conta antiga é arquivada e libera e-mail/CPF. Ver domain/recadastro.ts.
   const existentes = await findUsersByEmailOrCpf(normalizedEmail, params.input.cpf ?? null);
   if (existentes.length > 0) {
-    const turmaDoConvite = invite.facultyId && (invite.targetRole === "INTERN" || invite.targetRole === "LEADER")
-      ? await peekInternCohort(invite.facultyId, invite.cohortId)
-      : null;
     const today = localDateStr();
     const aArquivar: typeof existentes = [];
     for (const conta of existentes) {
-      const decisao = decidirRecadastro(await loadContaExistente(conta.id, today), turmaDoConvite);
+      const decisao = decidirRecadastro(await loadContaExistente(conta.id, today));
       if (decisao.tipo === "arquivar") {
         aArquivar.push(conta);
         continue;
@@ -102,7 +99,7 @@ export async function executeRegisterWithInvite(params: {
         entityId: conta.id,
         payload: {
           inviteLinkId: invite.id,
-          cohortId: turmaDoConvite,
+          cohortId: invite.cohortId,
           name: conta.name,
           email: conta.email,
           cpf: conta.cpf,
