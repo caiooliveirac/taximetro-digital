@@ -108,11 +108,11 @@ function modelo(passos: Passo[]) {
   return { fetch: fake, corpos };
 }
 
-async function perguntar(texto: string, opts: { passos?: Passo[]; fx?: Fixture; antes?: LunaPergunta[] } = {}) {
+async function perguntar(texto: string, opts: { passos?: Passo[]; fx?: Fixture; antes?: LunaPergunta[]; agora?: Date } = {}) {
   const m = modelo(opts.passos ?? []);
   const { f, lidas } = fontes(opts.fx);
   const logs: Record<string, unknown>[] = [];
-  const r = await perguntarLuna(ctx, [...(opts.antes ?? []), { role: "user", content: texto }], (o) => logs.push(o), { fontes: f, fetch: m.fetch });
+  const r = await perguntarLuna(ctx, [...(opts.antes ?? []), { role: "user", content: texto }], (o) => logs.push(o), { fontes: f, fetch: m.fetch, agora: opts.agora });
   const log = logs.find((l) => l.ev === "luna_interno")!;
   return { r, chamadas: m.corpos.length, corpos: m.corpos, log, lidas };
 }
@@ -196,6 +196,8 @@ test("prompt: plantão que ele já tem não vira bloqueio; fim de semana vira pr
 test("'Estou na Cabula, vai ativar?' — direto, base pelo nome, médico que chegou", async () => {
   const { r, chamadas, lidas } = await perguntar("Estou na Cabula, vai ativar?", {
     fx: { situacao: { consultado: true, chegaram: [{ nome: "Ana Lima", desde: "07:12" }], saindo: [], desativada: null } },
+    // Turno diurno em curso: sem relógio fixo, depois das 17h de HOJE vira o noturno e o teste quebra.
+    agora: new Date(`${HOJE}T10:00:00-03:00`),
   });
   assert.equal(chamadas, 0);
   assert.match(r.texto, /Dr\(a\)\. Ana Lima já chegou na CB02/);

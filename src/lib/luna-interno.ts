@@ -29,7 +29,7 @@ type ChatMsg = {
 
 export type LunaPergunta = { role: "user" | "assistant"; content: string; memoria?: LunaMemoria };
 export type LunaResposta = { texto: string; cartoes: LunaCartao[]; erro?: boolean; memoria?: LunaMemoria };
-export type LunaDeps = { fontes?: Fontes; fetch?: typeof fetch };
+export type LunaDeps = { fontes?: Fontes; fetch?: typeof fetch; agora?: Date };
 
 const HISTORICO = 6;
 const MAX_FERRAMENTAS = 3;
@@ -79,11 +79,11 @@ function memoriaAtual(conversa: LunaPergunta[]): LunaMemoria | undefined {
   return undefined;
 }
 
-async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: LunaMemoria | undefined, pergunta: string): Promise<Resultado> {
+async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: LunaMemoria | undefined, pergunta: string, agora = new Date()): Promise<Resultado> {
   if (intencao.tipo === "BUSCA") return buscar(f, ctx, intencao.args as Record<string, unknown>, memoria);
   // A meta está na tela Início: aqui não se gasta consulta nem token com ela.
   if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: META_NA_TELA };
-  if (intencao.tipo === "BASE_AGORA") return situacaoDaBase(f, ctx, pergunta);
+  if (intencao.tipo === "BASE_AGORA") return situacaoDaBase(f, ctx, pergunta, agora);
   const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
   if (intencao.tipo === "PRESENCA") return { status: "OK", registros: meus.length, texto: textoDaPresenca(meus, ctx.hoje, meta?.inicio ?? null) };
   const de = addDaysToDateStr(ctx.hoje, intencao.de);
@@ -123,7 +123,7 @@ export async function perguntarLuna(
   if (intencao) {
     const t1 = Date.now();
     try {
-      const r = await direto(intencao, f, ctx, memoria, pergunta);
+      const r = await direto(intencao, f, ctx, memoria, pergunta, deps.agora);
       ferramentas.push({ nome: intencao.tipo.toLowerCase(), ms: Date.now() - t1, status: r.status, registros: r.registros });
       registro({ rota: "direta", intencao: intencao.tipo, chamadas_modelo: 0, entrada: 0, saida: 0 });
       return { texto: r.texto, cartoes: r.cartao ? [r.cartao] : [], memoria: r.memoria ?? memoria };
