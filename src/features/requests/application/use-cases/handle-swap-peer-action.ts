@@ -46,7 +46,7 @@ type SwapActor = {
  * próprio plantão. Devolve o nome de quem já gastou a cota, ou null se a troca
  * pode seguir.
  */
-async function findInternOverCruQuota(internIds: string[], today: string): Promise<string | null> {
+export async function findInternOverCruQuota(internIds: string[], today: string): Promise<string | null> {
   for (const internId of internIds) {
     const rotation = await findActiveCruRotationWindow({ internId, today });
     const window = resolveCruSwapWindow({ today, rotation });
@@ -73,7 +73,7 @@ function cruQuotaError(internName: string) {
  * entrega o próprio. Devolve a frase pronta ("Fulano ficaria com dois plantões
  * seguidos...: X e Y") ou null se a troca pode seguir.
  */
-async function findSwapRestConflict(assignmentIdA: string, assignmentIdB: string): Promise<string | null> {
+export async function findSwapRestConflict(assignmentIdA: string, assignmentIdB: string): Promise<string | null> {
   const a = await findAssignmentTurno(assignmentIdA);
   const b = await findAssignmentTurno(assignmentIdB);
   if (!a || !b) return null;

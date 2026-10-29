@@ -2,22 +2,23 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeftRight, CalendarClock, LayoutGrid, Loader2, MapPin, RotateCcw, Send, Sparkles, Target, Ticket, Zap } from "lucide-react";
+import { ArrowLeftRight, CalendarClock, Loader2, MapPin, RotateCcw, Send, Sparkles, Target, Ticket, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { LunaCartao } from "@/lib/luna-ferramentas";
+import type { LunaCartao, LunaMemoria } from "@/lib/luna-ferramentas";
 
-type Msg = { role: "user" | "assistant"; content: string; cartoes?: LunaCartao[]; erro?: boolean };
+type Msg = { role: "user" | "assistant"; content: string; cartoes?: LunaCartao[]; erro?: boolean; memoria?: LunaMemoria };
 
 const GUARDA = "luna-interno-conversa";
 
+// Os atalhos caem no caminho direto da Luna (sem modelo): ver luna-roteador.ts.
 const ATALHOS = [
-  { icone: Ticket, rotulo: "Tem vaga liberada pra mim?", pergunta: "Tem vaga liberada por outra faculdade que eu possa pegar?" },
-  { icone: Target, rotulo: "Quanto falta pra minha meta?", pergunta: "Quanto falta para eu fechar minha meta, por tipo?" },
-  { icone: ArrowLeftRight, rotulo: "Quero trocar um plantão", pergunta: "Quero trocar um plantão. Quais ofertas de troca estão abertas e o que eu posso oferecer?" },
-  { icone: Zap, rotulo: "Tem extra aberto?", pergunta: "Tem plantão extra aberto que não bate com os meus?" },
+  { icone: Sparkles, rotulo: "Consigo fechar minha meta?", pergunta: "Consigo fechar minha meta?" },
+  { icone: Target, rotulo: "Quanto falta pra minha meta?", pergunta: "Quanto falta para fechar minha meta?" },
+  { icone: Ticket, rotulo: "Tem vaga liberada pra mim?", pergunta: "Tem vaga liberada pra mim?" },
+  { icone: ArrowLeftRight, rotulo: "Quero trocar um plantão", pergunta: "Quero trocar um plantão: que trocas servem pra mim?" },
+  { icone: Zap, rotulo: "Tem extra aberto?", pergunta: "Tem plantão extra aberto pra mim?" },
   { icone: CalendarClock, rotulo: "Meus próximos plantões", pergunta: "Quais são meus próximos plantões?" },
-  { icone: LayoutGrid, rotulo: "Sobrou vaga na minha grade?", pergunta: "Sobrou vaga na grade da minha faculdade que eu possa pedir?" },
 ] as const;
 
 /** **negrito** e listas com "- ", sem HTML do modelo. */
@@ -116,14 +117,14 @@ export default function LunaPage() {
     const r = await fetch("/taximetro/api/intern/luna", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensagens: nova.filter((m) => !m.erro).map(({ role, content }) => ({ role, content })) }),
+      body: JSON.stringify({ mensagens: nova.filter((m) => !m.erro).map(({ role, content, memoria }) => ({ role, content, ...(memoria ? { memoria } : {}) })) }),
     }).catch(() => null);
     const j = r ? await r.json().catch(() => null) : null;
     setPensando(false);
     setConversa([
       ...nova,
       j?.success
-        ? { role: "assistant", content: j.data.texto, cartoes: j.data.cartoes, erro: j.data.erro }
+        ? { role: "assistant", content: j.data.texto, cartoes: j.data.cartoes, erro: j.data.erro, memoria: j.data.memoria }
         : { role: "assistant", content: j?.error ?? "Sem conexão. Tente de novo.", erro: true },
     ]);
   }
@@ -230,7 +231,7 @@ export default function LunaPage() {
             onChange={(e) => setTexto(e.target.value)}
             maxLength={2000}
             disabled={ligada === false}
-            placeholder="Ex.: dá pra trocar meu sábado à noite?"
+            placeholder="Ex.: não posso segunda, prefiro noite"
             className="min-h-10 flex-1 bg-transparent px-2 text-sm text-slate-900 outline-none placeholder:text-slate-400"
           />
           <Button type="submit" disabled={!texto.trim() || pensando || ligada === false} size="sm" className="h-10 w-10 shrink-0 rounded-full p-0" aria-label="Perguntar">
