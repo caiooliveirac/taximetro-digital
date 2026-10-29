@@ -8,7 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { CASOS, TENTATIVA_MIN, abrir, fechar, proximoCaso, resumoDosTemas } from "../src/lib/dai-casos";
+import { CASOS, FICHAS, TENTATIVA_MIN, abrir, fechar, fichaDoTema, proximoCaso, resumoDosTemas } from "../src/lib/dai-casos";
 import { TEMAS, pedidoDeCaso } from "../src/lib/dai-temas";
 
 const ler = (arquivo: string) => readFileSync(path.join(process.cwd(), arquivo), "utf8");
@@ -54,8 +54,9 @@ test("próximo caso: nível mais baixo ainda não aberto; esgotou, o aberto há 
 
 test("resumo dos temas conta casos e abertos", () => {
   const r = resumoDosTemas([CASOS.find((c) => c.tema === "SEPSE")!.id]);
-  assert.equal(r.length, 10);
-  assert.deepEqual(r.find((t) => t.tema === "SEPSE"), { tema: "SEPSE", rotulo: "Sepse", total: 6, vistos: 1 });
+  assert.equal(r.length, 13);
+  assert.deepEqual(r.find((t) => t.tema === "SEPSE"), { tema: "SEPSE", rotulo: "Sepse", total: 6, vistos: 1, ficha: false });
+  assert.deepEqual(r.find((t) => t.tema === "PCR"), { tema: "PCR", rotulo: "PCR", total: 0, vistos: 0, ficha: true });
 });
 
 test("pedido de caso: tema, sem tema, e pergunta de plantão passa direto", () => {
@@ -64,6 +65,11 @@ test("pedido de caso: tema, sem tema, e pergunta de plantão passa direto", () =
   assert.equal(pedidoDeCaso("AVC"), "AVC");
   assert.equal(pedidoDeCaso("quero treinar dor no peito"), "IAM");
   assert.equal(pedidoDeCaso("revisar trauma pro plantão"), "TRAUMA");
+  assert.equal(pedidoDeCaso("PCR"), "PCR");
+  assert.equal(pedidoDeCaso("quero revisar parada cardíaca"), "PCR");
+  assert.equal(pedidoDeCaso("convulsão"), "CONVULSAO");
+  assert.equal(pedidoDeCaso("estudar tentativa de suicídio"), "PSIQ");
+  assert.equal(pedidoDeCaso("caso de paciente agitado"), "PSIQ");
   for (const p of [
     "Consigo fechar minha meta?",
     "Quanto falta para fechar minha meta?",
@@ -82,4 +88,19 @@ test("resposta só depois da tentativa, e quem personifica não conta como visto
   assert.match(rota, /if \(!user\.realUserId\) \{\s*await logAudit/);
   assert.match(ler("src/app/intern/luna/page.tsx"), new RegExp(`const TENTATIVA_MIN = ${TENTATIVA_MIN};`));
   assert.doesNotMatch(ler("src/lib/dai-temas.ts"), /dai-casos\.json/, "conteúdo não vai para o navegador");
+});
+
+test("fichas de plantão: uma por tema, tema conhecido, nenhum campo vazio", () => {
+  const temas = new Set<string>(TEMAS.map((t) => t.tema));
+  assert.deepEqual(FICHAS.map((f) => f.tema).sort(), ["CONVULSAO", "PCR", "PSIQ"]);
+  for (const f of FICHAS) {
+    assert.ok(temas.has(f.tema), f.tema);
+    for (const campo of ["titulo", "em_30_segundos", "nao_pode_faltar", "armadilha", "referencia"] as const) assert.ok(f[campo].trim(), `${f.tema}.${campo}`);
+  }
+  assert.equal(fichaDoTema("AVC"), null);
+});
+
+test("tema com ficha abre pela ficha; caso só quando pede", () => {
+  const rota = ler("src/app/api/intern/casos/route.ts");
+  assert.match(rota, /if \(ficha && !pular && !req\.nextUrl\.searchParams\.has\("caso"\)\)/);
 });

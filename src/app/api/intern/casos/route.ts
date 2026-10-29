@@ -2,7 +2,8 @@
  * /api/intern/casos — casos clínicos do Dai, texto pronto (ver src/lib/dai-casos.ts).
  *
  * GET              → { temas }  quantos casos cada tema tem e quantos ele já abriu
- * GET ?tema=AVC    → { caso }   próximo caso do tema, FECHADO (sem nome nem resposta)
+ * GET ?tema=PCR    → { ficha, casos }  revisão de plantão do tema, se houver
+ * GET ?tema=AVC[&caso=1|&pular=id] → { caso }  próximo caso do tema, FECHADO (sem nome nem resposta)
  * POST { id, tentativa } → { caso } ABERTO; registra DAI_CASO_ABERTO no audit_log
  *
  * Nenhuma chamada ao modelo, então fica fora do teto de perguntas do Dai.
@@ -16,7 +17,7 @@ import { db } from "@/db";
 import { auditLog } from "@/db/schema";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { logAudit } from "@/lib/audit";
-import { AUDIT_CASO_ABERTO, TENTATIVA_MIN, abrir, casoPorId, fechar, proximoCaso, resumoDosTemas } from "@/lib/dai-casos";
+import { AUDIT_CASO_ABERTO, CASOS, TENTATIVA_MIN, abrir, casoPorId, fichaDoTema, fechar, proximoCaso, resumoDosTemas } from "@/lib/dai-casos";
 
 async function quem(req: NextRequest) {
   const user = await getEffectiveUser(req);
@@ -40,7 +41,13 @@ export async function GET(req: NextRequest) {
   const vistos = await abertos(user.id);
   if (!tema) return NextResponse.json({ success: true, data: { temas: resumoDosTemas(vistos) } });
 
-  const caso = proximoCaso(tema, vistos, req.nextUrl.searchParams.get("pular") ?? undefined);
+  // Tema com ficha abre pela ficha; o caso vem quando ele pede (?caso=1 ou "outro caso").
+  const pular = req.nextUrl.searchParams.get("pular") ?? undefined;
+  const ficha = fichaDoTema(tema);
+  if (ficha && !pular && !req.nextUrl.searchParams.has("caso")) {
+    return NextResponse.json({ success: true, data: { ficha, casos: CASOS.filter((c) => c.tema === tema).length } });
+  }
+  const caso = proximoCaso(tema, vistos, pular);
   if (!caso) return NextResponse.json({ success: false, error: "Não há casos desse tema." }, { status: 404 });
   return NextResponse.json({ success: true, data: { caso: fechar(caso) } });
 }

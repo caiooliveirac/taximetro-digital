@@ -9,7 +9,15 @@
  */
 
 import todos from "@/content/dai-casos.json";
+import fichas from "@/content/dai-fichas.json";
 import { TEMAS, rotuloDoTema, type Tema } from "@/lib/dai-temas";
+
+/** Revisão de plantão de um tema: texto pré-hospitalar, revisado por PR antes de entrar. */
+export type Ficha = { tema: string; titulo: string; em_30_segundos: string; nao_pode_faltar: string; armadilha: string; referencia: string };
+
+export const FICHAS: readonly Ficha[] = fichas;
+
+export const fichaDoTema = (tema: string) => FICHAS.find((f) => f.tema === tema) ?? null;
 
 export type Caso = {
   id: string;
@@ -25,7 +33,7 @@ export type Caso = {
 
 export type CasoFechado = Pick<Caso, "id" | "tema" | "nivel" | "estimulo"> & { rotulo: string };
 export type CasoAberto = CasoFechado & Pick<Caso, "nome" | "armadilha" | "resposta" | "fechamento" | "referencia">;
-export type TemaResumo = { tema: Tema; rotulo: string; total: number; vistos: number };
+export type TemaResumo = { tema: Tema; rotulo: string; total: number; vistos: number; ficha: boolean };
 
 export const CASOS: readonly Caso[] = todos;
 
@@ -56,6 +64,6 @@ export function proximoCaso(tema: string, abertos: string[], pular?: string): Ca
 export function resumoDosTemas(abertos: string[]): TemaResumo[] {
   return TEMAS.map(({ tema, rotulo }) => {
     const doTema = CASOS.filter((c) => c.tema === tema);
-    return { tema, rotulo, total: doTema.length, vistos: doTema.filter((c) => abertos.includes(c.id)).length };
-  }).filter((t) => t.total > 0);
+    return { tema, rotulo, total: doTema.length, vistos: doTema.filter((c) => abertos.includes(c.id)).length, ficha: Boolean(fichaDoTema(tema)) };
+  }).filter((t) => t.total > 0 || t.ficha);
 }

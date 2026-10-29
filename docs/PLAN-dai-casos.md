@@ -162,7 +162,10 @@ Registro de "abriu a ficha": evento no `audit_log` (`DAI_FICHA_ABERTA`,
    "Discutir um caso" no Dai; evento `DAI_CASO_ABERTO` com `payload.caso`): exportar as 60 (sem o título no cartão fechado, MINOCA
    corrigida), tema no roteador do Dai, cartão com tentativa obrigatória e
    depois "Ver resposta". Atalho "Tentar um caso". Custo de modelo: 0.
-2. **Fichas de plantão** para os 6 temas que mais aparecem: PCR, trauma,
+2. **Fichas de plantão** — PCR, convulsão e agitação/suicídio/intoxicação
+   redigidas em `src/content/dai-fichas.json`, em revisão por PR (2026-10-29).
+   Tema com ficha abre pela ficha; "Tentar um caso" aparece se houver charada.
+   Trauma, AVC e IAM ficam para a próxima leva. para os 6 temas que mais aparecem: PCR, trauma,
    AVC, IAM, convulsão, psiq/intox. Redigidas offline a partir das
    referências, **revisadas pelo Caio** antes do merge. Nada gerado em
    tempo de execução.
