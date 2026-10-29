@@ -74,9 +74,15 @@ Log `ev: "luna_interno"`: `rota` (`direta` | `modelo` | `modelo+ferramenta`),
 
 ## Catálogo do banco (produção, 2026-10-29)
 
-Inventário: 23 tabelas, **0 views**, **1 materialized view**, **1 função**,
-**0 triggers** no schema `public`. A inteligência mora no código de domínio,
-não no banco.
+Inventário em 29/10 (manhã): 23 tabelas, 0 views, 1 materialized view, 1
+função e **2 triggers** no schema `public`. A inteligência mora no código de
+domínio, não no banco.
+
+> Correção: a primeira versão deste catálogo dizia "0 triggers" — a consulta
+> foi pelo `information_schema`, que esconde trigger de quem só lê. Pelo
+> `pg_trigger`, `trg_refresh_slots` (em `assignments`) e
+> `trg_refresh_slots_rules` (em `slot_rules`) faziam `REFRESH` da matview
+> (~0,6 s) dentro de toda escrita. Removidos em 29/10 — ver abaixo.
 
 | Objeto | Tipo | Granularidade | Quem usa | Fonte da verdade para a Luna? |
 |---|---|---|---|---|
@@ -87,8 +93,8 @@ não no banco.
 | `slot_rules` (312) | tabela | regra semanal base×dia×turno×faculdade | grade | Indireto, via `getRequestableSlots` (10 dias, até o fim do rodízio da turma) |
 | `cohorts`, `user_roles` | tabelas | rodízio e vínculo | compliance | Indireto, via `executeGetComplianceOverview` |
 | `cru_fixed_assignments` | tabela | CRU fixo com vigência | cota de CRU | Indireto, via `findInternOverCruQuota` |
-| `available_slots` (273 linhas) | **matview** | regra semanal; `filled` conta plantões de **todas as datas da história** daquele dia da semana | **ninguém** (só `scripts/materialized-view-available-slots.sql`) | **Não.** Não responde "vaga livre na data X"; `available` vira negativo; sem refresh agendado |
-| `refresh_available_slots()` | função (volátil) | — | ninguém | Não executada (efeito colateral) |
+| ~~`available_slots`~~ | matview | regra semanal; contava plantões de toda a história | ninguém | **Removida em 29/10** (SAMU), com a função e os triggers |
+| `turnos_livres` | **view** (desde 29/10) | data × base × turno × faculdade dona, 45 dias: capacidade, ocupadas, liberadas abertas/usadas, reservadas, sem dono, **sobra** | `fila-de-reposicao.ts` (oferta de vaga livre) | Sim, para "turno livre por data". Só fatos, sem política; ~12 ms. `scripts/view-turnos-livres.sql` |
 
 Índices relevantes: `assignments(date)`, `assignments(intern_id)`,
 `extra_shift_offers(released_faculty_id, date)`, `(date)`, `(claimed_by)`,
@@ -135,14 +141,27 @@ Os números do "depois" com modelo são estimativa por tamanho do corpo
 Medido em 2026-10-29: 131 internos precisam de 611 casinhas de USA, 112 de
 356 de CRU, 60 de 60 de CRL — a demanda passa da oferta em todo tipo.
 
+## Candidatura a vaga livre (29/10)
+
+O interno de meta completa no tipo se candidata a uma vaga liberada ou sem
+dono (`POST /api/intern/vagas-livres/candidatura`, botão "Me candidatar" na
+Dai). Vira o mesmo pedido `FREE_SLOT` que o líder já abria; a coordenação
+aprova em Admin → Solicitações. Regras (`candidatar-vaga-livre.ts`):
+12h de descanso; quem ainda precisa do tipo não se candidata (o líder escala
+direto); e só abre quando as vagas livres abertas nos próximos 10 dias passam
+de quantos internos precisam de reposição naquele tipo
+(`fila-de-reposicao.ts`, cache de 10 min). Fechada, a Dai nem busca vaga
+liberada e diz o tamanho da fila.
+
+A Dai não fala de meta: está na tela Início. "Quanto falta?" responde com um
+ponteiro, sem consulta e sem modelo; o prompt não leva números de meta.
+
 ## Pontos em aberto
 
-1. **Candidatura a vaga livre pelo interno** (proposta, não feita): hoje só o
-   líder pede `FREE_SLOT` para interno acima da meta. Ideia: o interno se
-   candidata pela Dai; abaixo da meta vai ao líder, acima vai à coordenação, e
-   só abre para quem está acima quando a oferta do tipo na janela passar de
-   quem precisa de reposição e cabe na data.
-2. **`available_slots`**: matview morta e enganosa. Substituir por "turno
-   livre por data" exige DDL e mover o teto físico das
-   bases, hoje em `capacidadeDaBase` (código), para o banco.
+1. **Vitalmed** ainda tem a matview antiga com triggers: o banco dela não tem
+   `extra_shift_offers.reserved_by` (push atrasado, deploy manual). A view só
+   entra depois do push dela.
+2. O teto físico das bases segue em `capacidadeDaBase` (código). A view não
+   precisa dele (só fatos da grade); se um dia o "sem dono" for calculado no
+   banco, ele muda para `bases`.
 3. `requests` só tem a PK; com o recorte no SQL ainda não faz falta índice.

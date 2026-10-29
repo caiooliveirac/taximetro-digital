@@ -10,6 +10,7 @@ type Request = {
   status: string;
   reviewNotes: string | null;
   createdAt: string;
+  targetInternId?: string | null;
   targetInternName?: string | null;
   extraBaseCode?: string | null;
   extraDate?: string | null;
@@ -20,7 +21,10 @@ type Request = {
 function detalhe(r: Request) {
   if (!r.extraBaseCode || !r.extraDate) return "";
   const quando = `${r.extraBaseCode} · ${r.extraDate.slice(8, 10)}/${r.extraDate.slice(5, 7)} ${r.extraPeriod === "NIGHT" ? "noturno" : "diurno"}`;
-  if (r.type === "FREE_SLOT") return `${r.targetInternName ?? "interno"} em vaga livre (${quando}) — meta do tipo já coberta`;
+  if (r.type === "FREE_SLOT") {
+    const candidatura = r.requesterId === r.targetInternId;
+    return `${r.targetInternName ?? "interno"} em vaga livre (${quando}) — meta do tipo já coberta${candidatura ? " · candidatura do próprio interno" : ""}`;
+  }
   return quando;
 }
 

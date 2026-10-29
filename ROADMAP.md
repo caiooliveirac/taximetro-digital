@@ -140,4 +140,4 @@ coordenações de SAMU sem nova instância.
 | Crons configurados no entrypoint (1 execução) | Moderado | `container-entrypoint.sh` |
 | `checkoutNotes` serializado como string | Baixo | `checkins` schema |
 | Falta de índice em `assignments.date + status` | Baixo | Performance futura |
-| `available_slots` como view materializada manual | Baixo | `scripts/materialized-view-*.sql` |
+| ~~`available_slots` como view materializada manual~~ — trocada pela view `turnos_livres` (2026-10-29) | — | `scripts/view-turnos-livres.sql` |

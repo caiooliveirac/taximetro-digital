@@ -14,7 +14,7 @@ Como o `taximetro-digital` chega em produção.
 ## Fluxo de deploy (resumido)
 
 1. **CI (`test` job)** — em runner GitHub: `npm ci` → `typecheck` → `test` → `build` com Node lido de `.nvmrc`.
-2. **`db_changes` (opcional, manual)** — `workflow_dispatch` com `apply_db_changes=true`: roda `drizzle-kit push --force` + recria a materialized view `available_slots`. Não é disparado em push automático.
+2. **`db_changes` (opcional, manual)** — `workflow_dispatch` com `apply_db_changes=true`: roda `drizzle-kit push --force` + recria a view `turnos_livres` (`scripts/view-turnos-livres.sql`). Não é disparado em push automático.
 3. **`deploy` (após `test` verde)**:
     1. `rsync` do source para `/home/ubuntu/taximetro-digital` na VM.
     2. `docker build --pull -t taximetro-digital:candidate .`

@@ -16,11 +16,12 @@ import {
   type Avaliada, type Bloqueio, type Busca, type Fonte, type MeuPlantao, type Oferta, type Pedido, type Periodo,
 } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr } from "@/lib/utils";
+import { candidaturaAberta, textoDaFila } from "@/features/extra-offers/application/fila-de-reposicao";
 
 export type { LunaCtx } from "@/lib/luna-dados";
 
 /** Cartões que a tela monta a partir do resultado das ferramentas (não do texto do modelo). */
-export type LunaItem = { titulo: string; detalhe?: string; href?: string; acao?: string; mapa?: string };
+export type LunaItem = { titulo: string; detalhe?: string; href?: string; acao?: string; mapa?: string; /** id da vaga livre: botão que abre a candidatura. */ candidatar?: string };
 export type LunaCartao = { tipo: "opcoes" | "troca" | "plantoes"; titulo: string; itens: LunaItem[]; verTudo?: { href: string; rotulo: string } };
 
 /** Opção numerada mostrada ao interno: é por ela que "a segunda" volta a ser um id. */
@@ -122,8 +123,9 @@ export function acharMeu(meus: MeuPlantao[], hoje: string, data: string, periodo
 // ---------------------------------------------------------------------------
 // Cartões
 
-function acaoDa(a: Avaliada, lider: { id: string; nome: string } | null): Pick<LunaItem, "href" | "acao"> {
+function acaoDa(a: Avaliada, lider: { id: string; nome: string } | null): Pick<LunaItem, "href" | "acao" | "candidatar"> {
   const q = quando(a.date, a.period, a.shift);
+  if (a.candidatura) return { candidatar: a.id, acao: "Me candidatar" };
   if (a.fonte === "LIBERADA" && lider) {
     const texto = `Oi! Tem vaga liberada ${a.tipo} na ${a.baseCode}, ${q}, e ainda me falta ${a.tipo} na meta. Pode me escalar nela?`;
     return { href: `/intern/mensagens?com=${lider.id}&texto=${encodeURIComponent(texto)}`, acao: "Pedir ao líder" };
@@ -194,13 +196,22 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
 
   // Vaga liberada é de quem precisa de reposição. Com a meta completa nos
   // tipos pedidos, nem vai buscar: diz quantos colegas estão na frente.
+  // Vaga livre é de quem precisa de reposição. Nos tipos em que a meta já
+  // fechou, só entra como candidatura — e só quando sobra vaga depois da fila.
   let fila = "";
+  let candidatura: GoalKind[] = [];
   const tiposDoPedido = args.tipos?.length ? args.tipos : GOAL_KINDS.filter((k) => (meta?.alvo[k] ?? 0) > 0);
-  if (objetivo !== "troca" && !somente.length && fontes.includes("LIBERADA") && meta && tiposDoPedido.length && tiposDoPedido.every((k) => meta.faltam[k] === 0)) {
-    fontes = fontes.filter((x) => x !== "LIBERADA");
-    const demanda = await f.demanda().catch(() => null);
-    const quem = demanda ? tiposDoPedido.filter((k) => demanda[k].internos > 0).map((k) => `${demanda[k].internos} precisam de ${demanda[k].casinhas} ${k}`) : [];
-    fila = `Vaga liberada vai primeiro para quem precisa de reposição${quem.length ? ` — hoje ${quem.join("; ")}` : ""}. Com sua meta completa, sobram extra e sobra da grade.`;
+  const completos = meta ? tiposDoPedido.filter((k) => meta.faltam[k] === 0) : [];
+  if (objetivo !== "troca" && !somente.length && fontes.includes("LIBERADA") && completos.length) {
+    const atual = await f.fila().catch(() => null);
+    candidatura = atual ? completos.filter((k) => candidaturaAberta(atual[k])) : [];
+    const fechados = completos.filter((k) => !candidatura.includes(k));
+    if (completos.length === tiposDoPedido.length && !candidatura.length) fontes = fontes.filter((x) => x !== "LIBERADA");
+    // Quem ainda precisa de algum tipo não recebe sermão de fila dos outros.
+    if (fechados.length && completos.length === tiposDoPedido.length) {
+      fila = `Vaga livre vai primeiro para quem precisa de reposição${atual ? `: ${fechados.map((k) => textoDaFila(k, atual[k])).join("; ")}` : ""}. Candidatura abre quando sobrar vaga.`;
+    }
+    if (candidatura.length) fila += `${fila ? "\n" : ""}Sobra vaga livre de ${candidatura.join(" e ")}: como sua meta está completa, você se candidata e a coordenação decide.`;
   }
 
   const leituras: Record<Fonte, () => Promise<Oferta[]>> = {
@@ -221,6 +232,7 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     ate,
     largar,
     somente,
+    candidatura,
   };
   const busca = buscarOpcoes(ofertas, { meta, meus, pedido, hoje: ctx.hoje });
 

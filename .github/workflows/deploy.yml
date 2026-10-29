@@ -107,13 +107,16 @@ jobs:
               postgres:16-alpine \
               sh -c 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/0027.sql'
 
-            echo "=== Recreating available_slots materialized view/triggers ==="
+            # O push --force derruba a view que não está no schema Drizzle.
+            # turnos_livres é view comum (sem refresh, sem trigger, dona é a
+            # role da app): este passo não falha mais por dono de função.
+            echo "=== Recreating turnos_livres view ==="
             docker run --rm \
               --network host \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-              -v "$(pwd)/scripts/materialized-view-available-slots.sql:/tmp/mv.sql:ro" \
+              -v "$(pwd)/scripts/view-turnos-livres.sql:/tmp/view.sql:ro" \
               postgres:16-alpine \
-              sh -c 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/mv.sql'
+              sh -c 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/view.sql'
 
             echo "=== Schema changes complete ==="
           REMOTE_SCRIPT

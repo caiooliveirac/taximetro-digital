@@ -16,7 +16,7 @@
 
 import { criarFontes, type Fontes, type LunaCtx, type RegistroFonte } from "@/lib/luna-dados";
 import { FERRAMENTAS, buscar, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
-import { quando, resumoParaModelo, textoDaAgenda, textoDaMeta, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
+import { quando, resumoParaModelo, textoDaAgenda, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
 import { rotear, type Intencao } from "@/lib/luna-roteador";
 import { addDaysToDateStr } from "@/lib/utils";
 
@@ -43,12 +43,15 @@ const config = () => ({
 
 export const lunaLigada = () => Boolean(config().key);
 
+const META_NA_TELA = "Sua meta, tipo por tipo, está na tela **Início**. Aqui eu procuro o que fecha ela: pergunte \"que vagas fecham minha meta?\".";
+
 const FALHOU = "Não consegui consultar seus dados agora — não vou chutar. As telas de Início, Trocas e Extras seguem funcionando.";
 
 const SISTEMA = `Você é o Dai, assistente dos internos de medicina no SAMU Salvador, no app Taxímetro. Ajuda a achar plantão possível: fechar a meta, trocar, pegar vaga liberada, extra ou sobra da grade.
 
 Como agir:
-- RESUMO abaixo é o estado real do interno agora (meta, rodízio, próximos plantões). Pergunta só sobre isso: responda direto, sem ferramenta.
+- RESUMO abaixo é o estado real do interno agora (rodízio, próximos plantões). Pergunta só sobre isso: responda direto, sem ferramenta.
+- Meta e casinhas ele já vê na tela Início: não repita números de meta; se perguntar, aponte a tela Início.
 - Vaga, extra, troca, opção, "consigo fechar a meta", "melhor solução": chame buscar_opcoes com as restrições que ele disse (nao_posso, prefere_*, tipos). Não filtre nem conte nada você: a ferramenta cruza meta, descanso e agenda.
 - Trocar um plantão dele por uma oferta específica: avaliar_troca. "Por que não contou", "fiz checkout e aparece pendente": explicar_plantao.
 - "A segunda", "essa", "dessas" = números da ÚLTIMA LISTA: passe em opcoes/opcao. Para refinar a última busca, repita os parâmetros dela e mude só o pedido.
@@ -75,8 +78,9 @@ function memoriaAtual(conversa: LunaPergunta[]): LunaMemoria | undefined {
 
 async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria?: LunaMemoria): Promise<Resultado> {
   if (intencao.tipo === "BUSCA") return buscar(f, ctx, intencao.args as Record<string, unknown>, memoria);
+  // A meta está na tela Início: aqui não se gasta consulta nem token com ela.
+  if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: META_NA_TELA };
   const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
-  if (intencao.tipo === "META") return { status: meta ? "OK" : "INSUFFICIENT_DATA", registros: 1, texto: textoDaMeta(meta) };
   if (intencao.tipo === "PRESENCA") return { status: "OK", registros: meus.length, texto: textoDaPresenca(meus, ctx.hoje, meta?.inicio ?? null) };
   const de = addDaysToDateStr(ctx.hoje, intencao.de);
   const ate = intencao.ate === null ? null : addDaysToDateStr(ctx.hoje, intencao.ate);
