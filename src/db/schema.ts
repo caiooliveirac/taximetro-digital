@@ -502,3 +502,20 @@ export const vacancyReleaseSettings = pgTable("vacancy_release_settings", {
   updatedBy: uuid("updated_by").references(() => users.id),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ── Mensagens entre internos ──────────────────────────────────────────────────
+// Conversa direta, um para um, para combinar troca de plantão (ou pedir ao
+// líder uma vaga liberada). A conversa é o par de pessoas; `requestId` só diz
+// de qual oferta de troca ela nasceu. Só os dois participantes leem.
+export const internMessages = pgTable("intern_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fromUserId: uuid("from_user_id").notNull().references(() => users.id),
+  toUserId: uuid("to_user_id").notNull().references(() => users.id),
+  requestId: uuid("request_id").references(() => requests.id),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  readAt: timestamp("read_at"),
+}, (t) => [
+  index("idx_intern_messages_to_unread").on(t.toUserId, t.readAt),
+  index("idx_intern_messages_pair").on(t.fromUserId, t.toUserId, t.createdAt),
+]);

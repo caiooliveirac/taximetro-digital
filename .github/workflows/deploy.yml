@@ -196,6 +196,7 @@ jobs:
               -e TOM_HOOK_SECRET="${{ secrets.TOM_HOOK_SECRET }}" \
               -e PLANTOES_READONLY_DATABASE_URL="${{ secrets.PLANTOES_READONLY_DATABASE_URL }}" \
               -e CROSS_APP_IMPORT_SECRET="${{ secrets.CROSS_APP_IMPORT_SECRET }}" \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               "$IMAGE_CANDIDATE"
 
             echo "=== Validating canary health ==="
@@ -242,6 +243,7 @@ jobs:
               -e TOM_HOOK_SECRET="${{ secrets.TOM_HOOK_SECRET }}" \
               -e PLANTOES_READONLY_DATABASE_URL="${{ secrets.PLANTOES_READONLY_DATABASE_URL }}" \
               -e MNRS_FEDERACAO_SECRET="${{ secrets.MNRS_FEDERACAO_SECRET }}" \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               "$IMAGE_CANDIDATE"
 
             echo "=== Waiting for production healthcheck ==="

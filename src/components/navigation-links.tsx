@@ -9,6 +9,8 @@ type Props = {
   title?: string;
   className?: string;
   showHeader?: boolean;
+  /** Onde o interno está agora. Sem ela, cada app usa a localização do próprio celular. */
+  origin?: { latitude: number; longitude: number } | null;
 };
 
 export function NavigationLinks({
@@ -18,10 +20,12 @@ export function NavigationLinks({
   title = "Como chegar",
   className,
   showHeader = true,
+  origin,
 }: Props) {
-  const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}&travelmode=driving${origin ? `&origin=${origin.latitude},${origin.longitude}` : ""}`;
   const wazeUrl = `https://waze.com/ul?ll=${latitude},${longitude}&navigate=yes`;
-  const uberUrl = `https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${latitude}&dropoff[longitude]=${longitude}${label ? `&dropoff[nickname]=${encodeURIComponent(label)}` : ""}`;
+  const pickup = origin ? `pickup[latitude]=${origin.latitude}&pickup[longitude]=${origin.longitude}` : "pickup=my_location";
+  const uberUrl = `https://m.uber.com/ul/?action=setPickup&${pickup}&dropoff[latitude]=${latitude}&dropoff[longitude]=${longitude}${label ? `&dropoff[nickname]=${encodeURIComponent(label)}` : ""}`;
 
   const links = [
     { href: mapsUrl, icon: "/taximetro/icons/gmaps.png", name: "Maps", ring: "hover:ring-blue-300" },
