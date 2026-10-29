@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Ambulance, Camera, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays, CalendarX, Zap, Shield, Users, type LucideIcon } from "lucide-react";
+import { Ambulance, Camera, ClipboardList, MapPin, Stethoscope, ArrowLeftRight, BarChart3, LogOut, Building2, CalendarDays, CalendarX, Zap, Shield, Users, MessageCircle, Sparkles, type LucideIcon } from "lucide-react";
 import { temFeature } from "@/lib/instance";
 import { InternPhotoChangeModal } from "@/components/intern-photo-change-modal";
 import { extractRoleNames, pickReturnRole, type ManagementRole } from "@/lib/role-access-policy";
@@ -36,6 +36,20 @@ export default function InternLayout({ children }: { children: React.ReactNode }
   const { data: session } = useSession();
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
 
+  const [naoLidas, setNaoLidas] = useState(0);
+
+  // Contador do ícone de mensagens: na troca de tela e a cada minuto.
+  useEffect(() => {
+    const contar = () =>
+      fetch("/taximetro/api/intern/mensagens")
+        .then((r) => r.json())
+        .then((j) => { if (j.success) setNaoLidas(j.data.naoLidas); })
+        .catch(() => {});
+    contar();
+    const id = setInterval(contar, 60_000);
+    return () => clearInterval(id);
+  }, [pathname]);
+
   const returnRole = pickReturnRole(extractRoleNames(session?.user?.roles, session?.user?.role));
   const returnArea = returnRole ? RETURN_AREA_META[returnRole] : null;
 
@@ -56,6 +70,18 @@ export default function InternLayout({ children }: { children: React.ReactNode }
               {returnArea.label}
             </Link>
           )}
+          <Link
+            href="/intern/mensagens"
+            aria-label={naoLidas > 0 ? `Mensagens, ${naoLidas} não lidas` : "Mensagens"}
+            className="relative inline-flex items-center rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          >
+            <MessageCircle className="h-4 w-4" strokeWidth={1.5} />
+            {naoLidas > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-red-500 px-1 text-center text-[10px] font-semibold leading-4 text-white">
+                {naoLidas > 9 ? "9+" : naoLidas}
+              </span>
+            ) : null}
+          </Link>
           <button
             type="button"
             onClick={() => setPhotoModalOpen(true)}
@@ -73,6 +99,17 @@ export default function InternLayout({ children }: { children: React.ReactNode }
         </div>
       </header>
       <main className="flex-1 bg-background p-4">{children}</main>
+      {/* Some onde a tela já tem caixa de texto fixa embaixo. */}
+      {pathname !== "/intern/luna" && pathname !== "/intern/mensagens" ? (
+        <Link
+          href="/intern/luna"
+          aria-label="Perguntar à Luna sobre plantões, trocas e vagas"
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-4 z-40 inline-flex items-center gap-1.5 rounded-full bg-navy-900 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-navy-700 active:scale-95"
+        >
+          <Sparkles className="h-4 w-4" strokeWidth={1.8} />
+          Luna
+        </Link>
+      ) : null}
       <InternPhotoChangeModal open={photoModalOpen} onClose={() => setPhotoModalOpen(false)} />
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 shadow-[0_-1px_3px_rgba(0,0,0,0.06)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
         <div className="mx-auto grid max-w-lg grid-cols-8 px-1 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-2">
