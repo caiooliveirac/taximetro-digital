@@ -35,6 +35,12 @@ type Props = {
   sinais?: SinalMarcado[];
   /** Grava (ou apaga, com `null`) o sinal do turno. Devolve a mensagem de erro, se houver. */
   onMarcar?: (date: string, period: TurnoDaFita, signal: SinalDoDia | null, label?: string) => Promise<string | null>;
+  /** Ofertas que cabem para o interno, por turno, e quantos colegas querem cada plantão dele. */
+  mercado?: {
+    paraVoce: { date: string; period: string; baseName: string; caixa: string }[];
+    procuraNosMeusPlantoes: Record<string, number>;
+  } | null;
+  onAbrirTrocas?: () => void;
 };
 
 type Modo = "VER" | SinalDoDia;
@@ -66,9 +72,9 @@ const MODOS: { modo: Modo; rotulo: string; dica: string; amostra: string; amostr
 
 // Diurno = papel claro e liso; noturno = tinta escura pontilhada. Valem nos
 // dois lugares em que o turno aparece: a faixa da lista e o quadradinho da fita.
-const PAPEL = "bg-[#FBF8F1] text-[#3E3626] shadow-[inset_0_0_0_1px_#EAE3D3]";
-const TINTA = "bg-[#18203B] text-[#DCE2F5]";
-const PONTILHADO: CSSProperties = {
+export const PAPEL = "bg-[#FBF8F1] text-[#3E3626] shadow-[inset_0_0_0_1px_#EAE3D3]";
+export const TINTA = "bg-[#18203B] text-[#DCE2F5]";
+export const PONTILHADO: CSSProperties = {
   backgroundImage: "radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1.2px)",
   backgroundSize: "7px 7px",
 };
@@ -83,7 +89,7 @@ const HACHURA: CSSProperties = {
   backgroundImage: "repeating-linear-gradient(135deg, rgba(124,131,150,0.38) 0 3px, transparent 3px 9px)",
 };
 // Quero e Posso: contorno. Colisão: contorno vermelho por cima de tudo.
-const CONTORNO: Record<"QUERO" | "POSSO", string> = {
+export const CONTORNO: Record<"QUERO" | "POSSO", string> = {
   QUERO: "shadow-[inset_0_0_0_2px_#D9961A]",
   POSSO: "shadow-[inset_0_0_0_2px_#3D84EE]",
 };
@@ -96,7 +102,7 @@ function dataCurta(date: string) {
   return `${d.getUTCDate()} ${MES[d.getUTCMonth()]}`;
 }
 
-export function InternCalendar({ assignments, onDayPick, sinais = [], onMarcar }: Props) {
+export function InternCalendar({ assignments, onDayPick, sinais = [], onMarcar, mercado, onAbrirTrocas }: Props) {
   const hoje = localDateStr();
   const semanas = useMemo(() => montarFita(assignments), [assignments]);
   const [mostrarPassadas, setMostrarPassadas] = useState(false);
@@ -116,6 +122,17 @@ export function InternCalendar({ assignments, onDayPick, sinais = [], onMarcar }
     () => new Set([...colisoes.values()].map((s) => chave(s.date, s.period))),
     [colisoes],
   );
+
+  // Só as ofertas que dá para fechar: as fora do alcance não interessam no calendário.
+  const ofertasPorTurno = useMemo(() => {
+    const m = new Map<string, { baseName: string; caixa: string }[]>();
+    for (const o of mercado?.paraVoce ?? []) {
+      if (o.caixa === "FORA") continue;
+      const k = chave(o.date, o.period as TurnoDaFita);
+      m.set(k, [...(m.get(k) ?? []), o]);
+    }
+    return m;
+  }, [mercado]);
 
   const tiposEmUso = useMemo(() => {
     const tipos = new Set(assignments.map((a) => a.baseType ?? "USA"));
@@ -141,6 +158,7 @@ export function InternCalendar({ assignments, onDayPick, sinais = [], onMarcar }
     const temPlantao = (porData.get(date) ?? []).some((a) => a.period === period);
     if (modo === "VER" || !onMarcar) {
       if (temPlantao) onDayPick(date, porData.get(date) ?? []);
+      else if (ofertasPorTurno.get(chave(date, period))?.length) onAbrirTrocas?.();
       return;
     }
     if (date < hoje) return avisar("Esse dia já passou.");
@@ -180,6 +198,8 @@ export function InternCalendar({ assignments, onDayPick, sinais = [], onMarcar }
       outroColado,
       colisoes,
       outroColide: sinal?.signal === "OUTRO_SERVICO" && outrosQueColidem.has(chave(date, period)),
+      ofertas: sinal?.signal === "QUERO" || sinal?.signal === "POSSO" ? ofertasPorTurno.get(chave(date, period)) ?? [] : [],
+      procura: mercado?.procuraNosMeusPlantoes[chave(date, period)] ?? 0,
       marcando: modo !== "VER" && date >= hoje,
       onClick: () => tocar(date, period),
     };
@@ -354,6 +374,8 @@ function Faixa({
   outroColado,
   colisoes,
   outroColide,
+  ofertas,
+  procura,
   marcando,
   onClick,
 }: {
@@ -363,6 +385,8 @@ function Faixa({
   outroColado: SinalMarcado | null;
   colisoes: Map<string, SinalMarcado>;
   outroColide: boolean;
+  ofertas: { baseName: string; caixa: string }[];
+  procura: number;
   marcando: boolean;
   onClick: () => void;
 }) {
@@ -386,9 +410,20 @@ function Faixa({
             <span className="truncate font-mono text-[10px] uppercase tracking-wide opacity-70">Outro serviço</span>
           </>
         )}
+        {ehInteresse && ofertas.some((o) => o.caixa === "PERFEITA") && (
+          <Etiqueta className="bg-emerald-600 text-white">troca perfeita</Etiqueta>
+        )}
+        {ehInteresse && ofertas.length > 0 && !ofertas.some((o) => o.caixa === "PERFEITA") && (
+          <Etiqueta className="bg-[#D9961A] text-[#2A1A00]">{`${ofertas.length} oferta${ofertas.length > 1 ? "s" : ""}`}</Etiqueta>
+        )}
         {ehInteresse && (
           <span className={cn("truncate font-mono text-[10px] font-semibold uppercase tracking-wide", sinal.signal === "QUERO" ? (noite ? "text-[#F5C46A]" : "text-[#A16207]") : noite ? "text-[#8DB8FF]" : "text-[#1D4ED8]")}>
             {sinal.signal === "QUERO" ? "Quero plantão" : "Posso pegar"}
+          </span>
+        )}
+        {ehInteresse && ofertas.length > 0 && (
+          <span className="truncate text-[13px] font-semibold leading-tight">
+            {ofertas.map((o) => nomeCurtoDaBase(o.baseName)).join(" · ")}
           </span>
         )}
         {emDescanso && (
@@ -408,7 +443,7 @@ function Faixa({
       ehInteresse && CONTORNO[sinal.signal as "QUERO" | "POSSO"],
       outroColide && COLIDE,
     );
-    if (!marcando) return <div className={classe} style={fundo}>{conteudo}</div>;
+    if (!marcando && !(ehInteresse && ofertas.length > 0)) return <div className={classe} style={fundo}>{conteudo}</div>;
     return (
       <button
         type="button"
@@ -446,6 +481,9 @@ function Faixa({
               <Etiqueta className="bg-[#E0434B] text-white">
                 {`colide${colisao.label ? ` · ${colisao.label}` : ""}`}
               </Etiqueta>
+            )}
+            {procura > 0 && !colisao && (
+              <Etiqueta className="bg-[#D9961A] text-[#2A1A00]">{`${procura} ${procura > 1 ? "querem" : "quer"} este turno`}</Etiqueta>
             )}
             {a.status === "ABSENT" && <Etiqueta className="bg-red-500 text-white">Ausente</Etiqueta>}
             {a.status === "CHECKED_IN" && <Etiqueta className="bg-amber-400 text-amber-950">Em andamento</Etiqueta>}
