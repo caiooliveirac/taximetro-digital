@@ -5,29 +5,20 @@
  *
  * Privacidade: outro serviço de alguém nunca sai daqui. Quero/Posso de um
  * colega só aparece em dois lugares, ambos ligados a uma troca possível: na
- * oferta dele ("aceita seu plantão de X") e na oferta de quem tem o turno que
- * ele marcou (nome na lista de interessados). O resto sai em contagem.
+ * oferta dele ("marcou o turno do seu plantão de X") e na oferta de quem tem o
+ * turno que ele marcou (nome na lista de interessados). O resto sai em contagem.
  */
 
-import { addDaysToDateStr, hasShiftStarted, localDateStr } from "@/lib/utils";
 import {
   avaliarOferta,
   janelaDeTrocas,
   resumoDaOferta,
   visivelPara,
-  type ContextoDoMercado,
   type PlantaoDoMercado,
 } from "@/shared/domain/policies/swap-match-policy";
-import {
-  ofertasAbertas,
-  plantoesDaJanela,
-  plantoesEmSolicitacao,
-  sinaisDaJanela,
-} from "@/features/requests/infra/repositories/swap-market-repository";
+import { carregarMercado } from "./load-swap-market";
 import { findInternOverCruQuota } from "./handle-swap-peer-action";
 
-/** Até onde o mercado olha: ofertas raramente passam de dois meses à frente. */
-const HORIZONTE_DIAS = 90;
 const DIAS_DA_JANELA = 28;
 
 const chave = (date: string, period: string) => `${date.slice(0, 10)}|${period}`;
@@ -38,41 +29,17 @@ function plantaoResumido(p: PlantaoDoMercado) {
 
 export async function executeGetSwapMarket(params: { internId: string; facultyId: string | null; agora?: Date }) {
   const agora = params.agora ?? new Date();
-  const hoje = localDateStr(agora);
-  // Um dia para trás: a noite de ontem ainda vale para o descanso de hoje.
-  const de = addDaysToDateStr(hoje, -1);
+  const { hoje, ctx, ofertas, faculdadeDe } = await carregarMercado(agora);
 
-  const [linhas, sinais, todasOfertas, bloqueados] = await Promise.all([
-    plantoesDaJanela({ de, ate: addDaysToDateStr(hoje, HORIZONTE_DIAS + 1) }),
-    sinaisDaJanela({ de }),
-    ofertasAbertas({ de: hoje }),
-    plantoesEmSolicitacao(),
-  ]);
-
-  const nomes = new Map<string, string>();
-  const faculdadeDe = new Map<string, Set<string>>();
-  const plantoes: PlantaoDoMercado[] = linhas.map(({ nome, ...p }) => {
-    nomes.set(p.internId, nome);
-    faculdadeDe.set(p.internId, (faculdadeDe.get(p.internId) ?? new Set()).add(p.facultyId));
-    return p as PlantaoDoMercado;
-  });
   const minhasFaculdades = new Set(faculdadeDe.get(params.internId) ?? []);
   if (params.facultyId) minhasFaculdades.add(params.facultyId);
-
-  // Oferta cujo turno já começou não serve a ninguém.
-  const ofertas = todasOfertas.filter(
-    (o) => !hasShiftStarted(o.plantao.date.slice(0, 10), o.plantao.period, o.plantao.shift, agora),
-  );
   const visiveis = ofertas.filter((o) => visivelPara(o, params.internId, minhasFaculdades));
 
   // Cota de CRU: só de quem pode entrar numa troca de CRU que este interno vê.
-  const cotaCruUsada = new Set<string>();
   const precisamDeCota = new Set([params.internId, ...visiveis.filter((o) => o.plantao.baseType === "CENTRAL").map((o) => o.plantao.internId)]);
   for (const id of precisamDeCota) {
-    if (await findInternOverCruQuota([id], hoje)) cotaCruUsada.add(id);
+    if (await findInternOverCruQuota([id], hoje)) ctx.cotaCruUsada.add(id);
   }
-
-  const ctx: ContextoDoMercado = { agora, plantoes, sinais, bloqueados, cotaCruUsada, nomes };
 
   const paraVoce = visiveis.map((o) => {
     const a = avaliarOferta(o, params.internId, ctx);
@@ -102,8 +69,8 @@ export async function executeGetSwapMarket(params: { internId: string; facultyId
     });
 
   const procuraNosMeusPlantoes: Record<string, number> = {};
-  const meus = new Set(plantoes.filter((p) => p.internId === params.internId).map((p) => chave(p.date, p.period)));
-  for (const s of sinais) {
+  const meus = new Set(ctx.plantoes.filter((p) => p.internId === params.internId).map((p) => chave(p.date, p.period)));
+  for (const s of ctx.sinais) {
     if (s.internId === params.internId || s.signal === "OUTRO_SERVICO") continue;
     const k = chave(s.date, s.period);
     if (meus.has(k)) procuraNosMeusPlantoes[k] = (procuraNosMeusPlantoes[k] ?? 0) + 1;
@@ -112,7 +79,7 @@ export async function executeGetSwapMarket(params: { internId: string; facultyId
   return {
     paraVoce,
     minhasOfertas,
-    janela: janelaDeTrocas({ de: hoje, dias: DIAS_DA_JANELA, ofertas, sinais }),
+    janela: janelaDeTrocas({ de: hoje, dias: DIAS_DA_JANELA, ofertas, sinais: ctx.sinais }),
     procuraNosMeusPlantoes,
   };
 }

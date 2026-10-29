@@ -15,7 +15,7 @@ import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { localDateStr, getShiftShortLabel } from "@/lib/utils";
 import { temFeature } from "@/lib/instance";
 import type { MercadoDeTrocas } from "@/features/requests/application/use-cases/get-swap-market";
-import { CAIXAS, CartaoDaOferta, JanelaDeTrocas, ResumoDaOferta, turnoCurto } from "@/components/intern/mercado-de-trocas";
+import { BasesPreferidas, CAIXAS, CartaoDaOferta, JanelaDeTrocas, ResumoDaOferta, turnoCurto } from "@/components/intern/mercado-de-trocas";
 
 const COM_MERCADO = temFeature("sinaisDeTroca");
 
@@ -123,6 +123,12 @@ export default function InternTrocas() {
   const [proposeTarget, setProposeTarget] = useState<Request | null>(null);
   const [proposeAssignmentId, setProposeAssignmentId] = useState("");
 
+  // O mercado é um extra: se falhar, o mural simples continua lá.
+  const recarregarMercado = useCallback(async () => {
+    const mJson = await fetch("/taximetro/api/intern/trocas/mercado").then((r) => r.json()).catch(() => null);
+    setMercado(mJson?.success ? mJson.data : null);
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const from = localDateStr();
@@ -140,11 +146,7 @@ export default function InternTrocas() {
       if (rJson.success) setMyRequests(rJson.data);
       if (osJson.success) setOpenSwaps(osJson.data);
       if (shJson.success) setSwapHistory(shJson.data);
-      if (COM_MERCADO) {
-        // O mercado é um extra: se falhar, o mural simples continua lá.
-        const mJson = await fetch("/taximetro/api/intern/trocas/mercado").then((r) => r.json()).catch(() => null);
-        setMercado(mJson?.success ? mJson.data : null);
-      }
+      if (COM_MERCADO) await recarregarMercado();
       // Vindo do calendário ("Ofertar para troca"): já abre com o plantão
       // escolhido. Sai da URL para o recarregar depois de publicar não repetir.
       const ofertar = new URLSearchParams(window.location.search).get("ofertar");
@@ -157,7 +159,7 @@ export default function InternTrocas() {
       setMsg({ type: "error", text: "Erro ao carregar dados." });
     }
     setLoading(false);
-  }, []);
+  }, [recarregarMercado]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -370,6 +372,7 @@ export default function InternTrocas() {
           {/* Mercado: ofertas separadas pelo que resolvem para você */}
           {mercado && (
             <div className="space-y-5">
+              <BasesPreferidas onMudou={recarregarMercado} />
               {CAIXAS.map(({ caixa, titulo, explica }) => {
                 const lista = mercado.paraVoce
                   .filter((o) => o.caixa === caixa)

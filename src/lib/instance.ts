@@ -56,7 +56,12 @@ export type Feature =
    * Interno marca no calendário outro serviço, Quero e Posso. Alimenta as
    * trocas, nunca o sorteio. A Vitalmed já tem a indisponibilidade dela.
    */
-  | "sinaisDeTroca";
+  | "sinaisDeTroca"
+  /**
+   * A Dai avisa no chat quem marcou Quero/Posso quando aparece oferta de troca
+   * que cabe naquele turno. É mensagem real: liga só com aprovação do texto.
+   */
+  | "avisoDeTrocas";
 
 /**
  * A fonte da verdade. Ligar algo para o SAMU aqui é uma decisão explícita e
@@ -70,6 +75,7 @@ const FEATURES: Record<Instancia, Record<Feature, boolean>> = {
     liberacaoAutomatica: true,
     avisosDaDai: true,
     sinaisDeTroca: true,
+    avisoDeTrocas: false,
   },
   vitalmed: {
     adminLottery: true,
@@ -77,6 +83,7 @@ const FEATURES: Record<Instancia, Record<Feature, boolean>> = {
     liberacaoAutomatica: false,
     avisosDaDai: false,
     sinaisDeTroca: false,
+    avisoDeTrocas: false,
   },
 };
 

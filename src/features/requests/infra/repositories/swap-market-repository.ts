@@ -7,7 +7,7 @@
 import { and, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/shared/db/client";
-import { assignments, bases, faculties, internDaySignals, requests, users } from "@/shared/db/schema";
+import { assignments, bases, faculties, internBasePreferences, internDaySignals, requests, users } from "@/shared/db/schema";
 import type { OfertaAberta, PlantaoDoMercado, SinalDoMercado } from "@/shared/domain/policies/swap-match-policy";
 
 const camposDoPlantao = {
@@ -86,4 +86,43 @@ export async function plantoesEmSolicitacao(): Promise<Set<string>> {
     if (l.b) ids.add(l.b);
   }
   return ids;
+}
+
+/** Bases favoritas (1) e a evitar (-1) de todos os internos: internId → código da base → peso. */
+export async function preferenciasDeBase(): Promise<Map<string, Map<string, number>>> {
+  const linhas = await db
+    .select({ internId: internBasePreferences.internId, baseCode: bases.code, weight: internBasePreferences.weight })
+    .from(internBasePreferences)
+    .innerJoin(bases, eq(bases.id, internBasePreferences.baseId));
+  const m = new Map<string, Map<string, number>>();
+  for (const l of linhas) m.set(l.internId, (m.get(l.internId) ?? new Map()).set(l.baseCode, l.weight));
+  return m;
+}
+
+/** Bases de ambulância ativas: as únicas em que preferência faz sentido (CRU e CRL são uma só). */
+export async function basesDeAmbulancia() {
+  return db
+    .select({ id: bases.id, code: bases.code, name: bases.name })
+    .from(bases)
+    .where(and(eq(bases.type, "USA"), eq(bases.isActive, true)))
+    .orderBy(bases.code);
+}
+
+export async function preferenciasDoInterno(internId: string) {
+  return db
+    .select({ baseId: internBasePreferences.baseId, peso: internBasePreferences.weight })
+    .from(internBasePreferences)
+    .where(eq(internBasePreferences.internId, internId));
+}
+
+export async function gravarPreferencia(params: { internId: string; baseId: string; peso: number }) {
+  const { internId, baseId, peso } = params;
+  if (peso === 0) {
+    await db.delete(internBasePreferences).where(and(eq(internBasePreferences.internId, internId), eq(internBasePreferences.baseId, baseId)));
+    return;
+  }
+  await db
+    .insert(internBasePreferences)
+    .values({ internId, baseId, weight: peso })
+    .onConflictDoUpdate({ target: [internBasePreferences.internId, internBasePreferences.baseId], set: { weight: peso } });
 }

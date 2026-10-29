@@ -137,3 +137,16 @@ test("janela conta ofertas e Quero/Posso por turno, e ignora outro serviço", ()
   assert.deepEqual(j[0], { date: "2026-11-08", period: "DAY", ofertas: 1, procura: 2 });
   assert.equal(j[2].procura, 0);
 });
+
+test("base favorita sobe e base evitada desce dentro da caixa, sem mudar a caixa", () => {
+  const favorita = ctx([anaNoite, brunoDia], [], { preferencias: new Map([["ana", new Map([["CN10", 1]])]]) });
+  const evitada = ctx([anaNoite, brunoDia], [], { preferencias: new Map([["ana", new Map([["CN10", -1]])]]) });
+  const neutra = avaliarOferta(ofertaBruno, "ana", ctx([anaNoite, brunoDia]));
+  const a = avaliarOferta(ofertaBruno, "ana", favorita);
+  const b = avaliarOferta(ofertaBruno, "ana", evitada);
+  assert.equal(a.caixa, neutra.caixa);
+  assert.equal(b.caixa, neutra.caixa);
+  assert.ok(a.forca > neutra.forca && b.forca < neutra.forca);
+  assert.match(a.motivo, /bases favoritas/);
+  assert.match(b.motivo, /prefere evitar/);
+});
