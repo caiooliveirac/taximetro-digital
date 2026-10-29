@@ -11,7 +11,7 @@ function fac(over: Partial<FaculdadeNaVaga> & { facultyId: string }): FaculdadeN
   return { capacity: 1, blocked: false, eligible: true, assigned: 0, alreadyReleased: 0, ...over };
 }
 
-test("teto: diurno dois, BR60, BR05, PM04 e PM40 só um; noturno um, dois nas cinco bases", () => {
+test("teto: diurno dois, BR60, BR05, PM04 e PM40 só um; noturno um, dois só na SM01, CB02, PR03 e CN10", () => {
   assert.equal(capacidadeDaBase("PP20", "DAY"), 2);
   assert.equal(capacidadeDaBase("BR60", "DAY"), 1);
   assert.equal(capacidadeDaBase("BR05", "DAY"), 1);
@@ -21,7 +21,9 @@ test("teto: diurno dois, BR60, BR05, PM04 e PM40 só um; noturno um, dois nas ci
     assert.equal(capacidadeDaBase(code, "DAY"), 1);
     assert.equal(capacidadeDaBase(code, "NIGHT"), 1);
   }
-  for (const code of ["SM01", "CB02", "PR03", "CN10", "CC70"]) assert.equal(capacidadeDaBase(code, "NIGHT"), 2);
+  for (const code of ["SM01", "CB02", "PR03", "CN10"]) assert.equal(capacidadeDaBase(code, "NIGHT"), 2);
+  // CC70 à noite é um só: não tem cama para dois (Caio, 29/10).
+  assert.equal(capacidadeDaBase("CC70", "NIGHT"), 1);
   assert.equal(capacidadeDaBase("PM40", "NIGHT"), 1);
   assert.equal(capacidadeDaBase("LF90", "DAY"), null);
 });

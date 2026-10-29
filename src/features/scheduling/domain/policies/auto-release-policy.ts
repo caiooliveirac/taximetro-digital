@@ -33,7 +33,7 @@ export const LIBERACAO_AUTOMATICA_DESDE = "2026-10-27";
 
 
 const DIURNO_UMA_VAGA = new Set(["BR60", "BR05", "PM04", "PM40"]);
-const NOITE_DUPLA = new Set(["SM01", "CB02", "PR03", "CN10", "CC70"]);
+const NOITE_DUPLA = new Set(["SM01", "CB02", "PR03", "CN10"]);
 const FORA_DA_TABELA = new Set(["LF90"]);
 
 /** Teto de internos na base no turno; null = sem teto próprio (vale a grade). */

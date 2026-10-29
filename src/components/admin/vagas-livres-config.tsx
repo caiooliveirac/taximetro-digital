@@ -126,7 +126,7 @@ export function VagasLivresConfig() {
         <p className="mt-1">
           Capacidade da base que nenhuma faculdade tem na grade fica livre desde já, nos dias do rodízio das turmas abertas
           {data.semDono.ate ? <> (hoje até <span className="font-semibold text-slate-900">{br(data.semDono.ate)}</span>, fim da última turma)</> : " (nenhuma turma aberta agora)"}.
-          Diurno: duas por USA, menos BR60, BR05, PM04 e PM40 (só uma). Noturno: uma, e duas só na SM01, CB02, PR03, CN10 e CC70.
+          Diurno: duas por USA, menos BR60, BR05, PM04 e PM40 (só uma). Noturno: uma, e duas só na SM01, CB02, PR03 e CN10.
         </p>
         <p className="mt-2 text-slate-900">
           <span className="font-semibold">{data.semDono.abertas}</span> abertas ·{" "}
