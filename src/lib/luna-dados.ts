@@ -18,6 +18,7 @@ import { findInternOverCruQuota, findSwapRestConflict } from "@/features/request
 import { findPendingRequestByAssignment } from "@/features/requests/infra/repositories/request-repository";
 import { getRequestableSlots } from "@/lib/slots";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
+import { naRepescagem } from "@/features/extra-offers/application/repescagem";
 import { goalKindOf } from "@/lib/goal-slots";
 import { situacaoDoTurnoNaBase, type SituacaoDoTurno } from "@/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import { filaDeReposicao, type Fila } from "@/features/extra-offers/application/fila-de-reposicao";
@@ -153,6 +154,7 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
       return soAsQueCabem(vagas.map((v): Oferta => ({
         fonte: "LIBERADA", id: v.id, baseCode: v.baseCode, tipo: goalKindOf(v.baseType),
         date: dia(v.date), period: v.period as Periodo, shift: v.shift, faculdade: v.releasedFacultyAbbr ?? null,
+        repescagem: naRepescagem(dia(v.date), v.period as Periodo, v.shift),
       })));
     }),
 

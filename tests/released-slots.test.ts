@@ -75,7 +75,8 @@ test("CRU fixo não nasce em dia/turno que a faculdade liberou", () => {
 test("vaga livre: líder aloca interno de outra faculdade pela oferta, como plantão normal", () => {
   const src = readFileSync(path.join(process.cwd(), "src/features/extra-offers/application/use-cases/claim-extra-offer.ts"), "utf8");
   assert.match(src, /\["LEADER", "COORDINATOR"\]\.includes\(actor\.role\)/);
-  assert.match(src, /isExtraShift: !vagaLivre/);
+  assert.match(src, /const comoExtra = !vagaLivre \|\| Boolean\(metaNaRepescagem\?\.cumprida\)/);
+  assert.match(src, /isExtraShift: comoExtra/);
   assert.match(src, /action: "FREE_SLOT_USED"/);
 });
 

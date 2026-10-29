@@ -286,6 +286,7 @@ export async function listFreeOffers(params: { excludeFacultyId: string; from: s
       id: extraShiftOffers.id,
       baseId: extraShiftOffers.baseId,
       baseCode: bases.code,
+      baseName: bases.name,
       baseType: bases.type,
       date: extraShiftOffers.date,
       period: extraShiftOffers.period,

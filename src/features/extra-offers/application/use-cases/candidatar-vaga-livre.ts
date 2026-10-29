@@ -20,6 +20,7 @@ import { hasShiftStarted } from "@/lib/utils";
 import { candidaturaAberta, filaDeReposicao, textoDaFila } from "../fila-de-reposicao";
 import { metaDoInternoNoTipo } from "./free-slot-goal";
 import { pedirVagaLivre } from "./claim-extra-offer";
+import { naRepescagem } from "../repescagem";
 
 const erro = (status: number, code: string, error: string) => ({ status, body: { success: false, code, error } }) as const;
 
@@ -38,6 +39,7 @@ export async function executeCandidatarVagaLivre(params: {
   if (offer.releasedFacultyId === intern.facultyId) return erro(409, "PROPRIA_FACULDADE", "Sua faculdade liberou esta vaga para as outras.");
   const period = offer.period as "DAY" | "NIGHT";
   if (hasShiftStarted(offer.date, period, offer.shift)) return erro(400, "JA_COMECOU", "Esse turno já começou.");
+  if (naRepescagem(offer.date, period, offer.shift)) return erro(409, "REPESCAGEM", "Faltam poucas horas para esse turno: a vaga virou extra. Pegue direto na aba Extras.");
 
   const existente = await findAssignmentByInternSlot({ internId: intern.id, date: offer.date, period, shift: (offer.shift as "MORNING" | "AFTERNOON" | null) ?? null });
   if (existente && existente.status !== "CANCELLED") return erro(409, "JA_TEM_PLANTAO", "Você já tem plantão nesse dia e turno.");

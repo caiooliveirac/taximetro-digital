@@ -56,6 +56,8 @@ export type Oferta = {
   /** LIBERADA: faculdade que abriu mão; TROCA: faculdade do colega. */
   faculdade?: string | null;
   obs?: string | null;
+  /** LIBERADA a menos de 8h do turno: virou extra, qualquer um pega (repescagem.ts). */
+  repescagem?: boolean;
 };
 
 export type Status = "ELIGIBLE" | "REQUIRES_APPROVAL" | "INCOMPATIBLE" | "ALREADY_CLAIMED" | "INSUFFICIENT_DATA";
@@ -166,7 +168,7 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
   const choque = plantaoSemDescanso({ date: o.date, period: o.period, shift: o.shift, baseCode: o.baseCode }, ocupados);
   if (choque) return fora("SEM_DESCANSO", `sem 12h de descanso por causa do seu ${descreveTurno(choque)}`);
 
-  if (o.fonte === "LIBERADA" && faltaDoTipo <= 0) {
+  if (o.fonte === "LIBERADA" && faltaDoTipo <= 0 && !o.repescagem) {
     if (pedido.objetivo !== "meta" && o.tipo && pedido.candidatura?.includes(o.tipo)) {
       return { ...o, status: "REQUIRES_APPROVAL", motivo: null, porque: "candidatura: a coordenação decide (sua meta do tipo já fechou)", contaParaMeta: false, candidatura: true };
     }
@@ -195,14 +197,14 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
     if (faltaDoTipo <= 0) return fora("META_DO_TIPO_FECHADA", `sua meta de ${o.tipo} já está completa`);
   }
 
-  const avisos: string[] = [APROVACAO[o.fonte]];
-  if (o.fonte === "EXTRA") avisos.push("não conta para a meta");
+  const avisos: string[] = [o.repescagem ? "última hora: você pega direto na aba Extras, primeiro que pegar leva" : APROVACAO[o.fonte]];
+  if (o.fonte === "EXTRA" || (o.repescagem && !conta)) avisos.push(o.repescagem ? "entra como extra, não conta para a meta" : "não conta para a meta");
   // Só vale dizer "não ajuda a meta" para quem ainda precisa de algum tipo.
   else if (o.fonte !== "TROCA" && !conta && meta && Object.values(meta.faltam).some((n) => n > 0)) avisos.push(noRodizio ? "não ajuda a meta (tipo já completo)" : "depois do fim do rodízio");
   if (ofereco && !largar) avisos.push(`você daria o ${descreveTurno(ofereco)}`);
   return {
     ...o,
-    status: o.fonte === "EXTRA" ? "ELIGIBLE" : "REQUIRES_APPROVAL",
+    status: o.fonte === "EXTRA" || o.repescagem ? "ELIGIBLE" : "REQUIRES_APPROVAL",
     motivo: null,
     porque: avisos.join("; "),
     contaParaMeta: conta,

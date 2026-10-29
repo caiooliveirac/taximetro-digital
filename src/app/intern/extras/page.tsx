@@ -18,7 +18,10 @@ type Offer = {
   facultyId: string | null;
   facultyAbbreviation: string | null;
   notes: string | null;
-  publishedAt: string;
+  publishedAt: string | null;
+  /** Vaga livre a menos de 8h do turno: qualquer interno pega direto. */
+  repescagem?: boolean;
+  liberadaPor?: string | null;
 };
 
 /* ═══════════ Helpers ═══════════ */
@@ -106,6 +109,7 @@ export default function InternExtrasPage() {
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" strokeWidth={2} />
         <div className="text-xs text-amber-800">
           <strong>Atenção:</strong> Plantões extras <strong>não contabilizam carga horária obrigatória</strong> da rotação. São oportunidades adicionais fora da escala regular.
+          {" "}A exceção é a <strong>vaga livre de última hora</strong>: se ainda falta esse tipo na sua meta, ela conta.
         </div>
       </div>
 
@@ -157,6 +161,11 @@ export default function InternExtrasPage() {
                       <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                         {offer.period === "DAY" ? <span>☀️</span> : <span>🌙</span>} {periodLabel(offer.period, offer.shift)}
                       </span>
+                      {offer.repescagem && (
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+                          Vaga livre de última hora
+                        </span>
+                      )}
                       {offer.facultyAbbreviation && (
                         <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
                           {offer.facultyAbbreviation}
@@ -200,7 +209,9 @@ export default function InternExtrasPage() {
 
                 <div className="flex items-center gap-1 text-[10px] text-slate-400">
                   <Clock className="h-3 w-3" />
-                  Publicado {new Date(offer.publishedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  {offer.repescagem || !offer.publishedAt
+                    ? `${offer.liberadaPor ? `Liberada pela ${offer.liberadaPor}` : "Sem dono na grade"} e ninguém escalou: conta na meta se ainda falta ${offer.baseType === "CENTRAL" ? "CRU" : offer.baseType}`
+                    : `Publicado ${new Date(offer.publishedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
                 </div>
               </div>
             );

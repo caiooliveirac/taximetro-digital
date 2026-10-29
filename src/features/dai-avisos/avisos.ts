@@ -8,6 +8,9 @@
  *    mensagem por interno por dia.
  *  - lideres: de manhã, ao líder, o que da grade da faculdade está sem escala
  *    nos próximos 7 dias e quantos internos ainda precisam.
+ *  - repescagem: vaga livre que segue aberta 8h antes do turno virou extra
+ *    (repescagem.ts): vai a quem ainda precisa do tipo e a quem marcou Quero
+ *    no turno, uma vez por vaga para cada interno, com "pega direto".
  *  - trocas:  oferta de troca que apareceu num turno em que o interno marcou
  *    Quero/Posso no calendário e que ele consegue fechar (swap-match-policy.ts).
  *    Feature `avisoDeTrocas`: desligada até o texto ser aprovado; `?dry=1`
@@ -23,19 +26,21 @@ import { db } from "@/db";
 import { assignments, auditLog, bases, cohorts, extraShiftOffers, faculties, internMessages, userRoles, users } from "@/db/schema";
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import { AUDIT_CASO_ABERTO } from "@/lib/dai-casos";
+import { internDaySignals } from "@/db/schema";
+import { naRepescagem } from "@/features/extra-offers/application/repescagem";
 import { GOAL_KINDS, goalKindOf, type GoalKind } from "@/lib/goal-slots";
 import { quando } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr, hasShiftStarted, localDateStr } from "@/lib/utils";
 import { plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
 import { idDaDai } from "./remetente";
-import { temaParaPlantao, textoProximoPlantao, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type VagaAvisada } from "./textos";
+import { temaParaPlantao, textoProximoPlantao, textoRepescagem, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type VagaAvisada } from "./textos";
 import { carregarMercado, type FotografiaDoMercado } from "@/features/requests/application/use-cases/load-swap-market";
 import { findInternOverCruQuota } from "@/features/requests/application/use-cases/handle-swap-peer-action";
 import { avaliarOferta, visivelPara, type Avaliacao, type OfertaAberta } from "@/shared/domain/policies/swap-match-policy";
 
-export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS" } as const;
-export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas";
+export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM" } as const;
+export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas" | "repescagem";
 export type ResultadoDosAvisos = { tipo: TipoDeAviso; enviados: number; considerados: number; dry: boolean; amostra?: string };
 
 type Envio = { para: string; texto: string; action: string; entityId: string; payload: Record<string, unknown> };
@@ -123,11 +128,13 @@ const diasEntre = (de: string, ate: string) => Math.round((Date.parse(`${ate}T12
  * faculdade, sem plantão no turno e com 12h de descanso. Todos que precisam
  * recebem; para não mandar as mesmas 3 vagas a todo mundo, quem tem mais
  * casinha vazia por dia de rodízio que resta escolhe primeiro e cada um
- * recebe as vagas menos citadas até ali. Pura, para teste.
+ * recebe as vagas menos citadas até ali. Na repescagem, quem marcou Quero
+ * no turno (`quer`, "data|turno") também serve, mesmo de meta fechada: vem
+ * por último, urgência zero. Pura, para teste.
  */
 export function vagasParaCadaInterno(
   vagas: Vaga[],
-  internos: { userId: string; facultyId: string | null; inicio: string | null; fim: string | null; faltam: Record<GoalKind, number> }[],
+  internos: { userId: string; facultyId: string | null; inicio: string | null; fim: string | null; faltam: Record<GoalKind, number>; quer?: Set<string> }[],
   turnosDe: Map<string, TurnoDePlantao[]>,
   jaAvisadas: Map<string, Set<string>>,
   hoje: string,
@@ -140,7 +147,7 @@ export function vagasParaCadaInterno(
     const turnos = turnosDe.get(i.userId) ?? [];
     const avisadas = jaAvisadas.get(i.userId) ?? new Set();
     const servem = vagas.filter((v) =>
-      i.faltam[v.tipo] > 0 &&
+      (i.faltam[v.tipo] > 0 || Boolean(i.quer?.has(`${v.date}|${v.period}`))) &&
       (!i.inicio || v.date >= i.inicio) && (!i.fim || v.date <= i.fim) &&
       v.releasedFacultyId !== i.facultyId &&
       !avisadas.has(v.id) &&
@@ -156,9 +163,8 @@ export function vagasParaCadaInterno(
   return saida;
 }
 
-async function avisarVagas(now: Date, dry: boolean): Promise<ResultadoDosAvisos> {
-  const hoje = localDateStr(now);
-  const ate = addDaysToDateStr(hoje, JANELA_VAGAS_DIAS - 1);
+/** Vagas livres abertas de `de` a `ate`, que cabem na viatura e cujo turno não começou. */
+async function vagasLivresAbertas(de: string, ate: string, now: Date): Promise<Vaga[]> {
   const ofertas = await db
     .select({ id: extraShiftOffers.id, baseCode: bases.code, baseType: bases.type, date: extraShiftOffers.date, period: extraShiftOffers.period, shift: extraShiftOffers.shift, releasedFacultyId: extraShiftOffers.releasedFacultyId, liberadaPor: faculties.abbreviation })
     .from(extraShiftOffers)
@@ -167,42 +173,59 @@ async function avisarVagas(now: Date, dry: boolean): Promise<ResultadoDosAvisos>
     .where(and(
       or(isNotNull(extraShiftOffers.releasedFacultyId), eq(extraShiftOffers.autoRelease, "SEM_DONO")),
       isNull(extraShiftOffers.claimedBy), isNull(extraShiftOffers.cancelledAt), isNull(extraShiftOffers.reservedBy),
-      // Vaga de hoje não dá tempo de pedir ao líder e ele escalar.
-      gte(extraShiftOffers.date, addDaysToDateStr(hoje, 1)), lte(extraShiftOffers.date, ate),
+      gte(extraShiftOffers.date, de), lte(extraShiftOffers.date, ate),
     ))
     .orderBy(extraShiftOffers.date, extraShiftOffers.period);
-  const vagas: Vaga[] = await soAsQueCabem(ofertas
+  return soAsQueCabem(ofertas
     .map((o) => ({ ...o, date: dia(o.date), period: o.period as "DAY" | "NIGHT", tipo: goalKindOf(o.baseType) }))
     .filter((o): o is typeof o & { tipo: GoalKind } => Boolean(o.tipo) && !hasShiftStarted(o.date, o.period, o.shift, now)));
-  if (!vagas.length) return { tipo: "vagas", enviados: 0, considerados: 0, dry };
+}
 
-  const tiposAbertos = new Set(vagas.map((v) => v.tipo));
-  const { data } = await executeGetComplianceOverview({ actor: { id: "", role: "COORDINATOR", facultyId: null } });
-  const internos = data
-    .map((r) => ({
-      userId: r.userId,
-      facultyId: r.facultyId ?? null,
-      inicio: r.rotationStartDate ? dia(r.rotationStartDate) : null,
-      fim: r.rotationEndDate ? dia(r.rotationEndDate) : null,
-      faltam: { USA: r.missingUSA, CRU: r.missingCRU, CRL: r.missingCRL },
-    }))
-    .filter((i) => GOAL_KINDS.some((k) => tiposAbertos.has(k) && i.faltam[k] > 0));
-  if (!internos.length) return { tipo: "vagas", enviados: 0, considerados: vagas.length, dry };
-
-  const ids = internos.map((i) => i.userId);
-  const [plantoes, historico] = await Promise.all([
-    db.select({ internId: assignments.internId, date: assignments.date, period: assignments.period, shift: assignments.shift, baseCode: bases.code })
-      .from(assignments)
-      .innerJoin(bases, eq(bases.id, assignments.baseId))
-      .where(and(inArray(assignments.internId, ids), ne(assignments.status, "CANCELLED"), gte(assignments.date, addDaysToDateStr(hoje, -1)), lte(assignments.date, addDaysToDateStr(ate, 1)))),
-    db.select({ para: auditLog.entityId, payload: auditLog.payload, em: auditLog.createdAt })
-      .from(auditLog)
-      .where(and(eq(auditLog.action, AVISO.VAGAS), inArray(auditLog.entityId, ids), gte(auditLog.createdAt, new Date(now.getTime() - 15 * 24 * 60 * 60_000)))),
-  ]);
+/** Plantões não cancelados dos internos entre as datas, como turnos para a regra das 12h. */
+async function turnosDosInternos(ids: string[], de: string, ate: string) {
+  const plantoes = await db.select({ internId: assignments.internId, date: assignments.date, period: assignments.period, shift: assignments.shift, baseCode: bases.code })
+    .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
+    .where(and(inArray(assignments.internId, ids), ne(assignments.status, "CANCELLED"), gte(assignments.date, de), lte(assignments.date, ate)));
   const turnosDe = new Map<string, TurnoDePlantao[]>();
   for (const p of plantoes) {
     turnosDe.set(p.internId, [...(turnosDe.get(p.internId) ?? []), { date: dia(p.date), period: p.period as "DAY" | "NIGHT", shift: p.shift, baseCode: p.baseCode }]);
   }
+  return turnosDe;
+}
+
+async function internosDoCompliance() {
+  const { data } = await executeGetComplianceOverview({ actor: { id: "", role: "COORDINATOR", facultyId: null } });
+  return data.map((r) => ({
+    userId: r.userId,
+    facultyId: r.facultyId ?? null,
+    inicio: r.rotationStartDate ? dia(r.rotationStartDate) : null,
+    fim: r.rotationEndDate ? dia(r.rotationEndDate) : null,
+    faltam: { USA: r.missingUSA, CRU: r.missingCRU, CRL: r.missingCRL } as Record<GoalKind, number>,
+  }));
+}
+
+async function avisarVagas(now: Date, dry: boolean): Promise<ResultadoDosAvisos> {
+  const hoje = localDateStr(now);
+  const ate = addDaysToDateStr(hoje, JANELA_VAGAS_DIAS - 1);
+  // Vaga de hoje não dá tempo de pedir ao líder e ele escalar; a de última
+  // hora vai no aviso da repescagem, que diz "pega direto".
+  const vagas = (await vagasLivresAbertas(addDaysToDateStr(hoje, 1), ate, now))
+    .filter((v) => !naRepescagem(v.date, v.period, v.shift, now));
+  if (!vagas.length) return { tipo: "vagas", enviados: 0, considerados: 0, dry };
+
+  const tiposAbertos = new Set(vagas.map((v) => v.tipo));
+  const internos = (await internosDoCompliance())
+    .filter((i) => GOAL_KINDS.some((k) => tiposAbertos.has(k) && i.faltam[k] > 0));
+  if (!internos.length) return { tipo: "vagas", enviados: 0, considerados: vagas.length, dry };
+
+  const ids = internos.map((i) => i.userId);
+  const [turnosDe, historico] = await Promise.all([
+    turnosDosInternos(ids, addDaysToDateStr(hoje, -1), addDaysToDateStr(ate, 1)),
+    db.select({ para: auditLog.entityId, payload: auditLog.payload, em: auditLog.createdAt })
+      .from(auditLog)
+      .where(and(eq(auditLog.action, AVISO.VAGAS), inArray(auditLog.entityId, ids), gte(auditLog.createdAt, new Date(now.getTime() - 15 * 24 * 60 * 60_000)))),
+  ]);
   const jaAvisadas = new Map<string, Set<string>>();
   const avisadoHoje = new Set<string>();
   for (const h of historico) {
@@ -223,6 +246,70 @@ async function avisarVagas(now: Date, dry: boolean): Promise<ResultadoDosAvisos>
   }));
   await enviar(envios, dry);
   return { tipo: "vagas", enviados: envios.length, considerados: internos.length, dry, amostra: envios[0]?.texto };
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Vaga livre de última hora (repescagem.ts): as que entraram na janela desde a
+ * última rodada. Não segue o limite de uma mensagem por dia do aviso de vagas
+ * — é a última chance da vaga —, mas cada vaga vai uma vez só a cada interno.
+ */
+async function avisarRepescagem(now: Date, dry: boolean): Promise<ResultadoDosAvisos> {
+  const hoje = localDateStr(now);
+  const amanha = addDaysToDateStr(hoje, 1);
+  const vagas = (await vagasLivresAbertas(hoje, amanha, now)).filter((v) => naRepescagem(v.date, v.period, v.shift, now));
+  if (!vagas.length) return { tipo: "repescagem", enviados: 0, considerados: 0, dry };
+
+  const tiposAbertos = new Set(vagas.map((v) => v.tipo));
+  const turnosAbertos = new Set(vagas.map((v) => `${v.date}|${v.period}`));
+  const [todos, sinais] = await Promise.all([
+    internosDoCompliance(),
+    db.select({ internId: internDaySignals.internId, date: internDaySignals.date, period: internDaySignals.period, signal: internDaySignals.signal, label: internDaySignals.label })
+      .from(internDaySignals)
+      .where(and(gte(internDaySignals.date, addDaysToDateStr(hoje, -1)), lte(internDaySignals.date, addDaysToDateStr(amanha, 1)))),
+  ]);
+  const quer = new Map<string, Set<string>>();
+  for (const s of sinais) {
+    const turno = `${dia(s.date)}|${s.period}`;
+    if (s.signal === "QUERO" && turnosAbertos.has(turno)) quer.set(s.internId, (quer.get(s.internId) ?? new Set()).add(turno));
+  }
+  const internos = todos
+    .map((i) => ({ ...i, quer: quer.get(i.userId) }))
+    .filter((i) => i.quer || GOAL_KINDS.some((k) => tiposAbertos.has(k) && i.faltam[k] > 0));
+  if (!internos.length) return { tipo: "repescagem", enviados: 0, considerados: vagas.length, dry };
+
+  const ids = internos.map((i) => i.userId);
+  const [turnosDe, historico] = await Promise.all([
+    turnosDosInternos(ids, addDaysToDateStr(hoje, -1), addDaysToDateStr(amanha, 1)),
+    db.select({ para: auditLog.entityId, payload: auditLog.payload })
+      .from(auditLog)
+      .where(and(eq(auditLog.action, AVISO.REPESCAGEM), inArray(auditLog.entityId, ids), gte(auditLog.createdAt, new Date(now.getTime() - 3 * 24 * 60 * 60_000)))),
+  ]);
+  // Outro serviço (plantão fora do SAMU) também pede 12h de descanso.
+  const idsSet = new Set(ids);
+  for (const s of sinais) {
+    if (s.signal !== "OUTRO_SERVICO" || !idsSet.has(s.internId)) continue;
+    turnosDe.set(s.internId, [...(turnosDe.get(s.internId) ?? []), { date: dia(s.date), period: s.period as "DAY" | "NIGHT", shift: null, baseCode: s.label ?? "outro serviço" }]);
+  }
+  const jaAvisadas = new Map<string, Set<string>>();
+  for (const h of historico) {
+    if (!h.para) continue;
+    const s = jaAvisadas.get(h.para) ?? new Set<string>();
+    for (const id of ((h.payload as { ofertas?: string[] } | null)?.ofertas ?? [])) s.add(id);
+    jaAvisadas.set(h.para, s);
+  }
+
+  const porInterno = vagasParaCadaInterno(vagas, internos, turnosDe, jaAvisadas, hoje);
+  const envios: Envio[] = [...porInterno].map(([para, lista]) => ({
+    para,
+    texto: textoRepescagem(lista.map((v): VagaAvisada => ({ baseCode: v.baseCode, quando: quando(v.date, v.period, v.shift), tipo: v.tipo, liberadaPor: v.liberadaPor }))),
+    action: AVISO.REPESCAGEM,
+    entityId: para,
+    payload: { ofertas: lista.map((v) => v.id) },
+  }));
+  await enviar(envios, dry);
+  return { tipo: "repescagem", enviados: envios.length, considerados: internos.length, dry, amostra: envios[0]?.texto };
 }
 
 // ---------------------------------------------------------------------------
@@ -367,5 +454,6 @@ export async function executarAvisosDaDai(tipo: TipoDeAviso, params: { now?: Dat
   if (tipo === "plantao") return avisarPlantao(now, dry);
   if (tipo === "vagas") return avisarVagas(now, dry);
   if (tipo === "trocas") return avisarTrocas(now, dry);
+  if (tipo === "repescagem") return avisarRepescagem(now, dry);
   return avisarLideres(now, dry);
 }

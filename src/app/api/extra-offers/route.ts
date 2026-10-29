@@ -4,6 +4,7 @@ import {
   listExtraOffers,
   listExtraOffersForAdmin,
 } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
+import { vagasNaRepescagem } from "@/features/extra-offers/application/repescagem";
 import {
   executePublishExtraOffer,
   publishExtraOfferSchema,
@@ -43,7 +44,16 @@ export async function GET(req: NextRequest) {
     ? await listExtraOffersForAdmin()
     : await listExtraOffers({ includeUnavailable });
 
-  return NextResponse.json({ success: true, data: rows });
+  // Vaga livre a menos de 8h do turno também é extra para o interno (repescagem.ts).
+  const repescagem = user.role === "INTERN" && !includeUnavailable && user.facultyId
+    ? (await vagasNaRepescagem(user.facultyId)).map((v) => ({
+      id: v.id, baseId: v.baseId, baseCode: v.baseCode, baseName: v.baseName, baseType: v.baseType,
+      date: v.date, period: v.period, shift: v.shift, facultyId: null, facultyAbbreviation: null, notes: null,
+      publishedAt: null, repescagem: true, liberadaPor: v.releasedFacultyAbbr ?? null,
+    }))
+    : [];
+
+  return NextResponse.json({ success: true, data: [...repescagem, ...rows] });
 }
 
 /* ═══════════ POST — publish offer ═══════════ */
