@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import {
   Send, CheckCircle, AlertCircle, ArrowLeftRight,
   PlusCircle, Sun, Moon, X,
-  HandshakeIcon, Clock, ShieldCheck,
+  HandshakeIcon, Clock, ShieldCheck, MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +62,22 @@ const DAY_LABEL: Record<string, string> = { MON: "Seg", TUE: "Ter", WED: "Qua", 
 function fmtDate(d: string) {
   return new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
+function turnoTexto(period: string | null, shift?: string | null) {
+  return shift ? getShiftShortLabel(shift) : period === "NIGHT" ? "noturno" : "diurno";
+}
+
+/** Abre a conversa com o colega já com uma primeira mensagem sugerida. */
+function ConversarLink({ com, troca, texto }: { com: string; troca: string; texto: string }) {
+  return (
+    <Link
+      href={`/intern/mensagens?com=${com}&troca=${troca}&texto=${encodeURIComponent(texto)}`}
+      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+    >
+      <MessageCircle className="h-3 w-3" /> Conversar
+    </Link>
+  );
+}
+
 function PeriodIcon({ period }: { period: string }) {
   return period === "DAY"
     ? <Sun className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.5} />
@@ -261,6 +278,13 @@ export default function InternTrocas() {
                         <Button size="sm" variant="outline" onClick={() => rejectProposal(r.id)} disabled={submitting} className="gap-1.5 text-xs h-7 px-3">
                           <X className="h-3 w-3" /> Recusar
                         </Button>
+                        {r.targetInternId && (
+                          <ConversarLink
+                            com={r.targetInternId}
+                            troca={r.id}
+                            texto={`Oi! Vi sua proposta para o meu ${r.baseCode} de ${r.assignmentDate ? fmtDate(r.assignmentDate) : ""}.`}
+                          />
+                        )}
                       </div>
                     </div>
                   )}
@@ -291,9 +315,16 @@ export default function InternTrocas() {
                   </div>
                   <p className="text-[11px] text-slate-500">Seu plantão continua mantido na escala enquanto {r.requesterName} não confirmar.</p>
                   <div className="pt-1">
-                    <Button size="sm" variant="outline" onClick={() => withdrawProposal(r.id)} disabled={submitting} className="gap-1.5 text-xs h-7 px-3">
-                      <X className="h-3 w-3" /> Desistir da proposta
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => withdrawProposal(r.id)} disabled={submitting} className="gap-1.5 text-xs h-7 px-3">
+                        <X className="h-3 w-3" /> Desistir da proposta
+                      </Button>
+                      <ConversarLink
+                        com={r.requesterId}
+                        troca={r.id}
+                        texto={`Oi! Te mandei uma proposta pelo seu ${r.baseCode} de ${r.assignmentDate ? fmtDate(r.assignmentDate) : ""}. Topa?`}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -337,9 +368,16 @@ export default function InternTrocas() {
                       </div>
                     </div>
                   ) : (
-                    <Button size="sm" variant="outline" onClick={() => setProposeTarget(r)} className="gap-1.5 text-xs h-7">
-                      <ArrowLeftRight className="h-3 w-3" /> Propor Troca
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setProposeTarget(r)} className="gap-1.5 text-xs h-7">
+                        <ArrowLeftRight className="h-3 w-3" /> Propor Troca
+                      </Button>
+                      <ConversarLink
+                        com={r.requesterId}
+                        troca={r.id}
+                        texto={`Oi! Vi sua oferta do ${r.baseCode} de ${r.assignmentDate ? fmtDate(r.assignmentDate) : ""} (${turnoTexto(r.assignmentPeriod, r.assignmentShift)}). Tenho interesse — o que você procura em troca?`}
+                      />
+                    </div>
                   )}
                 </div>
               ))}
