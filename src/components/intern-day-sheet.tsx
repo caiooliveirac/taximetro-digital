@@ -23,9 +23,11 @@ type Props = {
   dateStr: string | null;
   assignments: CalendarAssignment[];
   onClose: () => void;
+  /** Por plantão, o aviso de colisão com outro serviço do interno. */
+  colisoes?: Record<string, string>;
 };
 
-export function InternDaySheet({ open, dateStr, assignments, onClose }: Props) {
+export function InternDaySheet({ open, dateStr, assignments, onClose, colisoes }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -78,7 +80,7 @@ export function InternDaySheet({ open, dateStr, assignments, onClose }: Props) {
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           {assignments.map((a) => (
-            <AssignmentCard key={a.id} assignment={a} />
+            <AssignmentCard key={a.id} assignment={a} colisao={colisoes?.[a.id]} />
           ))}
         </div>
       </div>
@@ -86,7 +88,7 @@ export function InternDaySheet({ open, dateStr, assignments, onClose }: Props) {
   );
 }
 
-function AssignmentCard({ assignment: a }: { assignment: CalendarAssignment }) {
+function AssignmentCard({ assignment: a, colisao }: { assignment: CalendarAssignment; colisao?: string }) {
   const tipo = estiloDoTipo(a.baseType);
   const ps = getPeriodStyle(a.period);
   const canOffer =
@@ -103,6 +105,12 @@ function AssignmentCard({ assignment: a }: { assignment: CalendarAssignment }) {
         "space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]",
       )}
     >
+      {colisao && (
+        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-inset ring-red-200">
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-600">Colide com outro serviço</p>
+          {colisao}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <p className="text-xs font-medium text-slate-500">{rotuloDoTipo(a.baseType)}</p>

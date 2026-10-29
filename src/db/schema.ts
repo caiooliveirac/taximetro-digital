@@ -519,3 +519,26 @@ export const internMessages = pgTable("intern_messages", {
   index("idx_intern_messages_to_unread").on(t.toUserId, t.readAt),
   index("idx_intern_messages_pair").on(t.fromUserId, t.toUserId, t.createdAt),
 ]);
+
+// ── Sinais do interno sobre os próprios turnos (calendário) ──────────────────
+// O interno marca no calendário o que só ele sabe: em que turno tem plantão
+// fora do SAMU (OUTRO_SERVICO) e em quais quer (QUERO) ou topa (POSSO) pegar
+// plantão. Serve às trocas — nunca ao sorteio. Por isso é tabela própria, e não
+// `intern_unavailability`, que na Vitalmed é bloqueio do sorteio.
+// Só o próprio interno vê os seus. Regras em day-signal-policy.ts.
+export const daySignalEnum = pgEnum("day_signal", ["OUTRO_SERVICO", "QUERO", "POSSO"]);
+
+export const internDaySignals = pgTable("intern_day_signals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  internId: uuid("intern_id").notNull().references(() => users.id),
+  date: date("date").notNull(),
+  period: shiftPeriodEnum("period").notNull(),
+  signal: daySignalEnum("signal").notNull(),
+  // Onde é o outro serviço ("UPA", "HGE"), se o interno quiser dizer.
+  label: varchar("label", { length: 60 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_day_signal_intern_slot").on(t.internId, t.date, t.period),
+  index("idx_day_signal_date").on(t.date),
+]);

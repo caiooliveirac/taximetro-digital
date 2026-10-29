@@ -6,10 +6,17 @@ import { ptBR } from "date-fns/locale";
 import { CalendarDays } from "lucide-react";
 import { InternCalendar, type CalendarAssignment } from "@/components/intern-calendar";
 import { InternDaySheet } from "@/components/intern-day-sheet";
+import { temFeature } from "@/lib/instance";
+import {
+  colisoesComOutroServico,
+  type SinalDoDia,
+  type SinalMarcado,
+} from "@/shared/domain/policies/day-signal-policy";
 
 type ApiAssignment = CalendarAssignment & { internId?: string };
 
 const DONE_STATUSES = new Set(["CHECKED_OUT", "VALIDATED", "APPROVED"]);
+const COM_SINAIS = temFeature("sinaisDeTroca");
 
 export default function InternCalendarPage() {
   const [assignments, setAssignments] = useState<CalendarAssignment[]>([]);
@@ -17,6 +24,7 @@ export default function InternCalendarPage() {
   const [error, setError] = useState("");
   const [sheetDate, setSheetDate] = useState<string | null>(null);
   const [sheetItems, setSheetItems] = useState<CalendarAssignment[]>([]);
+  const [sinais, setSinais] = useState<SinalMarcado[]>([]);
 
   useEffect(() => {
     fetch("/taximetro/api/assignments?selfOnly=true")
@@ -31,7 +39,48 @@ export default function InternCalendarPage() {
       })
       .catch(() => setError("Não foi possível carregar seus plantões."))
       .finally(() => setLoading(false));
+    if (COM_SINAIS) {
+      fetch("/taximetro/api/intern/sinais")
+        .then((r) => r.json())
+        .then((json) => { if (json?.success) setSinais(json.data); })
+        .catch(() => {});
+    }
   }, []);
+
+  // Grava na hora na tela e volta atrás se o servidor recusar.
+  const marcar = async (date: string, period: "DAY" | "NIGHT", signal: SinalDoDia | null, label?: string) => {
+    const doTurno = (s: SinalMarcado) => s.date === date && s.period === period;
+    const trocar = (novo: SinalMarcado | null) =>
+      setSinais((atuais) => [...atuais.filter((s) => !doTurno(s)), ...(novo ? [novo] : [])]);
+    const anterior = sinais.find(doTurno) ?? null;
+    trocar(signal ? { date, period, signal, label: label || null } : null);
+    try {
+      const r = await fetch("/taximetro/api/intern/sinais", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, period, signal, label }),
+      });
+      const json = await r.json().catch(() => null);
+      if (!r.ok || !json?.success) {
+        trocar(anterior);
+        return json?.error ?? "Não foi possível salvar. Tente de novo.";
+      }
+      return null;
+    } catch {
+      trocar(anterior);
+      return "Sem conexão. Tente de novo.";
+    }
+  };
+
+  const colisoes = useMemo(() => {
+    const texto: Record<string, string> = {};
+    for (const [id, s] of colisoesComOutroServico(assignments, sinais)) {
+      const d = new Date(`${s.date}T12:00:00`);
+      const quando = `${format(d, "EEE d/MM", { locale: ptBR })} ${s.period === "DAY" ? "diurno" : "noturno"}`;
+      texto[id] = `Seu outro serviço${s.label ? ` em ${s.label}` : ""} (${quando}) fica colado neste plantão: seriam 24h seguidas. Para cumprir os dois, oferte este plantão para troca.`;
+    }
+    return texto;
+  }, [assignments, sinais]);
 
   const rotationBounds = useMemo(() => {
     if (assignments.length === 0) return null;
@@ -92,7 +141,12 @@ export default function InternCalendarPage() {
           Nenhum plantão escalado.
         </div>
       ) : (
-        <InternCalendar assignments={assignments} onDayPick={handleDayPick} />
+        <InternCalendar
+          assignments={assignments}
+          onDayPick={handleDayPick}
+          sinais={sinais}
+          onMarcar={COM_SINAIS ? marcar : undefined}
+        />
       )}
 
       <InternDaySheet
@@ -100,6 +154,7 @@ export default function InternCalendarPage() {
         dateStr={sheetDate}
         assignments={sheetItems}
         onClose={closeSheet}
+        colisoes={colisoes}
       />
     </div>
   );

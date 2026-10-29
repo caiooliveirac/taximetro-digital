@@ -1,7 +1,12 @@
 # PLAN — Calendário do interno vira painel de trocas
 
-Status: Fase 1 implementada em 2026-10-29 (`src/components/intern-calendar.tsx`,
-`src/lib/fita-turnos.ts`); Fases 2–4 propostas.
+Status: Fases 1 e 2 implementadas em 2026-10-29 (`src/components/intern-calendar.tsx`,
+`src/lib/fita-turnos.ts`, `src/shared/domain/policies/day-signal-policy.ts`,
+tabela `intern_day_signals`); Fases 3–4 propostas. Prévia da Fase 3 no portal:
+`mnrs-portal/portal/_portal/demo/taximetro-trocas.html`.
+
+Decisão da Fase 2: tabela própria, não `intern_unavailability` — na Vitalmed
+aquela tabela é bloqueio do sorteio, e os sinais aqui servem só às trocas.
 
 ## 1. O que está errado hoje (verificado)
 
