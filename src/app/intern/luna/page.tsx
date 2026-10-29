@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeftRight, CalendarClock, Loader2, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Target, Ticket, Zap } from "lucide-react";
+import { ArrowLeftRight, CalendarClock, ClipboardCheck, Loader2, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Target, Ticket, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LunaCartao, LunaMemoria } from "@/lib/luna-ferramentas";
@@ -16,8 +16,8 @@ const GUARDA = "luna-interno-conversa";
 // Os atalhos caem no caminho direto do Dai (sem modelo): ver luna-roteador.ts.
 // "Discutir um caso" nem passa pelo Dai de plantões: é texto pronto (dai-casos.ts).
 const ATALHOS = [
-  { icone: Sparkles, rotulo: "Consigo fechar minha meta?", pergunta: "Consigo fechar minha meta?" },
-  { icone: Target, rotulo: "Quanto falta pra minha meta?", pergunta: "Quanto falta para fechar minha meta?" },
+  { icone: Target, rotulo: "Que vagas fecham minha meta?", pergunta: "Que vagas fecham minha meta?" },
+  { icone: ClipboardCheck, rotulo: "Tenho checkout pendente?", pergunta: "Tenho checkout pendente?" },
   { icone: Ticket, rotulo: "Tem vaga liberada pra mim?", pergunta: "Tem vaga liberada pra mim?" },
   { icone: ArrowLeftRight, rotulo: "Quero trocar um plantão", pergunta: "Quero trocar um plantão: que trocas servem pra mim?" },
   { icone: Zap, rotulo: "Tem extra aberto?", pergunta: "Tem plantão extra aberto pra mim?" },
@@ -53,6 +53,37 @@ function Texto({ texto }: { texto: string }) {
   return <div className="space-y-1.5">{blocos}</div>;
 }
 
+/** Candidatura a vaga livre: o próprio interno pede, a coordenação decide. */
+function Candidatar({ offerId }: { offerId: string }) {
+  const [estado, setEstado] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  if (estado) {
+    return <span className={cn("max-w-[55%] text-right text-xs", estado.ok ? "text-emerald-700" : "text-amber-700")}>{estado.texto}</span>;
+  }
+  return (
+    <button
+      type="button"
+      disabled={enviando}
+      onClick={async () => {
+        setEnviando(true);
+        const r = await fetch("/taximetro/api/intern/vagas-livres/candidatura", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ offerId }),
+        }).catch(() => null);
+        const j = r ? await r.json().catch(() => null) : null;
+        setEnviando(false);
+        setEstado(j?.success
+          ? { ok: true, texto: j.data?.already ? "Você já se candidatou." : "Candidatura enviada à coordenação." }
+          : { ok: false, texto: j?.error ?? "Sem conexão. Tente de novo." });
+      }}
+      className="shrink-0 rounded-full bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700 disabled:opacity-50"
+    >
+      {enviando ? "Enviando…" : "Me candidatar"}
+    </button>
+  );
+}
+
 function Cartao({ cartao }: { cartao: LunaCartao }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -69,6 +100,7 @@ function Cartao({ cartao }: { cartao: LunaCartao }) {
                 <MapPin className="h-4 w-4" />
               </Link>
             ) : null}
+            {item.candidatar ? <Candidatar offerId={item.candidatar} /> : null}
             {item.href && item.acao ? (
               <Link href={item.href} className="shrink-0 rounded-full bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700">
                 {item.acao}

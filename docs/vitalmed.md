@@ -125,7 +125,9 @@ Migrations e seed rodam do notebook via túnel SSH (o PG só escuta em loopback)
 ```bash
 ssh -fN -L 15432:127.0.0.1:5432 magalu
 DATABASE_URL=postgresql://vitalmed:<senha>@localhost:15432/vitalmed npx drizzle-kit push --force
-# materialized view: scripts/materialized-view-available-slots.sql via psql
+# view turnos_livres: scripts/view-turnos-livres.sql via psql, como a role vitalmed.
+# Pendente em 2026-10-29: o banco da Vitalmed ainda não tem extra_shift_offers.reserved_by
+# (push atrasado); a view só cria depois do push. Até lá segue a matview antiga com triggers.
 ```
 
 Validação objetiva depois de subir:

@@ -87,6 +87,8 @@ export type Pedido = {
   largar?: MeuPlantao | null;
   /** Só reavaliar estas (referências de uma resposta anterior). */
   somente?: { fonte: Fonte; id: string }[];
+  /** Tipos com meta completa em que a candidatura a vaga livre está aberta (fila-de-reposicao.ts). */
+  candidatura?: GoalKind[];
 };
 
 export type Avaliada = Oferta & {
@@ -97,6 +99,8 @@ export type Avaliada = Oferta & {
   contaParaMeta: boolean;
   /** Para TROCA: o plantão meu que dá para oferecer. */
   ofereco?: MeuPlantao | null;
+  /** Vaga livre para quem já fechou a meta: é candidatura, a coordenação decide. */
+  candidatura?: boolean;
 };
 
 const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -161,6 +165,9 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
   if (choque) return fora("SEM_DESCANSO", `sem 12h de descanso por causa do seu ${descreveTurno(choque)}`);
 
   if (o.fonte === "LIBERADA" && faltaDoTipo <= 0) {
+    if (pedido.objetivo !== "meta" && o.tipo && pedido.candidatura?.includes(o.tipo)) {
+      return { ...o, status: "REQUIRES_APPROVAL", motivo: null, porque: "candidatura: a coordenação decide (sua meta do tipo já fechou)", contaParaMeta: false, candidatura: true };
+    }
     return fora("META_DO_TIPO_FECHADA", `vaga liberada é só para quem ainda tem ${o.tipo} faltando na meta`);
   }
 
@@ -346,9 +353,8 @@ export function textoDaBusca(b: Busca): string {
     if (b.status === "INSUFFICIENT_DATA") linhas.push("Não consegui achar sua meta, então não sei o que conta. Confira a aba Início ou fale com o líder.");
     else if (b.status === "META_COMPLETA") linhas.push("Sua meta já está completa nesse tipo — nada a fechar. Plantão a mais só como extra ou sobra da grade.");
     else {
-      linhas.push(`Faltam ${faltamEmTexto(b.faltam!)}${fim}.`);
-      if (b.status === "OPPORTUNITIES_FOUND") linhas.push(`Dá para fechar: ${b.plano.length === 1 ? "esta opção cobre" : `estas ${b.plano.length} opções cobrem`} o que falta, sem quebrar seu descanso.`);
-      else if (b.status === "PARTIAL") linhas.push(`Dá para avançar, mas ainda ficariam faltando ${faltamEmTexto(b.aindaFaltam!)}.`);
+      if (b.status === "OPPORTUNITIES_FOUND") linhas.push(`Dá para fechar${fim}: ${b.plano.length === 1 ? "esta opção cobre" : `estas ${b.plano.length} opções cobrem`} o que falta, sem quebrar seu descanso.`);
+      else if (b.status === "PARTIAL") linhas.push(`Dá para avançar${fim}, mas ainda ficariam faltando ${faltamEmTexto(b.aindaFaltam!)}.`);
       else linhas.push("Não achei agora nenhuma vaga que conte para a sua meta e caiba na sua agenda.");
     }
   } else if (b.status === "NO_OPTIONS") {
@@ -385,21 +391,6 @@ const ROTULO_MOTIVO: Record<Motivo, string> = {
 
 // ---------------------------------------------------------------------------
 // Resumo, agenda, presença e "por que não contou".
-
-export function textoDaMeta(meta: Meta | null) {
-  if (!meta) return "Não achei sua meta — você está num rodízio ativo? Confira a aba Início ou fale com o líder.";
-  const fim = meta.fim ? ` (rodízio até ${ddmm(meta.fim)})` : "";
-  const tipos = GOAL_KINDS.filter((k) => meta.alvo[k] > 0).map((k) =>
-    meta.faltam[k] > 0 ? `- **${k}**: faltam ${meta.faltam[k]} de ${meta.alvo[k]}` : `- **${k}**: completa (${meta.alvo[k]})`,
-  );
-  const total = GOAL_KINDS.reduce((s, k) => s + meta.faltam[k], 0);
-  return [
-    total ? `Faltam ${faltamEmTexto(meta.faltam)} para fechar sua meta${fim}.` : `Sua meta está toda marcada${fim}.`,
-    ...tipos,
-    `Realizados: ${meta.realizados}. Faltas: ${meta.faltas}${meta.faltas ? " (falta não ocupa casinha; só a abonada conta)" : ""}.`,
-    "Realizados, o de hoje e os agendados ocupam casinha; extra não conta.",
-  ].join("\n");
-}
 
 /** `janela`: "hoje", "amanhã"… quando a pergunta é de um dia só. */
 export function textoDaAgenda(meus: MeuPlantao[], de: string, ate: string | null, janela?: string) {
@@ -478,9 +469,6 @@ export function resumoParaModelo(meta: Meta | null, meus: MeuPlantao[], hoje: st
   return JSON.stringify({
     hoje,
     rodizio: meta ? { inicio: meta.inicio, fim: meta.fim } : null,
-    meta: meta ? Object.fromEntries(GOAL_KINDS.map((k) => [k, { alvo: meta.alvo[k], faltam: meta.faltam[k] }])) : null,
-    realizados: meta?.realizados ?? null,
-    faltas: meta?.faltas ?? null,
     pendencias_presenca: pendenciasDePresenca(meus, hoje, meta?.inicio ?? null).length,
     proximos: proximos.map((m) => ({ data: m.date, quando: quando(m.date, m.period, m.shift), base: m.baseCode, tipo: m.tipo, ...(m.isExtraShift ? { extra: true } : {}) })),
   });

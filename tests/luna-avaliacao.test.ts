@@ -10,6 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Fontes, LunaCtx } from "../src/lib/luna-dados";
+import type { Fila } from "../src/features/extra-offers/application/fila-de-reposicao";
 import { sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
 import { perguntarLuna, type LunaPergunta } from "../src/lib/luna-interno";
 import { explicarPlantao, textoDaPresenca, type Meta, type MeuPlantao, type Oferta } from "../src/lib/luna-inteligencia";
@@ -54,7 +55,10 @@ const TROCAS: Oferta[] = [
   oferta("TROCA", "T3", "USA", "2026-10-31", "NIGHT", { quem: "Davi Reis", quemId: "u-d", assignmentId: "a-t3", faculdade: "FAC-A" }),
 ];
 
-type Fixture = { meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; falha?: string };
+type Fixture = { meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; falha?: string };
+
+// Números de 29/10/2026: a demanda passa da oferta em todo tipo.
+const FILA: Fila = { USA: { precisam: 131, casinhas: 611, vagasAbertas: 43 }, CRU: { precisam: 112, casinhas: 356, vagasAbertas: 0 }, CRL: { precisam: 60, casinhas: 60, vagasAbertas: 0 } };
 
 function fontes(fx: Fixture = {}) {
   const lidas: string[] = [];
@@ -66,7 +70,7 @@ function fontes(fx: Fixture = {}) {
   const f: Fontes = {
     meta: le("meta", fx.meta === undefined ? META : fx.meta),
     meusPlantoes: le("meus", fx.meus ?? MEUS),
-    demanda: le("demanda", { USA: { internos: 131, casinhas: 611 }, CRU: { internos: 112, casinhas: 356 }, CRL: { internos: 60, casinhas: 60 } }),
+    fila: le("fila", fx.fila ?? FILA),
     lider: le("lider", { id: "lider-a", nome: "Líder A" }),
     liberadas: async (ate) => (await le("liberadas", fx.liberadas ?? LIBERADAS)()).filter((o) => o.date <= ate),
     extras: le("extras", fx.extras ?? EXTRAS),
@@ -106,13 +110,13 @@ async function perguntar(texto: string, opts: { passos?: Passo[]; fx?: Fixture; 
 // ---------------------------------------------------------------------------
 // Caminho direto: zero chamadas ao modelo.
 
-test("1. 'Quanto falta para eu terminar?' — direto, por tipo", async () => {
-  const { r, chamadas, log } = await perguntar("Quanto falta para eu terminar?");
+test("1. 'Quanto falta para eu terminar?' — meta está na tela Início: sem modelo e sem consulta", async () => {
+  const { r, chamadas, log, lidas } = await perguntar("Quanto falta para eu terminar?");
   assert.equal(chamadas, 0);
   assert.equal(log.rota, "direta");
-  assert.match(r.texto, /Faltam 2 USA e 1 CRL/);
-  assert.match(r.texto, /CRU\*\*: completa/);
-  assert.match(r.texto, /30\/11/);
+  assert.deepEqual(lidas, []);
+  assert.match(r.texto, /tela \*\*Início\*\*/);
+  assert.doesNotMatch(r.texto, /Faltam/);
 });
 
 test("2. 'Tenho algum plantão amanhã?' — direto, só amanhã", async () => {
@@ -135,8 +139,8 @@ test("8. 'Tenho checkout pendente?' — direto, aponta o plantão e quem resolve
 test("'Consigo fechar minha meta?' — direto: plano que cobre o que falta, sem descanso quebrado", async () => {
   const { r, chamadas, lidas } = await perguntar("Consigo fechar minha meta?");
   assert.equal(chamadas, 0);
-  assert.match(r.texto, /Faltam 2 USA e 1 CRL até 30\/11/);
-  assert.match(r.texto, /Dá para fechar/);
+  assert.match(r.texto, /Dá para fechar até 30\/11/);
+  assert.doesNotMatch(r.texto, /Faltam/);
   // Plano: a CRL da grade (dom) + as duas USA que cabem; nada colado na agenda.
   assert.match(r.texto, /1\. \*\*CRLG dom 01\/11 noite\*\*/);
   assert.match(r.texto, /2\. \*\*CB05 qui 05\/11 noite\*\*/);
@@ -157,14 +161,16 @@ test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho s
     { passos: [{ tool: { name: "buscar_opcoes", args: { objetivo: "meta", tipos: ["USA"], nao_posso: [{ dia_semana: "seg" }, { dia_semana: "qua" }], prefere_periodo: "noite" } } }] },
   );
   assert.equal(chamadas, 1);
-  assert.match(r.texto, /Faltam 2 USA/);
+  assert.match(r.texto, /Dá para fechar/);
   assert.doesNotMatch(r.texto, /CRL/); // pediu só USA
   assert.match(r.texto, /1\. \*\*CB05 qui 05\/11 noite\*\*/); // noite primeiro
   assert.match(r.texto, /2\. \*\*CB07 ter 10\/11 dia\*\*/);
   assert.doesNotMatch(r.texto, /SA01|IT30/);
   assert.match(r.texto, /Deixei de fora 2: 1 sem 12h de descanso, 1 em dia que você não pode/);
   // O resumo foi junto no prompt: o modelo não precisa de ferramenta para a agenda.
-  assert.match(corpos[0].messages[0].content, /RESUMO: .*"faltam":2/);
+  // Meta não vai no prompt (está na tela Início); a agenda vai.
+  assert.doesNotMatch(corpos[0].messages[0].content, /"faltam"/);
+  assert.match(corpos[0].messages[0].content, /RESUMO: .*"proximos"/);
   assert.equal(corpos[0].tools.length, 3);
 });
 
@@ -219,7 +225,7 @@ test("7. 'Minha meta fecha mesmo com uma falta?' — vai ao modelo com o resumo,
   const { chamadas, corpos, log } = await perguntar("Minha meta fecha mesmo com uma falta?", { passos: [{ texto: "Falta não ocupa casinha…" }] });
   assert.equal(chamadas, 1);
   assert.equal(log.rota, "modelo");
-  assert.match(corpos[0].messages[0].content, /"faltas":1/);
+  assert.match(corpos[0].messages[0].content, /tela Início/);
 });
 
 test("9. 'Por que meu plantão não contou na meta?' — explica cada um", async () => {
@@ -232,7 +238,7 @@ test("9. 'Por que meu plantão não contou na meta?' — explica cada um", async
 
 test("10. 'Encontre a melhor opção para completar minhas CRL'", async () => {
   const { r } = await perguntar("Encontre a melhor opção para completar minhas CRL", { passos: [{ tool: { name: "buscar_opcoes", args: { objetivo: "meta", tipos: ["CRL"] } } }] });
-  assert.match(r.texto, /Faltam 1 CRL/);
+  assert.match(r.texto, /Dá para fechar/);
   assert.match(r.texto, /1\. \*\*CRLG dom 01\/11 noite\*\*/);
   assert.doesNotMatch(r.texto, /USA\)/);
 });
@@ -247,7 +253,22 @@ test("12. 'Posso pegar vaga mesmo já tendo completado a meta?' — liberada nã
   assert.match(r.texto, /PM01 .*extra/);
   // Nem busca vaga liberada: diz quem está na frente.
   assert.ok(!lidas.includes("liberadas"));
-  assert.match(r.texto, /vai primeiro para quem precisa de reposição — hoje 131 precisam de 611 USA; 112 precisam de 356 CRU; 60 precisam de 60 CRL/);
+  assert.match(r.texto, /vai primeiro para quem precisa de reposição: 131 colegas ainda precisam de reposição de USA e há 43 vagas livres nos próximos 10 dias/);
+  assert.match(r.texto, /Candidatura abre quando sobrar vaga/);
+  assert.ok(!r.cartoes.some((c) => c.itens.some((i) => i.candidatar)));
+});
+
+test("meta completa e sobra vaga livre depois da fila: candidatura, a coordenação decide", async () => {
+  const completa: Meta = { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } };
+  const sobra: Fila = { ...FILA, USA: { precisam: 2, casinhas: 3, vagasAbertas: 9 } };
+  const { r, chamadas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: completa, fila: sobra } });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /Sobra vaga livre de USA: como sua meta está completa, você se candidata/);
+  assert.match(r.texto, /CB05 .*candidatura: a coordenação decide/);
+  assert.doesNotMatch(r.texto, /CRUX|CRL4/); // CRU e CRL seguem na fila
+  const item = r.cartoes[0].itens.find((i) => i.titulo.includes("CB05"))!;
+  assert.equal(item.candidatar, "CB05");
+  assert.equal(item.acao, "Me candidatar");
 });
 
 test("meta completa só num tipo: vaga liberada dos outros tipos continua", async () => {

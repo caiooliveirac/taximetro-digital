@@ -17,19 +17,17 @@ import { executeListRequests } from "@/features/requests/application/use-cases/l
 import { findInternOverCruQuota, findSwapRestConflict } from "@/features/requests/application/use-cases/handle-swap-peer-action";
 import { findPendingRequestByAssignment } from "@/features/requests/infra/repositories/request-repository";
 import { getRequestableSlots } from "@/lib/slots";
-import { GOAL_KINDS, goalKindOf, type GoalKind } from "@/lib/goal-slots";
+import { goalKindOf } from "@/lib/goal-slots";
+import { filaDeReposicao, type Fila } from "@/features/extra-offers/application/fila-de-reposicao";
 import { addDaysToDateStr, operationalDateStr } from "@/lib/utils";
 import type { Meta, MeuPlantao, Oferta, Periodo } from "@/lib/luna-inteligencia";
 
 export type LunaCtx = { internId: string; facultyId: string | null; hoje: string };
 
-/** Quantos internos ainda precisam de reposição em cada tipo, e quantas casinhas somam. */
-export type Demanda = Record<GoalKind, { internos: number; casinhas: number }>;
-
 export type Fontes = {
   meta(): Promise<Meta | null>;
-  /** Agregado de todos os internos ativos (só contagem, sem nome): cache de 10 min no processo. */
-  demanda(): Promise<Demanda>;
+  /** Quem precisa de reposição × vagas livres abertas, por tipo (agregado, cache de 10 min). */
+  fila(): Promise<Fila>;
   /** Do rodízio recente em diante, com presença; inclui cancelados (para explicar). */
   meusPlantoes(): Promise<MeuPlantao[]>;
   lider(): Promise<{ id: string; nome: string } | null>;
@@ -48,26 +46,6 @@ const PASSADO_DIAS = 75;
 
 const dia = (d: unknown) => String(d).slice(0, 10);
 const iso = (d: unknown) => (d ? new Date(d as string).toISOString() : null);
-
-// Agregado sem dado pessoal: pode ser o mesmo para todo interno. Muda devagar
-// (escala e checkout), e custa ~1 s calcular — não a cada pergunta.
-const DEMANDA_TTL_MS = 10 * 60_000;
-let demandaEmCache: { em: number; valor: Promise<Demanda> } | null = null;
-
-async function calcularDemanda(): Promise<Demanda> {
-  const { data } = await executeGetComplianceOverview({ actor: { id: "", role: "COORDINATOR", facultyId: null } });
-  const d = Object.fromEntries(GOAL_KINDS.map((k) => [k, { internos: 0, casinhas: 0 }])) as Demanda;
-  for (const r of data) {
-    for (const k of GOAL_KINDS) {
-      const falta = r[`missing${k}`];
-      if (falta > 0) {
-        d[k].internos += 1;
-        d[k].casinhas += falta;
-      }
-    }
-  }
-  return d;
-}
 
 export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void = () => {}): Fontes {
   const cache = new Map<string, Promise<unknown>>();
@@ -100,14 +78,7 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
       } satisfies Meta;
     }),
 
-    demanda: () => lido("demanda", () => {
-      if (!demandaEmCache || Date.now() - demandaEmCache.em > DEMANDA_TTL_MS) {
-        const valor = calcularDemanda();
-        demandaEmCache = { em: Date.now(), valor };
-        valor.catch(() => (demandaEmCache = null));
-      }
-      return demandaEmCache.valor;
-    }),
+    fila: () => lido("fila", () => filaDeReposicao()),
 
     meusPlantoes: () => lido("meus_plantoes", async () => {
       const rows = await db

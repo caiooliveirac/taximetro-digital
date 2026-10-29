@@ -271,7 +271,8 @@ export async function executeClaimExtraOffer(params: {
 }
 
 /** Pedido do líder para escalar acima da meta. Não segura a vaga: quem pegar antes, leva. */
-async function pedirVagaLivre(p: {
+/** Pedido de vaga livre para a coordenação: do líder por um interno, ou do próprio interno (candidatura). */
+export async function pedirVagaLivre(p: {
   actor: { id: string; role: string };
   offer: { id: string; baseId: string; date: string; period: "DAY" | "NIGHT" };
   internId: string;
@@ -307,9 +308,11 @@ async function pedirVagaLivre(p: {
     payload: { offerId: p.offer.id, internName: p.internName, baseCode: bs?.code ?? null, date: p.offer.date, period: p.offer.period, metaKind: p.meta.kind, metaTarget: p.meta.target },
   });
   const data = `${p.offer.date.slice(8, 10)}/${p.offer.date.slice(5, 7)}`;
+  const candidatura = p.actor.id === p.internId;
   void avisarCoordenacaoNoTelegram(
-    `📝 Pedido de vaga livre acima da meta\n${bs?.code ?? "base"} · ${data} ${p.offer.period === "NIGHT" ? "noturno" : "diurno"}\n`
-    + `Interno: ${p.internName} (meta de ${p.meta.kind} já coberta)\nPedido por: ${lider?.name ?? "líder"}\nAprove em Admin → Solicitações.`,
+    `📝 ${candidatura ? "Candidatura a vaga livre" : "Pedido de vaga livre acima da meta"}\n${bs?.code ?? "base"} · ${data} ${p.offer.period === "NIGHT" ? "noturno" : "diurno"}\n`
+    + `Interno: ${p.internName} (meta de ${p.meta.kind} já coberta)\n`
+    + `${candidatura ? "O próprio interno se candidatou (sobra vaga depois de quem precisa de reposição)." : `Pedido por: ${lider?.name ?? "líder"}`}\nAprove em Admin → Solicitações.`,
   );
   return { status: 200, body: { success: true, data: { requested: true, requestId: pedido.id } } } as const;
 }

@@ -30,7 +30,7 @@ export function rotear(pergunta: string): Intencao | null {
   if (/(consigo|da pra|da para|como|ajuda|quero|vou) .*(fechar|completar|terminar|bater|cumprir)|vagas? .*(meta)|(fechar|completar) (a |minha )?meta/.test(q) && !/quanto/.test(q)) {
     return TIPO.test(q) ? null : { tipo: "BUSCA", args: { objetivo: "meta" } };
   }
-  if (/(quanto|quantos|quantas|o que) (me |ainda )?falta|minha meta|da meta|pra terminar|para terminar/.test(q)) return { tipo: "META" };
+  if (/(quanto|quantos|quantas|o que) (me |ainda )?falta|minha meta|da meta|pra terminar|para terminar|casinha/.test(q)) return { tipo: "META" };
 
   if (/plantao (hoje|amanha)|plantoes? (de )?(hoje|amanha)|(hoje|amanha) (eu )?tenho plantao/.test(q) || /tenho (algum )?plantao/.test(q)) {
     if (/amanha/.test(q)) return { tipo: "AGENDA", de: 1, ate: 1, janela: "amanhã" };
