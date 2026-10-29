@@ -6,10 +6,11 @@ import { ArrowLeftRight, CalendarClock, ClipboardCheck, Loader2, MapPin, RotateC
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LunaCartao, LunaMemoria } from "@/lib/luna-ferramentas";
-import type { CasoAberto, CasoFechado, TemaResumo } from "@/lib/dai-casos";
+import type { CasoAberto, CasoFechado, Ficha, TemaResumo } from "@/lib/dai-casos";
 import { pedidoDeCaso, rotuloDoTema } from "@/lib/dai-temas";
 
-type Msg = { role: "user" | "assistant"; content: string; cartoes?: LunaCartao[]; erro?: boolean; memoria?: LunaMemoria; temas?: TemaResumo[]; caso?: CasoFechado };
+type Msg = { role: "user" | "assistant"; content: string; cartoes?: LunaCartao[]; erro?: boolean; memoria?: LunaMemoria; temas?: TemaResumo[]; caso?: CasoFechado; ficha?: FichaMsg };
+type FichaMsg = Ficha & { casos: number };
 
 const GUARDA = "luna-interno-conversa";
 
@@ -128,9 +129,35 @@ function TemasCartao({ temas, escolher }: { temas: TemaResumo[]; escolher: (tema
           onClick={() => escolher(t.tema)}
           className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 hover:ring-accent-300"
         >
-          {t.rotulo} <span className="text-slate-400">{t.vistos}/{t.total}</span>
+          {t.rotulo} <span className="text-slate-400">{t.total ? `${t.vistos}/${t.total}` : "revisão"}</span>
         </button>
       ))}
+    </section>
+  );
+}
+
+function FichaCartao({ ficha, caso }: { ficha: FichaMsg; caso: (tema: string) => void }) {
+  return (
+    <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Revisão de plantão · {ficha.titulo}</h3>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-accent-700">Em 30 segundos</p>
+        <Texto texto={ficha.em_30_segundos} />
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Não pode faltar</p>
+        <Texto texto={ficha.nao_pode_faltar} />
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Armadilha</p>
+        <p>{ficha.armadilha}</p>
+      </div>
+      <p className="text-xs text-slate-500">Referência: {ficha.referencia}</p>
+      {ficha.casos ? (
+        <button type="button" onClick={() => caso(ficha.tema)} className="text-xs font-semibold text-accent-600">
+          Tentar um caso de {rotuloDoTema(ficha.tema)} →
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -234,27 +261,33 @@ export default function LunaPage() {
     fim.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [conversa, pensando]);
 
-  async function casos(nova: Msg[], tema: string | null, pular?: string) {
+  async function casos(nova: Msg[], tema: string | null, pular?: string, caso?: boolean) {
     setPensando(true);
-    const qs = tema ? `?tema=${encodeURIComponent(tema)}${pular ? `&pular=${encodeURIComponent(pular)}` : ""}` : "";
-    const r = await fetch(`/taximetro/api/intern/casos${qs}`).catch(() => null);
+    const qs = new URLSearchParams();
+    if (tema) qs.set("tema", tema);
+    if (pular) qs.set("pular", pular);
+    if (caso) qs.set("caso", "1");
+    const r = await fetch(`/taximetro/api/intern/casos?${qs}`).catch(() => null);
     const j = r ? await r.json().catch(() => null) : null;
     setPensando(false);
     setConversa([
       ...nova,
       !j?.success
         ? { role: "assistant", content: j?.error ?? "Sem conexão. Tente de novo.", erro: true }
-        : j.data.caso
-          ? { role: "assistant", content: "Escreva sua conduta antes de ver a resposta. Texto de diretriz, sem IA.", caso: j.data.caso }
-          : { role: "assistant", content: "Qual tema? O número é quantos casos você já abriu.", temas: j.data.temas },
+        : j.data.ficha
+          ? { role: "assistant", content: "Revisão para o plantão. Texto de diretriz, sem IA.", ficha: { ...j.data.ficha, casos: j.data.casos } }
+          : j.data.caso
+            ? { role: "assistant", content: "Escreva sua conduta antes de ver a resposta. Texto de diretriz, sem IA.", caso: j.data.caso }
+            : { role: "assistant", content: "Qual tema? O número é quantos casos você já abriu.", temas: j.data.temas },
     ]);
   }
 
-  function pedirCaso(tema: string, pular?: string) {
+  function pedirCaso(tema: string, pular?: string, caso?: boolean) {
     if (pensando) return;
-    const nova = [...conversa, { role: "user" as const, content: `${pular ? "Outro caso" : "Caso"} de ${rotuloDoTema(tema)}` }];
+    const rotulo = rotuloDoTema(tema);
+    const nova = [...conversa, { role: "user" as const, content: pular ? `Outro caso de ${rotulo}` : caso ? `Caso de ${rotulo}` : rotulo }];
     setConversa(nova);
-    casos(nova, tema, pular);
+    casos(nova, tema, pular, caso);
   }
 
   async function perguntar(pergunta: string) {
@@ -343,6 +376,7 @@ export default function LunaPage() {
                 </div>
                 {m.cartoes?.map((c) => <Cartao key={c.tipo} cartao={c} />)}
                 {m.temas ? <TemasCartao temas={m.temas} escolher={(t) => pedirCaso(t)} /> : null}
+                {m.ficha ? <FichaCartao ficha={m.ficha} caso={(t) => pedirCaso(t, undefined, true)} /> : null}
                 {m.caso ? <CasoCartao key={m.caso.id} caso={m.caso} outro={pedirCaso} /> : null}
               </div>
             ),
