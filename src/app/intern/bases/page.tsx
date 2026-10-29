@@ -69,7 +69,8 @@ export default async function InternBasesPage() {
                     <p className="text-sm text-slate-500">Nenhuma base ativa disponível no momento.</p>
                 </div>
             ) : (
-                <BasesMap bases={comLocal} />
+                // Chave de navegador restrita por referrer a mnrs.com.br; sem ela (Vitalmed, dev) o mapa é Leaflet.
+                <BasesMap bases={comLocal} mapsKey={process.env.GOOGLE_MAPS_BROWSER_KEY || null} />
             )}
 
             {semLocal.length > 0 ? (
