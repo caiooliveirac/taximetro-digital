@@ -4,14 +4,15 @@
  * GET  → { ligada } (sem OPENAI_API_KEY a tela mostra só os atalhos)
  * POST → { mensagens: [{ role, content, memoria? }] } → { texto, cartoes, memoria }
  *
- * Teto por pessoa: 40 perguntas por dia e uma de cada vez — custo do modelo.
+ * Teto por pessoa: 10 perguntas por dia (contadas no audit_log, sobrevivem ao
+ * deploy), uma de cada vez, pergunta de até 300 caracteres — custo do modelo.
  * Cada pergunta do interno (não personificado) vira DAI_PERGUNTA no audit_log, 90 dias.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
 import { getEffectiveUser } from "@/lib/impersonate";
-import { gravarPergunta } from "@/lib/dai-perguntas";
+import { gravarPergunta, perguntasDeHoje } from "@/lib/dai-perguntas";
 import { lunaLigada, perguntarLuna } from "@/lib/luna-interno";
 import { checkRateLimit } from "@/shared/infra/rate-limit";
 import { localDateStr } from "@/lib/utils";
@@ -21,13 +22,17 @@ import { localDateStr } from "@/lib/utils";
 // próprio interno, então um id forjado aqui não mostra nada alheio.
 const memoria = z
   .object({
-    busca: z.record(z.string(), z.unknown()).optional(),
+    // Vai inteira para o prompt: sem teto, um JSON gigante vira conta gigante.
+    busca: z.record(z.string(), z.unknown()).refine((b) => JSON.stringify(b).length <= 800).optional(),
     opcoes: z
       .array(z.object({ n: z.number().int().min(1).max(20), fonte: z.enum(["LIBERADA", "EXTRA", "GRADE", "TROCA"]), id: z.string().max(120) }))
       .max(12)
       .optional(),
   })
   .optional();
+
+const PERGUNTA_MAX = 300;
+const TETO_DIA = 10;
 
 const pedido = z.object({
   mensagens: z
@@ -58,20 +63,29 @@ export async function POST(req: NextRequest) {
   if (!parsed.success || parsed.data.mensagens.at(-1)?.role !== "user") {
     return NextResponse.json({ success: false, error: "Pergunta inválida." }, { status: 400 });
   }
+  if (parsed.data.mensagens.at(-1)!.content.length > PERGUNTA_MAX) {
+    return NextResponse.json({ success: false, error: `Pergunta longa demais: até ${PERGUNTA_MAX} caracteres.` }, { status: 400 });
+  }
 
   const pessoa = user.realUserId ?? user.id;
   if (emCurso.has(pessoa)) {
     return NextResponse.json({ success: false, error: "Espere a resposta anterior terminar." }, { status: 429 });
   }
-  if (!checkRateLimit(`luna:${pessoa}`, 40, 24 * 60 * 60_000)) {
-    return NextResponse.json({ success: false, error: "Você chegou ao limite de perguntas de hoje. As telas continuam funcionando." }, { status: 429 });
+  // Personificando não grava no audit_log: aí só o contador do processo segura.
+  const hoje = localDateStr();
+  const feitas = user.realUserId ? 0 : await perguntasDeHoje(user.id, hoje);
+  if (feitas >= TETO_DIA || !checkRateLimit(`luna:${pessoa}`, TETO_DIA, 24 * 60 * 60_000)) {
+    return NextResponse.json(
+      { success: false, error: `Você já fez as ${TETO_DIA} perguntas de hoje. O Dai volta a responder amanhã — as telas continuam funcionando.` },
+      { status: 429 },
+    );
   }
 
   emCurso.add(pessoa);
   try {
     let meta: Record<string, unknown> = {};
     const resposta = await perguntarLuna(
-      { internId: user.id, facultyId: user.facultyId, hoje: localDateStr() },
+      { internId: user.id, facultyId: user.facultyId, hoje },
       parsed.data.mensagens,
       (o) => {
         meta = o;

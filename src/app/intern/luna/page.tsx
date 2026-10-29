@@ -418,7 +418,7 @@ export default function LunaPage() {
           <input
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
-            maxLength={2000}
+            maxLength={300}
             disabled={ligada === false}
             placeholder="Ex.: não posso segunda, prefiro noite"
             className="min-h-10 flex-1 bg-transparent px-2 text-sm text-slate-900 outline-none placeholder:text-slate-400"
