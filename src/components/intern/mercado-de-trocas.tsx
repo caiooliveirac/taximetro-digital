@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MercadoDeTrocas } from "@/features/requests/application/use-cases/get-swap-market";
 import type { Caixa } from "@/shared/domain/policies/swap-match-policy";
 import { estiloDoTipo, nomeCurtoDaBase, rotuloDoTipo } from "@/lib/base-colors";
@@ -183,5 +183,96 @@ export function JanelaDeTrocas({ janela }: { janela: MercadoDeTrocas["janela"] }
         )}
       </div>
     </section>
+  );
+}
+
+type BaseDeAmbulancia = { id: string; code: string; name: string };
+
+/**
+ * Até 3 bases favoritas e 3 a evitar. Toque cicla: neutra → favorita → evitar
+ * → neutra. Só reordena as ofertas dentro de cada caixa.
+ */
+export function BasesPreferidas({ onMudou }: { onMudou: () => void }) {
+  const [bases, setBases] = useState<BaseDeAmbulancia[]>([]);
+  const [pesos, setPesos] = useState<Record<string, number>>({});
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/taximetro/api/intern/bases-preferidas")
+      .then((r) => r.json())
+      .then((json) => {
+        if (!json?.success) return;
+        setBases(json.data.bases);
+        setPesos(Object.fromEntries(json.data.preferencias.map((p: { baseId: string; peso: number }) => [p.baseId, p.peso])));
+      })
+      .catch(() => {});
+  }, []);
+
+  const favoritas = bases.filter((b) => pesos[b.id] === 1);
+  const evitar = bases.filter((b) => pesos[b.id] === -1);
+
+  const tocar = async (base: BaseDeAmbulancia) => {
+    const atual = pesos[base.id] ?? 0;
+    const proximo = atual === 0 ? 1 : atual === 1 ? -1 : 0;
+    if (proximo === 1 && favoritas.length >= 3) return setErro("No máximo 3 favoritas. Toque numa delas para tirar.");
+    if (proximo === -1 && evitar.length >= 3) return setErro("No máximo 3 a evitar. Toque numa delas para tirar.");
+    setErro(null);
+    setPesos((p) => ({ ...p, [base.id]: proximo }));
+    const r = await fetch("/taximetro/api/intern/bases-preferidas", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseId: base.id, peso: proximo }),
+    }).then((x) => x.json()).catch(() => null);
+    if (!r?.success) {
+      setPesos((p) => ({ ...p, [base.id]: atual }));
+      setErro(r?.error ?? "Não foi possível salvar. Tente de novo.");
+      return;
+    }
+    onMudou();
+  };
+
+  if (bases.length === 0) return null;
+  const nomes = (l: BaseDeAmbulancia[]) => l.map((b) => nomeCurtoDaBase(b.name)).join(", ");
+
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+      <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+        Suas bases
+        <span className="ml-2 text-xs font-normal text-slate-500">
+          {favoritas.length || evitar.length
+            ? [favoritas.length ? `favoritas: ${nomes(favoritas)}` : "", evitar.length ? `evitar: ${nomes(evitar)}` : ""].filter(Boolean).join(" · ")
+            : "escolha favoritas e a evitar"}
+        </span>
+      </summary>
+      <p className="mt-2 text-xs text-slate-500">
+        Toque numa base: uma vez marca favorita, duas marca evitar, três volta ao normal. Até 3 de cada.
+        As ofertas das favoritas sobem dentro de cada caixa; as de evitar descem. Nada some.
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        {bases.map((b) => {
+          const peso = pesos[b.id] ?? 0;
+          return (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => tocar(b)}
+              aria-pressed={peso !== 0}
+              className={cn(
+                "flex min-w-0 flex-col items-start rounded-lg border px-2.5 py-1.5 text-left transition",
+                peso === 1 ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                  : peso === -1 ? "border-red-300 bg-red-50 text-red-900"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+              )}
+            >
+              <span className="w-full truncate text-sm font-medium">{nomeCurtoDaBase(b.name)}</span>
+              <span className="font-mono text-[10px] uppercase tracking-wide opacity-70">
+                {peso === 1 ? "favorita" : peso === -1 ? "evitar" : b.code}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {erro && <p className="mt-2 text-xs font-medium text-red-700">{erro}</p>}
+    </details>
   );
 }

@@ -71,6 +71,8 @@ append_dai_avisos_cron() {
   printf "%s\n" "${DAI_AVISO_PLANTAO_CRON:-0 17 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs plantao' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   printf "%s\n" "${DAI_AVISO_VAGAS_CRON:-25 8-20 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs vagas' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   printf "%s\n" "${DAI_AVISO_LIDERES_CRON:-0 8 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs lideres' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  # Trocas: sem efeito enquanto a feature avisoDeTrocas estiver desligada (instance.ts).
+  printf "%s\n" "${DAI_AVISO_TROCAS_CRON:-40 8-20 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs trocas' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   echo "[entrypoint] avisos da Dai habilitados (${TZ})"
 }
 

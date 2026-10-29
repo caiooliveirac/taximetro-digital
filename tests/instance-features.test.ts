@@ -44,6 +44,13 @@ test("sinais de troca no calendário: só no SAMU (a Vitalmed tem a indisponibil
   assert.equal(temFeature("sinaisDeTroca", "vitalmed"), false);
 });
 
+test("aviso de trocas da Dai desligado nas duas instâncias até o texto ser aprovado", () => {
+  // Mensagem real no chat de todo interno que marcou Quero/Posso. Ligar é
+  // decisão explícita do dono, depois de ver o texto no modo de teste (?dry=1).
+  assert.equal(temFeature("avisoDeTrocas", "samu"), false);
+  assert.equal(temFeature("avisoDeTrocas", "vitalmed"), false);
+});
+
 test("toda feature está declarada em todas as instâncias", () => {
   // Sem isto, uma feature nova declarada só na Vitalmed viraria `undefined` no
   // SAMU — que é falsy, funciona por acidente, e para de funcionar no dia em que

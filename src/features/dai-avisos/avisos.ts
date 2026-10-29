@@ -8,6 +8,10 @@
  *    mensagem por interno por dia.
  *  - lideres: de manhã, ao líder, o que da grade da faculdade está sem escala
  *    nos próximos 7 dias e quantos internos ainda precisam.
+ *  - trocas:  oferta de troca que apareceu num turno em que o interno marcou
+ *    Quero/Posso no calendário e que ele consegue fechar (swap-match-policy.ts).
+ *    Feature `avisoDeTrocas`: desligada até o texto ser aprovado; `?dry=1`
+ *    monta e mostra a amostra sem enviar.
  *
  * Texto pronto (textos.ts), sem modelo. Cada envio fica no audit_log
  * (DAI_AVISO_*): é o que impede repetir. Só lê para decidir; escreve só a
@@ -25,10 +29,13 @@ import { addDaysToDateStr, hasShiftStarted, localDateStr } from "@/lib/utils";
 import { plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
 import { idDaDai } from "./remetente";
-import { temaParaPlantao, textoProximoPlantao, textoSobraParaLider, textoVagasAbertas, type VagaAvisada } from "./textos";
+import { temaParaPlantao, textoProximoPlantao, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type VagaAvisada } from "./textos";
+import { carregarMercado, type FotografiaDoMercado } from "@/features/requests/application/use-cases/load-swap-market";
+import { findInternOverCruQuota } from "@/features/requests/application/use-cases/handle-swap-peer-action";
+import { avaliarOferta, visivelPara, type Avaliacao, type OfertaAberta } from "@/shared/domain/policies/swap-match-policy";
 
-export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA" } as const;
-export type TipoDeAviso = "plantao" | "vagas" | "lideres";
+export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS" } as const;
+export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas";
 export type ResultadoDosAvisos = { tipo: TipoDeAviso; enviados: number; considerados: number; dry: boolean; amostra?: string };
 
 type Envio = { para: string; texto: string; action: string; entityId: string; payload: Record<string, unknown> };
@@ -268,10 +275,97 @@ async function avisarLideres(now: Date, dry: boolean): Promise<ResultadoDosAviso
   return { tipo: "lideres", enviados: envios.length, considerados: lideres.length, dry, amostra: envios[0]?.texto };
 }
 
+// ---------------------------------------------------------------------------
+
+const TROCAS_POR_AVISO = 3;
+
+/**
+ * Para cada interno que marcou Quero/Posso num turno com oferta aberta: as
+ * ofertas que ele consegue fechar e ainda não recebeu, troca perfeita
+ * primeiro. Quem já recebeu aviso de troca hoje fica para amanhã. Puro.
+ */
+export function trocasParaCadaInterno(
+  foto: Pick<FotografiaDoMercado, "ctx" | "ofertas" | "faculdadeDe" | "hoje">,
+  jaAvisadas: Map<string, Set<string>>,
+  avisadoHoje: Set<string>,
+) {
+  const { ctx, ofertas, faculdadeDe, hoje } = foto;
+  const porTurno = new Map<string, OfertaAberta[]>();
+  for (const o of ofertas) {
+    const k = `${dia(o.plantao.date)}|${o.plantao.period}`;
+    porTurno.set(k, [...(porTurno.get(k) ?? []), o]);
+  }
+  const saida = new Map<string, { oferta: OfertaAberta; avaliacao: Avaliacao }[]>();
+  for (const s of ctx.sinais) {
+    if ((s.signal !== "QUERO" && s.signal !== "POSSO") || dia(s.date) < hoje || avisadoHoje.has(s.internId)) continue;
+    const doTurno = porTurno.get(`${dia(s.date)}|${s.period}`) ?? [];
+    for (const o of doTurno) {
+      if (jaAvisadas.get(s.internId)?.has(o.requestId)) continue;
+      if (!visivelPara(o, s.internId, faculdadeDe.get(s.internId) ?? new Set())) continue;
+      const avaliacao = avaliarOferta(o, s.internId, ctx);
+      if (avaliacao.caixa === "FORA") continue;
+      saida.set(s.internId, [...(saida.get(s.internId) ?? []), { oferta: o, avaliacao }]);
+    }
+  }
+  for (const [id, lista] of saida) {
+    saida.set(id, lista.sort((a, b) => b.avaliacao.forca - a.avaliacao.forca || a.oferta.plantao.date.localeCompare(b.oferta.plantao.date)).slice(0, TROCAS_POR_AVISO));
+  }
+  return saida;
+}
+
+async function avisarTrocas(now: Date, dry: boolean): Promise<ResultadoDosAvisos> {
+  const foto = await carregarMercado(now);
+  if (!foto.ofertas.length) return { tipo: "trocas", enviados: 0, considerados: 0, dry };
+  const interessados = [...new Set(foto.ctx.sinais.filter((s) => s.signal !== "OUTRO_SERVICO").map((s) => s.internId))];
+  if (!interessados.length) return { tipo: "trocas", enviados: 0, considerados: foto.ofertas.length, dry };
+
+  const historico = await db.select({ para: auditLog.entityId, payload: auditLog.payload, em: auditLog.createdAt })
+    .from(auditLog)
+    .where(and(eq(auditLog.action, AVISO.TROCAS), inArray(auditLog.entityId, interessados), gte(auditLog.createdAt, new Date(now.getTime() - 30 * 24 * 60 * 60_000))));
+  const jaAvisadas = new Map<string, Set<string>>();
+  const avisadoHoje = new Set<string>();
+  for (const h of historico) {
+    if (!h.para) continue;
+    const s = jaAvisadas.get(h.para) ?? new Set<string>();
+    for (const id of ((h.payload as { ofertas?: string[] } | null)?.ofertas ?? [])) s.add(id);
+    jaAvisadas.set(h.para, s);
+    if (now.getTime() - new Date(h.em).getTime() < UM_DIA_MS) avisadoHoje.add(h.para);
+  }
+
+  // Cota de CRU só de quem tem oferta de CRU em jogo: medir todo mundo custaria caro.
+  const comCru = new Set<string>();
+  for (const o of foto.ofertas.filter((x) => x.plantao.baseType === "CENTRAL")) {
+    comCru.add(o.plantao.internId);
+    for (const s of foto.ctx.sinais) if (`${dia(s.date)}|${s.period}` === `${dia(o.plantao.date)}|${o.plantao.period}`) comCru.add(s.internId);
+  }
+  for (const id of comCru) if (await findInternOverCruQuota([id], foto.hoje)) foto.ctx.cotaCruUsada.add(id);
+
+  const porInterno = trocasParaCadaInterno(foto, jaAvisadas, avisadoHoje);
+  const primeiro = (nome: string) => nome.trim().split(/\s+/)[0] ?? nome;
+  const envios: Envio[] = [...porInterno].map(([para, lista]) => ({
+    para,
+    texto: textoTrocasNosTurnosMarcados(lista.map(({ oferta, avaliacao }) => ({
+      base: oferta.plantao.baseName.replace(/^Base\s+/i, ""),
+      quando: quando(dia(oferta.plantao.date), oferta.plantao.period, oferta.plantao.shift),
+      quem: primeiro(oferta.nome),
+      perfeita: avaliacao.caixa === "PERFEITA",
+      dar: avaliacao.entregar
+        ? `${avaliacao.entregar.baseName.replace(/^Base\s+/i, "")}, ${quando(dia(avaliacao.entregar.date), avaliacao.entregar.period, avaliacao.entregar.shift)}`
+        : null,
+    }))),
+    action: AVISO.TROCAS,
+    entityId: para,
+    payload: { ofertas: lista.map((x) => x.oferta.requestId) },
+  }));
+  await enviar(envios, dry);
+  return { tipo: "trocas", enviados: envios.length, considerados: interessados.length, dry, amostra: envios[0]?.texto };
+}
+
 export async function executarAvisosDaDai(tipo: TipoDeAviso, params: { now?: Date; dry?: boolean } = {}): Promise<ResultadoDosAvisos> {
   const now = params.now ?? new Date();
   const dry = params.dry ?? false;
   if (tipo === "plantao") return avisarPlantao(now, dry);
   if (tipo === "vagas") return avisarVagas(now, dry);
+  if (tipo === "trocas") return avisarTrocas(now, dry);
   return avisarLideres(now, dry);
 }
