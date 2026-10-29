@@ -92,12 +92,12 @@ test("resposta só depois da tentativa, e quem personifica não conta como visto
 
 test("fichas de plantão: uma por tema, tema conhecido, nenhum campo vazio", () => {
   const temas = new Set<string>(TEMAS.map((t) => t.tema));
-  assert.deepEqual(FICHAS.map((f) => f.tema).sort(), ["CONVULSAO", "PCR", "PSIQ"]);
+  assert.deepEqual(FICHAS.map((f) => f.tema).sort(), ["AVC", "CONVULSAO", "IAM", "PCR", "PSIQ", "TRAUMA"]);
   for (const f of FICHAS) {
     assert.ok(temas.has(f.tema), f.tema);
     for (const campo of ["titulo", "em_30_segundos", "nao_pode_faltar", "armadilha", "referencia"] as const) assert.ok(f[campo].trim(), `${f.tema}.${campo}`);
   }
-  assert.equal(fichaDoTema("AVC"), null);
+  assert.equal(fichaDoTema("SEPSE"), null);
 });
 
 test("tema com ficha abre pela ficha; caso só quando pede", () => {

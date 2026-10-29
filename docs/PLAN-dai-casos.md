@@ -165,7 +165,10 @@ Registro de "abriu a ficha": evento no `audit_log` (`DAI_FICHA_ABERTA`,
 2. **Fichas de plantão** — PCR, convulsão e agitação/suicídio/intoxicação
    redigidas em `src/content/dai-fichas.json`, em revisão por PR (2026-10-29).
    Tema com ficha abre pela ficha; "Tentar um caso" aparece se houver charada.
-   Trauma, AVC e IAM ficam para a próxima leva. para os 6 temas que mais aparecem: PCR, trauma,
+   Trauma, AVC e IAM entraram em seguida (2026-10-29). Fontes conferidas no
+   texto aberto: RCUK 2025 (versão do ERC), NICE NG39/NG41/NG128/NG185/CG95,
+   AES 2016, ESETT, CRASH-2, consenso brasileiro de agitação. AHA e a revista
+   do ERC barram leitura automática. para os 6 temas que mais aparecem: PCR, trauma,
    AVC, IAM, convulsão, psiq/intox. Redigidas offline a partir das
    referências, **revisadas pelo Caio** antes do merge. Nada gerado em
    tempo de execução.
