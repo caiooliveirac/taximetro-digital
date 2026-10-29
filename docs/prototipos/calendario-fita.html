@@ -1,0 +1,421 @@
+<title>Fita de Turnos</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the 12h rule is a continuous ribbon of shifts. Each day = one row, diurno lane left (paper), noturno lane right (ink).
+   Read left-to-right, top-to-bottom: noturno of day D sits right before diurno of D+1, like text wrapping to the next line. */
+:root{
+  --bg:#ECEEF2; --surface:#FFFFFF; --fg:#151B2B; --muted:#5D6578; --faint:#9AA1B0; --line:#D9DCE3;
+  --paper:#FBF8F1; --paper-line:#EAE3D3; --paper-fg:#3E3626;
+  --ink:#18203B; --ink-2:#232D52; --ink-fg:#DCE2F5; --ink-dot:rgba(255,255,255,.09);
+  --usa:#EE6A55; --usa-deep:#4B160C; --usa-glow:#FFB3A6;
+  --cru:#8673F0; --cru-deep:#221A5A; --cru-glow:#CBC1FF;
+  --crl:#23AE9A; --crl-deep:#06392F; --crl-glow:#8FE8D8;
+  --quero:#D9961A; --posso:#3D84EE; --outro:#7C8396; --clash:#E0434B; --accent:#F97316; --ok:#2F9E5B;
+  --f-display:"Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body:"IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0F1218; --surface:#171B24; --fg:#E7EAF1; --muted:#9DA4B5; --faint:#646C7E; --line:#2A303D;
+  --paper:#2B2924; --paper-line:#3B382F; --paper-fg:#EFE6D2;
+  --ink:#0B1024; --ink-2:#141B38; --ink-fg:#C9D2F0; --ink-dot:rgba(255,255,255,.07);
+  --usa-deep:#2A0B05; --cru-deep:#130E36; --crl-deep:#04241D; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0F1218; --surface:#171B24; --fg:#E7EAF1; --muted:#9DA4B5; --faint:#646C7E; --line:#2A303D;
+  --paper:#2B2924; --paper-line:#3B382F; --paper-fg:#EFE6D2;
+  --ink:#0B1024; --ink-2:#141B38; --ink-fg:#C9D2F0; --ink-dot:rgba(255,255,255,.07);
+  --usa-deep:#2A0B05; --cru-deep:#130E36; --crl-deep:#04241D; color-scheme:dark }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.4}
+.wrap{max-width:760px;margin:0 auto;padding-block:20px 120px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,7vw,40px);line-height:1;margin:4px 0 0;letter-spacing:-.02em;text-wrap:balance}
+.sum{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;color:var(--muted)}
+.sum b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+.sum .clash b{color:var(--clash)}
+.sum .offer b{color:var(--quero)}
+
+/* mode switch */
+.modes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.modes button{font:inherit;font-weight:500;border:0;background:transparent;color:var(--muted);padding:9px 4px;border-radius:9px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1.1}
+.modes button i{display:block;width:22px;height:8px;border-radius:3px}
+.modes button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.modes button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.m-ver i{background:linear-gradient(90deg,var(--paper) 50%,var(--ink) 50%);border:1px solid var(--line)}
+.m-outro i{background:repeating-linear-gradient(135deg,var(--outro) 0 2px,transparent 2px 5px);border:1px solid var(--outro)}
+.m-quero i{border:2px dashed var(--quero)}
+.m-posso i{border:2px dotted var(--posso)}
+.hint{font-size:13px;color:var(--muted);min-height:18px}
+
+/* ribbon overview */
+.ribbon{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.rb-head,.rb-row{display:grid;grid-template-columns:44px repeat(14,minmax(0,1fr));gap:2px;align-items:center}
+.rb-head span{font-family:var(--f-mono);font-size:10px;color:var(--faint);text-align:center;grid-column:span 2}
+.rb-head span:first-child{grid-column:span 1}
+.rb-row .wk{font-family:var(--f-mono);font-size:10px;color:var(--muted)}
+.cell{height:22px;border-radius:3px;border:0;padding:0;cursor:pointer;position:relative}
+.cell.d{background:var(--paper);box-shadow:inset 0 0 0 1px var(--paper-line)}
+.cell.n{background:var(--ink);background-image:radial-gradient(var(--ink-dot) 1px,transparent 1.2px);background-size:5px 5px}
+.cell.d + .cell.n{margin-right:3px}
+.cell.past{opacity:.35}
+.cell.today::after{content:"";position:absolute;left:0;right:0;bottom:-5px;height:2px;background:var(--accent);border-radius:2px}
+.cell.k-usa{background:var(--usa)} .cell.k-cru{background:var(--cru)} .cell.k-crl{background:var(--crl)}
+.cell.n.k-usa,.cell.n.k-cru,.cell.n.k-crl{background-image:radial-gradient(rgba(0,0,0,.35) 1px,transparent 1.2px);background-size:4px 4px}
+.cell.k-outro{background:repeating-linear-gradient(135deg,var(--outro) 0 2px,transparent 2px 5px),var(--paper)}
+.cell.n.k-outro{background:repeating-linear-gradient(135deg,var(--outro) 0 2px,transparent 2px 5px),var(--ink)}
+.cell.k-quero{box-shadow:inset 0 0 0 2px var(--quero)} .cell.k-posso{box-shadow:inset 0 0 0 2px var(--posso)}
+.cell.rest{background-image:repeating-linear-gradient(0deg,rgba(128,128,128,.4) 0 1px,transparent 1px 3px)}
+.cell.clash{outline:2px solid var(--clash);outline-offset:-1px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding-top:8px;border-top:1px solid var(--line);margin-top:4px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:10px;border-radius:2px;display:inline-block}
+
+/* day list */
+.lanes-h{display:grid;grid-template-columns:58px minmax(0,1fr) minmax(0,1fr);gap:6px;position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--modes-h,62px));z-index:4;background:var(--bg);padding:6px 0}
+.lanes-h div{font-family:var(--f-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-radius:8px}
+.lanes-h .hd{background:var(--paper);color:var(--paper-fg);box-shadow:inset 0 0 0 1px var(--paper-line)}
+.lanes-h .hn{background:var(--ink);color:var(--ink-fg)}
+.week{display:flex;flex-direction:column;gap:4px}
+.week-t{font-family:var(--f-display);font-weight:600;font-size:15px;margin:14px 0 4px;color:var(--muted)}
+.row{display:grid;grid-template-columns:58px minmax(0,1fr) minmax(0,1fr);gap:6px;min-height:64px}
+.row.past{opacity:.45}
+.date{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding-left:2px}
+.date .dw{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em}
+.date .dn{font-family:var(--f-display);font-weight:800;font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
+.row.today .date .dn{color:var(--accent)}
+.row.today .date .dw::after{content:" · hoje";color:var(--accent)}
+.lane{position:relative;border-radius:10px;border:0;padding:8px 10px;text-align:left;font:inherit;cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;overflow:hidden}
+.lane:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.lane.d{background:var(--paper);color:var(--paper-fg);box-shadow:inset 0 0 0 1px var(--paper-line)}
+.lane.n{background:var(--ink);color:var(--ink-fg);background-image:radial-gradient(var(--ink-dot) 1px,transparent 1.2px);background-size:7px 7px}
+.lane .empty{font-size:12px;opacity:.0;transition:opacity .15s}
+body[data-mode="outro"] .lane .empty,body[data-mode="quero"] .lane .empty,body[data-mode="posso"] .lane .empty{opacity:.45}
+.lane:hover .empty{opacity:.6}
+.place{font-family:var(--f-display);font-weight:600;font-size:17px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kind{font-size:11px;font-family:var(--f-mono);letter-spacing:.04em;text-transform:uppercase;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* shift blocks: day = solid flat fill, night = glowing outline on ink */
+.lane.d.k-usa{background:var(--usa);color:var(--usa-deep);box-shadow:none}
+.lane.d.k-cru{background:var(--cru);color:#fff;box-shadow:none}
+.lane.d.k-crl{background:var(--crl);color:var(--crl-deep);box-shadow:none}
+.lane.n.k-usa{box-shadow:inset 0 0 0 2px var(--usa),inset 0 0 18px rgba(238,106,85,.35);color:var(--usa-glow)}
+.lane.n.k-cru{box-shadow:inset 0 0 0 2px var(--cru),inset 0 0 18px rgba(134,115,240,.4);color:var(--cru-glow)}
+.lane.n.k-crl{box-shadow:inset 0 0 0 2px var(--crl),inset 0 0 18px rgba(35,174,154,.35);color:var(--crl-glow)}
+.lane.k-outro{background-image:repeating-linear-gradient(135deg,rgba(124,131,150,.38) 0 3px,transparent 3px 9px)}
+.lane.d.k-outro{background-color:var(--paper)} .lane.n.k-outro{background-color:var(--ink)}
+.lane.k-quero{box-shadow:inset 0 0 0 2px var(--quero)}
+.lane.k-quero .kind{color:var(--quero);opacity:1}
+.lane.k-posso{box-shadow:inset 0 0 0 2px var(--posso)}
+.lane.k-posso .kind{color:var(--posso);opacity:1}
+.lane.rest{background-image:repeating-linear-gradient(0deg,rgba(128,128,128,.22) 0 1px,transparent 1px 5px)}
+.lane.rest .kind{opacity:.55}
+.lane.n.rest{background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.09) 0 1px,transparent 1px 5px)}
+.lane.clash::after{content:"";position:absolute;inset:0;border-radius:10px;box-shadow:inset 0 0 0 2px var(--clash)}
+.tag{align-self:flex-start;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;line-height:1.35;margin-bottom:2px;white-space:nowrap}
+.tag.offer{background:var(--quero);color:#2A1A00}
+.tag.clash{background:var(--clash);color:#fff}
+.tag.perfect{background:var(--ok);color:#fff}
+.lane .sub{font-size:12px;opacity:.8}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(10,14,25,.45);z-index:20}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-height:82vh;overflow:auto;background:var(--surface);color:var(--fg);border-radius:18px 18px 0 0;padding:18px max(18px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));max-width:760px;margin:0 auto;box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .22s ease-out}@keyframes up{from{transform:translateY(30px);opacity:.4}}}
+.sheet h2{font-family:var(--f-display);font-weight:800;font-size:24px;margin:2px 0 4px;letter-spacing:-.01em}
+.sheet .close{position:absolute;right:14px;top:12px;font:inherit;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:6px 10px;cursor:pointer}
+.box{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:12px}
+.box h3{margin:0 0 6px;font-size:13px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+.box.perfect{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.box.perfect h3{color:var(--ok)}
+.box.clash{border-color:var(--clash);background:color-mix(in srgb,var(--clash) 7%,transparent)}
+.box.clash h3{color:var(--clash)}
+.person{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.person:first-of-type{border-top:0}
+.person .why{color:var(--muted);font-size:12px}
+.pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;align-self:center}
+.pill.q{background:color-mix(in srgb,var(--quero) 20%,transparent);color:var(--quero)}
+.pill.p{background:color-mix(in srgb,var(--posso) 20%,transparent);color:var(--posso)}
+.big{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0 2px}
+.big div{display:flex;flex-direction:column}
+.big b{font-family:var(--f-display);font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.big span{font-size:12px;color:var(--muted)}
+.cta{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.cta button{font:inherit;font-weight:600;padding:11px 14px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer;flex:1 1 140px}
+.cta button.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.timeline{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;margin-top:8px}
+.timeline div{height:34px;border-radius:6px;font-size:11px;display:flex;align-items:flex-end;padding:4px;font-family:var(--f-mono)}
+.timeline .d{background:var(--paper);color:var(--paper-fg);box-shadow:inset 0 0 0 1px var(--paper-line)}
+.timeline .n{background:var(--ink);color:var(--ink-fg)}
+.timeline .me{box-shadow:inset 0 0 0 2px var(--accent)}
+.timeline .blk{background-image:repeating-linear-gradient(45deg,rgba(224,67,75,.45) 0 2px,transparent 2px 6px)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;z-index:30;max-width:min(92vw,520px);font-size:13px}
+.note{font-size:12px;color:var(--faint);text-align:center}
+@media (min-width:640px){ .row{min-height:58px} .place{font-size:18px} }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Calendário · rodízio 26 out – 22 nov</div>
+    <h1>Seus turnos, em fita</h1>
+    <div class="sum" id="sum"></div>
+  </header>
+
+  <nav class="modes" aria-label="Modo do calendário">
+    <button class="m-ver" data-m="ver" aria-pressed="true"><i></i>Ver</button>
+    <button class="m-outro" data-m="outro" aria-pressed="false"><i></i>Outro serviço</button>
+    <button class="m-quero" data-m="quero" aria-pressed="false"><i></i>Quero</button>
+    <button class="m-posso" data-m="posso" aria-pressed="false"><i></i>Posso</button>
+  </nav>
+  <div class="hint" id="hint"></div>
+
+  <section class="ribbon" aria-label="Visão do rodízio, turno a turno">
+    <div class="rb-head"><span></span><span>seg</span><span>ter</span><span>qua</span><span>qui</span><span>sex</span><span>sáb</span><span>dom</span></div>
+    <div id="rb"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--usa)"></i>Ambulância</span>
+      <span><i class="sw" style="background:var(--cru)"></i>Regulação</span>
+      <span><i class="sw" style="background:var(--crl)"></i>Leitos</span>
+      <span><i class="sw" style="background:repeating-linear-gradient(135deg,var(--outro) 0 2px,transparent 2px 5px);box-shadow:inset 0 0 0 1px var(--outro)"></i>Outro serviço</span>
+      <span><i class="sw" style="box-shadow:inset 0 0 0 2px var(--quero)"></i>Quero</span>
+      <span><i class="sw" style="box-shadow:inset 0 0 0 2px var(--posso)"></i>Posso</span>
+      <span><i class="sw" style="background:repeating-linear-gradient(0deg,rgba(128,128,128,.5) 0 1px,transparent 1px 3px);box-shadow:inset 0 0 0 1px var(--line)"></i>Descanso 12h</span>
+    </div>
+  </section>
+
+  <div class="lanes-h"><span></span><div class="hd">Diurno 07→19</div><div class="hn">Noturno 19→07</div></div>
+  <div id="list"></div>
+  <p class="note">Protótipo com dados de exemplo. Nomes e ofertas são fictícios.</p>
+</div>
+<div id="layer"></div>
+
+<script>
+const TODAY = "2026-10-29";
+const START = "2026-10-26", WEEKS = 4;
+const KIND = {usa:"Ambulância", cru:"Regulação", crl:"Leitos"};
+const DW = ["dom","seg","ter","qua","qui","sex","sáb"];
+const MES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+
+const addDays=(s,n)=>{const d=new Date(s+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
+const K=(date,p)=>date+"|"+p;
+const parse=k=>{const [date,p]=k.split("|");return {date,p}};
+function neighbors(k){const {date,p}=parse(k);return p==="D"?[K(addDays(date,-1),"N"),K(date,"N")]:[K(date,"D"),K(addDays(date,1),"D")]}
+const fmt=k=>{const {date,p}=parse(k);const d=new Date(date+"T12:00:00Z");return `${DW[d.getUTCDay()]} ${d.getUTCDate()}/${String(d.getUTCMonth()+1).padStart(2,"0")} ${p==="D"?"diurno":"noturno"}`};
+
+/* your SAMU shifts */
+const samu = {
+  [K("2026-10-26","D")]:{place:"San Martin",kind:"usa",status:"Concluído"},
+  [K("2026-10-30","D")]:{place:"Cabula",kind:"usa",status:"Agendado"},
+  [K("2026-11-01","N")]:{place:"Periperi",kind:"usa",status:"Agendado"},
+  [K("2026-11-05","D")]:{place:"Central de Regulação",kind:"cru",status:"CRU fixo"},
+  [K("2026-11-07","D")]:{place:"Paralela",kind:"usa",status:"Agendado"},
+  [K("2026-11-12","D")]:{place:"Central de Regulação",kind:"cru",status:"CRU fixo"},
+  [K("2026-11-17","N")]:{place:"Regulação de Leitos",kind:"crl",status:"Agendado"},
+  [K("2026-11-19","D")]:{place:"Central de Regulação",kind:"cru",status:"CRU fixo"},
+};
+/* your signals */
+const marks = {
+  [K("2026-11-03","D")]:{t:"outro",label:"Hospital Geral"},
+  [K("2026-11-03","N")]:{t:"outro",label:"Hospital Geral"},
+  [K("2026-11-18","D")]:{t:"outro",label:"UPA Brotas"},
+  [K("2026-11-21","N")]:{t:"outro",label:"Clínica"},
+  [K("2026-11-09","D")]:{t:"quero"},
+  [K("2026-11-10","N")]:{t:"quero"},
+  [K("2026-11-13","D")]:{t:"posso"},
+  [K("2026-11-15","D")]:{t:"posso"},
+};
+/* open swap offers from colleagues; wants = turnos the offerer marked quero/posso */
+const offers = [
+  {k:K("2026-11-09","D"),place:"Itapoã",kind:"usa",who:"Bruno",fac:"mesma turma",wants:[K("2026-11-17","N")]},
+  {k:K("2026-11-09","D"),place:"Pau Miúdo",kind:"usa",who:"Lívia",fac:"outra faculdade",wants:[]},
+  {k:K("2026-11-13","D"),place:"Central de Regulação",kind:"cru",who:"Rafael",fac:"mesma turma",wants:[K("2026-11-07","D")]},
+  {k:K("2026-11-15","D"),place:"Centenário",kind:"usa",who:"Marina",fac:"outra faculdade",wants:[]},
+  {k:K("2026-11-11","N"),place:"Cajazeiras",kind:"usa",who:"Tiago",fac:"mesma turma",wants:[]},
+];
+/* demand others signaled, used on the offer panel (counts only) */
+const demand = {
+  [K("2026-10-30","D")]:{q:["Ana","Davi"],p:["Júlia"],hist:5,can:14},
+  [K("2026-11-01","N")]:{q:[],p:["Caio"],hist:2,can:9},
+  [K("2026-11-07","D")]:{q:["Rafael"],p:[],hist:4,can:16},
+  [K("2026-11-17","N")]:{q:["Bruno"],p:["Helena"],hist:3,can:11},
+  [K("2026-11-05","D")]:{q:[],p:[],hist:6,can:12},
+  [K("2026-11-12","D")]:{q:["Pedro"],p:[],hist:6,can:12},
+  [K("2026-11-19","D")]:{q:[],p:["Lara"],hist:6,can:12},
+};
+
+let mode="ver";
+const allKeys=()=>{const out=[];for(let i=0;i<WEEKS*7;i++){const d=addDays(START,i);out.push(K(d,"D"),K(d,"N"))}return out};
+
+function analyse(){
+  const occ=new Set([...Object.keys(samu),...Object.keys(marks).filter(k=>marks[k].t==="outro")]);
+  const rest=new Map(); // key -> reason key
+  for(const k of Object.keys(samu)) for(const n of neighbors(k)) if(!samu[n]) rest.set(n,k);
+  const clash=new Map(); // samu key -> outro key
+  for(const k of Object.keys(samu)){
+    const m=marks[k]; if(m&&m.t==="outro"){clash.set(k,k);continue}
+    for(const n of neighbors(k)) if(marks[n]?.t==="outro") clash.set(k,n);
+  }
+  const blocked=k=>occ.has(k)||neighbors(k).some(n=>occ.has(n));
+  const offersFor=k=>offers.filter(o=>o.k===k);
+  // perfect: offer lands on your quero/posso AND offerer wants a SAMU shift of yours that collides with outro serviço
+  const perfect=[];
+  for(const o of offers){
+    const m=marks[o.k]; if(!m||m.t==="outro"||blocked(o.k)) continue;
+    for(const w of o.wants) if(samu[w]&&clash.has(w)) perfect.push({offer:o,give:w});
+  }
+  return {rest,clash,blocked,offersFor,perfect};
+}
+
+function laneHTML(k,A){
+  const {p,date}=parse(k), cls=["lane",p==="D"?"d":"n"]; let inner="",tag="";
+  const s=samu[k], m=marks[k];
+  if(s){
+    cls.push("k-"+s.kind);
+    inner=`<span class="place">${s.place}</span><span class="kind">${KIND[s.kind]} · ${s.status}</span>`;
+    if(A.clash.has(k)){cls.push("clash");tag=`<span class="tag clash">colide</span>`}
+    else if((demand[k]?.q.length||0)+(demand[k]?.p.length||0)>0 && date>=TODAY){{const n=demand[k].q.length+demand[k].p.length;tag=`<span class="tag offer">${n} ${n>1?"querem":"quer"} este turno</span>`}}
+  } else if(m?.t==="outro"){
+    cls.push("k-outro");
+    if([...A.clash.values()].includes(k)){cls.push("clash");tag=`<span class="tag clash">colide</span>`}
+    inner=`<span class="place">${m.label}</span><span class="kind">Outro serviço</span>`;
+  } else if(m){
+    cls.push("k-"+m.t);
+    const os=A.offersFor(k).filter(()=>!A.blocked(k));
+    const perf=A.perfect.some(x=>x.offer.k===k);
+    inner=`<span class="kind">${m.t==="quero"?"Quero plantão":"Posso pegar"}</span>`+
+      (os.length?`<span class="place">${os.map(o=>o.place).join(" · ")}</span>`:`<span class="sub">Sem oferta ainda</span>`);
+    if(perf) tag=`<span class="tag perfect">troca perfeita</span>`;
+    else if(os.length) tag=`<span class="tag offer">${os.length} oferta${os.length>1?"s":""}</span>`;
+  } else if(A.rest.has(k)){
+    cls.push("rest");
+    const r=samu[A.rest.get(k)];
+    inner=`<span class="kind">Descanso</span><span class="sub">colado em ${r.place}</span>`;
+  } else {
+    const os=A.offersFor(k);
+    inner=os.length?`<span class="sub">${os.length} oferta${os.length>1?"s":""} aberta${os.length>1?"s":""}</span>`:`<span class="empty">${mode==="ver"?"":"marcar"}</span>`;
+  }
+  return `<button class="${cls.join(" ")}" data-k="${k}" aria-label="${fmt(k)}">${tag}${inner}</button>`;
+}
+
+function render(){
+  document.body.dataset.mode=mode;
+  const A=analyse();
+  // summary
+  const future=Object.keys(samu).filter(k=>parse(k).date>=TODAY);
+  const done=Object.keys(samu).length-future.length;
+  const offerCount=offers.filter(o=>marks[o.k]&&marks[o.k].t!=="outro"&&!A.blocked(o.k)).length;
+  document.getElementById("sum").innerHTML=
+    `<span><b>${Object.keys(samu).length}</b> plantões · <b>${done}</b> feito</span>`+
+    `<span class="clash"><b>${A.clash.size}</b> colisão com outro serviço</span>`+
+    `<span class="offer"><b>${offerCount}</b> ofertas nos dias que você marcou</span>`+
+    (A.perfect.length?`<span style="color:var(--ok)"><b style="color:var(--ok)">${A.perfect.length}</b> troca perfeita</span>`:"");
+  // ribbon
+  let rb="";
+  for(let w=0;w<WEEKS;w++){
+    const d0=addDays(START,w*7), dt=new Date(d0+"T12:00:00Z");
+    rb+=`<div class="rb-row"><span class="wk">${dt.getUTCDate()} ${MES[dt.getUTCMonth()]}</span>`;
+    for(let i=0;i<7;i++){const d=addDays(d0,i);for(const p of ["D","N"]){const k=K(d,p);const c=["cell",p==="D"?"d":"n"];
+      if(samu[k])c.push("k-"+samu[k].kind);else if(marks[k])c.push("k-"+marks[k].t);else if(A.rest.has(k))c.push("rest");
+      if(A.clash.has(k))c.push("clash"); if(d<TODAY)c.push("past"); if(d===TODAY&&p==="D")c.push("today");
+      rb+=`<button class="${c.join(" ")}" data-jump="${d}" aria-label="${fmt(k)}"></button>`}}
+    rb+=`</div>`;
+  }
+  document.getElementById("rb").innerHTML=rb;
+  // list
+  let html="";
+  for(let w=0;w<WEEKS;w++){
+    const d0=addDays(START,w*7),d6=addDays(d0,6);
+    const a=new Date(d0+"T12:00:00Z"),b=new Date(d6+"T12:00:00Z");
+    html+=`<section class="week"><div class="week-t">${a.getUTCDate()} ${MES[a.getUTCMonth()]} – ${b.getUTCDate()} ${MES[b.getUTCMonth()]}</div>`;
+    for(let i=0;i<7;i++){
+      const d=addDays(d0,i),dt=new Date(d+"T12:00:00Z");
+      html+=`<div class="row${d<TODAY?" past":""}${d===TODAY?" today":""}" id="r-${d}">
+        <div class="date"><span class="dw">${DW[dt.getUTCDay()]}</span><span class="dn">${dt.getUTCDate()}</span></div>
+        ${laneHTML(K(d,"D"),A)}${laneHTML(K(d,"N"),A)}</div>`;
+    }
+    html+=`</section>`;
+  }
+  document.getElementById("list").innerHTML=html;
+  const H={ver:"Toque num turno para ver detalhes, ofertar ou abrir ofertas.",
+    outro:"Toque nos turnos em que você tem plantão em outro lugar. O sistema avisa quando colide com o SAMU.",
+    quero:"Toque nos turnos em que você quer plantão. Quem oferta nesse turno vê você primeiro.",
+    posso:"Toque nos turnos em que você topa pegar. Conta menos que Quero, mas entra na fila."};
+  document.getElementById("hint").textContent=H[mode];
+}
+
+function toast(t){const el=document.createElement("div");el.className="toast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2600)}
+
+function tap(k){
+  const A=analyse();
+  if(mode==="ver") return openSheet(k,A);
+  if(samu[k]) return toast(`${fmt(k)}: você já está em ${samu[k].place}. Para sair dele, oferte para troca.`);
+  if(mode==="outro"){
+    if(marks[k]?.t==="outro") delete marks[k]; else marks[k]={t:"outro",label:"Outro serviço"};
+    render(); const A2=analyse(); const c=[...A2.clash].find(([,o])=>o===k);
+    if(c) toast(`Colide com ${samu[c[0]].place} (${fmt(c[0])}). Oferte esse plantão para troca.`);
+    return;
+  }
+  if(A.rest.has(k)&&!marks[k]) return toast(`Sem 12h de descanso: colado em ${samu[A.rest.get(k)].place} (${fmt(A.rest.get(k))}).`);
+  if(marks[k]?.t==="outro") return toast("Esse turno está marcado como outro serviço.");
+  if(neighbors(k).some(n=>marks[n]?.t==="outro")) return toast("Colado num outro serviço seu: sem 12h de descanso.");
+  if(marks[k]?.t===mode) delete marks[k]; else marks[k]={t:mode};
+  render();
+}
+
+function closeSheet(){document.getElementById("layer").innerHTML=""}
+function openSheet(k,A){
+  const s=samu[k],m=marks[k],{date}=parse(k);let body="";
+  const tl=()=>{const seq=parse(k).p==="D"
+      ?[K(addDays(date,-1),"D"),K(addDays(date,-1),"N"),k,K(date,"N"),K(addDays(date,1),"D")]
+      :[K(addDays(date,-1),"N"),K(date,"D"),k,K(addDays(date,1),"D"),K(addDays(date,1),"N")];
+    return `<div class="timeline">${seq.map(x=>{const pp=parse(x);const c=[pp.p==="D"?"d":"n"];if(x===k)c.push("me");else if(neighbors(k).includes(x))c.push("blk");
+      return `<div class="${c.join(" ")}">${DW[new Date(pp.date+"T12:00:00Z").getUTCDay()]} ${pp.p==="D"?"dia":"noite"}</div>`}).join("")}</div>`};
+  if(s){
+    const dem=demand[k]||{q:[],p:[],hist:0,can:0};
+    const cl=A.clash.get(k);
+    const perf=A.perfect.find(x=>x.give===k);
+    body=`<div class="eyebrow">${fmt(k)} · ${KIND[s.kind]}</div><h2>${s.place}</h2><div style="color:var(--muted)">${s.status}</div>
+      <div class="box"><h3>Descanso de 12h</h3><div style="font-size:13px;color:var(--muted)">Os turnos hachurados ficam fechados para você enquanto este plantão for seu.</div>${tl()}</div>
+      ${cl?`<div class="box clash"><h3>Colide com outro serviço</h3>${cl===k?"Você marcou":"Turno colado em"} <b>${marks[cl].label}</b> (${fmt(cl)}). Para cumprir os dois, oferte este plantão.</div>`:""}
+      ${perf?`<div class="box perfect"><h3>Troca perfeita</h3><b>${perf.offer.who}</b> quer este turno e oferta <b>${perf.offer.place}</b> em ${fmt(perf.offer.k)}, dia que você marcou como ${marks[perf.offer.k].t}. Os dois resolvem um problema.</div>`:""}
+      ${date>=TODAY?`<div class="box"><h3>Se você ofertar</h3>
+        <div class="big"><div><b>${dem.can}</b><span>colegas podem</span></div><div><b style="color:var(--quero)">${dem.q.length+dem.p.length}</b><span>marcaram este turno</span></div><div><b>${dem.hist}</b><span>já fizeram ${DW[new Date(date+"T12:00:00Z").getUTCDay()]} ${parse(k).p==="D"?"dia":"noite"}</span></div></div>
+        ${dem.q.map(n=>`<div class="person"><div>${n}<div class="why">marcou Quero neste turno</div></div><span class="pill q">Quero</span></div>`).join("")}
+        ${dem.p.map(n=>`<div class="person"><div>${n}<div class="why">marcou Posso neste turno</div></div><span class="pill p">Posso</span></div>`).join("")}
+        ${s.kind==="cru"?`<div class="why" style="margin-top:8px;font-size:12px;color:var(--muted)">CRU: uma troca por rodízio. Você ainda não usou a sua.</div>`:""}
+        ${s.kind!=="usa"?`<div class="why" style="margin-top:4px;font-size:12px;color:var(--muted)">Só colegas da sua faculdade: troca entre faculdades vale só para Ambulância.</div>`:""}
+      </div>
+      <div class="cta"><button class="pri" data-act="ofertar">Ofertar para troca</button><button data-act="close">Fechar</button></div>`:""}`;
+  } else if(m&&m.t!=="outro"){
+    const os=A.offersFor(k);
+    body=`<div class="eyebrow">${fmt(k)} · você marcou ${m.t}</div><h2>${os.length?os.length+" oferta"+(os.length>1?"s":"")+" neste turno":"Ninguém ofertou ainda"}</h2>
+      <div style="color:var(--muted)">${os.length?"Ordenadas pelo que resolve mais para os dois lados.":"Você será avisado quando alguém ofertar este turno."}</div>
+      ${os.map(o=>{const want=o.wants.find(w=>samu[w]);const perf=want&&A.clash.has(want);
+        return `<div class="box${perf?" perfect":""}"><h3>${perf?"Troca perfeita":KIND[o.kind]}</h3><div class="place" style="font-size:19px">${o.place}</div>
+        <div class="why" style="color:var(--muted);font-size:13px;margin-top:2px">${o.who} · ${o.fac}${o.fac==="outra faculdade"&&o.kind!=="usa"?" · não pode":""}</div>
+        <div style="margin-top:8px;font-size:13px">${want?`Quer em troca: <b>${samu[want].place}</b>, ${fmt(want)}${perf?" — o turno que colide com seu outro serviço.":"."}`:"Aceita qualquer plantão seu que não quebre o descanso dele."}</div></div>`}).join("")}
+      <div class="cta"><button data-act="close">Fechar</button></div>`;
+  } else if(m?.t==="outro"){
+    body=`<div class="eyebrow">${fmt(k)}</div><h2>${m.label}</h2><div style="color:var(--muted)">Outro serviço. Só você vê esta marcação. Ela fecha os turnos colados para ofertas e acusa colisão com plantões do SAMU.</div>${tl()}<div class="cta"><button data-act="close">Fechar</button></div>`;
+  } else {
+    const os=A.offersFor(k);
+    body=`<div class="eyebrow">${fmt(k)}</div><h2>${A.rest.has(k)?"Descanso":"Turno livre"}</h2>
+      <div style="color:var(--muted)">${A.rest.has(k)?`Colado em ${samu[A.rest.get(k)].place} (${fmt(A.rest.get(k))}). Você não pode pegar plantão aqui.`:os.length?`${os.length} oferta aberta neste turno. Marque Quero para entrar na frente.`:"Marque Quero ou Posso para receber ofertas deste turno."}</div>
+      <div class="cta"><button data-act="close">Fechar</button></div>`;
+  }
+  document.getElementById("layer").innerHTML=`<div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-modal="true"><button class="close" data-act="close">Fechar</button>${body}</div>`;
+}
+
+document.addEventListener("click",e=>{
+  const mb=e.target.closest(".modes button");
+  if(mb){mode=mb.dataset.m;document.querySelectorAll(".modes button").forEach(b=>b.setAttribute("aria-pressed",b===mb));render();return}
+  const act=e.target.closest("[data-act]");
+  if(act){if(act.dataset.act==="ofertar"){closeSheet();toast("Oferta publicada. Quem marcou este turno vê primeiro.");}else closeSheet();return}
+  const ln=e.target.closest(".lane");if(ln){tap(ln.dataset.k);return}
+  const c=e.target.closest("[data-jump]");if(c){document.getElementById("r-"+c.dataset.jump)?.scrollIntoView({behavior:"smooth",block:"center"})}
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
+const modesEl=document.querySelector(".modes");
+new ResizeObserver(()=>document.documentElement.style.setProperty("--modes-h",(modesEl.offsetHeight+8)+"px")).observe(modesEl);
+render();
+</script>

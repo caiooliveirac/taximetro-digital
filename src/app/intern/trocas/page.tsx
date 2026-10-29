@@ -134,6 +134,14 @@ export default function InternTrocas() {
       if (rJson.success) setMyRequests(rJson.data);
       if (osJson.success) setOpenSwaps(osJson.data);
       if (shJson.success) setSwapHistory(shJson.data);
+      // Vindo do calendário ("Ofertar para troca"): já abre com o plantão
+      // escolhido. Sai da URL para o recarregar depois de publicar não repetir.
+      const ofertar = new URLSearchParams(window.location.search).get("ofertar");
+      if (ofertar) {
+        setTab("SWAP");
+        setSwapAssignmentId(ofertar);
+        window.history.replaceState(null, "", window.location.pathname);
+      }
     } catch {
       setMsg({ type: "error", text: "Erro ao carregar dados." });
     }

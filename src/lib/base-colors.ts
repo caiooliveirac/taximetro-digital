@@ -2,6 +2,7 @@
  * Visual mapping for SAMU base types → consistent color system.
  * Uses the CSS variables --color-base-usa/central defined in globals.css.
  */
+import { ORG, type Instancia } from "@/lib/instance";
 
 /** Canonical view order — sorted by numeric suffix */
 export const BASE_VIEW_ORDER = [
@@ -95,6 +96,52 @@ const FALLBACK_BASE_CODE = {
 
 export function getBaseStyleByCode(code: string | undefined | null) {
   return BASE_CODE_STYLES[(code ?? "").toUpperCase()] ?? FALLBACK_BASE_CODE;
+}
+
+/**
+ * Tipo de plantão como o interno reconhece: uma palavra e uma cor, sem
+ * código. O nome muda por instância (a Vitalmed chama de APH/CCO); a cor é a
+ * mesma. Diurno é bloco sólido; noturno é contorno luminoso sobre a faixa
+ * escura da noite (ver intern-calendar.tsx).
+ */
+const ROTULO_DO_TIPO: Record<Instancia, Record<BaseType, string>> = {
+  samu: { USA: "Ambulância", CENTRAL: "Regulação", CRL: "Leitos" },
+  vitalmed: { USA: "APH", CENTRAL: "CCO", CRL: "Leitos" },
+};
+
+const ESTILO_DO_TIPO: Record<BaseType, { dia: string; noite: string; amostra: string }> = {
+  USA: {
+    dia: "bg-[#EE6A55] text-[#4B160C]",
+    noite: "text-[#FFB3A6] shadow-[inset_0_0_0_2px_#EE6A55,inset_0_0_18px_rgba(238,106,85,0.35)]",
+    amostra: "bg-[#EE6A55]",
+  },
+  CENTRAL: {
+    dia: "bg-[#8673F0] text-white",
+    noite: "text-[#CBC1FF] shadow-[inset_0_0_0_2px_#8673F0,inset_0_0_18px_rgba(134,115,240,0.4)]",
+    amostra: "bg-[#8673F0]",
+  },
+  CRL: {
+    dia: "bg-[#23AE9A] text-[#06392F]",
+    noite: "text-[#8FE8D8] shadow-[inset_0_0_0_2px_#23AE9A,inset_0_0_18px_rgba(35,174,154,0.35)]",
+    amostra: "bg-[#23AE9A]",
+  },
+};
+
+function tipoValido(type: string | undefined | null): BaseType {
+  return type === "CENTRAL" || type === "CRL" ? type : "USA";
+}
+
+export function rotuloDoTipo(type: string | undefined | null, instancia: Instancia = ORG): string {
+  return ROTULO_DO_TIPO[instancia][tipoValido(type)];
+}
+
+export function estiloDoTipo(type: string | undefined | null) {
+  return ESTILO_DO_TIPO[tipoValido(type)];
+}
+
+/** "Base Cabula" → "Cabula". O código (CC70) nunca é o nome que a pessoa lê. */
+export function nomeCurtoDaBase(name: string): string {
+  return name.replace(/^Base\s+/i, "").trim();
 }
 
 /** Period visual helpers */
