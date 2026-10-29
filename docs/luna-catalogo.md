@@ -70,7 +70,11 @@ de Trocas).
 Log `ev: "luna_interno"`: `rota` (`direta` | `modelo` | `modelo+ferramenta`),
 `intencao`, `chamadas_modelo`, `entrada`/`saida` (tokens), `ferramentas`
 (nome, ms, status, registros), `fontes` (fonte lógica, ms, linhas, ok),
-`args` da ferramenta, `erro`.
+`args` da ferramenta, `erro`. Some a cada deploy (log do container).
+
+Para estudar o uso, cada pergunta de interno não personificado vira
+`DAI_PERGUNTA` no `audit_log` (`src/lib/dai-perguntas.ts`): pergunta, resposta
+(até 2000 chars), rota, intenção, ferramentas, `args`, ms. Guarda 90 dias.
 
 ## Catálogo do banco (produção, 2026-10-29)
 

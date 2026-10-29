@@ -5,11 +5,13 @@
  * POST → { mensagens: [{ role, content, memoria? }] } → { texto, cartoes, memoria }
  *
  * Teto por pessoa: 40 perguntas por dia e uma de cada vez — custo do modelo.
+ * Cada pergunta do interno (não personificado) vira DAI_PERGUNTA no audit_log, 90 dias.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
 import { getEffectiveUser } from "@/lib/impersonate";
+import { gravarPergunta } from "@/lib/dai-perguntas";
 import { lunaLigada, perguntarLuna } from "@/lib/luna-interno";
 import { checkRateLimit } from "@/shared/infra/rate-limit";
 import { localDateStr } from "@/lib/utils";
@@ -67,11 +69,17 @@ export async function POST(req: NextRequest) {
 
   emCurso.add(pessoa);
   try {
+    let meta: Record<string, unknown> = {};
     const resposta = await perguntarLuna(
       { internId: user.id, facultyId: user.facultyId, hoje: localDateStr() },
       parsed.data.mensagens,
-      (o) => console.log(JSON.stringify({ ...o, user: user.id, at: new Date().toISOString() })),
+      (o) => {
+        meta = o;
+        console.log(JSON.stringify({ ...o, user: user.id, at: new Date().toISOString() }));
+      },
     );
+    // Personificando, só olha: não entra no estudo do uso real.
+    if (!user.realUserId) await gravarPergunta(user.id, parsed.data.mensagens, resposta, meta).catch(() => {});
     return NextResponse.json({ success: true, data: resposta });
   } finally {
     emCurso.delete(pessoa);
