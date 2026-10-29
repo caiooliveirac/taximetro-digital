@@ -171,7 +171,7 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     .map((n) => memoria?.opcoes?.find((r) => r.n === n))
     .filter((r): r is LunaRef => Boolean(r));
   const objetivo = args.objetivo ?? (somente.length && somente.every((s) => s.fonte === "TROCA") ? "troca" : "plantao");
-  const fontes = somente.length ? [...new Set(somente.map((s) => s.fonte))] : args.fontes ?? FONTES_PADRAO[objetivo];
+  let fontes = somente.length ? [...new Set(somente.map((s) => s.fonte))] : args.fontes ?? FONTES_PADRAO[objetivo];
 
   const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
   const limite = addDaysToDateStr(ctx.hoje, args.dias ?? (objetivo === "meta" ? 45 : 21));
@@ -190,6 +190,17 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
       };
     }
     largar = achados[0];
+  }
+
+  // Vaga liberada é de quem precisa de reposição. Com a meta completa nos
+  // tipos pedidos, nem vai buscar: diz quantos colegas estão na frente.
+  let fila = "";
+  const tiposDoPedido = args.tipos?.length ? args.tipos : GOAL_KINDS.filter((k) => (meta?.alvo[k] ?? 0) > 0);
+  if (objetivo !== "troca" && !somente.length && fontes.includes("LIBERADA") && meta && tiposDoPedido.length && tiposDoPedido.every((k) => meta.faltam[k] === 0)) {
+    fontes = fontes.filter((x) => x !== "LIBERADA");
+    const demanda = await f.demanda().catch(() => null);
+    const quem = demanda ? tiposDoPedido.filter((k) => demanda[k].internos > 0).map((k) => `${demanda[k].internos} precisam de ${demanda[k].casinhas} ${k}`) : [];
+    fila = `Vaga liberada vai primeiro para quem precisa de reposição${quem.length ? ` — hoje ${quem.join("; ")}` : ""}. Com sua meta completa, sobram extra e sobra da grade.`;
   }
 
   const leituras: Record<Fonte, () => Promise<Oferta[]>> = {
@@ -229,6 +240,7 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   const mostradas = busca.opcoes.slice(0, MOSTRAR);
   const lider = mostradas.some((a) => a.fonte === "LIBERADA") ? await f.lider() : null;
   let texto = textoDaBusca(busca);
+  if (fila) texto += `\n${fila}`;
   if (largar) texto = `Para largar seu **${largar.baseCode} ${quando(largar.date, largar.period, largar.shift)}**:\n${texto}`;
   if (mostradas.some((a) => a.fonte === "LIBERADA") && !lider) texto += "\nSua faculdade está sem líder ativo cadastrado: a vaga liberada depende dele.";
 

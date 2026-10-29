@@ -66,6 +66,7 @@ function fontes(fx: Fixture = {}) {
   const f: Fontes = {
     meta: le("meta", fx.meta === undefined ? META : fx.meta),
     meusPlantoes: le("meus", fx.meus ?? MEUS),
+    demanda: le("demanda", { USA: { internos: 131, casinhas: 611 }, CRU: { internos: 112, casinhas: 356 }, CRL: { internos: 60, casinhas: 60 } }),
     lider: le("lider", { id: "lider-a", nome: "Líder A" }),
     liberadas: async (ate) => (await le("liberadas", fx.liberadas ?? LIBERADAS)()).filter((o) => o.date <= ate),
     extras: le("extras", fx.extras ?? EXTRAS),
@@ -238,13 +239,22 @@ test("10. 'Encontre a melhor opção para completar minhas CRL'", async () => {
 
 test("12. 'Posso pegar vaga mesmo já tendo completado a meta?' — liberada não; extra sim", async () => {
   const completa: Meta = { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } };
-  const { r } = await perguntar("Posso pegar uma vaga mesmo já tendo completado minha meta?", {
+  const { r, lidas } = await perguntar("Posso pegar uma vaga mesmo já tendo completado minha meta?", {
     fx: { meta: completa },
     passos: [{ tool: { name: "buscar_opcoes", args: { objetivo: "plantao" } } }],
   });
   assert.doesNotMatch(r.texto, /liberada por/);
   assert.match(r.texto, /PM01 .*extra/);
-  assert.match(r.texto, /de tipo com meta completa/);
+  // Nem busca vaga liberada: diz quem está na frente.
+  assert.ok(!lidas.includes("liberadas"));
+  assert.match(r.texto, /vai primeiro para quem precisa de reposição — hoje 131 precisam de 611 USA; 112 precisam de 356 CRU; 60 precisam de 60 CRL/);
+});
+
+test("meta completa só num tipo: vaga liberada dos outros tipos continua", async () => {
+  const { r, lidas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: { ...META, faltam: { USA: 2, CRU: 0, CRL: 0 } } } });
+  assert.ok(lidas.includes("liberadas"));
+  assert.match(r.texto, /CB05/);
+  assert.doesNotMatch(r.texto, /reposição/);
 });
 
 // ---------------------------------------------------------------------------

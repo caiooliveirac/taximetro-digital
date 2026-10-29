@@ -84,7 +84,7 @@ não no banco.
 | `checkins` (~9 mil) | tabela | 1 por plantão (`assignment_id` único) | presença, preceptor | Sim — checkout/check-in |
 | `extra_shift_offers` (354) | tabela | 1 vaga por base/data/turno; `released_faculty_id`/`auto_release` separam vaga liberada de extra | extras, grade do líder | Sim, via `listFreeOffers` / `listExtraOffers` |
 | `requests` (~1,9 mil) | tabela | pedido de troca/extra/vaga livre | Trocas | Sim, via `executeListRequests(open-swaps)` |
-| `slot_rules` (312) | tabela | regra semanal base×dia×turno×faculdade | grade | Indireto, via `getRequestableSlots` (só 7 dias) |
+| `slot_rules` (312) | tabela | regra semanal base×dia×turno×faculdade | grade | Indireto, via `getRequestableSlots` (10 dias, até o fim do rodízio da turma) |
 | `cohorts`, `user_roles` | tabelas | rodízio e vínculo | compliance | Indireto, via `executeGetComplianceOverview` |
 | `cru_fixed_assignments` | tabela | CRU fixo com vigência | cota de CRU | Indireto, via `findInternOverCruQuota` |
 | `available_slots` (273 linhas) | **matview** | regra semanal; `filled` conta plantões de **todas as datas da história** daquele dia da semana | **ninguém** (só `scripts/materialized-view-available-slots.sql`) | **Não.** Não responde "vaga livre na data X"; `available` vira negativo; sem refresh agendado |
@@ -117,16 +117,32 @@ não no banco.
 Os números do "depois" com modelo são estimativa por tamanho do corpo
 (chars/3,6); o log `luna_interno` em produção mede os reais.
 
-## Pontos de negócio em aberto (não decididos aqui)
+## Decidido em 2026-10-29 (depois do #111)
 
-1. **Descanso de 12h em extra e sobra da grade**: o app só aplica
-   `rest-policy` na troca e na escala do líder; pegar extra e aprovar extra da
-   grade não checam. A Luna esconde essas opções (como já fazia). Decidir se o
-   app deve barrar também.
-2. **Sobra da grade só olha 7 dias** (`getAvailableSlots` é semanal). A Luna
-   avisa quando isso pode estar escondendo opção.
-3. **`available_slots`**: matview morta e enganosa. Remover exige DDL em
-   produção — pedir autorização.
-4. **`listRequestsRows`** carrega todas as solicitações (~1,9 mil, com joins)
-   a cada "trocas abertas"; `requests` não tem índice além da PK. Ganho fácil:
-   filtrar `type='SWAP' and status='OPEN'` no SQL.
+- **Descanso de 12h em todo caminho**: pegar extra, escalar em vaga livre
+  (`claim-extra-offer.ts`) e aprovar extra da grade (`review-request.ts`)
+  passam por `semDescansoPara` (`src/features/scheduling/application/descanso.ts`).
+  Só a escala retroativa da coordenação fica de fora. A sobra da grade já sai
+  filtrada (`getRequestableSlots`).
+- **Sobra da grade**: 10 dias, cortada no fim do rodízio da turma do interno.
+- **Pedidos no SQL**: `listRequestsRows(filtro)` recorta por trocas abertas,
+  pessoa ou faculdade; só a visão "tudo" da coordenação lê a tabela inteira.
+  Conferido igual à lógica antiga em 6 escopos com dado real.
+- **Vaga liberada é de quem precisa de reposição**: com a meta completa nos
+  tipos pedidos, a Dai nem busca vaga liberada e diz quantos colegas precisam
+  (agregado `Fontes.demanda`, cache de 10 min, só contagem).
+
+Medido em 2026-10-29: 131 internos precisam de 611 casinhas de USA, 112 de
+356 de CRU, 60 de 60 de CRL — a demanda passa da oferta em todo tipo.
+
+## Pontos em aberto
+
+1. **Candidatura a vaga livre pelo interno** (proposta, não feita): hoje só o
+   líder pede `FREE_SLOT` para interno acima da meta. Ideia: o interno se
+   candidata pela Dai; abaixo da meta vai ao líder, acima vai à coordenação, e
+   só abre para quem está acima quando a oferta do tipo na janela passar de
+   quem precisa de reposição e cabe na data.
+2. **`available_slots`**: matview morta e enganosa. Substituir por "turno
+   livre por data" exige DDL e mover o teto físico das
+   bases, hoje em `capacidadeDaBase` (código), para o banco.
+3. `requests` só tem a PK; com o recorte no SQL ainda não faz falta índice.

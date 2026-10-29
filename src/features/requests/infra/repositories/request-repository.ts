@@ -1,10 +1,24 @@
-import { and, desc, eq, gte, inArray, lte, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/shared/db/client";
 import { assignments, bases, checkins, cruFixedAssignments, extraShiftOffers, faculties, requests, userRoles, users } from "@/shared/db/schema";
 import { alias } from "drizzle-orm/pg-core";
 import type { CruSwapWindow } from "@/shared/domain/policies/cru-swap-quota-policy";
 
-export async function listRequestsRows() {
+/**
+ * Recorte no SQL para não trazer a tabela inteira (são ~2 mil pedidos e
+ * crescendo) quando a tela só quer as trocas abertas ou os pedidos de uma
+ * pessoa. Sem filtro, tudo — é a visão da coordenação.
+ */
+export type FiltroDePedidos = {
+  /** Só SWAP em OPEN cujo plantão é desta data em diante. */
+  trocasAbertasDesde?: string;
+  /** Pedidos em que a pessoa é solicitante ou alvo. */
+  pessoa?: string;
+  /** Pedidos destes solicitantes. */
+  solicitantes?: string[];
+};
+
+export async function listRequestsRows(filtro: FiltroDePedidos = {}) {
   const targetUser = alias(users, "target_user");
   const targetAssign = alias(assignments, "target_assign");
   const targetBase = alias(bases, "target_base");
@@ -51,6 +65,13 @@ export async function listRequestsRows() {
     .leftJoin(targetAssign, eq(targetAssign.id, requests.targetAssignmentId))
     .leftJoin(targetBase, eq(targetBase.id, targetAssign.baseId))
     .leftJoin(extraBase, eq(extraBase.id, requests.extraBaseId))
+    .where(and(
+      ...(filtro.trocasAbertasDesde
+        ? [eq(requests.type, "SWAP"), eq(requests.status, "OPEN"), gte(assignments.date, filtro.trocasAbertasDesde)]
+        : []),
+      ...(filtro.pessoa ? [or(eq(requests.requesterId, filtro.pessoa), eq(requests.targetInternId, filtro.pessoa))] : []),
+      ...(filtro.solicitantes ? [filtro.solicitantes.length ? inArray(requests.requesterId, filtro.solicitantes) : sql`false`] : []),
+    ))
     .orderBy(requests.createdAt);
 
   return rows;
@@ -413,7 +434,7 @@ export async function cancelOpenSwapRequest(requestId: string) {
 
 export async function findBaseAvailability(baseId: string) {
   const [extraBaseRow] = await db
-    .select({ id: bases.id, isActive: bases.isActive })
+    .select({ id: bases.id, code: bases.code, isActive: bases.isActive })
     .from(bases)
     .where(eq(bases.id, baseId))
     .limit(1);

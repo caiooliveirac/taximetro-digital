@@ -11,6 +11,7 @@ import { getValidInternIdsForFaculty } from "@/features/scheduling/infra/reposit
 import { localDateStr } from "@/lib/utils";
 import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 import { findPendingFreeSlotRequest, insertRequest } from "@/features/requests/infra/repositories/request-repository";
+import { semDescansoPara } from "@/features/scheduling/application/descanso";
 import { metaDoInternoNoTipo, textoMetaCumprida } from "./free-slot-goal";
 
 /**
@@ -139,6 +140,19 @@ export async function executeClaimExtraOffer(params: {
     return { status: 409, body: { success: false, error: alocandoOutro ? "Este interno já tem um plantão neste dia e turno" : "Você já tem um plantão neste dia e turno" } } as const;
   }
 
+  // 12h de descanso em todo plantão novo — extra e vaga livre também. Só a
+  // escala retroativa da coordenação (registro do que já aconteceu) passa.
+  const [baseDaVaga] = await db.select({ code: bases.code, type: bases.type }).from(bases).where(eq(bases.id, offer.baseId)).limit(1);
+  if (!retroativo) {
+    const semDescanso = await semDescansoPara(internId, alocandoOutro ? "O interno" : "Você", {
+      date: offer.date,
+      period: offer.period as "DAY" | "NIGHT",
+      shift: offer.shift,
+      baseCode: baseDaVaga?.code ?? "",
+    });
+    if (semDescanso) return { status: 409, body: { success: false, code: "SEM_DESCANSO", error: semDescanso } } as const;
+  }
+
   // Vaga sem dono (auto-release-slots.ts) também é vaga livre: vira plantão
   // normal do interno, só não tem faculdade que liberou.
   const vagaLivre = Boolean(offer.releasedFacultyId) || offer.autoRelease === "SEM_DONO";
@@ -149,7 +163,6 @@ export async function executeClaimExtraOffer(params: {
   // Vaga livre é para quem precisa: o líder só escala sozinho interno abaixo
   // da meta do tipo da vaga. Acima disso, só com aprovação da coordenação.
   if (vagaLivre && actor.role === "LEADER" && !params.isImpersonating) {
-    const [baseDaVaga] = await db.select({ type: bases.type }).from(bases).where(eq(bases.id, offer.baseId)).limit(1);
     const meta = baseDaVaga ? await metaDoInternoNoTipo(internId, baseDaVaga.type) : null;
     if (meta?.cumprida) {
       const [interno] = await db.select({ name: users.name }).from(users).where(eq(users.id, internId)).limit(1);

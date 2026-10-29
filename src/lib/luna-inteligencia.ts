@@ -300,7 +300,7 @@ export function buscarOpcoes(ofertas: Oferta[], cx: { meta: Meta | null; meus: M
   }
 
   if ((pedido.fontes ?? []).includes("GRADE") && (status === "PARTIAL" || status === "NO_OPTIONS")) {
-    avisos.push("A sobra da grade da faculdade só aparece para os próximos 7 dias — vale perguntar de novo semana que vem.");
+    avisos.push("A sobra da grade da faculdade só aparece para os próximos 10 dias (até o fim do seu rodízio) — vale perguntar de novo daqui a uns dias.");
   }
 
   return {

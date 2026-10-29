@@ -4,12 +4,14 @@ import {
   findExistingAssignmentForInternSlot,
   findRequestById,
   findRequesterFacultyRole,
+  findUserNameById,
   reactivateCancelledAssignment,
   updateRequestReview,
 } from "@/features/requests/infra/repositories/request-repository";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { checkPeriodOccupancy } from "@/lib/slots";
 import { executeClaimExtraOffer } from "@/features/extra-offers/application/use-cases/claim-extra-offer";
+import { semDescansoPara } from "@/features/scheduling/application/descanso";
 
 type ReviewActor = {
   id: string;
@@ -101,6 +103,13 @@ export async function executeReviewRequest(params: {
             },
           } as const;
         }
+
+        const semDescanso = await semDescansoPara(request.requesterId, (await findUserNameById(request.requesterId))?.trim() || "O interno", {
+          date: request.extraDate,
+          period: request.extraPeriod as "DAY" | "NIGHT",
+          baseCode: extraBaseRow.code,
+        });
+        if (semDescanso) return { status: 409, body: { success: false, error: semDescanso } } as const;
 
         const existingAssignment = await findExistingAssignmentForInternSlot({
           internId: request.requesterId,

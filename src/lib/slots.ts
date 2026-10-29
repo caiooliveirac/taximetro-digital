@@ -1,9 +1,10 @@
 import { db } from "@/db";
-import { slotRules, assignments, bases, faculties, requests } from "@/db/schema";
+import { slotRules, assignments, bases, cohorts, faculties, requests, userRoles } from "@/db/schema";
 import { eq, and, sql, ne, gte, lte, inArray } from "drizzle-orm";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
 import { countLiveReservations, listLiveReservations } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
+import { plantaoSemDescanso } from "@/shared/domain/policies/rest-policy";
 
 function normalizeDateKey(date: string): string {
   return date.slice(0, 10);
@@ -131,27 +132,56 @@ export async function getAvailableSlots(facultyId?: string, weekStart?: string) 
     });
 }
 
+/** Sobra da grade que o interno pode pedir: os próximos 10 dias, nunca além do fim do rodízio da turma dele. */
+export const JANELA_DA_SOBRA_DIAS = 10;
+
+/** Fim do rodízio do interno: a turma do vínculo de interno ativo na faculdade. null = sem turma. */
+async function fimDoRodizio(facultyId: string, internId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ endDate: cohorts.endDate })
+    .from(userRoles)
+    .innerJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
+    .where(and(
+      eq(userRoles.userId, internId),
+      eq(userRoles.role, "INTERN"),
+      eq(userRoles.facultyId, facultyId),
+      eq(userRoles.isActive, true),
+    ))
+    .limit(1);
+  return row?.endDate ? String(row.endDate).slice(0, 10) : null;
+}
+
 export async function getRequestableSlots(facultyId: string, internId: string) {
-  const slots = (await getAvailableSlots(facultyId)).filter((slot) => slot.available > 0 && Boolean(slot.nextDate));
+  const today = localDateStr();
+  const fim = await fimDoRodizio(facultyId, internId);
+  const janela = addDaysToDateStr(today, JANELA_DA_SOBRA_DIAS - 1);
+  const limite = fim && fim < janela ? fim : janela;
+  // getAvailableSlots olha uma semana; 10 dias são duas.
+  const semanas = await Promise.all([getAvailableSlots(facultyId, today), getAvailableSlots(facultyId, addDaysToDateStr(today, 7))]);
+  const slots = semanas.flat().filter((slot) => slot.available > 0 && Boolean(slot.nextDate) && slot.nextDate <= limite);
   if (slots.length === 0) return [];
 
   const slotDates = [...new Set(slots.map((slot) => slot.nextDate))].sort();
-  const firstDate = slotDates[0];
-  const lastDate = slotDates[slotDates.length - 1];
+  // Um dia a mais de cada lado: o descanso de 12h olha o turno vizinho.
+  const firstDate = addDaysToDateStr(slotDates[0], -1);
+  const lastDate = addDaysToDateStr(slotDates[slotDates.length - 1], 1);
 
   const activeAssignments = await db
     .select({
       date: assignments.date,
       period: assignments.period,
       shift: assignments.shift,
+      baseCode: bases.code,
     })
     .from(assignments)
+    .innerJoin(bases, eq(bases.id, assignments.baseId))
     .where(and(
       eq(assignments.internId, internId),
       gte(assignments.date, firstDate),
       lte(assignments.date, lastDate),
       ne(assignments.status, "CANCELLED"),
     ));
+  const turnos = activeAssignments.map((a) => ({ ...a, date: String(a.date).slice(0, 10), period: a.period as "DAY" | "NIGHT" }));
 
   // For EBMSP (shift-based): only block if BOTH shifts are taken
   const blockedByAssignment = new Set<string>();
@@ -201,6 +231,9 @@ export async function getRequestableSlots(facultyId: string, internId: string) {
     if (blockedByAssignment.has(key)) return false;
     if (blockedByPendingExtra.has(key)) return false;
     if (blockedByCru.has(key)) return false;
+    // Mesmo turno já foi decidido acima (meio turno do EBMSP incluso); aqui só os vizinhos.
+    const vizinhos = turnos.filter((t) => `${t.date}|${t.period}` !== key);
+    if (plantaoSemDescanso({ date: slot.nextDate, period: slot.period as "DAY" | "NIGHT", baseCode: slot.baseCode }, vizinhos)) return false;
     return true;
   });
 }
