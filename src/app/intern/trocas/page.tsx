@@ -15,7 +15,7 @@ import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { localDateStr, getShiftShortLabel } from "@/lib/utils";
 import { temFeature } from "@/lib/instance";
 import type { MercadoDeTrocas } from "@/features/requests/application/use-cases/get-swap-market";
-import { BasesPreferidas, CAIXAS, CartaoDaOferta, JanelaDeTrocas, ResumoDaOferta, turnoCurto } from "@/components/intern/mercado-de-trocas";
+import { BasesPreferidas, CAIXAS, CartaoDaOferta, JanelaDeTrocas, ResumoDaOferta, TrocaATres, turnoCurto } from "@/components/intern/mercado-de-trocas";
 
 const COM_MERCADO = temFeature("sinaisDeTroca");
 
@@ -197,6 +197,19 @@ export default function InternTrocas() {
   }
   function proporDireto(id: string, assignmentId: string) { apiPatch({ id, action: "propose", assignmentId }); }
   function confirmSwap(id: string) { apiPatch({ id, action: "confirm" }); }
+
+  async function roda(method: "POST" | "PATCH", body: Record<string, unknown>, sucesso: string) {
+    setMsg(null); setSubmitting(true);
+    try {
+      const res = await fetch("/taximetro/api/intern/trocas/roda", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const json = await res.json();
+      if (json.success) {
+        setMsg({ type: "success", text: json.data?.concluida ? "Troca a três feita! Já está no seu calendário." : sucesso });
+        load();
+      } else setMsg({ type: "error", text: json.error || "Erro." });
+    } catch { setMsg({ type: "error", text: "Erro de conexão." }); }
+    setSubmitting(false);
+  }
   function rejectProposal(id: string) { apiPatch({ id, action: "reject_proposal" }); }
   function withdrawProposal(id: string) { apiPatch({ id, action: "withdraw_proposal" }); }
   function cancelRequest(id: string) { apiPatch({ id, action: "cancel" }); }
@@ -373,6 +386,19 @@ export default function InternTrocas() {
           {mercado && (
             <div className="space-y-5">
               <BasesPreferidas onMudou={recarregarMercado} />
+              {userId && (
+                <TrocaATres
+                  mercado={mercado}
+                  euId={userId}
+                  ocupado={submitting}
+                  meusPlantoes={assignments.map((a) => ({
+                    id: a.id,
+                    texto: `${a.baseName.replace(/^Base\s+/i, "")}, ${turnoCurto(a.date, a.period)}`,
+                  }))}
+                  onPropor={(assignmentIds, qualquerSentido) => roda("POST", { assignmentIds, qualquerSentido }, "Troca a três proposta. Os outros dois recebem aviso para confirmar.")}
+                  onResponder={(id, acao) => roda("PATCH", { id, acao }, acao === "confirmar" ? "Confirmado. Falta alguém confirmar." : acao === "recusar" ? "Recusada. Nada mudou." : "Proposta cancelada.")}
+                />
+              )}
               {CAIXAS.map(({ caixa, titulo, explica }) => {
                 const lista = mercado.paraVoce
                   .filter((o) => o.caixa === caixa)

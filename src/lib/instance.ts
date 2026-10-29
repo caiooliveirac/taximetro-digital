@@ -62,7 +62,13 @@ export type Feature =
    * que cabe naquele turno. É mensagem real: ligada no SAMU em 2026-10-29,
    * com o texto aprovado pelo dono.
    */
-  | "avisoDeTrocas";
+  | "avisoDeTrocas"
+  /**
+   * A Dai acha trocas a três (rodas) pelas disponibilidades e avisa os três, e
+   * avisa cada etapa de uma roda (proposta, recusa, conclusão). Pedido do dono
+   * em 2026-10-29.
+   */
+  | "avisoDeRodas";
 
 /**
  * A fonte da verdade. Ligar algo para o SAMU aqui é uma decisão explícita e
@@ -77,6 +83,7 @@ const FEATURES: Record<Instancia, Record<Feature, boolean>> = {
     avisosDaDai: true,
     sinaisDeTroca: true,
     avisoDeTrocas: true,
+    avisoDeRodas: true,
   },
   vitalmed: {
     adminLottery: true,
@@ -85,6 +92,7 @@ const FEATURES: Record<Instancia, Record<Feature, boolean>> = {
     avisosDaDai: false,
     sinaisDeTroca: false,
     avisoDeTrocas: false,
+    avisoDeRodas: false,
   },
 };
 

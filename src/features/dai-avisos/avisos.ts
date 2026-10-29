@@ -12,6 +12,10 @@
  *    (repescagem.ts): vai a quem ainda precisa do tipo e a quem marcou Quero
  *    no turno sem nunca ter tido extra, uma vez por vaga para cada interno,
  *    com "pega direto".
+ *  - rodas:   troca a três que fecha com as disponibilidades (quem precisa sair
+ *    de um plantão e quem marcou Quero/Posso), para os três ao mesmo tempo.
+ *    Uma vez por dia; cada pessoa recebe no máximo uma a cada 2 dias, e a
+ *    mesma roda nunca vai duas vezes (swap-cycle-policy.ts).
  *  - trocas:  oferta de troca que apareceu num turno em que o interno marcou
  *    Quero/Posso no calendário e que ele consegue fechar (swap-match-policy.ts).
  *    Feature `avisoDeTrocas`: desligada até o texto ser aprovado; `?dry=1`
@@ -35,16 +39,17 @@ import { addDaysToDateStr, hasShiftStarted, localDateStr } from "@/lib/utils";
 import { plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
 import { idDaDai } from "./remetente";
-import { temaParaPlantao, textoProximoPlantao, textoRepescagem, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type VagaAvisada } from "./textos";
+import { temaParaPlantao, textoProximoPlantao, textoRepescagem, textoRodaSugerida, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type PernaAvisada, type VagaAvisada } from "./textos";
+import { encontrarRodas, minhaPerna, problemaNaRoda, type RodaSugerida } from "@/shared/domain/policies/swap-cycle-policy";
 import { carregarMercado, type FotografiaDoMercado } from "@/features/requests/application/use-cases/load-swap-market";
 import { findInternOverCruQuota } from "@/features/requests/application/use-cases/handle-swap-peer-action";
 import { avaliarOferta, visivelPara, type Avaliacao, type OfertaAberta } from "@/shared/domain/policies/swap-match-policy";
 
-export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM" } as const;
-export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas" | "repescagem";
+export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM", RODAS: "DAI_AVISO_RODAS" } as const;
+export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas" | "repescagem" | "rodas";
 export type ResultadoDosAvisos = { tipo: TipoDeAviso; enviados: number; considerados: number; dry: boolean; amostra?: string };
 
-type Envio = { para: string; texto: string; action: string; entityId: string; payload: Record<string, unknown> };
+export type Envio = { para: string; texto: string; action: string; entityId: string; payload: Record<string, unknown> };
 
 const VAGAS_POR_AVISO = 3;
 const JANELA_VAGAS_DIAS = 10;
@@ -54,7 +59,7 @@ const UM_DIA_MS = 20 * 60 * 60_000;
 
 const dia = (d: unknown) => String(d).slice(0, 10);
 
-async function enviar(envios: Envio[], dry: boolean) {
+export async function enviar(envios: Envio[], dry: boolean) {
   if (dry || envios.length === 0) return;
   const dai = await idDaDai({ criar: true });
   if (!dai) throw new Error("Dai sem usuário");
@@ -451,6 +456,74 @@ async function avisarTrocas(now: Date, dry: boolean): Promise<ResultadoDosAvisos
   return { tipo: "trocas", enviados: envios.length, considerados: interessados.length, dry, amostra: envios[0]?.texto };
 }
 
+const RODA_INTERVALO_MS = 2 * 24 * 60 * 60_000;
+
+/**
+ * Quais rodas avisar agora: nunca a mesma duas vezes, ninguém em duas rodas
+ * na mesma rodada, e quem recebeu aviso de roda há menos de 2 dias fica de
+ * fora — a roda só vai se os três puderem receber juntos. Puro.
+ */
+export function rodasParaAvisar(rodas: RodaSugerida[], jaAvisadas: Set<string>, recentes: Set<string>): RodaSugerida[] {
+  const usados = new Set<string>();
+  const escolhidas: RodaSugerida[] = [];
+  for (const r of rodas) {
+    if (jaAvisadas.has(r.assinatura)) continue;
+    if (r.pernas.some((p) => usados.has(p.internId) || recentes.has(p.internId))) continue;
+    for (const p of r.pernas) usados.add(p.internId);
+    escolhidas.push(r);
+  }
+  return escolhidas;
+}
+
+async function avisarRodas(now: Date, dry: boolean): Promise<ResultadoDosAvisos> {
+  const foto = await carregarMercado(now);
+  let rodas = encontrarRodas(foto.ctx, foto.ofertas);
+  if (!rodas.length) return { tipo: "rodas", enviados: 0, considerados: 0, dry };
+
+  // Cota de CRU só dos que estão em roda de CRU.
+  const ofertados = new Set(foto.ofertas.map((o) => o.plantao.id));
+  for (const r of rodas.filter((x) => x.pernas[0].entrega.baseType === "CENTRAL")) {
+    for (const p of r.pernas) if (!foto.ctx.cotaCruUsada.has(p.internId) && await findInternOverCruQuota([p.internId], foto.hoje)) foto.ctx.cotaCruUsada.add(p.internId);
+  }
+  rodas = rodas.filter((r) => !problemaNaRoda(r.pernas, foto.ctx, new Set(r.pernas.map((p) => p.entrega.id).filter((id) => ofertados.has(id)))));
+
+  const historico = await db.select({ para: auditLog.entityId, payload: auditLog.payload, em: auditLog.createdAt })
+    .from(auditLog)
+    .where(and(eq(auditLog.action, AVISO.RODAS), gte(auditLog.createdAt, new Date(now.getTime() - 60 * 24 * 60 * 60_000))));
+  const jaAvisadas = new Set<string>();
+  const recentes = new Set<string>();
+  for (const h of historico) {
+    const assinatura = (h.payload as { assinatura?: string } | null)?.assinatura;
+    if (assinatura) jaAvisadas.add(assinatura);
+    if (h.para && now.getTime() - new Date(h.em).getTime() < RODA_INTERVALO_MS) recentes.add(h.para);
+  }
+
+  const primeiro = (id: string) => (foto.ctx.nomes.get(id) ?? "Um colega").trim().split(/\s+/)[0];
+  const curto = (p: { baseName: string; date: string; period: string; shift: string | null }) =>
+    `${p.baseName.replace(/^Base\s+/i, "")}, ${quando(dia(p.date), p.period, p.shift)}`;
+  const envios: Envio[] = [];
+  for (const r of rodasParaAvisar(rodas, jaAvisadas, recentes)) {
+    const pernas: PernaAvisada[] = r.pernas.map((p, i) => ({
+      quem: primeiro(p.internId),
+      entrega: curto(p.entrega),
+      recebe: curto(p.recebe),
+      deQuem: primeiro(r.pernas[(i + 2) % 3].internId),
+      paraQuem: primeiro(r.pernas[(i + 1) % 3].internId),
+    }));
+    r.pernas.forEach((p, i) => {
+      envios.push({
+        para: p.internId,
+        texto: textoRodaSugerida({ ...pernas[i], pediu: minhaPerna(r, p.internId, foto.ctx)?.pediu ?? false }, pernas.filter((_, j) => j !== i)),
+        action: AVISO.RODAS,
+        entityId: p.internId,
+        payload: { assinatura: r.assinatura, sinalizadas: r.sinalizadas },
+      });
+    });
+  }
+  await enviar(envios, dry);
+  return { tipo: "rodas", enviados: envios.length, considerados: rodas.length, dry, amostra: envios[0]?.texto };
+}
+
 export async function executarAvisosDaDai(tipo: TipoDeAviso, params: { now?: Date; dry?: boolean } = {}): Promise<ResultadoDosAvisos> {
   const now = params.now ?? new Date();
   const dry = params.dry ?? false;
@@ -458,5 +531,6 @@ export async function executarAvisosDaDai(tipo: TipoDeAviso, params: { now?: Dat
   if (tipo === "vagas") return avisarVagas(now, dry);
   if (tipo === "trocas") return avisarTrocas(now, dry);
   if (tipo === "repescagem") return avisarRepescagem(now, dry);
+  if (tipo === "rodas") return avisarRodas(now, dry);
   return avisarLideres(now, dry);
 }

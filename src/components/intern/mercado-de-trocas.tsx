@@ -6,6 +6,7 @@ import type { Caixa } from "@/shared/domain/policies/swap-match-policy";
 import { estiloDoTipo, nomeCurtoDaBase, rotuloDoTipo } from "@/lib/base-colors";
 import { cn, localDateStr } from "@/lib/utils";
 import { PAPEL, PONTILHADO, TINTA } from "@/components/intern-calendar";
+import { Button } from "@/components/ui/button";
 
 export type OfertaParaVoce = MercadoDeTrocas["paraVoce"][number];
 export type ResumoDaMinhaOferta = MercadoDeTrocas["minhasOfertas"][number];
@@ -274,5 +275,142 @@ export function BasesPreferidas({ onMudou }: { onMudou: () => void }) {
       </div>
       {erro && <p className="mt-2 text-xs font-medium text-red-700">{erro}</p>}
     </details>
+  );
+}
+
+type PlantaoDaRoda = { id: string; date: string; period: string; baseName: string } | null;
+type PernaNaTela = { internId: string; nome: string; entrega: PlantaoDaRoda; recebe: PlantaoDaRoda; confirmou?: boolean };
+
+function textoDoPlantao(p: PlantaoDaRoda) {
+  return p ? `${nomeCurtoDaBase(p.baseName)}, ${turnoCurto(p.date, p.period)}` : "plantão que mudou";
+}
+
+/** As três pernas: quem entrega o quê para quem. A do interno vem destacada. */
+function PernasDaRoda({ pernas, euId, mostrarConfirmacao }: { pernas: PernaNaTela[]; euId: string; mostrarConfirmacao?: boolean }) {
+  return (
+    <ol className="space-y-1.5">
+      {pernas.map((p, i) => {
+        const proximo = pernas[(i + 1) % pernas.length];
+        const eu = p.internId === euId;
+        return (
+          <li key={p.internId} className={cn("rounded-lg px-2.5 py-2 text-[13px]", eu ? "bg-accent-50 text-slate-900 ring-1 ring-accent-200" : "bg-slate-50 text-slate-700")}>
+            <span className="font-semibold">{eu ? "Você" : p.nome.split(" ")[0]}</span> entrega{" "}
+            <span className="font-medium">{textoDoPlantao(p.entrega)}</span> para{" "}
+            <span className="font-semibold">{proximo.internId === euId ? "você" : proximo.nome.split(" ")[0]}</span>
+            {mostrarConfirmacao && (
+              <span className={cn("ml-1.5 rounded-full px-1.5 text-[10px] font-semibold", p.confirmou ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600")}>
+                {p.confirmou ? "confirmou" : "aguardando"}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+type MinhaOpcao = { id: string; texto: string };
+
+/**
+ * Troca a três: rodas que a Dai achou nas disponibilidades, rodas já propostas
+ * (cada um confirma; só vale com os três), e a montagem à mão com duas ofertas
+ * abertas de colegas.
+ */
+export function TrocaATres({
+  mercado,
+  euId,
+  meusPlantoes,
+  ocupado,
+  onPropor,
+  onResponder,
+}: {
+  mercado: MercadoDeTrocas;
+  euId: string;
+  meusPlantoes: MinhaOpcao[];
+  ocupado: boolean;
+  onPropor: (ids: string[], qualquerSentido: boolean) => void;
+  onResponder: (id: string, acao: "confirmar" | "recusar" | "cancelar") => void;
+}) {
+  const [meu, setMeu] = useState("");
+  const [oferta1, setOferta1] = useState("");
+  const [oferta2, setOferta2] = useState("");
+  const ofertas = mercado.paraVoce;
+
+  return (
+    <section className="space-y-2" id="troca-a-tres">
+      <h2 className="text-sm font-semibold text-slate-900">Troca a três</h2>
+      <p className="-mt-1 text-xs text-slate-500">
+        Cada um entrega um plantão e recebe o de outro. Só vale quando os três confirmam; até lá nada muda na escala.
+      </p>
+
+      {mercado.rodasAbertas.map((r) => {
+        const minha = r.pernas.find((p) => p.internId === euId);
+        return (
+          <article key={r.id} className="space-y-2 rounded-xl border border-violet-300 bg-white p-3">
+            <p className="text-xs text-slate-500">{r.propostaPorMim ? "Você propôs" : `${r.quemPropos.split(" ")[0]} propôs`}</p>
+            <PernasDaRoda pernas={r.pernas} euId={euId} mostrarConfirmacao />
+            <div className="flex flex-wrap gap-2">
+              {minha && !minha.confirmou && (
+                <Button size="sm" disabled={ocupado} onClick={() => onResponder(r.id, "confirmar")} className="h-7 bg-emerald-600 px-3 text-xs hover:bg-emerald-700">
+                  Confirmar
+                </Button>
+              )}
+              {r.propostaPorMim ? (
+                <Button size="sm" variant="outline" disabled={ocupado} onClick={() => onResponder(r.id, "cancelar")} className="h-7 px-3 text-xs">
+                  Cancelar proposta
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" disabled={ocupado} onClick={() => onResponder(r.id, "recusar")} className="h-7 px-3 text-xs">
+                  Recusar
+                </Button>
+              )}
+            </div>
+          </article>
+        );
+      })}
+
+      {mercado.rodasSugeridas.map((r) => (
+        <article key={r.assinatura} className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs text-slate-500">
+            {r.sinalizadas === 3 ? "Os três marcaram o turno que receberiam." : r.euPedi ? "Dois de vocês marcaram o turno que receberiam." : "Os outros dois marcaram o turno que receberiam. Você não marcou o seu, mas se topar a roda fecha."}
+          </p>
+          <PernasDaRoda pernas={r.pernas} euId={euId} />
+          <Button size="sm" disabled={ocupado} onClick={() => onPropor(r.ordem, false)} className="h-7 px-3 text-xs">
+            Propor troca a três
+          </Button>
+        </article>
+      ))}
+
+      <details className="rounded-xl border border-dashed border-slate-300 px-3 py-2.5">
+        <summary className="cursor-pointer text-xs font-medium text-slate-700">Montar troca a três à mão</summary>
+        <p className="mt-2 text-xs text-slate-500">
+          Combinou com dois colegas que ofertaram plantões? Escolha o seu e as duas ofertas; o sistema acha o sentido em que a roda fecha e confere as regras.
+        </p>
+        <div className="mt-2 space-y-2">
+          <select value={meu} onChange={(e) => setMeu(e.target.value)} className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+            <option value="">Seu plantão...</option>
+            {meusPlantoes.map((p) => <option key={p.id} value={p.id}>{p.texto}</option>)}
+          </select>
+          {[[oferta1, setOferta1], [oferta2, setOferta2]].map(([valor, set], i) => (
+            <select key={i} value={valor as string} onChange={(e) => (set as (v: string) => void)(e.target.value)} className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+              <option value="">{i === 0 ? "Primeira oferta..." : "Segunda oferta..."}</option>
+              {ofertas.map((o) => (
+                <option key={o.requestId} value={o.id}>
+                  {nomeCurtoDaBase(o.baseName)}, {turnoCurto(o.date, o.period)} — {o.quem.split(" ")[0]}
+                </option>
+              ))}
+            </select>
+          ))}
+          <Button
+            size="sm"
+            disabled={ocupado || !meu || !oferta1 || !oferta2 || oferta1 === oferta2}
+            onClick={() => onPropor([meu, oferta1, oferta2], true)}
+            className="h-7 px-3 text-xs"
+          >
+            Propor troca a três
+          </Button>
+        </div>
+      </details>
+    </section>
   );
 }

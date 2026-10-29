@@ -97,3 +97,36 @@ export function textoTrocasNosTurnosMarcados(trocas: TrocaAvisada[]) {
     "Abra Trocas para propor com um toque. A primeira proposta segura a oferta até a pessoa responder.",
   ].join("\n");
 }
+
+/** Uma perna da roda como a pessoa lê: "Cabula, ter 10/11 dia". */
+export type PernaAvisada = { quem: string; entrega: string; recebe: string; deQuem: string; paraQuem: string };
+
+/** A Dai achou uma troca a três: texto para quem está numa das pontas. */
+export function textoRodaSugerida(eu: PernaAvisada & { pediu: boolean }, outros: PernaAvisada[]) {
+  const nomes = outros.map((o) => o.quem).join(" e ");
+  return [
+    `Achei uma troca a três que tira você, ${nomes} dos plantões de que vocês precisam sair:`,
+    `- Você entrega ${eu.entrega} para ${eu.paraQuem} e recebe ${eu.recebe}, de ${eu.deQuem}.`,
+    ...outros.map((o) => `- ${o.quem} entrega ${o.entrega} para ${o.paraQuem}.`),
+    eu.pediu
+      ? "Você marcou esse turno que receberia."
+      : `Você não marcou ${eu.recebe}; se topar, a roda fecha.`,
+    "Abra Trocas, em Troca a três, para propor. Só vale quando os três confirmarem; até lá nada muda na escala.",
+  ].join("\n");
+}
+
+export function textoRodaProposta(quemPropos: string, eu: PernaAvisada) {
+  return [
+    `${quemPropos} propôs uma troca a três com você:`,
+    `- Você entrega ${eu.entrega} para ${eu.paraQuem} e recebe ${eu.recebe}, de ${eu.deQuem}.`,
+    "Abra Trocas, em Troca a três, para confirmar ou recusar. Só vale quando os três confirmarem.",
+  ].join("\n");
+}
+
+export function textoRodaFechada(eu: PernaAvisada) {
+  return `Troca a três feita: você entregou ${eu.entrega} e agora está em ${eu.recebe}. Já está no seu calendário.`;
+}
+
+export function textoRodaDesfeita(motivo: string) {
+  return `A troca a três de que você fazia parte não vai acontecer: ${motivo} Nada mudou na sua escala.`;
+}
