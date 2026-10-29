@@ -198,6 +198,18 @@ extra de USA só é oferecida — no aviso e na Dai — se a base ainda tem luga
 turno contando os plantões de todas as faculdades. Em 29/10, 2 das 39 vagas
 USA abertas já estavam com a viatura cheia.
 
+## "Estou na base, vai ativar?" (29/10)
+
+Caminho direto, sem modelo (`luna-base-agora.ts`; ferramenta
+`situacao_da_base` quando a pergunta vem enrolada). Base pelo código ou nome
+citado, senão a do plantão dele em andamento ou nas próximas 4h. Lê o quadro
+do `plantoes` (`situacaoDoTurnoNaBase`, role `taximetro_ro`, mesmas tabelas do
+remanejamento): médico que chegou para o turno (início programado 07:00/19:00),
+o do turno anterior sem saída registrada e desativação aberta. Responde quem
+procurar; sem médico, orienta Avisar → Sem médico (aba Hoje) e o remanejamento
+na aba Check-in a partir de HH:15 (`REIVINDICACAO_MIN`). O quadro só tem quem
+registrou chegada pelo Telegram: a resposta diz isso.
+
 ## Pontos em aberto
 
 1. **Vitalmed** ainda tem a matview antiga com triggers: o banco dela não tem

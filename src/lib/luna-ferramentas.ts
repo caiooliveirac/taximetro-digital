@@ -16,6 +16,7 @@ import {
   type Avaliada, type Bloqueio, type Busca, type Fonte, type MeuPlantao, type Oferta, type Pedido, type Periodo,
 } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr } from "@/lib/utils";
+import { baseETurno, inicioDoTurno, textoDaBaseAgora } from "@/lib/luna-base-agora";
 import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
 
 export type { LunaCtx } from "@/lib/luna-dados";
@@ -431,4 +432,40 @@ export const FERRAMENTAS: {
     },
     run: (f, ctx, args) => explicar(f, ctx, args),
   },
+  {
+    name: "situacao_da_base",
+    description: "Se a base vai ativar agora: médico que chegou para o turno, o que está de saída, ou se está desativada, pelo quadro dos médicos. Sem base: a do plantão dele.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: { base: { type: "string", description: "Código (CB02) ou nome (Cabula) da base, se ele disse" } },
+    },
+    run: (f, ctx, args) => situacaoDaBase(f, ctx, typeof args.base === "string" ? args.base : ""),
+  },
 ];
+
+const semAcentoMaiusculo = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+/** "Estou na base tal, vai ativar?" — a base citada (código ou nome) ou a do plantão dele. */
+export async function situacaoDaBase(f: Fontes, ctx: LunaCtx, texto: string, now: Date = new Date()): Promise<Resultado> {
+  const [lista, meus] = await Promise.all([f.bases(), f.meusPlantoes()]);
+  const t = semAcentoMaiusculo(texto);
+  const codigo = t.match(/\b([A-Z]{2})\s?(\d{2})\b/);
+  const citada =
+    (codigo && lista.find((b) => b.code === `${codigo[1]}${codigo[2]}`)?.code) ||
+    lista.find((b) => {
+      const nome = semAcentoMaiusculo(b.name).replace(/^BASE\s+/, "").trim();
+      return nome.length >= 4 && t.includes(nome);
+    })?.code ||
+    null;
+  const { baseCode, turno } = baseETurno(meus, now, citada);
+  if (!baseCode) {
+    return { status: "INSUFFICIENT_DATA", registros: 0, texto: "Não achei plantão seu agora. Diga a base (ex.: \"estou na CB02, vai ativar?\")." };
+  }
+  const situacao = await f.situacaoDoTurno(baseCode, inicioDoTurno(turno));
+  return {
+    status: !situacao.consultado ? "FAILED" : situacao.desativada ? "DESATIVADA" : situacao.chegaram.length ? "MEDICO_CHEGOU" : situacao.saindo.length ? "MEDICO_SAINDO" : "SEM_MEDICO",
+    registros: situacao.chegaram.length + situacao.saindo.length,
+    texto: textoDaBaseAgora({ baseCode, turno, now, situacao }),
+  };
+}

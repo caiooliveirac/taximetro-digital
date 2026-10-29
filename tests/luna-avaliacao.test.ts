@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Fontes, LunaCtx } from "../src/lib/luna-dados";
 import type { Fila } from "../src/features/extra-offers/application/fila-de-reposicao";
+import type { SituacaoDoTurno } from "../src/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import { sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
 import { perguntarLuna, type LunaPergunta } from "../src/lib/luna-interno";
 import { explicarPlantao, textoDaPresenca, type Meta, type MeuPlantao, type Oferta } from "../src/lib/luna-inteligencia";
@@ -57,7 +58,7 @@ const TROCAS: Oferta[] = [
   oferta("TROCA", "T3", "USA", "2026-10-31", "NIGHT", { quem: "Davi Reis", quemId: "u-d", assignmentId: "a-t3", faculdade: "FAC-A" }),
 ];
 
-type Fixture = { meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; falha?: string };
+type Fixture = { meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; situacao?: SituacaoDoTurno; falha?: string };
 
 // Números de 29/10/2026: a demanda passa da oferta em todo tipo.
 const FILA: Fila = { USA: { precisam: 131, casinhas: 611, vagasAbertas: 43 }, CRU: { precisam: 112, casinhas: 356, vagasAbertas: 0 }, CRL: { precisam: 60, casinhas: 60, vagasAbertas: 0 } };
@@ -73,6 +74,11 @@ function fontes(fx: Fixture = {}) {
     meta: le("meta", fx.meta === undefined ? META : fx.meta),
     meusPlantoes: le("meus", fx.meus ?? MEUS),
     fila: le("fila", fx.fila ?? FILA),
+    bases: le("bases", [{ code: "CB02", name: "Base Cabula" }, { code: "PM04", name: "Base Pituba" }, { code: "PR03", name: "Base Periperi" }]),
+    situacaoDoTurno: async (codigo, inicio) => {
+      lidas.push(`plantoes:${codigo}:${inicio.toISOString()}`);
+      return fx.situacao ?? { consultado: true, chegaram: [], saindo: [], desativada: null };
+    },
     lider: le("lider", { id: "lider-a", nome: "Líder A" }),
     liberadas: async (ate) => (await le("liberadas", fx.liberadas ?? LIBERADAS)()).filter((o) => o.date <= ate),
     extras: le("extras", fx.extras ?? EXTRAS),
@@ -185,6 +191,15 @@ test("prompt: plantão que ele já tem não vira bloqueio; fim de semana vira pr
   assert.match(src, /Pergunta de regra/);
 });
 
+test("'Estou na Cabula, vai ativar?' — direto, base pelo nome, médico que chegou", async () => {
+  const { r, chamadas, lidas } = await perguntar("Estou na Cabula, vai ativar?", {
+    fx: { situacao: { consultado: true, chegaram: [{ nome: "Ana Lima", desde: "07:12" }], saindo: [], desativada: null } },
+  });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /Dr\(a\)\. Ana Lima já chegou na CB02/);
+  assert.ok(lidas.some((l) => l.startsWith("plantoes:CB02:")));
+});
+
 test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho sexta", async () => {
   const { r, chamadas, corpos } = await perguntar(
     "Faltam duas USA na minha meta, não posso segunda nem quarta, prefiro noturno e já tenho um plantão sexta. O que você consegue encontrar para mim?",
@@ -201,7 +216,7 @@ test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho s
   // Meta não vai no prompt (está na tela Início); a agenda vai.
   assert.doesNotMatch(corpos[0].messages[0].content, /"faltam"/);
   assert.match(corpos[0].messages[0].content, /RESUMO: .*"proximos"/);
-  assert.equal(corpos[0].tools.length, 3);
+  assert.equal(corpos[0].tools.length, 4);
 });
 
 test("3. 'Quais vagas posso pegar sem prejudicar meu descanso?' — direto, descanso conferido", async () => {

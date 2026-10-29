@@ -89,3 +89,77 @@ export async function estadoDasBasesNoPlantoes(codigos: string[]): Promise<Estad
     return vazio;
   }
 }
+
+export type MedicoNoTurno = { nome: string; desde: string };
+
+/**
+ * A base num turno, pelo quadro do `plantoes`, para o interno que pergunta
+ * "vai ativar?": quem já chegou PARA ESTE turno (início programado nele), quem
+ * é do turno anterior e ainda não registrou saída (o que está de saída) e se a
+ * base está desativada agora. A ocupação só nasce quando o médico chega (pelo
+ * Telegram): médico escalado que ainda não chegou não aparece.
+ *
+ * `consultado: false` = sem canal ou banco fora; quem chama diz que não sabe.
+ */
+export type SituacaoDoTurno = {
+  consultado: boolean;
+  chegaram: MedicoNoTurno[];
+  saindo: MedicoNoTurno[];
+  /** `desde` aqui já vem como "HH:MM" no horário de Salvador. */
+  desativada: Desativacao | null;
+};
+
+export async function situacaoDoTurnoNaBase(codigo: string, inicioDoTurno: Date): Promise<SituacaoDoTurno> {
+  const vazio: SituacaoDoTurno = { consultado: false, chegaram: [], saindo: [], desativada: null };
+  const sql = obterConexao();
+  if (!sql) return vazio;
+  try {
+    // Margem de 30 min no horário programado: o quadro grava 07:00/19:00, mas
+    // correção manual às vezes sai alguns minutos fora.
+    const [ocupacoes, estado] = await Promise.all([
+      sql<Array<{ nome: string; desde: string; papel: "CHEGOU" | "SAINDO" }>>`
+        SELECT COALESCE(NULLIF(d.display_name, ''), d.full_name) AS nome,
+               to_char(o.started_at AT TIME ZONE 'America/Bahia', 'HH24:MI') AS desde,
+               CASE WHEN o.scheduled_start_at BETWEEN ${inicioDoTurno} - interval '30 minutes' AND ${inicioDoTurno} + interval '30 minutes'
+                    THEN 'CHEGOU' ELSE 'SAINDO' END AS papel
+        FROM operations_v2.intervention_occupancies o
+        JOIN operations_v2.intervention_bases b ON b.id = o.base_id
+        JOIN operations_v2.doctors d ON d.id = o.doctor_id
+        WHERE b.code = ${codigo}
+          AND o.started_at IS NOT NULL
+          AND o.started_at <= now()
+          AND o.actual_ended_at IS NULL
+          AND (
+            (o.scheduled_start_at BETWEEN ${inicioDoTurno} - interval '30 minutes' AND ${inicioDoTurno} + interval '30 minutes'
+              AND (o.ended_at IS NULL OR o.ended_at > now()))
+            OR
+            (o.scheduled_end_at BETWEEN ${inicioDoTurno} - interval '30 minutes' AND ${inicioDoTurno} + interval '30 minutes'
+              AND o.started_at > ${inicioDoTurno} - interval '30 hours')
+          )
+        ORDER BY o.started_at
+      `,
+      sql<Array<{ desde: string | null; motivo: string | null }>>`
+        SELECT to_char(x.deactivated_at AT TIME ZONE 'America/Bahia', 'HH24:MI') AS desde, x.notes AS motivo
+        FROM operations_v2.intervention_bases b
+        LEFT JOIN operations_v2.intervention_base_deactivations x
+          ON x.base_id = b.id
+         AND x.deactivated_at <= now()
+         AND (x.reactivated_at IS NULL OR x.reactivated_at > now())
+        WHERE b.code = ${codigo}
+          AND (x.id IS NOT NULL OR NOT b.is_active)
+        ORDER BY x.deactivated_at DESC NULLS LAST
+        LIMIT 1
+      `,
+    ]);
+    const [fechada] = estado;
+    return {
+      consultado: true,
+      chegaram: ocupacoes.filter((o) => o.papel === "CHEGOU").map(({ nome, desde }) => ({ nome, desde })),
+      saindo: ocupacoes.filter((o) => o.papel === "SAINDO").map(({ nome, desde }) => ({ nome, desde })),
+      desativada: fechada ? { desde: fechada.desde, motivo: fechada.motivo?.trim() || (fechada.desde ? null : "base inativa no cadastro") } : null,
+    };
+  } catch (erro) {
+    console.warn(`[plantoes] situação do turno falhou: ${erro instanceof Error ? erro.message : erro}`);
+    return vazio;
+  }
+}

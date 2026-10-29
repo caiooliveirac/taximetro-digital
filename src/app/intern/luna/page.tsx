@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeftRight, CalendarClock, ClipboardCheck, Loader2, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Target, Ticket, Zap } from "lucide-react";
+import { ArrowLeftRight, CalendarClock, ClipboardCheck, Loader2, Siren, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Target, Ticket, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LunaCartao, LunaMemoria } from "@/lib/luna-ferramentas";
@@ -23,6 +23,7 @@ const ATALHOS = [
   { icone: ArrowLeftRight, rotulo: "Quero trocar um plantão", pergunta: "Quero trocar um plantão: que trocas servem pra mim?" },
   { icone: Zap, rotulo: "Tem extra aberto?", pergunta: "Tem plantão extra aberto pra mim?" },
   { icone: CalendarClock, rotulo: "Meus próximos plantões", pergunta: "Quais são meus próximos plantões?" },
+  { icone: Siren, rotulo: "Minha base vai ativar?", pergunta: "Minha base vai ativar?" },
   { icone: Stethoscope, rotulo: "Discutir um caso", pergunta: "Quero discutir um caso" },
 ] as const;
 
