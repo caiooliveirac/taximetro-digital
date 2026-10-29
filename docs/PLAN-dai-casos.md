@@ -9,13 +9,18 @@ Nada de avaliação dinâmica da resposta do interno (o `/analisar` do
 gatekeeper): com ~400 internos ativos, conversa livre por tema custa caro e
 abre espaço para o modelo inventar conduta. O Dai fica na zona de conforto:
 
-- **identifica o tema** que o interno quer discutir (roteador sem modelo;
-  modelo só como fallback, devolvendo um tema da lista e nada mais);
+- **identifica o tema** que o interno quer discutir (roteador sem modelo);
 - **sugere revisar** um tema antes do plantão;
 - **entrega o texto curado como está**, sem resumir, reescrever ou comentar.
 
+Discutir uma charada **não chama modelo nenhum**: o interno escreve a
+tentativa dele e só então abre o gabarito. Texto genérico, não personalizado
+— é o preço de 0 token por conversa, e a gente melhora os textos em vez de
+gerar resposta. Se o roteador não acha o tema, o Dai mostra os temas em
+botões (sem fallback de modelo).
+
 O modelo nunca recebe a descrição da ocorrência (texto livre, pode ter dado de
-paciente). No máximo o apelido do caso, e só se o roteador não resolver.
+paciente).
 
 ## Fonte do conteúdo
 
@@ -71,13 +76,19 @@ interno ──► "quero revisar PCR" / atalho "Revisar para o plantão" / ocorr
               │
               ▼
         roteador (regex de tema, o mesmo mapa da tabela acima)   0 chamadas
-              │ achou ──► cartão da ficha (texto do banco, sem modelo)
-              │ não achou
-              ▼
-        modelo classifica: responde só um id da lista de temas   1 chamada, ~300 tokens
-              │ tema ──► cartão da ficha
-              └ nenhum ──► botões com os temas disponíveis
+              │ achou ──► ficha do tema + "Tentar um caso"
+              └ não achou ──► botões com os temas disponíveis
+
+"Tentar um caso" (0 chamadas):
+  1. caso sem título: "Caso · IAM · nível 4" + estímulo
+  2. caixa "Sua conduta" — precisa escrever algo (mín. ~40 caracteres) para liberar
+  3. "Ver resposta": nome do caso ("Era: De Winter Disfarçado"), armadilha,
+     resposta-padrão, follow-up e referência, com a tentativa dele em cima
+     para comparar
 ```
+
+A escolha do caso segue o anti-repetição do gatekeeper, só por interno: casos
+do tema que ele ainda não abriu; esgotou, recomeça pelo mais antigo.
 
 **Sugestão ativa antes do plantão** (determinística, sem modelo): no Início,
 no dia do plantão e na véspera, um cartão "Revisar para hoje: PCR". O tema sai
@@ -107,6 +118,24 @@ fixo deixa a tela previsível. Mesmo estilo de texto do gatekeeper (linhas com
 A charada do gatekeeper também é exibida sozinha, com os campos dela, para os
 temas sem ficha.
 
+### O título entrega o diagnóstico
+
+No gatekeeper, o `snippet_pergunta.j2` põe `— {{ nome_memoravel }} —` logo
+acima do estímulo, e o nome conta a resposta: "De Winter Disfarçado" num caso
+que pergunta por que ativar a hemodinâmica, "Wellens Avisa", "Dissecção
+Calada", "Sgarbossa Esquecido", "O AVC que Não Era". Era essa linha que o Caio
+apagava à mão antes de mandar.
+
+Regra no Dai: **antes da resposta, só tema, nível e estímulo.** `nome_memoravel`,
+`armadilha`, `tags` e `referencia` aparecem só depois de "Ver resposta". Teste
+garante que o cartão fechado não contém nenhum desses campos.
+
+O estímulo em si está limpo: num script sobre as 60, 19 citam um termo do id
+(`fast`, `d-dímero`, `lactato`, `contraste`…), mas é dado do caso, não spoiler.
+A exceção a revisar à mão na exportação: `iam-minoca-investigacao` termina com
+"Como investiga MINOCA?" — o diagnóstico já está na pergunta; trocar por "Como
+segue a investigação?".
+
 ## Onde o conteúdo mora
 
 Recomendação: **arquivos no repositório** (`content/dai/fichas/*.json` +
@@ -115,8 +144,10 @@ cópia das 60 charadas exportada do gatekeeper), lidos no build.
 - Revisão por PR: texto clínico muda com diff e responsável.
 - Vale no SAMU, na Vitalmed e no dev sem schema extra (a Vitalmed não tem o
   schema `gatekeeper`).
-- Risco de divergir do gatekeeper: baixo (último commit de conteúdo em
-  2026-04-28, bot parado). Se ele voltar a ser curado, um script reexporta.
+- Os textos vão ser melhorados aqui (Caio, 2026-10-29), então depois da
+  exportação **a cópia do taxímetro passa a ser a fonte**. O gatekeeper está
+  parado desde julho e o último conteúdo é de 2026-04-28; não há sincronia de
+  volta.
 
 Alternativa: ler `gatekeeper.desafios` direto do banco (fonte única, mas só
 existe no SAMU de produção e exige outro caminho no dev e nos testes).
@@ -126,8 +157,9 @@ Registro de "abriu a ficha": evento no `audit_log` (`DAI_FICHA_ABERTA`,
 
 ## Fases
 
-1. **Ler as charadas**: exportar as 60, tema no roteador do Dai, cartão de
-   charada com "Ver resposta". Atalho "Revisar um tema". Custo de modelo: 0.
+1. **Tentar um caso**: exportar as 60 (sem o título no cartão fechado, MINOCA
+   corrigida), tema no roteador do Dai, cartão com tentativa obrigatória e
+   depois "Ver resposta". Atalho "Tentar um caso". Custo de modelo: 0.
 2. **Fichas de plantão** para os 6 temas que mais aparecem: PCR, trauma,
    AVC, IAM, convulsão, psiq/intox. Redigidas offline a partir das
    referências, **revisadas pelo Caio** antes do merge. Nada gerado em
@@ -145,13 +177,18 @@ Registro de "abriu a ficha": evento no `audit_log` (`DAI_FICHA_ABERTA`,
 - Push ou Telegram: o aviso é cartão dentro do app (Telegram tem 1 vínculo
   entre 1.157 internos).
 
+## Respondido (Caio, 2026-10-29)
+
+- Resposta da charada: **só depois que o interno tenta**. Sem avaliação.
+- Sem LLM para responder; texto genérico, melhorado com o tempo.
+- Título da charada não aparece antes da resposta (ver acima).
+- Conteúdo no repositório (decorre de "a gente pode incrementar os textos").
+
 ## Perguntas abertas
 
-1. Conteúdo no repositório (recomendado) ou lido do schema `gatekeeper`?
-2. Quem revisa as fichas: só o Caio, ou um preceptor por tema?
-3. Referência-base do pré-hospitalar: Protocolos SAMU/MS (SBV/SAV) e qual
+1. Quem revisa as fichas: só o Caio, ou um preceptor por tema?
+2. Referência-base do pré-hospitalar: Protocolos SAMU/MS (SBV/SAV) e qual
    edição? AHA 2025 para PCR?
-4. A charada mostra a resposta na hora ou só depois que o interno escreve a
-   dele (sem avaliação, só para forçar pensar antes)?
-5. Fallback do modelo para classificar o tema vale a pena, ou só botões
-   quando o roteador não achar?
+3. Guardar a tentativa do interno? Recomendação: não na fase 1 (sem tabela,
+   sem dado novo para cuidar). Se o preceptor quiser ler as tentativas, vira
+   tabela própria na fase 3.
