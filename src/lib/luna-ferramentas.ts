@@ -16,7 +16,7 @@ import {
   type Avaliada, type Bloqueio, type Busca, type Fonte, type MeuPlantao, type Oferta, type Pedido, type Periodo,
 } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr } from "@/lib/utils";
-import { baseETurno, inicioDoTurno, textoDaBaseAgora } from "@/lib/luna-base-agora";
+import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoPedido } from "@/lib/luna-base-agora";
 import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
 
 export type { LunaCtx } from "@/lib/luna-dados";
@@ -434,13 +434,22 @@ export const FERRAMENTAS: {
   },
   {
     name: "situacao_da_base",
-    description: "Se a base vai ativar agora: médico que chegou para o turno, o que está de saída, ou se está desativada, pelo quadro dos médicos. Sem base: a do plantão dele.",
+    description: "Se a base vai ativar: no turno de agora, o médico que chegou, o de saída ou se está desativada; em turno futuro, o médico previsto na escala. Sem base: a do plantão dele.",
     parameters: {
       type: "object",
       additionalProperties: false,
-      properties: { base: { type: "string", description: "Código (CB02) ou nome (Cabula) da base, se ele disse" } },
+      properties: {
+        base: { type: "string", description: "Código (CB02) ou nome (Cabula) da base, se ele disse" },
+        data: { type: "string", description: "YYYY-MM-DD, se ele falou de outro dia" },
+        periodo: { type: "string", enum: ["dia", "noite"] },
+      },
     },
-    run: (f, ctx, args) => situacaoDaBase(f, ctx, typeof args.base === "string" ? args.base : ""),
+    run: (f, ctx, args) => {
+      // Vira texto e passa pelo mesmo leitor da pergunta direta.
+      const data = typeof args.data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.data) ? `${args.data.slice(8, 10)}/${args.data.slice(5, 7)}` : "";
+      const periodo = args.periodo === "noite" ? "noite" : args.periodo === "dia" ? "de dia" : "";
+      return situacaoDaBase(f, ctx, [typeof args.base === "string" ? args.base : "", data, periodo].join(" "));
+    },
   },
 ];
 
@@ -458,14 +467,17 @@ export async function situacaoDaBase(f: Fontes, ctx: LunaCtx, texto: string, now
       return nome.length >= 4 && t.includes(nome);
     })?.code ||
     null;
-  const { baseCode, turno } = baseETurno(meus, now, citada);
+  const { baseCode, turno } = baseETurno(meus, now, citada, turnoPedido(texto, now));
   if (!baseCode) {
     return { status: "INSUFFICIENT_DATA", registros: 0, texto: "Não achei plantão seu agora. Diga a base (ex.: \"estou na CB02, vai ativar?\")." };
   }
-  const situacao = await f.situacaoDoTurno(baseCode, inicioDoTurno(turno));
+  const [situacao, escala] = await Promise.all([f.situacaoDoTurno(baseCode, inicioDoTurno(turno)), f.medicosPrevistos(turno.date, turno.period)]);
+  const previstos = { consultado: escala.consultado, diaSemEscala: escala.diaSemEscala, nomes: escala.porBase[baseCode] ?? [] };
   return {
-    status: !situacao.consultado ? "FAILED" : situacao.desativada ? "DESATIVADA" : situacao.chegaram.length ? "MEDICO_CHEGOU" : situacao.saindo.length ? "MEDICO_SAINDO" : "SEM_MEDICO",
+    status: now < inicioDoTurno(turno)
+      ? (!previstos.consultado || previstos.diaSemEscala ? "SEM_ESCALA" : previstos.nomes.length ? "PREVISTO" : "FURO_NA_ESCALA")
+      : !situacao.consultado ? "FAILED" : situacao.desativada ? "DESATIVADA" : situacao.chegaram.length ? "MEDICO_CHEGOU" : situacao.saindo.length ? "MEDICO_SAINDO" : "SEM_MEDICO",
     registros: situacao.chegaram.length + situacao.saindo.length,
-    texto: textoDaBaseAgora({ baseCode, turno, now, situacao }),
+    texto: textoDaBaseAgora({ baseCode, turno, now, situacao, previstos }),
   };
 }

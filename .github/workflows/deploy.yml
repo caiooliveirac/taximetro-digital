@@ -198,6 +198,8 @@ jobs:
               -e TOM_AVISO_URL="http://127.0.0.1:3083/aviso" \
               -e TOM_HOOK_SECRET="${{ secrets.TOM_HOOK_SECRET }}" \
               -e PLANTOES_READONLY_DATABASE_URL="${{ secrets.PLANTOES_READONLY_DATABASE_URL }}" \
+              -e ESPERADOS_URL="http://127.0.0.1:3040/api/esperados" \
+              -e ESPERADOS_TOKEN="${{ secrets.ESPERADOS_TOKEN }}" \
               -e CROSS_APP_IMPORT_SECRET="${{ secrets.CROSS_APP_IMPORT_SECRET }}" \
               -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               -e GOOGLE_MAPS_BROWSER_KEY="${{ secrets.GOOGLE_MAPS_BROWSER_KEY }}" \
@@ -246,6 +248,8 @@ jobs:
               -e TOM_AVISO_URL="http://127.0.0.1:3083/aviso" \
               -e TOM_HOOK_SECRET="${{ secrets.TOM_HOOK_SECRET }}" \
               -e PLANTOES_READONLY_DATABASE_URL="${{ secrets.PLANTOES_READONLY_DATABASE_URL }}" \
+              -e ESPERADOS_URL="http://127.0.0.1:3040/api/esperados" \
+              -e ESPERADOS_TOKEN="${{ secrets.ESPERADOS_TOKEN }}" \
               -e MNRS_FEDERACAO_SECRET="${{ secrets.MNRS_FEDERACAO_SECRET }}" \
               -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               -e GOOGLE_MAPS_BROWSER_KEY="${{ secrets.GOOGLE_MAPS_BROWSER_KEY }}" \

@@ -210,6 +210,15 @@ procurar; sem médico, orienta Avisar → Sem médico (aba Hoje) e o remanejamen
 na aba Check-in a partir de HH:15 (`REIVINDICACAO_MIN`). O quadro só tem quem
 registrou chegada pelo Telegram: a resposta diz isso.
 
+Turno futuro ("vai ativar amanhã à noite?", "sábado", "03/11"): médico
+previsto pela escala médica do Escalas & Trocas, `GET /api/esperados` (a mesma
+rota do painel do plantoes; escala dinâmica, depois das trocas), env
+`ESPERADOS_URL`/`ESPERADOS_TOKEN` (secret do GitHub, copiado do container
+`escala`). Base sem ninguém no turno = "sem médico escalado, pode não
+ativar"; dia sem nenhuma base na resposta = escala não publicada, "não
+consegui ver". Em 29/10 a rota devolvia vazio para todo outubro (novembro
+ok) — problema do lado do Escalas, não investigado aqui.
+
 ## Pontos em aberto
 
 1. **Vitalmed** ainda tem a matview antiga com triggers: o banco dela não tem

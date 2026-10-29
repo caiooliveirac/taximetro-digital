@@ -20,6 +20,7 @@ import { getRequestableSlots } from "@/lib/slots";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
 import { goalKindOf } from "@/lib/goal-slots";
 import { situacaoDoTurnoNaBase, type SituacaoDoTurno } from "@/features/scheduling/infra/repositories/plantoes-medicos-repository";
+import { medicosPrevistos, type MedicosPrevistos } from "@/features/scheduling/infra/repositories/escala-medica-repository";
 import { filaDeReposicao, type Fila } from "@/features/extra-offers/application/fila-de-reposicao";
 import { addDaysToDateStr, hasShiftStarted, operationalDateStr } from "@/lib/utils";
 import type { Meta, MeuPlantao, Oferta, Periodo } from "@/lib/luna-inteligencia";
@@ -34,6 +35,8 @@ export type Fontes = {
   bases(): Promise<{ code: string; name: string }[]>;
   /** Quadro de médicos do `plantoes` para a base num turno (quem chegou, quem sai, desativada). */
   situacaoDoTurno(codigo: string, inicioDoTurno: Date): Promise<SituacaoDoTurno>;
+  /** Médico previsto por base no turno, pela escala médica do Escalas & Trocas. */
+  medicosPrevistos(date: string, period: Periodo): Promise<MedicosPrevistos>;
   /** Do rodízio recente em diante, com presença; inclui cancelados (para explicar). */
   meusPlantoes(): Promise<MeuPlantao[]>;
   lider(): Promise<{ id: string; nome: string } | null>;
@@ -89,6 +92,8 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
     bases: () => lido("bases", () => db.select({ code: bases.code, name: bases.name }).from(bases).where(eq(bases.isActive, true))),
 
     situacaoDoTurno: (codigo, inicio) => lido(`plantoes:${codigo}:${inicio.toISOString()}`, () => situacaoDoTurnoNaBase(codigo, inicio)),
+
+    medicosPrevistos: (date, period) => lido(`escala:${date}:${period}`, () => medicosPrevistos(date, period)),
 
     meusPlantoes: () => lido("meus_plantoes", async () => {
       const rows = await db

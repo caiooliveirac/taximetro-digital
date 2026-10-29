@@ -14,6 +14,7 @@ import path from "node:path";
 import type { Fontes, LunaCtx } from "../src/lib/luna-dados";
 import type { Fila } from "../src/features/extra-offers/application/fila-de-reposicao";
 import type { SituacaoDoTurno } from "../src/features/scheduling/infra/repositories/plantoes-medicos-repository";
+import type { MedicosPrevistos } from "../src/features/scheduling/infra/repositories/escala-medica-repository";
 import { sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
 import { perguntarLuna, type LunaPergunta } from "../src/lib/luna-interno";
 import { explicarPlantao, textoDaPresenca, type Meta, type MeuPlantao, type Oferta } from "../src/lib/luna-inteligencia";
@@ -58,7 +59,7 @@ const TROCAS: Oferta[] = [
   oferta("TROCA", "T3", "USA", "2026-10-31", "NIGHT", { quem: "Davi Reis", quemId: "u-d", assignmentId: "a-t3", faculdade: "FAC-A" }),
 ];
 
-type Fixture = { meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; situacao?: SituacaoDoTurno; falha?: string };
+type Fixture = { meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; situacao?: SituacaoDoTurno; previstos?: MedicosPrevistos; falha?: string };
 
 // Números de 29/10/2026: a demanda passa da oferta em todo tipo.
 const FILA: Fila = { USA: { precisam: 131, casinhas: 611, vagasAbertas: 43 }, CRU: { precisam: 112, casinhas: 356, vagasAbertas: 0 }, CRL: { precisam: 60, casinhas: 60, vagasAbertas: 0 } };
@@ -79,6 +80,7 @@ function fontes(fx: Fixture = {}) {
       lidas.push(`plantoes:${codigo}:${inicio.toISOString()}`);
       return fx.situacao ?? { consultado: true, chegaram: [], saindo: [], desativada: null };
     },
+    medicosPrevistos: async () => fx.previstos ?? { consultado: true, diaSemEscala: false, porBase: { CB02: ["Carla M."] } },
     lider: le("lider", { id: "lider-a", nome: "Líder A" }),
     liberadas: async (ate) => (await le("liberadas", fx.liberadas ?? LIBERADAS)()).filter((o) => o.date <= ate),
     extras: le("extras", fx.extras ?? EXTRAS),
@@ -198,6 +200,16 @@ test("'Estou na Cabula, vai ativar?' — direto, base pelo nome, médico que che
   assert.equal(chamadas, 0);
   assert.match(r.texto, /Dr\(a\)\. Ana Lima já chegou na CB02/);
   assert.ok(lidas.some((l) => l.startsWith("plantoes:CB02:")));
+});
+
+test("'A Cabula vai ativar no dia 30/12 à noite?' — turno futuro: médico previsto pela escala", async () => {
+  const { r, chamadas, lidas } = await perguntar("A Cabula vai ativar no dia 30/12 à noite?", {
+    previstos: undefined,
+    fx: { previstos: { consultado: true, diaSemEscala: false, porBase: { CB02: ["Carla M."] } } },
+  } as never);
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /^CB02, qua 30\/12 noite: Pela escala médica, o previsto é Dr\(a\)\. Carla M\./);
+  assert.ok(lidas.some((l) => l.startsWith("plantoes:CB02:2026-12-30T22")));
 });
 
 test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho sexta", async () => {

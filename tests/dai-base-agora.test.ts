@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoDoRelogio } from "../src/lib/luna-base-agora";
+import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoDoRelogio, turnoPedido } from "../src/lib/luna-base-agora";
 import { rotear } from "../src/lib/luna-roteador";
 import type { MeuPlantao } from "../src/lib/luna-inteligencia";
 
@@ -46,8 +46,9 @@ test("base desativada no quadro: não vai ativar, remanejar", () => {
 
 test("antes do turno: ainda não começou, mostra quem está na base", () => {
   const t = textoDaBaseAgora({ baseCode: "CB02", turno: { date: "2026-10-30", period: "NIGHT" }, now: as("17:30"), situacao: sit({ saindo: [{ nome: "Ana Lima", desde: "07:12" }] }) });
-  assert.match(t, /O turno das 19:00 na CB02 ainda não começou/);
+  assert.match(t, /^CB02, sex 30\/10 noite:/);
   assert.match(t, /Na base agora está Dr\(a\)\. Ana Lima, do turno anterior/);
+  assert.match(t, /Perto das 19:00 do dia, pergunte de novo/);
 });
 
 test("sem canal com o plantoes: diz que não sabe e orienta o aviso", () => {
@@ -77,4 +78,44 @@ test("roteador: 'vai ativar?' vai direto, mesmo com 'noite' na frase", () => {
     assert.equal(rotear(q)?.tipo, "BASE_AGORA", q);
   }
   assert.notEqual(rotear("Quais são meus próximos plantões?")?.tipo, "BASE_AGORA");
+});
+
+const prev = (nomes: string[], diaSemEscala = false) => ({ consultado: true, diaSemEscala, nomes });
+
+test("turno futuro: médico previsto pela escala; furo; dia sem escala publicada", () => {
+  const noite = { date: "2026-10-31", period: "NIGHT" as const };
+  assert.match(
+    textoDaBaseAgora({ baseCode: "CB02", turno: noite, now: as("10:00"), situacao: sit({}), previstos: prev(["Ana L."]) }),
+    /^CB02, sáb 31\/10 noite: Pela escala médica, o previsto é Dr\(a\)\. Ana L\. Perto das 19:00 do dia, pergunte de novo/,
+  );
+  assert.match(
+    textoDaBaseAgora({ baseCode: "CB02", turno: noite, now: as("10:00"), situacao: sit({}), previstos: prev([]) }),
+    /não tem ninguém previsto na CB02 nesse turno: sem médico escalado, ela pode não ativar/,
+  );
+  // Dia sem nenhuma base na escala = escala não publicada, não furo.
+  assert.match(
+    textoDaBaseAgora({ baseCode: "CB02", turno: noite, now: as("10:00"), situacao: sit({}), previstos: prev([], true) }),
+    /Não consegui ver a escala médica desse turno/,
+  );
+});
+
+test("turno de agora sem chegada: mostra também o previsto pela escala", () => {
+  const t = textoDaBaseAgora({ baseCode: "CB02", turno: dia, now: as("07:05"), situacao: sit({}), previstos: prev(["Ana L."]) });
+  assert.match(t, /Pela escala médica, o previsto é Dr\(a\)\. Ana L\./);
+});
+
+test("turno pedido na pergunta: amanhã, dia da semana, data, noite", () => {
+  const agora = as("10:00", "2026-10-29"); // quinta
+  assert.deepEqual(turnoPedido("vai ativar amanhã?", agora), { date: "2026-10-30", period: "DAY" });
+  assert.deepEqual(turnoPedido("e amanhã à noite?", agora), { date: "2026-10-30", period: "NIGHT" });
+  assert.deepEqual(turnoPedido("sábado vai ativar?", agora), { date: "2026-10-31", period: "DAY" });
+  assert.deepEqual(turnoPedido("quinta que vem?", agora), { date: "2026-11-05", period: "DAY" });
+  assert.deepEqual(turnoPedido("dia 03/11 noite", agora), { date: "2026-11-03", period: "NIGHT" });
+  assert.deepEqual(turnoPedido("hoje à noite", agora), { date: "2026-10-29", period: "NIGHT" });
+  assert.equal(turnoPedido("vai ativar?", agora), null);
+});
+
+test("sem plantão perto, 'minha base vai ativar?' olha o próximo plantão dele", () => {
+  const meus = [meu("2026-11-03", "NIGHT", "SM01")];
+  assert.deepEqual(baseETurno(meus, as("10:00", "2026-10-29"), null), { baseCode: "SM01", turno: { date: "2026-11-03", period: "NIGHT" } });
 });
