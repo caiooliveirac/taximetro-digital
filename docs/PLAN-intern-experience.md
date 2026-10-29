@@ -25,7 +25,12 @@ Dados de produção (2026-10-29):
 - Vagas liberadas USA abertas no futuro: **229** (213 sem dono, 16 manuais).
   Usadas nos últimos 30 dias: 32.
 
-### 2a. Troca com interno de outra faculdade (só USA)
+### 2a. Troca com interno de outra faculdade (só USA) — no ar
+
+Confirmado pelo Caio em 2026-10-29: só USA. Implementado como abaixo
+(`src/shared/domain/policies/cross-faculty-swap-policy.ts`). Plantão vindo de
+troca que a coordenação cancela depois mantém a oferta `TROCA`, igual a vaga
+liberada usada hoje: não existe "devolver" vaga cedida.
 
 Hoje o bloqueio é um `if` (`handle-swap-peer-action.ts:129`) e a lista de
 ofertas filtra pela faculdade (`list-requests.ts:47`). Tirar os dois não basta:
@@ -74,7 +79,7 @@ da Luna e numa seção de Extras. Mesmo sem 2c, a brecha precisa fechar.
 
 ### Perguntas para o Caio
 
-1. 2a só USA está bom, ou CRL também?
+1. ~~2a só USA está bom, ou CRL também?~~ Só USA (respondido).
 2. 2b: o plantão devolvido volta para a grade da faculdade (líder repõe) ou já
    vira vaga liberada na hora?
 3. Troca entre faculdades desfeita pela coordenação: a vaga volta para quem?

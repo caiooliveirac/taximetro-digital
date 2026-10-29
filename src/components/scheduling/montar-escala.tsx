@@ -52,6 +52,8 @@ type Slot = {
 type Released = {
   id: string; baseId: string; baseCode: string; date: string; period: string;
   shift: string | null; claimedBy: string | null;
+  /** "TROCA": cedida numa troca de USA com interno de outra faculdade. */
+  autoRelease?: string | null;
 };
 /** Vaga que OUTRA faculdade liberou e esta pode usar. */
 type FreeSlot = {
@@ -1167,10 +1169,10 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               <div
                                 key={r.id}
                                 className="flex items-center gap-1.5 rounded-md border border-dashed border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800"
-                                title={r.claimedBy ? "Vaga cedida e já usada por outra faculdade" : "Vaga cedida às outras faculdades — fora do sorteio"}
+                                title={r.autoRelease === "TROCA" ? "Seu interno trocou este plantão com um interno de outra faculdade" : r.claimedBy ? "Vaga cedida e já usada por outra faculdade" : "Vaga cedida às outras faculdades — fora do sorteio"}
                               >
                                 <Unlock className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{r.claimedBy ? "Cedida · em uso" : "Cedida a outras"}</span>
+                                <span className="truncate">{r.autoRelease === "TROCA" ? "Trocada · outra faculdade" : r.claimedBy ? "Cedida · em uso" : "Cedida a outras"}</span>
                                 {!r.claimedBy && (
                                   <button
                                     type="button"

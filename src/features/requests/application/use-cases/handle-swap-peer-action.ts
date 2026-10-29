@@ -18,9 +18,11 @@ import {
   findRequestById,
   findUserNameById,
   hasCheckinRecord,
+  insertSwapCessions,
   reopenSwapRequest,
   updateRequestProposal,
 } from "@/features/requests/infra/repositories/request-repository";
+import { cessoesDaTroca, podeTrocarEntreFaculdades } from "@/shared/domain/policies/cross-faculty-swap-policy";
 import { hasUsedCruSwapQuota, resolveCruSwapWindow } from "@/shared/domain/policies/cru-swap-quota-policy";
 import { mensagemSemDescanso, plantaoSemDescanso } from "@/shared/domain/policies/rest-policy";
 import { addDaysToDateStr } from "@/lib/utils";
@@ -129,9 +131,6 @@ export async function executeSwapPeerAction(params: {
     const requesterFaculties = await findInternFacultiesByUserId(request.requesterId);
     const proposerFaculties = await findInternFacultiesByUserId(userId);
     const sharesFaculty = [...proposerFaculties].some((id) => requesterFaculties.has(id));
-    if (!sharesFaculty) {
-      return { status: 400, body: { success: false, error: "Troca só é permitida dentro da mesma faculdade" } } as const;
-    }
 
     // Troca só entre plantões do mesmo tipo de base (CRU↔CRU, CRL↔CRL, USA↔USA)
     if (request.assignmentId) {
@@ -142,6 +141,10 @@ export async function executeSwapPeerAction(params: {
           status: 400,
           body: { success: false, error: "Troca só é permitida entre plantões do mesmo tipo (CRU↔CRU, CRL↔CRL, USA↔USA)" },
         } as const;
+      }
+
+      if (!sharesFaculty && !podeTrocarEntreFaculdades(offeredType)) {
+        return { status: 400, body: { success: false, error: "Com interno de outra faculdade, só dá para trocar plantão de USA" } } as const;
       }
 
       // Cota checada já aqui para não deixar o colega esperando por uma proposta
@@ -229,11 +232,17 @@ export async function executeSwapPeerAction(params: {
     const semDescanso = await findSwapRestConflict(origAssignment.id, targetAssignment.id);
     if (semDescanso) return { status: 409, body: { success: false, error: semDescanso } } as const;
 
+    // O que vale para a grade é a faculdade de cada plantão, não a do vínculo.
+    const entreFaculdades = origAssignment.facultyId !== targetAssignment.facultyId;
+    if (entreFaculdades && !podeTrocarEntreFaculdades(baseType)) {
+      return { status: 400, body: { success: false, error: "Com interno de outra faculdade, só dá para trocar plantão de USA" } } as const;
+    }
+
     // Troca efetivada na hora
     await cancelAssignmentForSwap(origAssignment.id);
     await cancelAssignmentForSwap(targetAssignment.id);
 
-    await createSwapAssignment({
+    const novoDoOriginal = await createSwapAssignment({
       internId: origAssignment.internId,
       facultyId: origAssignment.facultyId,
       baseId: targetAssignment.baseId,
@@ -243,7 +252,7 @@ export async function executeSwapPeerAction(params: {
       createdBy: actor.realUserId ?? actor.id,
     });
 
-    await createSwapAssignment({
+    const novoDoAlvo = await createSwapAssignment({
       internId: targetAssignment.internId,
       facultyId: targetAssignment.facultyId,
       baseId: origAssignment.baseId,
@@ -252,6 +261,16 @@ export async function executeSwapPeerAction(params: {
       shift: origAssignment.shift,
       createdBy: actor.realUserId ?? actor.id,
     });
+
+    // Cada faculdade segue dona da vaga que cedeu (grade, sorteio, cron).
+    await insertSwapCessions(cessoesDaTroca({
+      original: origAssignment,
+      alvo: targetAssignment,
+      novoDoAlvo,
+      novoDoOriginal,
+      publishedBy: actor.realUserId ?? actor.id,
+      agora: new Date(),
+    }));
 
     await completeSwapRequest(input.id);
 
@@ -264,6 +283,7 @@ export async function executeSwapPeerAction(params: {
         origAssignmentId: origAssignment.id,
         targetAssignmentId: targetAssignment.id,
         baseType,
+        entreFaculdades,
       },
     });
 

@@ -239,6 +239,7 @@ export async function listReleasedOffers(params: { facultyId: string; from: stri
       shift: extraShiftOffers.shift,
       claimedBy: extraShiftOffers.claimedBy,
       reservedBy: extraShiftOffers.reservedBy,
+      autoRelease: extraShiftOffers.autoRelease,
     })
     .from(extraShiftOffers)
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))

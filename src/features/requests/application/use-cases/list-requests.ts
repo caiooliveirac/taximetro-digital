@@ -3,6 +3,7 @@ import {
   listRequestsRows,
 } from "@/features/requests/infra/repositories/request-repository";
 import { shiftAlreadyStarted } from "@/features/requests/domain/request-shift-window";
+import { podeTrocarEntreFaculdades } from "@/shared/domain/policies/cross-faculty-swap-policy";
 
 // Troca em aberto (ou proposta ainda não confirmada) cujo plantão já começou não
 // serve mais para ninguém: some da lista em vez de ficar eternamente visível.
@@ -44,12 +45,14 @@ export async function executeListRequests(params: {
   const now = new Date();
   const rows = (await listRequestsRows()).filter((r) => !isStaleSwap(r, now));
 
+  // Oferta da própria faculdade, de qualquer tipo; de outra faculdade, só USA
+  // (ver cross-faculty-swap-policy.ts).
   if (scope === "open-swaps" && (actor.role === "INTERN" || actor.role === "LEADER") && actor.facultyId) {
     const facultyInternIds = await findFacultyInternIds(actor.facultyId);
     const filtered = rows.filter((r) =>
       r.type === "SWAP" &&
       r.status === "OPEN" &&
-      facultyInternIds.has(r.requesterId) &&
+      (facultyInternIds.has(r.requesterId) || podeTrocarEntreFaculdades(r.baseType)) &&
       r.requesterId !== actor.id,
     );
     return filtered;
