@@ -156,6 +156,23 @@ liberada e diz o tamanho da fila.
 A Dai não fala de meta: está na tela Início. "Quanto falta?" responde com um
 ponteiro, sem consulta e sem modelo; o prompt não leva números de meta.
 
+## Avisos da Dai no chat (29/10)
+
+Texto pronto, sem modelo (`src/features/dai-avisos/`), por cron do container
+(`scripts/container-entrypoint.sh`, desliga com `DAI_AVISOS_ENABLED=false`).
+A Dai é um usuário sem login (`dai@assistente.taximetro`, inativo); no chat a
+conversa com ela não tem campo de resposta e aponta para a aba Dai.
+
+| Aviso | Quando | Para quem | O quê |
+|---|---|---|---|
+| `plantao` | 17h | quem tem plantão amanhã (1 por interno) | base, "veja na aba Bases", tema para revisar (primeiro do tipo que ele não abriu na Dai) |
+| `vagas` | :25, 8h–20h | quem ainda precisa do tipo, vaga de amanhã a 10 dias, no rodízio dele, com 12h de descanso | até 3 vagas; 1 mensagem por dia; cada vaga citada para no máximo 4, os mais urgentes primeiro |
+| `lideres` | 8h | líder ativo, 1 por dia | turnos da grade sem escala nos 7 dias (só em dia de turma), internos com casinha vazia, vagas de outras faculdades |
+
+Cada envio vai para o `audit_log` (`DAI_AVISO_PLANTAO|VAGAS|SOBRA`), que é o
+que impede repetir. `GET /api/cron/dai-avisos?tipo=…&dry=1` monta sem enviar.
+Simulação em 29/10 com dado real: 48 (plantão), 54 (vagas), 11 (líderes).
+
 ## Pontos em aberto
 
 1. **Vitalmed** ainda tem a matview antiga com triggers: o banco dela não tem

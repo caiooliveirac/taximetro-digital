@@ -65,6 +65,15 @@ append_vagas_livres_cron() {
   echo "[entrypoint] liberação automática de vagas habilitada em ${schedule} (${TZ})"
 }
 
+append_dai_avisos_cron() {
+  # Véspera do plantão às 17h; vaga livre que abriu, de hora em hora no dia
+  # (depois da liberação automática do minuto 10); resumo do líder às 8h.
+  printf "%s\n" "${DAI_AVISO_PLANTAO_CRON:-0 17 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs plantao' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  printf "%s\n" "${DAI_AVISO_VAGAS_CRON:-25 8-20 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs vagas' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  printf "%s\n" "${DAI_AVISO_LIDERES_CRON:-0 8 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs lideres' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  echo "[entrypoint] avisos da Dai habilitados (${TZ})"
+}
+
 start_cron_daemon() {
   crond -l 2 -L /dev/stdout
 }
@@ -115,6 +124,14 @@ elif [ -z "${AUTH_SECRET:-}" ]; then
   echo "[entrypoint] liberação automática de vagas desabilitada por configuração incompleta (AUTH_SECRET)"
 else
   append_vagas_livres_cron
+fi
+
+if [ "${DAI_AVISOS_ENABLED:-true}" = "false" ]; then
+  echo "[entrypoint] avisos da Dai desabilitados por DAI_AVISOS_ENABLED=false"
+elif [ -z "${AUTH_SECRET:-}" ]; then
+  echo "[entrypoint] avisos da Dai desabilitados por configuração incompleta (AUTH_SECRET)"
+else
+  append_dai_avisos_cron
 fi
 
 start_cron_daemon

@@ -17,6 +17,7 @@ import { db } from "@/db";
 import { faculties, internMessages, requests, userRoles, users } from "@/db/schema";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { checkRateLimit } from "@/shared/infra/rate-limit";
+import { DAI_NOME, idDaDai } from "@/features/dai-avisos/remetente";
 
 const PAPEIS = ["INTERN", "LEADER"] as const;
 
@@ -47,7 +48,10 @@ async function pessoas(ids: string[]) {
       eq(userRoles.isArchived, false),
       inArray(userRoles.role, [...PAPEIS]),
     ));
-  const mapa = new Map<string, { id: string; nome: string; faculdade: string | null }>();
+  const mapa = new Map<string, { id: string; nome: string; faculdade: string | null; dai?: boolean }>();
+  // A Dai escreve avisos (dai-avisos/avisos.ts) e não tem vínculo nem login.
+  const dai = await idDaDai();
+  if (dai && ids.includes(dai)) mapa.set(dai, { id: dai, nome: DAI_NOME, faculdade: null, dai: true });
   // Interno ganha do líder na hora de dizer a faculdade: é a dele de origem.
   const peso = (role: string) => (role === "INTERN" ? 0 : 1);
   for (const r of [...rows].sort((a, b) => peso(a.role) - peso(b.role))) {
@@ -143,6 +147,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ success: false, error: "Mensagem vazia ou longa demais (até 1000 letras)." }, { status: 400 });
   const { para, texto, requestId } = parsed.data;
   if (para === user.id) return NextResponse.json({ success: false, error: "Não dá para mandar mensagem para você mesmo." }, { status: 400 });
+  if (para === (await idDaDai())) return NextResponse.json({ success: false, error: "A Dai responde na aba Dai." }, { status: 400 });
   if (!checkRateLimit(`mensagens:${user.id}`, 30, 5 * 60_000)) {
     return NextResponse.json({ success: false, error: "Muitas mensagens seguidas. Espere uns minutos." }, { status: 429 });
   }
