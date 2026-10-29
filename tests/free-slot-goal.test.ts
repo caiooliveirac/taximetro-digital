@@ -18,6 +18,15 @@ test("líder em vaga livre com interno de meta coberta recebe META_CUMPRIDA, nã
   assert.match(src, /type: "FREE_SLOT"/);
 });
 
+test("interno não se escala sozinho em vaga livre, nem por POST direto", () => {
+  const src = ler("src/features/extra-offers/application/use-cases/claim-extra-offer.ts");
+  const guarda = src.indexOf('vagaLivre && actor.role === "INTERN" && !alocandoOutro');
+  assert.ok(guarda > 0, "guarda do interno existe");
+  assert.match(src.slice(guarda, guarda + 300), /status: 403[\s\S]*code: "VAGA_LIVRE_PELO_LIDER"/);
+  // A guarda vem antes de criar o plantão.
+  assert.ok(guarda < src.indexOf("isExtraShift: !vagaLivre"), "barra antes de gravar");
+});
+
 test("pedido de vaga livre só a coordenação aprova, e some da lista do líder", () => {
   assert.match(ler("src/features/requests/application/use-cases/review-request.ts"), /request\.type === "FREE_SLOT" && actor\.role !== "COORDINATOR"/);
   assert.match(ler("src/features/requests/application/use-cases/list-requests.ts"), /r\.type !== "FREE_SLOT"/);

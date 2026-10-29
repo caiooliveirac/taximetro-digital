@@ -72,10 +72,11 @@ já fechou a meta.
 
 ### 2c. Interno pega vaga liberada sozinho
 
-Hoje a API **já aceita** POST do interno numa vaga liberada sem checar a meta
-(`claim-extra-offer.ts:151` só trava LEADER). Proposta: estender a trava ao
-INTERN (abaixo da meta pega direto; acima, 409) e pôr o botão "Pegar" no cartão
-da Luna e numa seção de Extras. Mesmo sem 2c, a brecha precisa fechar.
+Decidido (Caio, 2026-10-29): o interno continua sem se escalar sozinho. A
+brecha da API está fechada desde `5b1f685`: POST do interno numa vaga livre
+responde 403 `VAGA_LIVRE_PELO_LIDER` (teste em `tests/free-slot-goal.test.ts`).
+Quem escala é o líder (abaixo da meta) ou a coordenação, pela candidatura
+(`candidatar-vaga-livre.ts`).
 
 ### Perguntas para o Caio
 
@@ -83,7 +84,7 @@ da Luna e numa seção de Extras. Mesmo sem 2c, a brecha precisa fechar.
 2. 2b: o plantão devolvido volta para a grade da faculdade (líder repõe) ou já
    vira vaga liberada na hora?
 3. Troca entre faculdades desfeita pela coordenação: a vaga volta para quem?
-4. 2c: o interno pega direto, ou continua pedindo ao líder? Se continuar,
-   fecho só a brecha da API.
+4. ~~2c: o interno pega direto, ou continua pedindo ao líder?~~ Continua pelo
+   líder; brecha da API fechada (respondido).
 5. Mensagem nova avisar no Telegram do interno (quem tem vínculo)? Hoje só o
    contador no app.
