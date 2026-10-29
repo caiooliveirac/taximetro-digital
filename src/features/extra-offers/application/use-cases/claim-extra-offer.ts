@@ -13,6 +13,9 @@ import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 import { findPendingFreeSlotRequest, insertRequest } from "@/features/requests/infra/repositories/request-repository";
 import { semDescansoPara } from "@/features/scheduling/application/descanso";
 import { metaDoInternoNoTipo, textoMetaCumprida } from "./free-slot-goal";
+import { comExtraNoHistorico, naRepescagem, TEXTO_JA_TEVE_EXTRA } from "../repescagem";
+import { soAsQueCabem } from "../lotacao";
+import { goalKindOf } from "@/lib/goal-slots";
 
 /**
  * Oferta de data passada não se pega. O board e a grade já não mostram; isto é
@@ -51,7 +54,11 @@ export function textoVagaAutomaticaUsada(p: {
   const origem = p.autoRelease === "SEM_DONO"
     ? "Vaga sem dono usada"
     : `Vaga liberada pelo prazo da ${p.releasedByAbbr ?? "outra faculdade"} usada`;
-  const quem = p.actorRole === "COORDINATOR" ? `${p.actorName} (coordenação)` : `${p.actorName} (líder ${p.facultyAbbr})`;
+  const quem = p.actorRole === "COORDINATOR"
+    ? `${p.actorName} (coordenação)`
+    : p.actorRole === "INTERN"
+      ? "o próprio interno, na repescagem"
+      : `${p.actorName} (líder ${p.facultyAbbr})`;
   return `🔓 ${origem}\n${p.baseCode} · ${data} ${turno}\nInterno: ${p.internName} (${p.facultyAbbr})\nEscalado por: ${quem}`;
 }
 
@@ -156,19 +163,40 @@ export async function executeClaimExtraOffer(params: {
   // Vaga sem dono (auto-release-slots.ts) também é vaga livre: vira plantão
   // normal do interno, só não tem faculdade que liberou.
   const vagaLivre = Boolean(offer.releasedFacultyId) || offer.autoRelease === "SEM_DONO";
-  // Interno não se escala em vaga livre: quem escala é o líder (abaixo da
-  // meta) ou a coordenação, pela candidatura (candidatar-vaga-livre.ts). A
-  // tela não oferece isso; aqui fecha o POST direto.
-  if (vagaLivre && actor.role === "INTERN" && !alocandoOutro) {
+  // 8h antes do turno a vaga livre vira extra (repescagem.ts): qualquer um
+  // pega, sem líder e sem a trava da meta.
+  const repescagem = vagaLivre && !retroativo && naRepescagem(offer.date, offer.period as "DAY" | "NIGHT", offer.shift);
+  // Fora da repescagem, interno não se escala em vaga livre: quem escala é o
+  // líder (abaixo da meta) ou a coordenação, pela candidatura
+  // (candidatar-vaga-livre.ts). A tela não oferece isso; aqui fecha o POST direto.
+  if (vagaLivre && !repescagem && actor.role === "INTERN" && !alocandoOutro) {
     return { status: 403, body: { success: false, code: "VAGA_LIVRE_PELO_LIDER", error: "Vaga livre é escalada pelo líder da sua faculdade. Se sua meta já fechou, candidate-se pela Dai." } } as const;
   }
-  const [quemLiberou] = vagaLivre
-    ? await db.select({ abbr: faculties.abbreviation }).from(faculties).where(eq(faculties.id, offer.releasedFacultyId!)).limit(1)
+  const [quemLiberou] = vagaLivre && offer.releasedFacultyId
+    ? await db.select({ abbr: faculties.abbreviation }).from(faculties).where(eq(faculties.id, offer.releasedFacultyId)).limit(1)
     : [null];
+
+  // Sem o líder no meio, a trava da viatura cheia fica aqui (lotacao.ts).
+  if (repescagem && baseDaVaga) {
+    const turno = { baseCode: baseDaVaga.code, tipo: goalKindOf(baseDaVaga.type), date: offer.date, period: offer.period as "DAY" | "NIGHT" };
+    if (!(await soAsQueCabem([turno])).length) {
+      return { status: 409, body: { success: false, code: "BASE_CHEIA", error: "A base já está com a equipe completa nesse turno." } } as const;
+    }
+  }
+
+  // Na repescagem, quem já fechou a meta do tipo leva o plantão como extra:
+  // não conta na meta, como o extra comum.
+  const metaNaRepescagem = repescagem && baseDaVaga ? await metaDoInternoNoTipo(internId, baseDaVaga.type) : null;
+  const comoExtra = !vagaLivre || Boolean(metaNaRepescagem?.cumprida);
+  // Extra de última hora é um por interno: quem já teve não ganha outro por
+  // ter visto primeiro. A coordenação decide por fora dessa trava.
+  if (repescagem && comoExtra && actor.role !== "COORDINATOR" && !params.isImpersonating && (await comExtraNoHistorico([internId])).has(internId)) {
+    return { status: 409, body: { success: false, code: "JA_TEVE_EXTRA", error: `${alocandoOutro ? "O interno" : "Você"} ${TEXTO_JA_TEVE_EXTRA}` } } as const;
+  }
 
   // Vaga livre é para quem precisa: o líder só escala sozinho interno abaixo
   // da meta do tipo da vaga. Acima disso, só com aprovação da coordenação.
-  if (vagaLivre && actor.role === "LEADER" && !params.isImpersonating) {
+  if (vagaLivre && !repescagem && actor.role === "LEADER" && !params.isImpersonating) {
     const meta = baseDaVaga ? await metaDoInternoNoTipo(internId, baseDaVaga.type) : null;
     if (meta?.cumprida) {
       const [interno] = await db.select({ name: users.name }).from(users).where(eq(users.id, internId)).limit(1);
@@ -195,13 +223,13 @@ export async function executeClaimExtraOffer(params: {
         period: offer.period,
         shift: (offer.shift as "MORNING" | "AFTERNOON") ?? undefined,
         status: "SCHEDULED",
-        isExtraShift: !vagaLivre,
+        isExtraShift: comoExtra,
         extraShiftNotes: vagaLivre ? null : offer.notes ?? null,
         createdBy: params.createdBy ?? actor.id,
         notes: vagaLivre
-          ? offer.releasedFacultyId
+          ? (offer.releasedFacultyId
             ? `Vaga livre liberada pela ${quemLiberou?.abbr ?? "outra faculdade"}`
-            : "Vaga livre sem dono na grade"
+            : "Vaga livre sem dono na grade") + (repescagem ? " — pega na repescagem" : "")
           : `Plantão extra — oferta pública #${offerId.slice(0, 8)}`,
       })
       .returning({ id: assignments.id });
@@ -241,6 +269,7 @@ export async function executeClaimExtraOffer(params: {
         baseCode: bs?.code ?? null,
         date: offer.date,
         period: offer.period,
+        ...(repescagem ? { repescagem: true, comoExtra } : {}),
         ...(retroativo ? { allowRetroactiveOverride: true } : {}),
       },
     });
