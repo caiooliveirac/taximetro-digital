@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
   const feitas = user.realUserId ? 0 : await perguntasDeHoje(user.id, hoje);
   if (feitas >= TETO_DIA || !checkRateLimit(`luna:${pessoa}`, TETO_DIA, 24 * 60 * 60_000)) {
     return NextResponse.json(
-      { success: false, error: `Você já fez as ${TETO_DIA} perguntas de hoje. O Dai volta a responder amanhã — as telas continuam funcionando.` },
+      { success: false, error: "Seus tokens de IA com a Dai acabaram por hoje. Amanhã eles voltam — as telas continuam funcionando." },
       { status: 429 },
     );
   }
