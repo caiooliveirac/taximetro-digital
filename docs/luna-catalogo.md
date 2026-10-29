@@ -215,9 +215,10 @@ previsto pela escala médica do Escalas & Trocas, `GET /api/esperados` (a mesma
 rota do painel do plantoes; escala dinâmica, depois das trocas), env
 `ESPERADOS_URL`/`ESPERADOS_TOKEN` (secret do GitHub, copiado do container
 `escala`). Base sem ninguém no turno = "sem médico escalado, pode não
-ativar"; dia sem nenhuma base na resposta = escala não publicada, "não
-consegui ver". Em 29/10 a rota devolvia vazio para todo outubro (novembro
-ok) — problema do lado do Escalas, não investigado aqui.
+ativar"; dia sem nenhuma base na resposta = "não consegui ver". A escala
+médica do mês fica em rascunho por sigilo no app; a Dai pede `rascunho=1`
+(aberto no Escalas em 29/10, como já fazem o resumo de turno e o bot do
+grupo). O painel do plantoes continua só com a escala publicada.
 
 ## Pontos em aberto
 
