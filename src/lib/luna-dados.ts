@@ -26,7 +26,8 @@ import { filaDeReposicao, type Fila } from "@/features/extra-offers/application/
 import { addDaysToDateStr, hasShiftStarted, operationalDateStr } from "@/lib/utils";
 import type { Meta, MeuPlantao, Oferta, Periodo } from "@/lib/luna-inteligencia";
 
-export type LunaCtx = { internId: string; facultyId: string | null; hoje: string };
+/** `voz`: semente da redação das respostas diretas (dai-voz.ts); sem ela, sempre a mesma. */
+export type LunaCtx = { internId: string; facultyId: string | null; hoje: string; voz?: string };
 
 export type Fontes = {
   meta(): Promise<Meta | null>;

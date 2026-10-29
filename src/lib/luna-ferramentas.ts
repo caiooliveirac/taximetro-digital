@@ -13,7 +13,7 @@ import { GOAL_KINDS, type GoalKind } from "@/lib/goal-slots";
 import type { Fontes, LunaCtx } from "@/lib/luna-dados";
 import {
   FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, explicarPlantao, quando, textoDaBusca,
-  type Avaliada, type Bloqueio, type Busca, type Fonte, type MeuPlantao, type Oferta, type Pedido, type Periodo,
+  type Avaliada, type Bloqueio, type Busca, type Fonte, type Meta, type MeuPlantao, type Oferta, type Pedido, type Periodo,
 } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr } from "@/lib/utils";
 import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoPedido } from "@/lib/luna-base-agora";
@@ -22,8 +22,31 @@ import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-r
 export type { LunaCtx } from "@/lib/luna-dados";
 
 /** Cartões que a tela monta a partir do resultado das ferramentas (não do texto do modelo). */
-export type LunaItem = { titulo: string; detalhe?: string; href?: string; acao?: string; mapa?: string; /** id da vaga livre: botão que abre a candidatura. */ candidatar?: string };
-export type LunaCartao = { tipo: "opcoes" | "troca" | "plantoes"; titulo: string; itens: LunaItem[]; verTudo?: { href: string; rotulo: string } };
+export type LunaItem = {
+  titulo: string;
+  detalhe?: string;
+  href?: string;
+  acao?: string;
+  mapa?: string;
+  /** id da vaga livre: botão que abre a candidatura. */
+  candidatar?: string;
+  /** Com estes, a tela desenha data, turno e tipo como selos; `titulo` fica para conversas antigas. */
+  quando?: { data: string; periodo: string; turno?: string | null };
+  base?: string;
+  tipoVaga?: string | null;
+  numero?: number;
+};
+/** Meta tipo por tipo: casinhas marcadas, vazias e quantas a busca cobre. */
+export type LunaCasinhas = { tipo: GoalKind; alvo: number; marcadas: number; cobre: number }[];
+export type LunaCartao = {
+  tipo: "opcoes" | "troca" | "plantoes" | "guia";
+  titulo: string;
+  itens: LunaItem[];
+  verTudo?: { href: string; rotulo: string };
+  casinhas?: LunaCasinhas;
+  /** Guia: fechado quando há opções na tela, aberto quando não há. */
+  aberto?: boolean;
+};
 
 /** Opção numerada mostrada ao interno: é por ela que "a segunda" volta a ser um id. */
 export type LunaRef = { n: number; fonte: Fonte; id: string };
@@ -33,6 +56,8 @@ export type LunaMemoria = { busca?: ArgsBusca; opcoes?: LunaRef[] };
 export type Resultado = {
   texto: string;
   cartao?: LunaCartao;
+  /** Explicação da regra, ao lado do cartão (ex.: o jogo dos extras). */
+  guia?: LunaCartao;
   memoria?: LunaMemoria;
   /** Para o log: o desfecho e quantos registros a ferramenta olhou. */
   status: string;
@@ -143,9 +168,9 @@ function acaoDa(a: Avaliada, lider: { id: string; nome: string } | null): Pick<L
 
 const ROTULO_STATUS = { ELIGIBLE: "pode pegar", REQUIRES_APPROVAL: "precisa de aprovação" } as const;
 
-function cartaoDaBusca(b: Busca, lider: { id: string; nome: string } | null, numero: (a: Avaliada, i: number) => number): LunaCartao | undefined {
+function cartaoDaBusca(b: Busca, lider: { id: string; nome: string } | null, numero: (a: Avaliada, i: number) => number, casinhas?: LunaCasinhas): LunaCartao | undefined {
   const mostradas = b.opcoes.slice(0, MOSTRAR);
-  if (!mostradas.length) return undefined;
+  if (!mostradas.length && !casinhas?.length) return undefined;
   const titulo = b.objetivo === "meta" ? "Para fechar sua meta" : b.objetivo === "troca" ? "Trocas que servem para você" : "Opções para você";
   return {
     tipo: "opcoes",
@@ -154,11 +179,38 @@ function cartaoDaBusca(b: Busca, lider: { id: string; nome: string } | null, num
       titulo: `${numero(a, i)}. ${a.baseCode} · ${quando(a.date, a.period, a.shift)}`,
       detalhe: `${a.tipo ?? "?"} · ${a.fonte === "TROCA" ? `troca com ${a.quem ?? "colega"}` : a.fonte === "LIBERADA" ? "vaga liberada" : a.fonte === "EXTRA" ? "extra" : "sobra da grade"} · ${ROTULO_STATUS[a.status as keyof typeof ROTULO_STATUS] ?? ""}`,
       mapa: a.baseCode,
+      quando: { data: a.date, periodo: a.period, turno: a.shift },
+      base: a.baseCode,
+      tipoVaga: a.tipo,
+      numero: numero(a, i),
       ...acaoDa(a, lider),
     })),
     verTudo: b.objetivo === "troca" ? { href: "/intern/trocas", rotulo: "Abrir Trocas" } : undefined,
+    casinhas,
   };
 }
+
+/** Casinhas da meta com o que o plano cobriria, para a tela desenhar. */
+function casinhasDa(b: Busca, meta: Meta | null): LunaCasinhas | undefined {
+  if (b.objetivo !== "meta" || !meta || b.status === "INSUFFICIENT_DATA") return undefined;
+  return GOAL_KINDS.filter((k) => meta.alvo[k] > 0).map((k) => {
+    const marcadas = meta.alvo[k] - meta.faltam[k];
+    return { tipo: k, alvo: meta.alvo[k], marcadas, cobre: Math.min(meta.faltam[k], b.plano.filter((a) => a.tipo === k).length) };
+  });
+}
+
+// O jogo dos extras, como o código decide hoje (claim-extra-offer.ts, repescagem.ts, avisos.ts).
+const GUIA_EXTRAS: LunaCartao = {
+  tipo: "guia",
+  titulo: "Como funciona o jogo dos extras",
+  itens: [
+    "**Extra comum**: o líder ou a coordenação publica e leva quem pegar primeiro na aba Extras. Não conta para a meta.",
+    "**Repescagem**: vaga livre que ninguém ocupou vira extra 8h antes do turno — o noturno abre às 11h do dia, o diurno às 20h da véspera — e fecha quando o turno começa.",
+    "Na repescagem você pega direto, sem líder. Falta esse tipo na sua meta? Conta como plantão normal. Meta já fechada? Vira extra, e esse é **um só por interno**.",
+    "Em qualquer extra: 12h de descanso e nada no mesmo turno. Pegou, é seu — só o líder ou a coordenação tiram.",
+    "Quem ainda precisa do tipo, ou marcou **Quero** naquele turno e ainda não teve extra, recebe meu aviso aqui quando a repescagem abre.",
+  ].map((titulo) => ({ titulo })),
+};
 
 // ---------------------------------------------------------------------------
 // buscar_opcoes
@@ -262,7 +314,7 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   // "a primeira" continuar sendo a primeira daquela lista.
   const original = new Map(somente.map((r) => [`${r.fonte}|${r.id}`, r.n]));
   const numero = (a: Avaliada, i: number) => original.get(`${a.fonte}|${a.id}`) ?? i + 1;
-  let texto = textoDaBusca(busca, numero);
+  let texto = textoDaBusca(busca, numero, ctx.voz);
   if (fila && busca.status !== "META_COMPLETA") texto += `\n${fila}`;
   if (largar) texto = `Para largar seu **${largar.baseCode} ${quando(largar.date, largar.period, largar.shift)}**:\n${texto}`;
   if (mostradas.some((a) => a.fonte === "LIBERADA") && !lider) texto += "\nSua faculdade está sem líder ativo cadastrado: a vaga liberada depende dele.";
@@ -273,7 +325,9 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     status: busca.status,
     registros: ofertas.length,
     texto,
-    cartao: cartaoDaBusca(busca, lider, numero),
+    cartao: cartaoDaBusca(busca, lider, numero, casinhasDa(busca, meta)),
+    // Pergunta só de extra: explica o jogo junto, aberto quando não há nenhum.
+    guia: !somente.length && fontes.length === 1 && fontes[0] === "EXTRA" ? { ...GUIA_EXTRAS, aberto: !mostradas.length } : undefined,
     memoria: somente.length
       ? memoria
       : { busca: semRefs, opcoes: mostradas.map((a, i) => ({ n: i + 1, fonte: a.fonte, id: a.id })) },

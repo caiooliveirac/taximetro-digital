@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeftRight, CalendarClock, ClipboardCheck, Loader2, Siren, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Target, Ticket, Zap } from "lucide-react";
+import { ArrowLeftRight, CalendarClock, ChevronDown, ClipboardCheck, Loader2, Moon, Siren, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Sun, Sunrise, Sunset, Target, Ticket, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { LunaCartao, LunaMemoria } from "@/lib/luna-ferramentas";
+import { getBaseStyle } from "@/lib/base-colors";
+import type { LunaCartao, LunaCasinhas, LunaItem, LunaMemoria } from "@/lib/luna-ferramentas";
 import type { CasoAberto, CasoFechado, Ficha, TemaResumo } from "@/lib/dai-casos";
 import { pedidoDeCaso, rotuloDoTema } from "@/lib/dai-temas";
 
@@ -86,17 +87,126 @@ function Candidatar({ offerId }: { offerId: string }) {
   );
 }
 
+const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+function Turno({ periodo, turno }: { periodo: string; turno?: string | null }) {
+  const [Icone, rotulo, horas, cor] =
+    turno === "MORNING" ? [Sunrise, "Manhã", "7h–13h", "bg-amber-50 text-amber-700 ring-amber-600/20"]
+    : turno === "AFTERNOON" ? [Sunset, "Tarde", "13h–19h", "bg-orange-50 text-orange-700 ring-orange-600/20"]
+    : periodo === "NIGHT" ? [Moon, "Noite", "19h–7h", "bg-indigo-50 text-indigo-700 ring-indigo-600/20"]
+    : [Sun, "Dia", "7h–19h", "bg-yellow-50 text-yellow-800 ring-yellow-600/20"];
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", cor)}>
+      <Icone className="h-3 w-3" />
+      {rotulo} <span className="opacity-60">{horas}</span>
+    </span>
+  );
+}
+
+function TipoSelo({ tipo }: { tipo: string }) {
+  const [base, extra] = tipo.split(" · ");
+  return (
+    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold", getBaseStyle(base === "CRU" ? "CENTRAL" : base).pill)}>
+      {base}
+      {extra ? <span className="ml-1 font-normal opacity-70">{extra}</span> : null}
+    </span>
+  );
+}
+
+/** Data em bloco, turno e tipo como selos: o que a tela desenha quando o item traz `quando`. */
+function ItemComData({ item }: { item: LunaItem & { quando: NonNullable<LunaItem["quando"]> } }) {
+  const d = new Date(`${item.quando.data.slice(0, 10)}T12:00:00Z`);
+  const tipo = item.tipoVaga ?? null;
+  // O detalhe antigo começa pelo tipo, que agora já está no selo.
+  const resto = tipo && item.detalhe?.startsWith(tipo) ? item.detalhe.slice(tipo.length).replace(/^ · /, "") : item.detalhe;
+  return (
+    <>
+      <span className="flex w-11 shrink-0 flex-col items-center rounded-xl bg-slate-50 py-1 ring-1 ring-slate-200">
+        <span className="text-[10px] font-semibold uppercase leading-none text-slate-500">{SEMANA[d.getUTCDay()]}</span>
+        <span className="text-lg font-bold leading-tight tabular-nums text-slate-900">{d.getUTCDate()}</span>
+        <span className="text-[10px] uppercase leading-none text-slate-400">{MESES[d.getUTCMonth()]}</span>
+      </span>
+      <span className="min-w-0 flex-1 space-y-1">
+        <span className="flex items-baseline gap-1.5">
+          {item.numero ? <span className="text-xs font-semibold tabular-nums text-slate-400">{item.numero}.</span> : null}
+          <span className="truncate text-sm font-semibold text-slate-900">{item.base}</span>
+        </span>
+        <span className="flex flex-wrap items-center gap-1">
+          <Turno periodo={item.quando.periodo} turno={item.quando.turno} />
+          {tipo ? <TipoSelo tipo={tipo} /> : null}
+        </span>
+        {resto ? <span className="block truncate text-xs text-slate-500">{resto}</span> : null}
+      </span>
+    </>
+  );
+}
+
+/** Casinhas da meta: cheias (marcadas), tracejadas (a busca cobre) e vazias. */
+function Casinhas({ casinhas }: { casinhas: LunaCasinhas }) {
+  return (
+    <div className="space-y-1.5 border-b border-slate-100 px-3 py-2.5">
+      {casinhas.map((c) => (
+        <div key={c.tipo} className="flex items-center gap-2">
+          <span className="w-10 shrink-0"><TipoSelo tipo={c.tipo} /></span>
+          <span className="flex flex-1 flex-wrap gap-1">
+            {Array.from({ length: c.alvo }, (_, i) => (
+              <span
+                key={i}
+                className={cn(
+                  "h-3.5 w-3.5 rounded-[4px]",
+                  i < c.marcadas ? "bg-slate-700" : i < c.marcadas + c.cobre ? "animate-pulse border-2 border-dashed border-accent-500 bg-accent-50" : "border border-slate-300 bg-white",
+                )}
+              />
+            ))}
+          </span>
+          <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+            {c.marcadas}/{c.alvo}
+            {c.cobre ? <span className="font-semibold text-accent-600"> +{c.cobre}</span> : null}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Guia({ cartao }: { cartao: LunaCartao }) {
+  return (
+    <details open={cartao.aberto} className="group overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <Sparkles className="h-3.5 w-3.5 text-accent-500" />
+        <span className="flex-1">{cartao.titulo}</span>
+        <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+      </summary>
+      <ol className="space-y-2 border-t border-slate-100 px-3 py-2.5 text-sm text-slate-700">
+        {cartao.itens.map((item, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-50 text-[11px] font-semibold text-accent-700">{i + 1}</span>
+            <Texto texto={item.titulo} />
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 function Cartao({ cartao }: { cartao: LunaCartao }) {
+  if (cartao.tipo === "guia") return <Guia cartao={cartao} />;
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <h3 className="border-b border-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{cartao.titulo}</h3>
+      {cartao.casinhas?.length ? <Casinhas casinhas={cartao.casinhas} /> : null}
       <ul className="divide-y divide-slate-100">
         {cartao.itens.map((item, i) => (
-          <li key={i} className="flex items-center gap-2 px-3 py-2">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-slate-900">{item.titulo}</span>
-              {item.detalhe ? <span className="block truncate text-xs text-slate-500">{item.detalhe}</span> : null}
-            </span>
+          <li key={i} className="flex items-center gap-2.5 px-3 py-2">
+            {item.quando ? (
+              <ItemComData item={item as LunaItem & { quando: NonNullable<LunaItem["quando"]> }} />
+            ) : (
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-slate-900">{item.titulo}</span>
+                {item.detalhe ? <span className="block truncate text-xs text-slate-500">{item.detalhe}</span> : null}
+              </span>
+            )}
             {item.mapa ? (
               <Link href={`/intern/bases?base=${encodeURIComponent(item.mapa)}`} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={`Ver ${item.mapa} no mapa`}>
                 <MapPin className="h-4 w-4" />

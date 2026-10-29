@@ -12,6 +12,7 @@
 import { GOAL_KINDS, buildGoalSlots, type GoalKind } from "@/lib/goal-slots";
 import { classifyPendingAttendance } from "@/shared/domain/policies/pending-attendance";
 import { hasCheckoutDeadlinePassed } from "@/lib/utils";
+import { voz } from "@/lib/dai-voz";
 import { descreveTurno, plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
 
 export type Periodo = "DAY" | "NIGHT";
@@ -358,7 +359,7 @@ export function linhaDaOpcao(a: Avaliada, n: number) {
 export const MOSTRAR = 5;
 
 /** `numero`: na reavaliação ("e a segunda?"), a opção mantém o número da lista original. */
-export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => number = (_a, i) => i + 1): string {
+export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => number = (_a, i) => i + 1, v?: string): string {
   const linhas: string[] = [];
   const fim = b.fimRodizio ? ` até ${ddmm(b.fimRodizio)} (fim do rodízio)` : "";
   if (b.sumiram) linhas.push(b.sumiram === 1 ? "Essa opção não está mais aberta — alguém já pegou ou ela saiu da lista." : `${b.sumiram} dessas opções não estão mais abertas.`);
@@ -367,17 +368,17 @@ export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => numbe
     if (b.status === "INSUFFICIENT_DATA") linhas.push("Não consegui achar sua meta, então não sei o que conta. Confira a aba Início ou fale com o líder.");
     else if (b.status === "META_COMPLETA") {
       const tipos = b.tipos?.length ? `de ${b.tipos.join(" e ")} ` : "";
-      return `Sua meta ${tipos}já está toda marcada — não há casinha vazia para fechar. Plantão a mais? Pergunte "tem extra aberto?" ou "sobrou vaga na grade?".`;
+      return voz.metaCompleta(v, tipos);
     }
     else {
-      if (b.status === "OPPORTUNITIES_FOUND") linhas.push(`Dá para fechar${fim}: ${b.plano.length === 1 ? "esta opção cobre" : `estas ${b.plano.length} opções cobrem`} o que falta, sem quebrar seu descanso.`);
-      else if (b.status === "PARTIAL") linhas.push(`Dá para avançar${fim}, mas ainda ficariam faltando ${faltamEmTexto(b.aindaFaltam!)}.`);
-      else linhas.push("Não achei agora nenhuma vaga que conte para a sua meta e caiba na sua agenda.");
+      if (b.status === "OPPORTUNITIES_FOUND") linhas.push(voz.fechaMeta(v, fim, b.plano.length));
+      else if (b.status === "PARTIAL") linhas.push(voz.parcial(v, fim, faltamEmTexto(b.aindaFaltam!)));
+      else linhas.push(voz.semMeta(v));
     }
   } else if (b.status === "NO_OPTIONS") {
-    linhas.push(b.objetivo === "troca" ? "Não achei oferta de troca que sirva para você agora." : "Não achei nada que caiba na sua agenda agora.");
+    linhas.push(b.objetivo === "troca" ? voz.semTroca(v) : voz.semNada(v));
   } else {
-    linhas.push(`Achei ${b.totalCompativeis} ${b.totalCompativeis === 1 ? "opção compatível" : "opções compatíveis"}${b.precisamAprovacao ? ` (${b.precisamAprovacao} dependem de aprovação)` : ""}.`);
+    linhas.push(voz.achei(v, b.totalCompativeis, b.precisamAprovacao ? ` (${b.precisamAprovacao} dependem de aprovação)` : ""));
   }
 
   b.opcoes.slice(0, MOSTRAR).forEach((a, i) => linhas.push(`- ${linhaDaOpcao(a, numero(a, i))}`));
@@ -411,11 +412,11 @@ const ROTULO_MOTIVO: Record<Motivo, string> = {
 // Resumo, agenda, presença e "por que não contou".
 
 /** `janela`: "hoje", "amanhã"… quando a pergunta é de um dia só. */
-export function textoDaAgenda(meus: MeuPlantao[], de: string, ate: string | null, janela?: string) {
+export function textoDaAgenda(meus: MeuPlantao[], de: string, ate: string | null, janela?: string, v?: string) {
   const lista = ativos(meus).filter((m) => m.date >= de && (!ate || m.date <= ate)).slice(0, 8);
-  if (!lista.length) return janela ? `Você não tem plantão ${janela}.` : "Você não tem plantão marcado daqui para frente.";
+  if (!lista.length) return voz.semAgenda(v, janela);
   return [
-    janela ? `Seu plantão ${janela}:` : "Seus próximos plantões:",
+    voz.agenda(v, janela),
     ...lista.map((m) => `- **${m.baseCode} ${quando(m.date, m.period, m.shift)}** (${m.tipo ?? "?"}${m.isExtraShift ? ", extra" : ""})`),
   ].join("\n");
 }
@@ -432,14 +433,14 @@ export function pendenciasDePresenca(meus: MeuPlantao[], hoje: string, inicio: s
     .filter((x) => x.falta);
 }
 
-export function textoDaPresenca(meus: MeuPlantao[], hoje: string, inicio: string | null, now: Date = new Date()) {
+export function textoDaPresenca(meus: MeuPlantao[], hoje: string, inicio: string | null, now: Date = new Date(), v?: string) {
   const p = pendenciasDePresenca(meus, hoje, inicio, now);
   const andamento = meus.filter((m) => m.status === "CHECKED_IN" && m.date <= hoje && !hasCheckoutDeadlinePassed(m.date, m.period, now));
   const checkout = p.filter((x) => x.falta === "CHECKOUT");
   const checkin = p.filter((x) => x.falta === "CHECKIN" && x.m.status !== "ABSENT");
   const faltas = meus.filter((m) => m.status === "ABSENT" && m.date <= hoje && (!inicio || m.date >= inicio) && !checkout.some((c) => c.m.id === m.id));
   const linhas: string[] = [];
-  if (!checkout.length && !checkin.length) linhas.push("Nenhum checkout pendente: todo plantão que já terminou está fechado.");
+  if (!checkout.length && !checkin.length) linhas.push(voz.presencaOk(v));
   for (const m of andamento) linhas.push(`Em andamento: **${m.baseCode} ${quando(m.date, m.period, m.shift)}** — check-in feito; o checkout é no fim do turno.`);
   if (checkout.length) {
     linhas.push(`Checkout pendente em ${checkout.length}:`);
