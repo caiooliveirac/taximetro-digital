@@ -2,8 +2,8 @@
 
 import "leaflet/dist/leaflet.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Map as LeafletMap, Marker as LeafletMarker } from "leaflet";
 import { CalendarClock, LocateFixed, Loader2, MapPin, Navigation } from "lucide-react";
+import { criarMotor, type MotorMapa } from "@/components/intern/bases-map-motor";
 import { NavigationLinks } from "@/components/navigation-links";
 import { getBaseStyle, type BaseType } from "@/lib/base-colors";
 import { haversineDistance } from "@/lib/geo";
@@ -24,7 +24,10 @@ type Ponto = { key: string; latitude: number; longitude: number; bases: MapBase[
 type Proximo = { baseCode: string; date: string; period: string; shift?: string | null };
 
 const MESMO_LUGAR_METROS = 80;
-const CENTRO_SALVADOR: [number, number] = [-12.95, -38.45];
+
+/** Código interno de base que não diz nada ao interno vira o nome que ele reconhece. */
+const CODIGO_NO_MAPA: Record<string, string> = { FACULDADE: "ZARNS/FACS" };
+const nomeNoMapa = (code: string) => CODIGO_NO_MAPA[code] ?? code;
 
 const COR: Record<BaseType, string> = { USA: "#ef4444", CENTRAL: "#0ea5e9", CRL: "#14b8a6" };
 const TIPO_LABEL: Record<BaseType, string> = { USA: "USA", CENTRAL: "Central", CRL: "CRL" };
@@ -43,7 +46,7 @@ function agrupar(bases: MapBase[]): Ponto[] {
 
 function rotulo(ponto: Ponto) {
   const [primeira, ...resto] = ponto.bases;
-  return resto.length ? `${primeira.code} +${resto.length}` : primeira.code;
+  return resto.length ? `${nomeNoMapa(primeira.code)} +${resto.length}` : nomeNoMapa(primeira.code);
 }
 
 function distanciaTexto(metros: number) {
@@ -72,13 +75,13 @@ function iconeHtml(ponto: Ponto, ativo: boolean, proximo: boolean) {
   return `<div style="position:absolute;left:0;top:0;${transformar}display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:3px 8px;font:600 11px/1.2 system-ui,sans-serif;color:#fff;background:${cor};border:2px solid #fff;cursor:pointer;${anel}">${rotulo(ponto)}</div>`;
 }
 
-export function BasesMap({ bases }: { bases: MapBase[] }) {
+export function BasesMap({ bases, mapsKey }: { bases: MapBase[]; mapsKey: string | null }) {
   const pontos = useMemo(() => agrupar(bases), [bases]);
   const mapaEl = useRef<HTMLDivElement>(null);
-  const mapa = useRef<LeafletMap | null>(null);
-  const marcadores = useRef(new Map<string, LeafletMarker>());
-  const eu = useRef<LeafletMarker | null>(null);
-  const leaflet = useRef<typeof import("leaflet") | null>(null);
+  const mapa = useRef<MotorMapa | null>(null);
+  const [mapaPronto, setMapaPronto] = useState(false);
+  // Google recusou a chave depois de carregar: refaz o mapa no Leaflet.
+  const [semGoogle, setSemGoogle] = useState(false);
 
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [posicao, setPosicao] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -107,61 +110,54 @@ export function BasesMap({ bases }: { bases: MapBase[] }) {
   const aberto = selecionado ?? pontoDoProximo?.key ?? null;
   const ponto = pontos.find((p) => p.key === aberto) ?? null;
 
-  // Mapa: Leaflet só existe no navegador, então entra por import dinâmico.
+  // Mapa: Google e Leaflet só existem no navegador, então entram por import/script dinâmico.
   useEffect(() => {
     let cancelado = false;
-    const doMapa = marcadores.current;
+    let motor: MotorMapa | null = null;
     (async () => {
-      const L = (await import("leaflet")).default;
-      if (cancelado || !mapaEl.current || mapa.current) return;
-      leaflet.current = L;
-      const m = L.map(mapaEl.current, { zoomControl: false, attributionControl: true }).setView(CENTRO_SALVADOR, 11);
-      L.control.zoom({ position: "topright" }).addTo(m);
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-        maxZoom: 19,
-        subdomains: "abcd",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      }).addTo(m);
+      if (!mapaEl.current) return;
+      motor = await criarMotor(mapaEl.current, semGoogle ? null : mapsKey, () => setSemGoogle(true), () => cancelado);
+      if (!motor) return;
       for (const p of pontos) {
-        const marcador = L.marker([p.latitude, p.longitude], {
-          icon: L.divIcon({ className: "", html: iconeHtml(p, false, false), iconSize: [0, 0] }),
-          title: p.bases.map((b) => `${b.code} — ${b.name}`).join("\n"),
-          riseOnHover: true,
-        }).addTo(m);
-        marcador.on("click", () => setSelecionado(p.key));
-        doMapa.set(p.key, marcador);
+        motor.marcar(
+          p.key,
+          [p.latitude, p.longitude],
+          iconeHtml(p, false, false),
+          p.bases.map((b) => `${nomeNoMapa(b.code)} — ${b.name}`).join("\n"),
+          () => setSelecionado(p.key),
+        );
       }
-      if (pontos.length) m.fitBounds(L.latLngBounds(pontos.map((p) => [p.latitude, p.longitude])), { padding: [28, 28] });
-      mapa.current = m;
+      if (pontos.length) motor.enquadrar(pontos.map((p) => [p.latitude, p.longitude]), 28);
+      mapa.current = motor;
+      setMapaPronto(true);
       // Vindo de outra tela (cartão da Luna, por exemplo): ?base=CB02 já abre nela.
       const pedida = new URLSearchParams(window.location.search).get("base");
       const alvo = pedida ? pontos.find((p) => p.bases.some((b) => b.code === pedida)) : null;
       if (alvo) {
         setSelecionado(alvo.key);
-        m.setView([alvo.latitude, alvo.longitude], 15);
+        motor.centrar([alvo.latitude, alvo.longitude], 15);
       }
     })();
     return () => {
       cancelado = true;
-      mapa.current?.remove();
+      motor?.destruir();
       mapa.current = null;
-      doMapa.clear();
-      eu.current = null;
+      setMapaPronto(false);
     };
-  }, [pontos]);
+  }, [pontos, mapsKey, semGoogle]);
 
   // Destaque visual: selecionado cresce, base do próximo plantão ganha anel âmbar.
   useEffect(() => {
-    const L = leaflet.current;
-    if (!L) return;
+    const m = mapa.current;
+    if (!mapaPronto || !m) return;
     for (const p of pontos) {
-      const marcador = marcadores.current.get(p.key);
-      marcador?.setIcon(
-        L.divIcon({ className: "", html: iconeHtml(p, p.key === aberto, p.key === pontoDoProximo?.key), iconSize: [0, 0] }),
+      m.pintar(
+        p.key,
+        iconeHtml(p, p.key === aberto, p.key === pontoDoProximo?.key),
+        p.key === aberto ? 1000 : p.key === pontoDoProximo?.key ? 500 : 0,
       );
-      marcador?.setZIndexOffset(p.key === aberto ? 1000 : p.key === pontoDoProximo?.key ? 500 : 0);
     }
-  }, [pontos, aberto, pontoDoProximo]);
+  }, [pontos, aberto, pontoDoProximo, mapaPronto]);
 
   // Próximo plantão do interno (mesma fonte da tela Hoje).
   useEffect(() => {
@@ -181,7 +177,7 @@ export function BasesMap({ bases }: { bases: MapBase[] }) {
 
   const mostrar = useCallback((p: Ponto) => {
     setSelecionado(p.key);
-    mapa.current?.flyTo([p.latitude, p.longitude], Math.max(mapa.current.getZoom(), 14), { duration: 0.6 });
+    mapa.current?.voar([p.latitude, p.longitude], 14);
     mapaEl.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
@@ -197,16 +193,9 @@ export function BasesMap({ bases }: { bases: MapBase[] }) {
         setLocalizando(false);
         const aqui = { latitude: coords.latitude, longitude: coords.longitude };
         setPosicao(aqui);
-        const L = leaflet.current;
         const m = mapa.current;
-        if (!L || !m) return;
-        const icone = L.divIcon({
-          className: "",
-          html: '<div style="width:16px;height:16px;border-radius:999px;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 6px rgba(37,99,235,.25)"></div>',
-          iconAnchor: [8, 8],
-        });
-        if (eu.current) eu.current.setLatLng([aqui.latitude, aqui.longitude]);
-        else eu.current = L.marker([aqui.latitude, aqui.longitude], { icon: icone, zIndexOffset: 2000, title: "Você está aqui" }).addTo(m);
+        if (!m) return;
+        m.marcarEu([aqui.latitude, aqui.longitude]);
         // Enquadra você e a base que importa: a do próximo plantão, ou a mais perto.
         const alvo =
           pontoDoProximo ??
@@ -217,7 +206,7 @@ export function BasesMap({ bases }: { bases: MapBase[] }) {
           )[0];
         if (alvo) {
           setSelecionado((atual) => atual ?? alvo.key);
-          m.fitBounds(L.latLngBounds([[aqui.latitude, aqui.longitude], [alvo.latitude, alvo.longitude]]), { padding: [48, 48], maxZoom: 15 });
+          m.enquadrar([[aqui.latitude, aqui.longitude], [alvo.latitude, alvo.longitude]], 48, 15);
         }
       },
       (erro) => {
@@ -256,7 +245,7 @@ export function BasesMap({ bases }: { bases: MapBase[] }) {
           <span className="min-w-0 flex-1">
             <span className="block text-xs font-medium text-amber-700">Seu próximo plantão</span>
             <span className="block truncate text-sm font-semibold text-slate-900">
-              {proximo.baseCode} · {quandoTexto(proximo)}
+              {nomeNoMapa(proximo.baseCode)} · {quandoTexto(proximo)}
             </span>
           </span>
           <span className="text-xs font-semibold text-amber-700">Ver rota</span>
@@ -293,7 +282,7 @@ export function BasesMap({ bases }: { bases: MapBase[] }) {
           <div className="space-y-1.5">
             {ponto.bases.map((b) => (
               <div key={b.id} className="flex items-center gap-2">
-                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", getBaseStyle(b.type).pill)}>{b.code}</span>
+                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", getBaseStyle(b.type).pill)}>{nomeNoMapa(b.code)}</span>
                 <span className="truncate text-sm text-slate-700">{b.name}</span>
               </div>
             ))}
@@ -307,7 +296,7 @@ export function BasesMap({ bases }: { bases: MapBase[] }) {
           <NavigationLinks
             latitude={ponto.latitude}
             longitude={ponto.longitude}
-            label={ponto.bases.map((b) => b.code).join("/")}
+            label={ponto.bases.map((b) => nomeNoMapa(b.code)).join("/")}
             origin={posicao}
             title={posicao ? "Rota saindo de onde você está" : "Como chegar"}
           />
@@ -333,7 +322,7 @@ export function BasesMap({ bases }: { bases: MapBase[] }) {
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: COR[p.bases[0].type] }} />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-slate-900">
-                    {p.bases.map((b) => b.code).join(" · ")}
+                    {p.bases.map((b) => nomeNoMapa(b.code)).join(" · ")}
                     {p.key === pontoDoProximo?.key ? (
                       <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">próximo plantão</span>
                     ) : null}
