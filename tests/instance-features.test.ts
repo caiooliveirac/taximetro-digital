@@ -51,6 +51,11 @@ test("aviso de trocas da Dai: ligado no SAMU (texto aprovado em 2026-10-29), des
   assert.equal(temFeature("avisoDeTrocas", "vitalmed"), false);
 });
 
+test("aviso de rodas (troca a três) da Dai: SAMU sim, Vitalmed não", () => {
+  assert.equal(temFeature("avisoDeRodas", "samu"), true);
+  assert.equal(temFeature("avisoDeRodas", "vitalmed"), false);
+});
+
 test("toda feature está declarada em todas as instâncias", () => {
   // Sem isto, uma feature nova declarada só na Vitalmed viraria `undefined` no
   // SAMU — que é falsy, funciona por acidente, e para de funcionar no dia em que

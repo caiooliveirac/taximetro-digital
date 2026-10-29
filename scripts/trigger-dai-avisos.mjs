@@ -1,9 +1,9 @@
-// Dispara um tipo de aviso da Dai: node scripts/trigger-dai-avisos.mjs plantao|vagas|lideres|trocas|repescagem
+// Dispara um tipo de aviso da Dai: node scripts/trigger-dai-avisos.mjs plantao|vagas|lideres|trocas|repescagem|rodas
 const key = process.env.AUTH_SECRET;
 const tipo = process.argv[2];
 
 if (!key || !tipo) {
-  console.error("[dai-avisos] uso: AUTH_SECRET=... node scripts/trigger-dai-avisos.mjs plantao|vagas|lideres|trocas|repescagem");
+  console.error("[dai-avisos] uso: AUTH_SECRET=... node scripts/trigger-dai-avisos.mjs plantao|vagas|lideres|trocas|repescagem|rodas");
   process.exit(1);
 }
 

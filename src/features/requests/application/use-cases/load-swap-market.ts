@@ -13,6 +13,7 @@ import {
   preferenciasDeBase,
   sinaisDaJanela,
 } from "@/features/requests/infra/repositories/swap-market-repository";
+import { plantoesEmRodaAberta } from "@/features/requests/infra/repositories/swap-cycle-repository";
 
 /** Até onde o mercado olha: ofertas raramente passam de dois meses à frente. */
 const HORIZONTE_DIAS = 90;
@@ -30,13 +31,15 @@ export async function carregarMercado(agora: Date): Promise<FotografiaDoMercado>
   // Um dia para trás: a noite de ontem ainda vale para o descanso de hoje.
   const de = addDaysToDateStr(hoje, -1);
 
-  const [linhas, sinais, todasOfertas, bloqueados, preferencias] = await Promise.all([
+  const [linhas, sinais, todasOfertas, emSolicitacao, emRoda, preferencias] = await Promise.all([
     plantoesDaJanela({ de, ate: addDaysToDateStr(hoje, HORIZONTE_DIAS + 1) }),
     sinaisDaJanela({ de }),
     ofertasAbertas({ de: hoje }),
     plantoesEmSolicitacao(),
+    plantoesEmRodaAberta(),
     preferenciasDeBase(),
   ]);
+  const bloqueados = new Set([...emSolicitacao, ...emRoda]);
 
   const nomes = new Map<string, string>();
   const faculdadeDe = new Map<string, Set<string>>();

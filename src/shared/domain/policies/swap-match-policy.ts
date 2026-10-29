@@ -133,13 +133,13 @@ function turnosOcupados(ctx: ContextoDoMercado, internId: string, sem: Set<strin
   return [...plantoes, ...outros];
 }
 
-function cabe(ctx: ContextoDoMercado, internId: string, recebe: PlantaoDoMercado, entrega: PlantaoDoMercado): boolean {
+export function cabe(ctx: ContextoDoMercado, internId: string, recebe: PlantaoDoMercado, entrega: PlantaoDoMercado): boolean {
   const novo = { date: recebe.date.slice(0, 10), period: recebe.period, shift: recebe.shift, baseCode: recebe.baseCode };
   return !plantaoSemDescanso(novo, turnosOcupados(ctx, internId, new Set([entrega.id, recebe.id])));
 }
 
 /** O plantão do interno que colide com um outro serviço dele, se houver. */
-function colideComOutroServico(ctx: ContextoDoMercado, p: PlantaoDoMercado): boolean {
+export function colideComOutroServico(ctx: ContextoDoMercado, p: PlantaoDoMercado): boolean {
   const outros = new Set(
     sinaisDe(ctx, p.internId)
       .filter((s) => s.signal === "OUTRO_SERVICO")

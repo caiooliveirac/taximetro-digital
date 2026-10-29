@@ -178,11 +178,27 @@ semanas — cabe numa leitura por request, sem tabela de cache.
   dia 14, que você marcou como quero plantão". **Envio real de mensagem —
   precisa de autorização explícita antes de ligar.**
 
+### Fase 5 — Troca a três (feita em 2026-10-29)
+
+Roda de três: cada um entrega um plantão e recebe o do anterior. Um pedido só
+(`swap_cycles` + `swap_cycle_legs`, migration 0034); cada perna confirma; com
+o terceiro sim aplica tudo numa transação, validando o resultado final
+(`swap-cycle-policy.ts`): mesmo tipo, faculdade (`podeTrocarEntreFaculdades`),
+12h de descanso de cada um com outro serviço contando, cota de CRU contando uma
+troca por pessoa. Recusa, cancelamento ou plantão que mudou desfaz a roda sem
+mexer em ninguém.
+
+A Dai acha rodas por script, sem modelo (`encontrarRodas`): parte de quem
+precisa sair (oferta aberta ou colisão com outro serviço) e de quem marcou
+Quero/Posso; pede ao menos duas pernas marcadas. Avisa os três juntos uma vez
+por dia (cron 10h05, `avisoDeRodas`), no máximo uma roda a cada 2 dias por
+pessoa, nunca a mesma roda duas vezes. Em Trocas: rodas sugeridas, rodas em
+aberto com quem já confirmou, e montagem à mão com duas ofertas abertas.
+
 ## 5. Fora do escopo
 
 - O sorteio passar a respeitar "outro serviço" no SAMU (decisão de produto
   separada; hoje é Vitalmed only e o teste `instance-features` protege).
-- Troca em cadeia (A→B→C). Ver seção 6.
 - Calendário do líder/coordenador.
 
 ## 6. O que vem do escalasetrocasSAMU

@@ -556,3 +556,39 @@ export const internBasePreferences = pgTable("intern_base_preferences", {
 }, (t) => [
   uniqueIndex("uq_base_pref_intern_base").on(t.internId, t.baseId),
 ]);
+
+// ── Troca a três (roda) ──────────────────────────────────────────────────────
+// Três internos, cada um entrega um plantão e recebe o do anterior na roda.
+// Um pedido só: cada perna confirma, e quando os três confirmam aplica tudo de
+// uma vez, conferindo o resultado final (descanso, tipo, faculdade, cota de
+// CRU). Ninguém fica no meio do caminho. Regras em swap-cycle-policy.ts.
+export const swapCycleStatusEnum = pgEnum("swap_cycle_status", [
+  "PROPOSTA", "CONCLUIDA", "RECUSADA", "CANCELADA", "EXPIRADA",
+]);
+
+export const swapCycles = pgTable("swap_cycles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  status: swapCycleStatusEnum("status").notNull().default("PROPOSTA"),
+  proposedBy: uuid("proposed_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  closedAt: timestamp("closed_at"),
+  // Por que fechou sem concluir ("Bruno recusou", "um dos plantões mudou").
+  closedReason: text("closed_reason"),
+}, (t) => [
+  index("idx_swap_cycle_status").on(t.status),
+]);
+
+export const swapCycleLegs = pgTable("swap_cycle_legs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  cycleId: uuid("cycle_id").notNull().references(() => swapCycles.id),
+  internId: uuid("intern_id").notNull().references(() => users.id),
+  givesAssignmentId: uuid("gives_assignment_id").notNull().references(() => assignments.id),
+  receivesAssignmentId: uuid("receives_assignment_id").notNull().references(() => assignments.id),
+  // Ordem na roda: quem está na posição i entrega para a posição i+1.
+  position: integer("position").notNull(),
+  confirmedAt: timestamp("confirmed_at"),
+}, (t) => [
+  uniqueIndex("uq_swap_cycle_leg_intern").on(t.cycleId, t.internId),
+  index("idx_swap_cycle_leg_intern").on(t.internId),
+  index("idx_swap_cycle_leg_gives").on(t.givesAssignmentId),
+]);
