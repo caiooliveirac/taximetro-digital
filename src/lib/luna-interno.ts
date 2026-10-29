@@ -45,7 +45,7 @@ Regras de resposta:
 Regras do sistema (para explicar quando perguntarem):
 - Meta: casinhas por tipo (USA, CRU, CRL) na rotação. Realizados, o plantão de hoje e os agendados ocupam casinha. Extra não conta para a meta.
 - Vaga liberada: outra faculdade abriu mão daquela vaga. Por enquanto só serve a quem ainda está abaixo da meta naquele tipo, e quem escala é o líder da faculdade do interno — o interno pede ao líder (o cartão abre a conversa já escrita).
-- Troca: com colega da mesma faculdade, mesmo tipo (USA↔USA, CRU↔CRU, CRL↔CRL), 12h de descanso entre plantões, CRU só uma troca por rodízio. Vale quando quem ofereceu confirma. Dá para combinar pelo chat (botão Conversar).
+- Troca: mesmo tipo (USA↔USA, CRU↔CRU, CRL↔CRL), 12h de descanso entre plantões, CRU só uma troca por rodízio. USA dá para trocar com interno de qualquer faculdade; CRU e CRL, só com a mesma. Vale quando quem ofereceu confirma. Dá para combinar pelo chat (botão Conversar).
 - Extra: primeiro que pegar, na aba Extras.
 - Vaga sobrando na grade da própria faculdade: pedido na aba Trocas → Extra, aprovado pelo líder.
 - Bases: o mapa na aba Bases abre a rota no Maps, Waze ou Uber a partir de onde o interno está.`;

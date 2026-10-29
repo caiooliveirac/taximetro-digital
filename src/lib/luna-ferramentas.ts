@@ -242,8 +242,8 @@ async function trocasAbertas(ctx: LunaCtx): Promise<Resultado> {
   });
   return {
     dados: {
-      regra: "Troca é entre internos da mesma faculdade, do mesmo tipo (USA↔USA, CRU↔CRU, CRL↔CRL), com 12h de descanso; CRU troca uma vez por rodízio. Vale quando quem ofereceu confirma.",
-      ofertas: lista.slice(0, MAX_ITENS).map((x) => ({ de: x.o.requesterName, base: x.o.baseCode, tipo: x.tipo, quando: x.quando, voce_tem_do_mesmo_tipo_para_oferecer: x.meus_do_mesmo_tipo })),
+      regra: "Troca é do mesmo tipo (USA↔USA, CRU↔CRU, CRL↔CRL), com 12h de descanso; CRU troca uma vez por rodízio. USA vale com interno de qualquer faculdade; CRU e CRL, só da mesma. Vale quando quem ofereceu confirma.",
+      ofertas: lista.slice(0, MAX_ITENS).map((x) => ({ de: x.o.requesterName, faculdade: x.o.facultyAbbr, base: x.o.baseCode, tipo: x.tipo, quando: x.quando, voce_tem_do_mesmo_tipo_para_oferecer: x.meus_do_mesmo_tipo })),
       total: lista.length,
       seus_plantoes_que_pode_oferecer: futuros.slice(0, 10).map((m) => ({ base: m.baseCode, tipo: TIPO[m.tipo] ?? m.tipo, quando: turnoCurto(m.date, m.period, m.shift) })),
     },
@@ -253,7 +253,7 @@ async function trocasAbertas(ctx: LunaCtx): Promise<Resultado> {
           titulo: "Ofertas de troca dos colegas",
           itens: lista.slice(0, 6).map((x) => ({
             titulo: `${x.o.baseCode} · ${x.quando}`,
-            detalhe: `${x.tipo} · ${x.o.requesterName}`,
+            detalhe: `${x.tipo} · ${x.o.requesterName}${x.o.facultyAbbr ? ` (${x.o.facultyAbbr})` : ""}`,
             href: `/intern/mensagens?com=${x.o.requesterId}&troca=${x.o.id}&texto=${encodeURIComponent(`Oi! Vi sua oferta do ${x.o.baseCode} (${x.quando}). Tenho interesse — o que você procura em troca?`)}`,
             acao: "Conversar",
           })),
@@ -313,7 +313,7 @@ export const FERRAMENTAS: {
   },
   {
     name: "trocas_abertas",
-    description: "Ofertas de troca publicadas por colegas da faculdade do interno, e os plantões dele que poderiam entrar na troca.",
+    description: "Ofertas de troca abertas que o interno pode pegar (da faculdade dele, de qualquer tipo; de outras faculdades, só USA), e os plantões dele que poderiam entrar na troca.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
     run: (ctx) => trocasAbertas(ctx),
   },

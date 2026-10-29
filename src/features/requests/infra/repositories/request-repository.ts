@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, lte, ne, or } from "drizzle-orm";
 import { db } from "@/shared/db/client";
-import { assignments, bases, checkins, cruFixedAssignments, requests, userRoles, users } from "@/shared/db/schema";
+import { assignments, bases, checkins, cruFixedAssignments, extraShiftOffers, faculties, requests, userRoles, users } from "@/shared/db/schema";
 import { alias } from "drizzle-orm/pg-core";
 import type { CruSwapWindow } from "@/shared/domain/policies/cru-swap-quota-policy";
 
@@ -24,6 +24,7 @@ export async function listRequestsRows() {
       baseName: bases.name,
       baseType: bases.type,
       facultyId: assignments.facultyId,
+      facultyAbbr: faculties.abbreviation,
       targetInternId: requests.targetInternId,
       targetInternName: targetUser.name,
       targetAssignmentId: requests.targetAssignmentId,
@@ -45,6 +46,7 @@ export async function listRequestsRows() {
     .innerJoin(users, eq(users.id, requests.requesterId))
     .leftJoin(assignments, eq(assignments.id, requests.assignmentId))
     .leftJoin(bases, eq(bases.id, assignments.baseId))
+    .leftJoin(faculties, eq(faculties.id, assignments.facultyId))
     .leftJoin(targetUser, eq(targetUser.id, requests.targetInternId))
     .leftJoin(targetAssign, eq(targetAssign.id, requests.targetAssignmentId))
     .leftJoin(targetBase, eq(targetBase.id, targetAssign.baseId))
@@ -374,7 +376,7 @@ export async function createSwapAssignment(params: {
   createdBy: string;
   notes?: string;
 }) {
-  await db.insert(assignments).values({
+  const [criado] = await db.insert(assignments).values({
     internId: params.internId,
     facultyId: params.facultyId,
     baseId: params.baseId,
@@ -383,7 +385,14 @@ export async function createSwapAssignment(params: {
     shift: params.shift,
     createdBy: params.createdBy,
     notes: params.notes ?? "Troca entre internos",
-  });
+  }).returning({ id: assignments.id });
+  return criado.id;
+}
+
+/** Vagas cedidas numa troca entre faculdades (ver cross-faculty-swap-policy.ts). */
+export async function insertSwapCessions(rows: (typeof extraShiftOffers.$inferInsert)[]) {
+  if (rows.length === 0) return;
+  await db.insert(extraShiftOffers).values(rows);
 }
 
 export async function completeSwapRequest(requestId: string) {

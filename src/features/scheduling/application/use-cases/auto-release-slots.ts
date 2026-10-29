@@ -456,6 +456,8 @@ export async function listFreeSlotUsage(dias = 30) {
     .leftJoin(liberou, eq(liberou.id, extraShiftOffers.releasedFacultyId))
     .where(and(
       sql`(${extraShiftOffers.releasedFacultyId} is not null or ${extraShiftOffers.autoRelease} = 'SEM_DONO')`,
+      // Troca entre faculdades cede a vaga, mas não é vaga livre escolhida por líder.
+      sql`${extraShiftOffers.autoRelease} is distinct from 'TROCA'`,
       isNull(extraShiftOffers.reservedBy),
       gte(extraShiftOffers.claimedAt, desde),
       ne(assignments.status, "CANCELLED"),

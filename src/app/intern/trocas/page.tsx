@@ -32,6 +32,7 @@ type Request = {
   assignmentPeriod: string | null; assignmentShift: string | null;
   baseCode: string | null;
   baseName: string | null; baseType: string | null;
+  facultyAbbr?: string | null;
   targetInternId: string | null; targetInternName: string | null;
   targetAssignmentId: string | null; targetAssignmentDate: string | null;
   targetAssignmentPeriod: string | null; targetAssignmentShift: string | null;
@@ -236,7 +237,7 @@ export default function InternTrocas() {
               Oferecer Plantão para Troca
             </h2>
             <p className="text-xs text-slate-500">
-              Selecione um plantão seu. Colegas da mesma faculdade poderão propor uma troca oferecendo um plantão do mesmo tipo (CRU↔CRU, CRL↔CRL, USA↔USA).
+              Selecione um plantão seu. Colegas poderão propor uma troca oferecendo um plantão do mesmo tipo (CRU↔CRU, CRL↔CRL, USA↔USA). USA aparece também para internos de outras faculdades; CRU e CRL, só para a sua.
             </p>
             <div className="flex items-start gap-2 rounded-lg bg-violet-50 px-3 py-2 text-[11px] text-violet-700 ring-1 ring-violet-100">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
@@ -342,7 +343,10 @@ export default function InternTrocas() {
                 <div key={r.id} className="rounded-lg border border-emerald-200 bg-white p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs font-medium text-slate-900">{r.requesterName}</p>
+                      <p className="flex items-center gap-1.5 text-xs font-medium text-slate-900">
+                        {r.requesterName}
+                        {r.facultyAbbr ? <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{r.facultyAbbr}</span> : null}
+                      </p>
                       <p className="text-xs text-slate-500">oferece:</p>
                     </div>
                     <ShiftBadge code={r.baseCode} date={r.assignmentDate} period={r.assignmentPeriod} shift={r.assignmentShift} baseType={r.baseType} />
@@ -352,7 +356,8 @@ export default function InternTrocas() {
                       <p className="text-xs font-medium text-slate-700">Qual plantão seu você oferece em troca?</p>
                       <select value={proposeAssignmentId} onChange={(e) => setProposeAssignmentId(e.target.value)} className={selectClass}>
                         <option value="">Selecionar...</option>
-                        {availableAssignments.map((a) => (
+                        {/* Só o mesmo tipo entra na troca (USA↔USA, CRU↔CRU, CRL↔CRL). */}
+                        {availableAssignments.filter((a) => !r.baseType || !a.baseType || a.baseType === r.baseType).map((a) => (
                           <option key={a.id} value={a.id}>
                             {a.baseCode} — {fmtDate(a.date)} ({a.shift ? getShiftShortLabel(a.shift) : a.period === "DAY" ? "Diurno" : "Noturno"})
                           </option>
