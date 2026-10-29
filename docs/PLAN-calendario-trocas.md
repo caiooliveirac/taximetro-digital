@@ -1,8 +1,8 @@
 # PLAN — Calendário do interno vira painel de trocas
 
-Status: Fases 1, 2 e 3 implementadas em 2026-10-29 (Fase 3: `swap-match-policy.ts`, `get-swap-market.ts`, `/api/intern/trocas/mercado`). Fases 1 e 2 (`src/components/intern-calendar.tsx`,
+Status: Fases 1 a 4 implementadas em 2026-10-29 (Fase 4: bases preferidas em `intern_base_preferences`; aviso de trocas da Dai pronto e desligado — feature `avisoDeTrocas`, liga só com o texto aprovado. Telegram ficou de fora: 1 vínculo em produção). Fase 3 (Fase 3: `swap-match-policy.ts`, `get-swap-market.ts`, `/api/intern/trocas/mercado`). Fases 1 e 2 (`src/components/intern-calendar.tsx`,
 `src/lib/fita-turnos.ts`, `src/shared/domain/policies/day-signal-policy.ts`,
-tabela `intern_day_signals`); Fase 4 (preferência de base, aviso no Telegram) proposta. Tutorial do mercado no portal:
+tabela `intern_day_signals`); Tutorial do mercado no portal:
 `mnrs-portal/portal/_portal/demo/taximetro-trocas.html`.
 
 Decisão da Fase 2: tabela própria, não `intern_unavailability` — na Vitalmed

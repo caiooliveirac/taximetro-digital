@@ -50,6 +50,8 @@ export type ContextoDoMercado = {
   /** Internos que já gastaram a troca de CRU do rodízio. */
   cotaCruUsada: Set<string>;
   nomes: Map<string, string>;
+  /** Bases favoritas (1) e a evitar (-1) de cada interno, pelo código da base. */
+  preferencias?: Map<string, Map<string, number>>;
 };
 
 export type Caixa = "PERFEITA" | "COMBINA" | "PODE" | "SO_ENTREGANDO" | "FORA";
@@ -152,6 +154,18 @@ function colideComOutroServico(ctx: ContextoDoMercado, p: PlantaoDoMercado): boo
  * dele vai em troca. Supõe que a oferta é visível para ele (ver `visivelPara`).
  */
 export function avaliarOferta(oferta: OfertaAberta, internId: string, ctx: ContextoDoMercado): Avaliacao {
+  const a = avaliarPelasRegras(oferta, internId, ctx);
+  const peso = ctx.preferencias?.get(internId)?.get(oferta.plantao.baseCode) ?? 0;
+  if (a.caixa === "FORA" || peso === 0) return a;
+  // A preferência só reordena dentro da caixa: não esconde nem promove oferta.
+  return {
+    ...a,
+    forca: a.forca + (peso > 0 ? 1.5 : -1.5),
+    motivo: `${a.motivo} ${peso > 0 ? "É uma das suas bases favoritas." : "É uma base que você prefere evitar."}`,
+  };
+}
+
+function avaliarPelasRegras(oferta: OfertaAberta, internId: string, ctx: ContextoDoMercado): Avaliacao {
   const o = oferta.plantao;
   const k = chave(o.date, o.period);
   const fora = (motivo: string): Avaliacao => ({ caixa: "FORA", motivo, entregar: null, forca: 0 });

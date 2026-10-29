@@ -542,3 +542,17 @@ export const internDaySignals = pgTable("intern_day_signals", {
   uniqueIndex("uq_day_signal_intern_slot").on(t.internId, t.date, t.period),
   index("idx_day_signal_date").on(t.date),
 ]);
+
+// ── Bases preferidas do interno (mercado de trocas) ──────────────────────────
+// Até 3 favoritas (peso 1) e 3 a evitar (peso -1). Só ordenam as ofertas de
+// troca dentro de cada caixa; nunca escondem nem bloqueiam nada, e o sorteio
+// não lê. Ver swap-match-policy.ts.
+export const internBasePreferences = pgTable("intern_base_preferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  internId: uuid("intern_id").notNull().references(() => users.id),
+  baseId: uuid("base_id").notNull().references(() => bases.id),
+  weight: integer("weight").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_base_pref_intern_base").on(t.internId, t.baseId),
+]);

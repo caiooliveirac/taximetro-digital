@@ -72,3 +72,18 @@ export function textoSobraParaLider(s: SobraDaFaculdade): string | null {
   linhas.push(s.sobraPorTipo.USA ? "USA não escalada no prazo vira vaga livre para as outras faculdades. Escale em Montar escala." : "Escale em Montar escala.");
   return linhas.join("\n");
 }
+
+export type TrocaAvisada = { base: string; quando: string; quem: string; perfeita: boolean; dar: string | null };
+
+/** Oferta de troca que apareceu num turno em que o interno marcou Quero/Posso. */
+export function textoTrocasNosTurnosMarcados(trocas: TrocaAvisada[]) {
+  return [
+    trocas.length === 1
+      ? "Apareceu uma oferta de troca num turno que você marcou no calendário:"
+      : "Apareceram ofertas de troca em turnos que você marcou no calendário:",
+    ...trocas.map((t) =>
+      `- ${t.base}, ${t.quando}, de ${t.quem}${t.dar ? `. Você daria ${t.dar}` : ""}${t.perfeita ? " (troca perfeita: quem ofertou também marcou esse seu turno)" : ""}.`,
+    ),
+    "Abra Trocas para propor com um toque. A primeira proposta segura a oferta até a pessoa responder.",
+  ].join("\n");
+}
