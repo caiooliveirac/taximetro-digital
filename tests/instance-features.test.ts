@@ -35,6 +35,8 @@ test("Vitalmed tem sorteio no admin e indisponibilidade do interno", () => {
 test("liberação automática de vagas: só no SAMU, que tem o teto por base", () => {
   assert.equal(temFeature("liberacaoAutomatica", "samu"), true);
   assert.equal(temFeature("liberacaoAutomatica", "vitalmed"), false);
+  assert.equal(temFeature("avisosDaDai", "samu"), true);
+  assert.equal(temFeature("avisosDaDai", "vitalmed"), false);
 });
 
 test("toda feature está declarada em todas as instâncias", () => {

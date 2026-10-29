@@ -45,7 +45,13 @@ export type Feature =
    * tem, viram vaga livre para qualquer líder. O teto por base é do SAMU
    * (auto-release-policy.ts); a Vitalmed não tem essa tabela.
    */
-  | "liberacaoAutomatica";
+  | "liberacaoAutomatica"
+  /**
+   * A Dai deixa avisos no chat (véspera do plantão, vaga livre que abriu,
+   * sobra da grade para o líder). Lê a view turnos_livres, que a Vitalmed
+   * ainda não tem (docs/vitalmed.md).
+   */
+  | "avisosDaDai";
 
 /**
  * A fonte da verdade. Ligar algo para o SAMU aqui é uma decisão explícita e
@@ -57,11 +63,13 @@ const FEATURES: Record<Instancia, Record<Feature, boolean>> = {
     adminLottery: false,
     internUnavailability: false,
     liberacaoAutomatica: true,
+    avisosDaDai: true,
   },
   vitalmed: {
     adminLottery: true,
     internUnavailability: true,
     liberacaoAutomatica: false,
+    avisosDaDai: false,
   },
 };
 

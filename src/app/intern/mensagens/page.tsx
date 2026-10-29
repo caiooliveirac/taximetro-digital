@@ -17,7 +17,7 @@ type Conversa = {
 
 type Mensagem = { id: string; texto: string; em: string; minha: boolean };
 
-type Pessoa = { id: string; nome: string; faculdade: string | null };
+type Pessoa = { id: string; nome: string; faculdade: string | null; dai?: boolean };
 
 const ATUALIZAR_MS = 6_000;
 
@@ -207,6 +207,11 @@ function Conversa({ com, troca, rascunho }: { com: string; troca: string | null;
 
       {erro && mensagens && mensagens.length > 0 ? <p className="text-xs text-red-600">{erro}</p> : null}
 
+      {pessoa?.dai ? (
+        <Link href="/intern/luna" className="sticky bottom-24 block rounded-2xl border border-slate-200 bg-white p-3 text-center text-sm font-semibold text-accent-600 shadow-sm hover:bg-slate-50">
+          Avisos automáticos. Para conversar com a Dai, abra a aba Dai →
+        </Link>
+      ) : (
       <div className="sticky bottom-24 flex items-end gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
         <textarea
           value={texto}
@@ -226,6 +231,7 @@ function Conversa({ com, troca, rascunho }: { com: string; troca: string | null;
           {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>
+      )}
     </div>
   );
 }
