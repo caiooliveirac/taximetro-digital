@@ -63,11 +63,22 @@ test("troca só entre plantões do mesmo tipo", () => {
   assert.match(a.motivo, /não tem plantão de Ambulância/);
 });
 
-test("outra faculdade só troca USA; CRU de outra faculdade nem aparece", () => {
+test("outra faculdade troca USA e CRU; CRL de outra faculdade nem aparece", () => {
   const cruBruno = P("bruno-cru", "bruno", "2026-11-08", "DAY", { baseType: "CENTRAL", facultyId: FAC_B });
-  const oferta = { ...ofertaBruno, plantao: cruBruno };
-  assert.equal(visivelPara(oferta, "ana", new Set([FAC_A])), false);
+  const crlBruno = P("bruno-crl", "bruno", "2026-11-08", "DAY", { baseType: "CRL", facultyId: FAC_B });
+  assert.equal(visivelPara({ ...ofertaBruno, plantao: cruBruno }, "ana", new Set([FAC_A])), true);
+  assert.equal(visivelPara({ ...ofertaBruno, plantao: crlBruno }, "ana", new Set([FAC_A])), false);
   assert.equal(visivelPara(ofertaBruno, "ana", new Set([FAC_B])), true);
+});
+
+test("CRU de outra faculdade entra na troca; CRL não", () => {
+  const cruBruno = P("bruno-cru", "bruno", "2026-11-08", "DAY", { baseType: "CENTRAL", baseCode: "CRU", facultyId: FAC_B });
+  const cruAna = P("ana-cru", "ana", "2026-11-15", "DAY", { baseType: "CENTRAL", baseCode: "CRU" });
+  assert.notEqual(avaliarOferta({ ...ofertaBruno, plantao: cruBruno }, "ana", ctx([cruAna, cruBruno])).caixa, "FORA");
+
+  const crlBruno = P("bruno-crl", "bruno", "2026-11-08", "DAY", { baseType: "CRL", baseCode: "CRL", facultyId: FAC_B });
+  const crlAna = P("ana-crl", "ana", "2026-11-15", "DAY", { baseType: "CRL", baseCode: "CRL" });
+  assert.equal(avaliarOferta({ ...ofertaBruno, plantao: crlBruno }, "ana", ctx([crlAna, crlBruno])).caixa, "FORA");
 });
 
 test("cota de CRU usada tira a oferta de CRU do alcance", () => {

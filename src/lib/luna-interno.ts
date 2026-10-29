@@ -64,7 +64,7 @@ Como agir:
 Regras (para explicar):
 - Meta: casinhas por tipo (USA, CRU, CRL) no rodízio. Realizados, o de hoje e os agendados ocupam casinha. Extra não conta. Falta não ocupa casinha: ela volta a ficar vazia e precisa de reposição (vaga liberada pelo líder ou sobra da grade). Falta abonada conta.
 - Vaga liberada (outra faculdade abriu mão): só para quem ainda tem casinha vazia no tipo; quem escala é o líder da faculdade dele.
-- Troca: mesmo tipo, 12h de descanso, CRU uma por rodízio; USA com qualquer faculdade, CRU e CRL só com a mesma; vale quando quem ofereceu confirma.
+- Troca: mesmo tipo, 12h de descanso, CRU uma por rodízio; USA e CRU com qualquer faculdade, CRL só com a mesma; vale quando quem ofereceu confirma.
 - Extra: primeiro que pegar, aba Extras. Sobra da grade: pede em Trocas → Extra, o líder aprova.`;
 
 function calendario(hoje: string) {

@@ -1,5 +1,5 @@
 /**
- * Troca com interno de OUTRA faculdade — só USA.
+ * Troca com interno de OUTRA faculdade — USA e CRU.
  *
  * A grade conta vaga por faculdade pelo `assignments.facultyId`, e cada
  * interno segue com a própria faculdade no plantão que recebe (meta, relatório
@@ -9,15 +9,19 @@
  * `autoRelease = "TROCA"`: o mesmo caminho de uma vaga livre usada por outra
  * faculdade (ver auto-release-slots.ts, `deVagaLivre`).
  *
- * Só USA porque lá o teto da base é físico (uma viatura) e checado em todo
- * caminho de alocação; CRU tem grade e sorteio por faculdade, e o meio turno
- * do EBMSP não casa com o plantão de 12h das outras.
+ * USA desde 2026-10-29 (teto físico da viatura checado em todo caminho). CRU
+ * no mesmo dia, a pedido do Caio: a cota de uma troca de CRU por rodízio vale
+ * igual, e a vaga cedida sai da grade da faculdade dona em toda conta
+ * (turnos_livres, getRequestableSlots, checkSlotAvailability, CRU fixo) — na
+ * CRU não há teto físico para segurar lotação. O meio turno do EBMSP, que não
+ * casaria com o plantão de 12h das outras, está desligado desde 2026-09-22.
+ * CRL segue dentro da faculdade.
  */
 
-export const TIPO_TROCA_ENTRE_FACULDADES = "USA";
+export const TIPOS_TROCA_ENTRE_FACULDADES = new Set(["USA", "CENTRAL"]);
 
 export function podeTrocarEntreFaculdades(baseType: string | null | undefined): boolean {
-  return baseType === TIPO_TROCA_ENTRE_FACULDADES;
+  return Boolean(baseType && TIPOS_TROCA_ENTRE_FACULDADES.has(baseType));
 }
 
 type PlantaoTrocado = {

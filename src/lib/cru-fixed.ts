@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, bases, cruFixedAssignments, extraShiftOffers, users } from "@/db/schema";
 
@@ -239,6 +239,9 @@ export async function materializeCruFixedAssignments(params: {
             isNull(extraShiftOffers.cancelledAt),
             // Reserva da coordenação segura uma vaga aberta, não a do fixo.
             isNull(extraShiftOffers.reservedBy),
+            // Troca entre faculdades cede um lugar, ocupado pelo colega; o dia
+            // segue sendo da faculdade para os outros fixos.
+            sql`${extraShiftOffers.autoRelease} is distinct from 'TROCA'`,
         ));
     for (const row of releasedRows) releasedCru.add(`${normalizeDate(row.date)}|${row.period}`);
 

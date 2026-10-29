@@ -57,7 +57,7 @@ export async function executeListRequests(params: {
 
   const rows = (await listRequestsRows(filtro)).filter((r) => !isStaleSwap(r, now));
 
-  // Oferta da própria faculdade, de qualquer tipo; de outra faculdade, só USA
+  // Oferta da própria faculdade, de qualquer tipo; de outra faculdade, USA ou CRU
   // (ver cross-faculty-swap-policy.ts).
   if (trocasAbertas && actor.facultyId) {
     const facultyInternIds = await findFacultyInternIds(actor.facultyId);

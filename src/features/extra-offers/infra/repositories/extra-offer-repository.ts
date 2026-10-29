@@ -345,6 +345,44 @@ export async function cancelReleasedOffers(params: {
   return rows.length;
 }
 
+/* ═══════════ Vagas cedidas pela faculdade ═══════════ */
+
+// Liberada (aberta ou já usada por outra faculdade, inclusive troca entre
+// faculdades) e não cancelada: a vaga saiu da grade da faculdade. Reserva da
+// coordenação tem conta própria (abaixo). É a mesma conta da view
+// turnos_livres (liberadas_abertas + liberadas_usadas).
+const cessaoViva = (facultyId: string) => and(
+  eq(extraShiftOffers.releasedFacultyId, facultyId),
+  isNull(extraShiftOffers.cancelledAt),
+  isNull(extraShiftOffers.reservedBy),
+);
+
+/** Vagas cedidas vivas numa data/turno/base de uma faculdade. */
+export async function countLiveCessions(params: { facultyId: string; baseId: string; date: string; period: "DAY" | "NIGHT" }) {
+  const [row] = await db
+    .select({ n: sql<number>`COUNT(*)` })
+    .from(extraShiftOffers)
+    .where(and(
+      cessaoViva(params.facultyId),
+      eq(extraShiftOffers.baseId, params.baseId),
+      eq(extraShiftOffers.date, params.date),
+      eq(extraShiftOffers.period, params.period),
+    ));
+  return Number(row?.n ?? 0);
+}
+
+/** Vagas cedidas vivas da faculdade na janela. */
+export async function listLiveCessions(params: { facultyId: string; from: string; to: string }) {
+  return db
+    .select({ baseId: extraShiftOffers.baseId, date: extraShiftOffers.date, period: extraShiftOffers.period })
+    .from(extraShiftOffers)
+    .where(and(
+      cessaoViva(params.facultyId),
+      gte(extraShiftOffers.date, params.from),
+      lte(extraShiftOffers.date, params.to),
+    ));
+}
+
 /* ═══════════ Vagas reservadas pela coordenação ═══════════ */
 
 /** Reservas vivas numa data/turno/base de uma faculdade. */

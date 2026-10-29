@@ -182,7 +182,7 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
     }),
 
     trocas: () => lido("trocas", async () => {
-      // Mesmo recorte da aba Trocas: da própria faculdade, qualquer tipo; de outra, só USA.
+      // Mesmo recorte da aba Trocas: da própria faculdade, qualquer tipo; de outra, USA ou CRU.
       const ofertas = await executeListRequests({ actor: { id: ctx.internId, role: "INTERN", facultyId: ctx.facultyId }, scope: "open-swaps" });
       return ofertas
         .filter((o) => o.assignmentDate)

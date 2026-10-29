@@ -259,7 +259,7 @@ export default function InternTrocas() {
               Oferecer Plantão para Troca
             </h2>
             <p className="text-xs text-slate-500">
-              Selecione um plantão seu. Colegas poderão propor uma troca oferecendo um plantão do mesmo tipo (CRU↔CRU, CRL↔CRL, USA↔USA). USA aparece também para internos de outras faculdades; CRU e CRL, só para a sua.
+              Selecione um plantão seu. Colegas poderão propor uma troca oferecendo um plantão do mesmo tipo (CRU↔CRU, CRL↔CRL, USA↔USA). USA e CRU aparecem também para internos de outras faculdades; CRL, só para a sua.
             </p>
             <div className="flex items-start gap-2 rounded-lg bg-violet-50 px-3 py-2 text-[11px] text-violet-700 ring-1 ring-violet-100">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
