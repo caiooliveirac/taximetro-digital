@@ -51,7 +51,12 @@ export type Feature =
    * sobra da grade para o líder). Lê a view turnos_livres, que a Vitalmed
    * ainda não tem (docs/vitalmed.md).
    */
-  | "avisosDaDai";
+  | "avisosDaDai"
+  /**
+   * Interno marca no calendário outro serviço, Quero e Posso. Alimenta as
+   * trocas, nunca o sorteio. A Vitalmed já tem a indisponibilidade dela.
+   */
+  | "sinaisDeTroca";
 
 /**
  * A fonte da verdade. Ligar algo para o SAMU aqui é uma decisão explícita e
@@ -64,12 +69,14 @@ const FEATURES: Record<Instancia, Record<Feature, boolean>> = {
     internUnavailability: false,
     liberacaoAutomatica: true,
     avisosDaDai: true,
+    sinaisDeTroca: true,
   },
   vitalmed: {
     adminLottery: true,
     internUnavailability: true,
     liberacaoAutomatica: false,
     avisosDaDai: false,
+    sinaisDeTroca: false,
   },
 };
 

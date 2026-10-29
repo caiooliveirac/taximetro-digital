@@ -39,6 +39,11 @@ test("liberação automática de vagas: só no SAMU, que tem o teto por base", (
   assert.equal(temFeature("avisosDaDai", "vitalmed"), false);
 });
 
+test("sinais de troca no calendário: só no SAMU (a Vitalmed tem a indisponibilidade)", () => {
+  assert.equal(temFeature("sinaisDeTroca", "samu"), true);
+  assert.equal(temFeature("sinaisDeTroca", "vitalmed"), false);
+});
+
 test("toda feature está declarada em todas as instâncias", () => {
   // Sem isto, uma feature nova declarada só na Vitalmed viraria `undefined` no
   // SAMU — que é falsy, funciona por acidente, e para de funcionar no dia em que
