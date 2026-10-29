@@ -52,6 +52,16 @@ export function textoVagasAbertas(vagas: VagaAvisada[]) {
   ].join("\n");
 }
 
+/** Vaga livre a menos de 8h do turno: virou extra, o interno pega direto (repescagem.ts). */
+export function textoRepescagem(vagas: VagaAvisada[]) {
+  return [
+    `Vaga de última hora, ainda sem ninguém, que cabe na sua agenda:`,
+    ...vagas.map((v) => `- ${v.baseCode} ${v.quando} (${v.tipo}${v.liberadaPor ? `, liberada pela ${v.liberadaPor}` : ", sem dono"})`),
+    `Falta pouco para o turno, então virou extra: você pega direto na aba Extras, sem passar pelo líder. Quem pegar primeiro leva.`,
+    `Se ainda falta esse tipo na sua meta, conta na meta; se já fechou, entra como extra.`,
+  ].join("\n");
+}
+
 export type SobraDaFaculdade = {
   faculdade: string;
   sobraPorTipo: Partial<Record<GoalKind, number>>;

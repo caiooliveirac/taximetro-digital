@@ -64,7 +64,7 @@ test("mensagens: só interno ou líder, e quem personifica não escreve", () => 
 
 test("vaga livre: interno não se escala sozinho; candidatura passa pela coordenação", () => {
   const claim = ler("src/features/extra-offers/application/use-cases/claim-extra-offer.ts");
-  assert.match(claim, /if \(vagaLivre && actor\.role === "INTERN" && !alocandoOutro\) \{\s*return \{ status: 403/);
+  assert.match(claim, /if \(vagaLivre && !repescagem && actor\.role === "INTERN" && !alocandoOutro\) \{\s*return \{ status: 403/);
   const candidatura = ler("src/features/extra-offers/application/use-cases/candidatar-vaga-livre.ts");
   assert.match(candidatura, /semDescansoPara/);
   assert.match(candidatura, /candidaturaAberta\(fila\)/);

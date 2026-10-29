@@ -127,6 +127,7 @@ export function acharMeu(meus: MeuPlantao[], hoje: string, data: string, periodo
 function acaoDa(a: Avaliada, lider: { id: string; nome: string } | null): Pick<LunaItem, "href" | "acao" | "candidatar"> {
   const q = quando(a.date, a.period, a.shift);
   if (a.candidatura) return { candidatar: a.id, acao: "Me candidatar" };
+  if (a.repescagem) return { href: "/intern/extras", acao: "Pegar" };
   if (a.fonte === "LIBERADA" && lider) {
     const texto = `Oi! Tem vaga liberada ${a.tipo} na ${a.baseCode}, ${q}, e ainda me falta ${a.tipo} na meta. Pode me escalar nela?`;
     return { href: `/intern/mensagens?com=${lider.id}&texto=${encodeURIComponent(texto)}`, acao: "Pedir ao líder" };

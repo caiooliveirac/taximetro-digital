@@ -187,11 +187,21 @@ conversa com ela não tem campo de resposta e aponta para a aba Dai.
 |---|---|---|---|
 | `plantao` | 17h | quem tem plantão amanhã (1 por interno) | base, "veja na aba Bases", tema para revisar (primeiro do tipo que ele não abriu na Dai) |
 | `vagas` | :25, 8h–20h | todos que ainda precisam do tipo, vaga de amanhã a 10 dias, no rodízio dele, com 12h de descanso, que cabe na viatura | até 3 vagas; 1 mensagem por dia; os mais urgentes escolhem primeiro e cada um recebe as menos citadas |
+| `repescagem` | :15, 8h–20h | quem precisa do tipo e quem marcou Quero no turno; mesmas travas do `vagas` (outro serviço também conta no descanso) | vaga livre que entrou na repescagem: "pega direto na aba Extras"; uma vez por vaga para cada interno, fora do limite diário |
 | `lideres` | 8h | líder ativo, 1 por dia | turnos da grade sem escala nos 7 dias (só em dia de turma), internos com casinha vazia, vagas de outras faculdades |
 
-Cada envio vai para o `audit_log` (`DAI_AVISO_PLANTAO|VAGAS|SOBRA`), que é o
+Cada envio vai para o `audit_log` (`DAI_AVISO_PLANTAO|VAGAS|SOBRA|REPESCAGEM`), que é o
 que impede repetir. `GET /api/cron/dai-avisos?tipo=…&dry=1` monta sem enviar.
 Simulação em 29/10 com dado real: 48 (plantão), 131 (vagas), 11 (líderes).
+
+**Repescagem (29/10, `repescagem.ts`):** vaga livre ainda aberta 8h antes do
+turno vira extra — o interno pega direto, sem líder e sem trava da meta, quem
+chegar primeiro leva. Fora de 8h–20h a abertura recua para as 20h anteriores:
+noturno abre às 11h, diurno e tarde da EBMSP às 20h da véspera. Quem ainda
+precisa do tipo ganha plantão da meta; quem já fechou, `isExtraShift`. Seguem
+o descanso de 12h, a viatura (checada também no servidor, `BASE_CHEIA`) e a
+faculdade que liberou não pega. Aparece na aba Extras ("Vaga livre de última
+hora") e na Dai como "Pegar"; o aviso `vagas` não cita vaga em repescagem.
 
 Teto da viatura (`lotacao.ts`, regra em `capacidadeDaBase`): vaga livre ou
 extra de USA só é oferecida — no aviso e na Dai — se a base ainda tem lugar no

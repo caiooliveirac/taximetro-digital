@@ -13,18 +13,18 @@ const ler = (arquivo: string) => readFileSync(path.join(process.cwd(), arquivo),
 
 test("líder em vaga livre com interno de meta coberta recebe META_CUMPRIDA, não alocação", () => {
   const src = ler("src/features/extra-offers/application/use-cases/claim-extra-offer.ts");
-  assert.match(src, /vagaLivre && actor\.role === "LEADER" && !params\.isImpersonating/);
+  assert.match(src, /vagaLivre && !repescagem && actor\.role === "LEADER" && !params\.isImpersonating/);
   assert.match(src, /code: "META_CUMPRIDA"/);
   assert.match(src, /type: "FREE_SLOT"/);
 });
 
-test("interno não se escala sozinho em vaga livre, nem por POST direto", () => {
+test("interno não se escala sozinho em vaga livre fora da repescagem, nem por POST direto", () => {
   const src = ler("src/features/extra-offers/application/use-cases/claim-extra-offer.ts");
-  const guarda = src.indexOf('vagaLivre && actor.role === "INTERN" && !alocandoOutro');
+  const guarda = src.indexOf('vagaLivre && !repescagem && actor.role === "INTERN" && !alocandoOutro');
   assert.ok(guarda > 0, "guarda do interno existe");
   assert.match(src.slice(guarda, guarda + 300), /status: 403[\s\S]*code: "VAGA_LIVRE_PELO_LIDER"/);
   // A guarda vem antes de criar o plantão.
-  assert.ok(guarda < src.indexOf("isExtraShift: !vagaLivre"), "barra antes de gravar");
+  assert.ok(guarda < src.indexOf("isExtraShift: comoExtra"), "barra antes de gravar");
 });
 
 test("pedido de vaga livre só a coordenação aprova, e some da lista do líder", () => {
