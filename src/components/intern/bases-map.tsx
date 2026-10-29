@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, LocateFixed, Loader2, MapPin, Navigation } from "lucide-react";
 import { criarMotor, type MotorMapa } from "@/components/intern/bases-map-motor";
 import { NavigationLinks } from "@/components/navigation-links";
-import { getBaseStyle, type BaseType } from "@/lib/base-colors";
+import type { BaseType } from "@/lib/base-colors";
 import { haversineDistance } from "@/lib/geo";
 import { cn, getShiftShortLabel, localDateStr } from "@/lib/utils";
 
@@ -29,8 +29,11 @@ const MESMO_LUGAR_METROS = 80;
 const CODIGO_NO_MAPA: Record<string, string> = { FACULDADE: "ZARNS/FACS" };
 const nomeNoMapa = (code: string) => CODIGO_NO_MAPA[code] ?? code;
 
-const COR: Record<BaseType, string> = { USA: "#ef4444", CENTRAL: "#0ea5e9", CRL: "#14b8a6" };
-const TIPO_LABEL: Record<BaseType, string> = { USA: "USA", CENTRAL: "Central", CRL: "CRL" };
+// Tons fortes e bem separados: o azul e o verde-azulado de antes sumiam na água e nos
+// parques do mapa do Google, e CRU e CRL ficavam com cara de mesma coisa.
+const COR: Record<BaseType, string> = { USA: "#dc2626", CENTRAL: "#0369a1", CRL: "#7c3aed" };
+const TIPO_LABEL: Record<BaseType, string> = { USA: "USA", CENTRAL: "Central/CRU", CRL: "CRL (leitos)" };
+const ORDEM_TIPO: BaseType[] = ["USA", "CENTRAL", "CRL"];
 
 function agrupar(bases: MapBase[]): Ponto[] {
   const pontos: Ponto[] = [];
@@ -44,9 +47,12 @@ function agrupar(bases: MapBase[]): Ponto[] {
   return pontos;
 }
 
-function rotulo(ponto: Ponto) {
-  const [primeira, ...resto] = ponto.bases;
-  return resto.length ? `${nomeNoMapa(primeira.code)} +${resto.length}` : nomeNoMapa(primeira.code);
+/** Bases do ponto por tipo: Pau Miúdo vira PM04/PM40 (USA) · CRU (Central) · CRL. */
+function porTipo(ponto: Ponto) {
+  return ORDEM_TIPO.map((type) => ({
+    type,
+    codes: ponto.bases.filter((b) => b.type === type).map((b) => nomeNoMapa(b.code)),
+  })).filter((g) => g.codes.length);
 }
 
 function distanciaTexto(metros: number) {
@@ -68,11 +74,17 @@ function quandoTexto(p: Proximo) {
 }
 
 function iconeHtml(ponto: Ponto, ativo: boolean, proximo: boolean) {
-  const cor = COR[ponto.bases[0].type] ?? COR.USA;
+  // Um pedaço por tipo, na cor dele: a CRU e a CRL não somem atrás da USA do mesmo endereço.
+  const pedacos = porTipo(ponto)
+    .map(
+      (g, i) =>
+        `<span style="padding:3px 7px;background:${COR[g.type]};${i ? "border-left:1px solid rgba(255,255,255,.7);" : ""}">${g.codes.join("/")}</span>`,
+    )
+    .join("");
   const anel = proximo ? "box-shadow:0 0 0 3px #fff,0 0 0 6px #f59e0b;" : "box-shadow:0 1px 4px rgba(0,0,0,.35);";
   // Ícone de tamanho zero no ponto; o rótulo se centraliza sobre ele, seja qual for a largura.
   const transformar = `transform:translate(-50%,-50%)${ativo ? " scale(1.15)" : ""};`;
-  return `<div style="position:absolute;left:0;top:0;${transformar}display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:3px 8px;font:600 11px/1.2 system-ui,sans-serif;color:#fff;background:${cor};border:2px solid #fff;cursor:pointer;${anel}">${rotulo(ponto)}</div>`;
+  return `<div style="position:absolute;left:0;top:0;${transformar}display:inline-flex;align-items:stretch;overflow:hidden;white-space:nowrap;border-radius:999px;font:600 11px/1.2 system-ui,sans-serif;color:#fff;border:2px solid #fff;cursor:pointer;${anel}">${pedacos}</div>`;
 }
 
 export function BasesMap({ bases, mapsKey }: { bases: MapBase[]; mapsKey: string | null }) {
@@ -282,8 +294,11 @@ export function BasesMap({ bases, mapsKey }: { bases: MapBase[]; mapsKey: string
           <div className="space-y-1.5">
             {ponto.bases.map((b) => (
               <div key={b.id} className="flex items-center gap-2">
-                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", getBaseStyle(b.type).pill)}>{nomeNoMapa(b.code)}</span>
-                <span className="truncate text-sm text-slate-700">{b.name}</span>
+                <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-white" style={{ background: COR[b.type] }}>
+                  {nomeNoMapa(b.code)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{b.name}</span>
+                <span className="shrink-0 text-[11px] font-medium text-slate-400">{TIPO_LABEL[b.type]}</span>
               </div>
             ))}
             {distancias.has(ponto.key) ? (
@@ -319,7 +334,11 @@ export function BasesMap({ bases, mapsKey }: { bases: MapBase[]; mapsKey: string
                 onClick={() => mostrar(p)}
                 className={cn("flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50", p.key === aberto && "bg-slate-50")}
               >
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: COR[p.bases[0].type] }} />
+                <span className="flex shrink-0 -space-x-1">
+                  {porTipo(p).map((g) => (
+                    <span key={g.type} className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ background: COR[g.type] }} />
+                  ))}
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-slate-900">
                     {p.bases.map((b) => nomeNoMapa(b.code)).join(" · ")}
