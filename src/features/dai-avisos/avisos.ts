@@ -3,8 +3,9 @@
  *
  *  - plantao: na véspera, o plantão de amanhã, onde fica a base e um tema
  *    para revisar.
- *  - vagas:   vaga livre que abriu e cabe para quem ainda precisa daquele
- *    tipo — no máximo uma mensagem por interno por dia.
+ *  - vagas:   vaga livre que abriu, cabe na viatura (lotacao.ts) e serve a
+ *    quem ainda precisa daquele tipo — todos recebem, no máximo uma
+ *    mensagem por interno por dia.
  *  - lideres: de manhã, ao líder, o que da grade da faculdade está sem escala
  *    nos próximos 7 dias e quantos internos ainda precisam.
  *
@@ -22,6 +23,7 @@ import { GOAL_KINDS, goalKindOf, type GoalKind } from "@/lib/goal-slots";
 import { quando } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr, hasShiftStarted, localDateStr } from "@/lib/utils";
 import { plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
+import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
 import { idDaDai } from "./remetente";
 import { temaParaPlantao, textoProximoPlantao, textoSobraParaLider, textoVagasAbertas, type VagaAvisada } from "./textos";
 
@@ -106,17 +108,15 @@ async function avisarPlantao(now: Date, dry: boolean): Promise<ResultadoDosAviso
 
 type Vaga = { id: string; baseCode: string; tipo: GoalKind; date: string; period: "DAY" | "NIGHT"; shift: string | null; releasedFacultyId: string | null; liberadaPor: string | null };
 
-/** Cada vaga é citada para poucos: aviso para 100 pessoas da mesma vaga só gera corrida. */
-const CITACOES_POR_VAGA = 4;
-
 const diasEntre = (de: string, ate: string) => Math.round((Date.parse(`${ate}T12:00:00Z`) - Date.parse(`${de}T12:00:00Z`)) / 86_400_000);
 
 /**
  * Para cada interno que ainda precisa de um tipo, as vagas livres abertas que
  * cabem: do tipo que falta, dentro do rodízio dele, não liberadas pela própria
- * faculdade, sem plantão no turno e com 12h de descanso. Quem tem mais casinha
- * vazia por dia de rodízio que resta escolhe primeiro, e cada vaga vai para
- * no máximo CITACOES_POR_VAGA internos. Pura, para teste.
+ * faculdade, sem plantão no turno e com 12h de descanso. Todos que precisam
+ * recebem; para não mandar as mesmas 3 vagas a todo mundo, quem tem mais
+ * casinha vazia por dia de rodízio que resta escolhe primeiro e cada um
+ * recebe as vagas menos citadas até ali. Pura, para teste.
  */
 export function vagasParaCadaInterno(
   vagas: Vaga[],
@@ -137,9 +137,11 @@ export function vagasParaCadaInterno(
       (!i.inicio || v.date >= i.inicio) && (!i.fim || v.date <= i.fim) &&
       v.releasedFacultyId !== i.facultyId &&
       !avisadas.has(v.id) &&
-      (citacoes.get(v.id) ?? 0) < CITACOES_POR_VAGA &&
       !plantaoSemDescanso({ date: v.date, period: v.period, shift: v.shift, baseCode: v.baseCode }, turnos),
-    ).slice(0, VAGAS_POR_AVISO);
+    )
+      .sort((a, b) => (citacoes.get(a.id) ?? 0) - (citacoes.get(b.id) ?? 0) || `${a.date}${a.period}`.localeCompare(`${b.date}${b.period}`))
+      .slice(0, VAGAS_POR_AVISO)
+      .sort((a, b) => `${a.date}${a.period === "DAY" ? 0 : 1}`.localeCompare(`${b.date}${b.period === "DAY" ? 0 : 1}`));
     if (!servem.length) continue;
     for (const v of servem) citacoes.set(v.id, (citacoes.get(v.id) ?? 0) + 1);
     saida.set(i.userId, servem);
@@ -162,9 +164,9 @@ async function avisarVagas(now: Date, dry: boolean): Promise<ResultadoDosAvisos>
       gte(extraShiftOffers.date, addDaysToDateStr(hoje, 1)), lte(extraShiftOffers.date, ate),
     ))
     .orderBy(extraShiftOffers.date, extraShiftOffers.period);
-  const vagas: Vaga[] = ofertas
+  const vagas: Vaga[] = await soAsQueCabem(ofertas
     .map((o) => ({ ...o, date: dia(o.date), period: o.period as "DAY" | "NIGHT", tipo: goalKindOf(o.baseType) }))
-    .filter((o): o is typeof o & { tipo: GoalKind } => Boolean(o.tipo) && !hasShiftStarted(o.date, o.period, o.shift, now));
+    .filter((o): o is typeof o & { tipo: GoalKind } => Boolean(o.tipo) && !hasShiftStarted(o.date, o.period, o.shift, now)));
   if (!vagas.length) return { tipo: "vagas", enviados: 0, considerados: 0, dry };
 
   const tiposAbertos = new Set(vagas.map((v) => v.tipo));

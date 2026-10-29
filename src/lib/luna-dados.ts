@@ -17,6 +17,7 @@ import { executeListRequests } from "@/features/requests/application/use-cases/l
 import { findInternOverCruQuota, findSwapRestConflict } from "@/features/requests/application/use-cases/handle-swap-peer-action";
 import { findPendingRequestByAssignment } from "@/features/requests/infra/repositories/request-repository";
 import { getRequestableSlots } from "@/lib/slots";
+import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
 import { goalKindOf } from "@/lib/goal-slots";
 import { filaDeReposicao, type Fila } from "@/features/extra-offers/application/fila-de-reposicao";
 import { addDaysToDateStr, operationalDateStr } from "@/lib/utils";
@@ -139,18 +140,18 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
     liberadas: (ate) => lido(`liberadas:${ate}`, async () => {
       if (!ctx.facultyId) return [];
       const vagas = await listFreeOffers({ excludeFacultyId: ctx.facultyId, from: ctx.hoje, to: ate });
-      return vagas.map((v): Oferta => ({
+      return soAsQueCabem(vagas.map((v): Oferta => ({
         fonte: "LIBERADA", id: v.id, baseCode: v.baseCode, tipo: goalKindOf(v.baseType),
         date: dia(v.date), period: v.period as Periodo, shift: v.shift, faculdade: v.releasedFacultyAbbr ?? null,
-      }));
+      })));
     }),
 
     extras: () => lido("extras", async () => {
       const extras = await listExtraOffers();
-      return extras.map((e): Oferta => ({
+      return soAsQueCabem(extras.map((e): Oferta => ({
         fonte: "EXTRA", id: e.id, baseCode: e.baseCode, tipo: goalKindOf(e.baseType),
         date: dia(e.date), period: e.period as Periodo, shift: e.shift, obs: e.notes ?? null,
-      }));
+      })));
     }),
 
     grade: () => lido("grade", async () => {

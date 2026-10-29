@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { temaParaPlantao, textoProximoPlantao, textoSobraParaLider, textoVagasAbertas } from "../src/features/dai-avisos/textos";
 import { vagasParaCadaInterno } from "../src/features/dai-avisos/avisos";
+import { cabeNaBase } from "../src/features/extra-offers/application/lotacao";
 
 const ler = (arquivo: string) => readFileSync(path.join(process.cwd(), arquivo), "utf8");
 
@@ -68,11 +69,24 @@ test("vaga aberta: só para quem precisa do tipo, cabe no rodízio e na agenda, 
   assert.deepEqual(r.get("caio")?.map((v) => v.id), ["V3", "V5"]);
 });
 
-test("cada vaga vai para no máximo 4 internos, os mais urgentes primeiro", () => {
-  const vagas = [vaga("V1", "USA", "2026-11-03", "DAY")];
-  const internos = Array.from({ length: 10 }, (_, n) => ({ ...interno(`i${n}`, { USA: n + 1, CRU: 0, CRL: 0 }) }));
+test("todos que precisam recebem, e as vagas se espalham: os mais urgentes escolhem primeiro", () => {
+  const vagas = [vaga("V1", "USA", "2026-11-03", "DAY"), vaga("V2", "USA", "2026-11-04", "DAY"), vaga("V3", "USA", "2026-11-05", "DAY"), vaga("V4", "USA", "2026-11-06", "DAY")];
+  const internos = Array.from({ length: 10 }, (_, n) => interno(`i${n}`, { USA: n + 1, CRU: 0, CRL: 0 }));
   const r = vagasParaCadaInterno(vagas, internos, new Map(), new Map(), "2026-10-29");
-  assert.deepEqual([...r.keys()], ["i9", "i8", "i7", "i6"]);
+  assert.equal(r.size, 10);
+  assert.deepEqual(r.get("i9")!.map((v) => v.id), ["V1", "V2", "V3"]);
+  assert.deepEqual(r.get("i8")!.map((v) => v.id), ["V1", "V2", "V4"]); // V4 ainda não citada entra
+});
+
+test("teto da viatura: BR60/BR05/PM04/PM40 um de dia; à noite dois só nas bases duplas; CRU sem teto", () => {
+  const t = (baseCode: string, period: "DAY" | "NIGHT", tipo: "USA" | "CRU" = "USA") => ({ baseCode, period, tipo, date: "2026-11-03" });
+  assert.equal(cabeNaBase(t("PM40", "DAY"), 1), false);
+  assert.equal(cabeNaBase(t("BR05", "DAY"), 0), true);
+  assert.equal(cabeNaBase(t("CB05", "DAY"), 1), true);
+  assert.equal(cabeNaBase(t("CB05", "DAY"), 2), false);
+  assert.equal(cabeNaBase(t("SM01", "NIGHT"), 1), true);
+  assert.equal(cabeNaBase(t("CZ50", "NIGHT"), 1), false);
+  assert.equal(cabeNaBase(t("CENTRAL", "DAY", "CRU"), 9), true);
 });
 
 test("texto de vaga: diz que falta o tipo e manda pedir ao líder pela Dai", () => {

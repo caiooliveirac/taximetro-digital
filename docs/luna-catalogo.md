@@ -166,12 +166,17 @@ conversa com ela não tem campo de resposta e aponta para a aba Dai.
 | Aviso | Quando | Para quem | O quê |
 |---|---|---|---|
 | `plantao` | 17h | quem tem plantão amanhã (1 por interno) | base, "veja na aba Bases", tema para revisar (primeiro do tipo que ele não abriu na Dai) |
-| `vagas` | :25, 8h–20h | quem ainda precisa do tipo, vaga de amanhã a 10 dias, no rodízio dele, com 12h de descanso | até 3 vagas; 1 mensagem por dia; cada vaga citada para no máximo 4, os mais urgentes primeiro |
+| `vagas` | :25, 8h–20h | todos que ainda precisam do tipo, vaga de amanhã a 10 dias, no rodízio dele, com 12h de descanso, que cabe na viatura | até 3 vagas; 1 mensagem por dia; os mais urgentes escolhem primeiro e cada um recebe as menos citadas |
 | `lideres` | 8h | líder ativo, 1 por dia | turnos da grade sem escala nos 7 dias (só em dia de turma), internos com casinha vazia, vagas de outras faculdades |
 
 Cada envio vai para o `audit_log` (`DAI_AVISO_PLANTAO|VAGAS|SOBRA`), que é o
 que impede repetir. `GET /api/cron/dai-avisos?tipo=…&dry=1` monta sem enviar.
-Simulação em 29/10 com dado real: 48 (plantão), 54 (vagas), 11 (líderes).
+Simulação em 29/10 com dado real: 48 (plantão), 131 (vagas), 11 (líderes).
+
+Teto da viatura (`lotacao.ts`, regra em `capacidadeDaBase`): vaga livre ou
+extra de USA só é oferecida — no aviso e na Dai — se a base ainda tem lugar no
+turno contando os plantões de todas as faculdades. Em 29/10, 2 das 39 vagas
+USA abertas já estavam com a viatura cheia.
 
 ## Pontos em aberto
 
