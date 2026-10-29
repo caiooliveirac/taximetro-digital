@@ -15,15 +15,16 @@ export const AUDIT_PERGUNTA = "DAI_PERGUNTA";
 const RETENCAO_DIAS = 90;
 
 /**
- * Perguntas do interno hoje — o teto diário conta daqui, não da memória do
- * processo, para não zerar a cada deploy. created_at grava hora local (sessão
- * America/Sao_Paulo), então comparar com a data local basta.
+ * Perguntas de hoje que chamaram o modelo (rota "modelo" ou "modelo+ferramenta")
+ * — as diretas do banco não gastam token e não contam. Vem do audit_log, não
+ * da memória do processo, para não zerar a cada deploy. created_at grava hora
+ * local (sessão America/Sao_Paulo), então comparar com a data local basta.
  */
-export async function perguntasDeHoje(userId: string, hoje: string): Promise<number> {
+export async function perguntasComModeloHoje(userId: string, hoje: string): Promise<number> {
   const [r] = await db
     .select({ n: count() })
     .from(auditLog)
-    .where(and(eq(auditLog.userId, userId), eq(auditLog.action, AUDIT_PERGUNTA), gte(auditLog.createdAt, sql`${hoje}::date`)));
+    .where(and(eq(auditLog.userId, userId), eq(auditLog.action, AUDIT_PERGUNTA), gte(auditLog.createdAt, sql`${hoje}::date`), sql`${auditLog.payload}->>'rota' like 'modelo%'`));
   return r?.n ?? 0;
 }
 

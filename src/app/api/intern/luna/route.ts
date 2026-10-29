@@ -4,15 +4,16 @@
  * GET  → { ligada } (sem OPENAI_API_KEY a tela mostra só os atalhos)
  * POST → { mensagens: [{ role, content, memoria? }] } → { texto, cartoes, memoria }
  *
- * Teto por pessoa: 10 perguntas por dia (contadas no audit_log, sobrevivem ao
- * deploy), uma de cada vez, pergunta de até 300 caracteres — custo do modelo.
+ * Teto por pessoa: 10 perguntas por dia que chamam o modelo (contadas no
+ * audit_log, sobrevivem ao deploy); as que saem direto do banco seguem
+ * respondendo. Uma de cada vez, pergunta de até 300 caracteres.
  * Cada pergunta do interno (não personificado) vira DAI_PERGUNTA no audit_log, 90 dias.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
 import { getEffectiveUser } from "@/lib/impersonate";
-import { gravarPergunta, perguntasDeHoje } from "@/lib/dai-perguntas";
+import { gravarPergunta, perguntasComModeloHoje } from "@/lib/dai-perguntas";
 import { lunaLigada, perguntarLuna } from "@/lib/luna-interno";
 import { checkRateLimit } from "@/shared/infra/rate-limit";
 import { localDateStr } from "@/lib/utils";
@@ -32,7 +33,10 @@ const memoria = z
   .optional();
 
 const PERGUNTA_MAX = 300;
-const TETO_DIA = 10;
+const TETO_MODELO_DIA = 10;
+// Caminho direto não gasta token; este teto só segura abuso.
+const TETO_DIA = 80;
+const SEM_TOKENS = "Seus tokens de IA com a Dai acabaram por hoje — amanhã eles voltam. Os atalhos acima seguem respondendo, e as telas continuam funcionando.";
 
 const pedido = z.object({
   mensagens: z
@@ -71,26 +75,24 @@ export async function POST(req: NextRequest) {
   if (emCurso.has(pessoa)) {
     return NextResponse.json({ success: false, error: "Espere a resposta anterior terminar." }, { status: 429 });
   }
-  // Personificando não grava no audit_log: aí só o contador do processo segura.
-  const hoje = localDateStr();
-  const feitas = user.realUserId ? 0 : await perguntasDeHoje(user.id, hoje);
-  if (feitas >= TETO_DIA || !checkRateLimit(`luna:${pessoa}`, TETO_DIA, 24 * 60 * 60_000)) {
-    return NextResponse.json(
-      { success: false, error: "Seus tokens de IA com a Dai acabaram por hoje. Amanhã eles voltam — as telas continuam funcionando." },
-      { status: 429 },
-    );
+  if (!checkRateLimit(`luna:${pessoa}`, TETO_DIA, 24 * 60 * 60_000)) {
+    return NextResponse.json({ success: false, error: "Você chegou ao limite de perguntas de hoje. As telas continuam funcionando." }, { status: 429 });
   }
+  // Personificando não grava no audit_log: aí o modelo não tem teto (só o coordenador personifica).
+  const hoje = localDateStr();
+  const comModelo = user.realUserId ? 0 : await perguntasComModeloHoje(user.id, hoje);
 
   emCurso.add(pessoa);
   try {
     let meta: Record<string, unknown> = {};
     const resposta = await perguntarLuna(
-      { internId: user.id, facultyId: user.facultyId, hoje },
+      { internId: user.id, facultyId: user.facultyId, hoje, voz: crypto.randomUUID() },
       parsed.data.mensagens,
       (o) => {
         meta = o;
         console.log(JSON.stringify({ ...o, user: user.id, at: new Date().toISOString() }));
       },
+      { semModelo: comModelo >= TETO_MODELO_DIA ? SEM_TOKENS : undefined },
     );
     // Personificando, só olha: não entra no estudo do uso real.
     if (!user.realUserId) await gravarPergunta(user.id, parsed.data.mensagens, resposta, meta).catch(() => {});

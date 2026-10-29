@@ -18,6 +18,7 @@ import type { MedicosPrevistos } from "../src/features/scheduling/infra/reposito
 import { sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
 import { perguntarLuna, type LunaPergunta } from "../src/lib/luna-interno";
 import { explicarPlantao, textoDaPresenca, type Meta, type MeuPlantao, type Oferta } from "../src/lib/luna-inteligencia";
+import { voz } from "../src/lib/dai-voz";
 import { rotear } from "../src/lib/luna-roteador";
 
 const HOJE = "2026-10-29";
@@ -108,11 +109,11 @@ function modelo(passos: Passo[]) {
   return { fetch: fake, corpos };
 }
 
-async function perguntar(texto: string, opts: { passos?: Passo[]; fx?: Fixture; antes?: LunaPergunta[]; agora?: Date } = {}) {
+async function perguntar(texto: string, opts: { passos?: Passo[]; fx?: Fixture; antes?: LunaPergunta[]; agora?: Date; semModelo?: string } = {}) {
   const m = modelo(opts.passos ?? []);
   const { f, lidas } = fontes(opts.fx);
   const logs: Record<string, unknown>[] = [];
-  const r = await perguntarLuna(ctx, [...(opts.antes ?? []), { role: "user", content: texto }], (o) => logs.push(o), { fontes: f, fetch: m.fetch, agora: opts.agora });
+  const r = await perguntarLuna(ctx, [...(opts.antes ?? []), { role: "user", content: texto }], (o) => logs.push(o), { fontes: f, fetch: m.fetch, agora: opts.agora, semModelo: opts.semModelo });
   const log = logs.find((l) => l.ev === "luna_interno")!;
   return { r, chamadas: m.corpos.length, corpos: m.corpos, log, lidas };
 }
@@ -504,4 +505,44 @@ test("roteador: inequívoco vai direto; restrição, referência ou explicação
     "Encontre a melhor opção para completar minhas CRL",
     "Tem vaga de USA?",
   ]) assert.equal(rotear(q), null, q);
+});
+
+// ---------------------------------------------------------------------------
+// Teto de tokens, voz das respostas diretas, casinhas e guia dos extras.
+
+test("teto de tokens batido: pergunta direta segue respondendo, a que precisaria do modelo não o chama", async () => {
+  const direta = await perguntar("Quais são meus próximos plantões?", { semModelo: "SEM TOKENS" });
+  assert.equal(direta.chamadas, 0);
+  assert.doesNotMatch(direta.r.texto, /SEM TOKENS/);
+  const livre = await perguntar("Não posso segunda, prefiro noite: o que tem?", { semModelo: "SEM TOKENS" });
+  assert.equal(livre.chamadas, 0);
+  assert.equal(livre.r.texto, "SEM TOKENS");
+  assert.equal(livre.log.rota, "sem_tokens");
+});
+
+test("voz: sem semente sai a primeira forma; com semente há pelo menos 5 jeitos de dizer, todos com os mesmos fatos", () => {
+  assert.equal(voz.agenda(undefined), "Seus próximos plantões:");
+  const formas = new Set(Array.from({ length: 200 }, (_, i) => voz.achei(`s${i}`, 3, "")));
+  assert.ok(formas.size >= 5, `só ${formas.size} formas`);
+  for (const f of formas) assert.match(f, /3/);
+  for (let i = 0; i < 50; i++) assert.match(voz.semAgenda(`s${i}`, "amanhã"), /amanhã/i);
+});
+
+test("'Que vagas fecham minha meta?' — cartão traz as casinhas e o que a busca cobre", async () => {
+  const { r } = await perguntar("Que vagas fecham minha meta?");
+  const c = r.cartoes.find((x) => x.tipo === "opcoes");
+  assert.ok(c?.casinhas?.length);
+  for (const k of c!.casinhas!) assert.ok(k.marcadas + k.cobre <= k.alvo);
+  assert.ok(c!.itens.every((i) => i.quando && i.base));
+});
+
+test("'Tem extra aberto?' — explica o jogo dos extras: aberto sem extra, fechado com extra na lista", async () => {
+  const com = await perguntar("Tem plantão extra aberto pra mim?");
+  const guia = com.r.cartoes.find((x) => x.tipo === "guia");
+  assert.ok(guia);
+  assert.match(guia!.itens.map((i) => i.titulo).join(" "), /8h antes do turno/);
+  const sem = await perguntar("Tem plantão extra aberto pra mim?", { fx: { extras: [] } });
+  assert.equal(sem.r.cartoes.find((x) => x.tipo === "guia")?.aberto, true);
+  const meta = await perguntar("Que vagas fecham minha meta?");
+  assert.ok(!meta.r.cartoes.some((x) => x.tipo === "guia"));
 });

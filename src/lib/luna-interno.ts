@@ -19,6 +19,7 @@ import { FERRAMENTAS, buscar, situacaoDaBase, type LunaCartao, type LunaMemoria,
 import { quando, resumoParaModelo, textoDaAgenda, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
 import { rotear, type Intencao } from "@/lib/luna-roteador";
 import { addDaysToDateStr } from "@/lib/utils";
+import { voz } from "@/lib/dai-voz";
 
 type ChatMsg = {
   role: "system" | "user" | "assistant" | "tool";
@@ -29,7 +30,8 @@ type ChatMsg = {
 
 export type LunaPergunta = { role: "user" | "assistant"; content: string; memoria?: LunaMemoria };
 export type LunaResposta = { texto: string; cartoes: LunaCartao[]; erro?: boolean; memoria?: LunaMemoria };
-export type LunaDeps = { fontes?: Fontes; fetch?: typeof fetch; agora?: Date };
+/** `semModelo`: teto de tokens do dia batido — o caminho direto segue, o modelo responde só este texto. */
+export type LunaDeps = { fontes?: Fontes; fetch?: typeof fetch; agora?: Date; semModelo?: string };
 
 const HISTORICO = 6;
 const MAX_FERRAMENTAS = 3;
@@ -42,8 +44,6 @@ const config = () => ({
 });
 
 export const lunaLigada = () => Boolean(config().key);
-
-const META_NA_TELA = "Sua meta, tipo por tipo, está na tela **Início**. Aqui eu procuro o que fecha ela: pergunte \"que vagas fecham minha meta?\".";
 
 const FALHOU = "Não consegui consultar seus dados agora — não vou chutar. As telas de Início, Trocas e Extras seguem funcionando.";
 
@@ -65,7 +65,8 @@ Regras (para explicar):
 - Meta: casinhas por tipo (USA, CRU, CRL) no rodízio. Realizados, o de hoje e os agendados ocupam casinha. Extra não conta. Falta não ocupa casinha: ela volta a ficar vazia e precisa de reposição (vaga liberada pelo líder ou sobra da grade). Falta abonada conta.
 - Vaga liberada (outra faculdade abriu mão): só para quem ainda tem casinha vazia no tipo; quem escala é o líder da faculdade dele.
 - Troca: mesmo tipo, 12h de descanso, CRU uma por rodízio; USA e CRU com qualquer faculdade, CRL só com a mesma; vale quando quem ofereceu confirma.
-- Extra: primeiro que pegar, aba Extras. Sobra da grade: pede em Trocas → Extra, o líder aprova.`;
+- Extra: o líder publica, leva quem pegar primeiro na aba Extras; não conta para a meta. Repescagem: vaga livre vira extra 8h antes do turno e o interno pega direto; se falta o tipo na meta, conta como plantão normal; com a meta fechada vira extra, um só por interno. 12h de descanso sempre; quem pegou só sai pelo líder ou coordenação.
+- Sobra da grade: pede em Trocas → Extra, o líder aprova.`;
 
 function calendario(hoje: string) {
   return Array.from({ length: 15 }, (_, i) => {
@@ -73,6 +74,8 @@ function calendario(hoje: string) {
     return `${quando(d, "DAY").slice(0, -4)}=${d}`;
   }).join(", ");
 }
+
+const cartoesDe = (r: Resultado) => [r.cartao, r.guia].filter((c): c is LunaCartao => Boolean(c));
 
 function memoriaAtual(conversa: LunaPergunta[]): LunaMemoria | undefined {
   for (let i = conversa.length - 1; i >= 0; i--) if (conversa[i].role === "assistant" && conversa[i].memoria) return conversa[i].memoria;
@@ -82,22 +85,29 @@ function memoriaAtual(conversa: LunaPergunta[]): LunaMemoria | undefined {
 async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: LunaMemoria | undefined, pergunta: string, agora = new Date()): Promise<Resultado> {
   if (intencao.tipo === "BUSCA") return buscar(f, ctx, intencao.args as Record<string, unknown>, memoria);
   // A meta está na tela Início: aqui não se gasta consulta nem token com ela.
-  if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: META_NA_TELA };
+  if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: voz.metaNaTela(ctx.voz) };
   if (intencao.tipo === "BASE_AGORA") return situacaoDaBase(f, ctx, pergunta, agora);
   const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
-  if (intencao.tipo === "PRESENCA") return { status: "OK", registros: meus.length, texto: textoDaPresenca(meus, ctx.hoje, meta?.inicio ?? null) };
+  if (intencao.tipo === "PRESENCA") return { status: "OK", registros: meus.length, texto: textoDaPresenca(meus, ctx.hoje, meta?.inicio ?? null, undefined, ctx.voz) };
   const de = addDaysToDateStr(ctx.hoje, intencao.de);
   const ate = intencao.ate === null ? null : addDaysToDateStr(ctx.hoje, intencao.ate);
   const lista = ativos(meus).filter((m) => m.date >= de && (!ate || m.date <= ate)).slice(0, 6);
   return {
     status: lista.length ? "OK" : "NO_OPTIONS",
     registros: meus.length,
-    texto: textoDaAgenda(meus, de, ate, intencao.janela),
+    texto: textoDaAgenda(meus, de, ate, intencao.janela, ctx.voz),
     cartao: lista.length
       ? {
           tipo: "plantoes",
           titulo: "Seus plantões",
-          itens: lista.map((m) => ({ titulo: `${m.baseCode} · ${quando(m.date, m.period, m.shift)}`, detalhe: `${m.tipo ?? "?"}${m.isExtraShift ? " · extra" : ""}`, mapa: m.baseCode })),
+          itens: lista.map((m) => ({
+            titulo: `${m.baseCode} · ${quando(m.date, m.period, m.shift)}`,
+            detalhe: `${m.tipo ?? "?"}${m.isExtraShift ? " · extra" : ""}`,
+            mapa: m.baseCode,
+            quando: { data: m.date, periodo: m.period, turno: m.shift },
+            base: m.baseCode,
+            tipoVaga: m.isExtraShift ? `${m.tipo ?? "?"} · extra` : m.tipo,
+          })),
           verTudo: { href: "/intern/calendario", rotulo: "Abrir calendário" },
         }
       : undefined,
@@ -126,14 +136,18 @@ export async function perguntarLuna(
       const r = await direto(intencao, f, ctx, memoria, pergunta, deps.agora);
       ferramentas.push({ nome: intencao.tipo.toLowerCase(), ms: Date.now() - t1, status: r.status, registros: r.registros });
       registro({ rota: "direta", intencao: intencao.tipo, chamadas_modelo: 0, entrada: 0, saida: 0 });
-      return { texto: r.texto, cartoes: r.cartao ? [r.cartao] : [], memoria: r.memoria ?? memoria };
+      return { texto: r.texto, cartoes: cartoesDe(r), memoria: r.memoria ?? memoria };
     } catch (e) {
       registro({ rota: "direta", intencao: intencao.tipo, chamadas_modelo: 0, erro: (e as Error).message.slice(0, 200) });
       return { texto: FALHOU, cartoes: [], erro: true, memoria };
     }
   }
 
-  // 2. Uma chamada, com o resumo já no prompt.
+  // 2. Uma chamada, com o resumo já no prompt — se ainda houver tokens hoje.
+  if (deps.semModelo) {
+    registro({ rota: "sem_tokens", chamadas_modelo: 0 });
+    return { texto: deps.semModelo, cartoes: [], memoria };
+  }
   let resumo: string;
   try {
     const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
@@ -210,7 +224,7 @@ export async function perguntarLuna(
   if (!ok.length) return { texto: m.content || "Não entendi o pedido. Pode dizer de outro jeito?", cartoes: [], memoria };
   return {
     texto: ok.map((x) => x.texto).join("\n\n"),
-    cartoes: ok.flatMap((x) => (x.cartao ? [x.cartao] : [])),
+    cartoes: ok.flatMap(cartoesDe),
     erro: ok.every((x) => x.status === "FAILED") || undefined,
     memoria: nova ?? memoria,
   };
