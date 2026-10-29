@@ -16,7 +16,7 @@ import {
   type Avaliada, type Bloqueio, type Busca, type Fonte, type MeuPlantao, type Oferta, type Pedido, type Periodo,
 } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr } from "@/lib/utils";
-import { candidaturaAberta, textoDaFila } from "@/features/extra-offers/application/fila-de-reposicao";
+import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
 
 export type { LunaCtx } from "@/lib/luna-dados";
 
@@ -141,7 +141,7 @@ function acaoDa(a: Avaliada, lider: { id: string; nome: string } | null): Pick<L
 
 const ROTULO_STATUS = { ELIGIBLE: "pode pegar", REQUIRES_APPROVAL: "precisa de aprovação" } as const;
 
-function cartaoDaBusca(b: Busca, lider: { id: string; nome: string } | null): LunaCartao | undefined {
+function cartaoDaBusca(b: Busca, lider: { id: string; nome: string } | null, numero: (a: Avaliada, i: number) => number): LunaCartao | undefined {
   const mostradas = b.opcoes.slice(0, MOSTRAR);
   if (!mostradas.length) return undefined;
   const titulo = b.objetivo === "meta" ? "Para fechar sua meta" : b.objetivo === "troca" ? "Trocas que servem para você" : "Opções para você";
@@ -149,7 +149,7 @@ function cartaoDaBusca(b: Busca, lider: { id: string; nome: string } | null): Lu
     tipo: "opcoes",
     titulo,
     itens: mostradas.map((a, i) => ({
-      titulo: `${i + 1}. ${a.baseCode} · ${quando(a.date, a.period, a.shift)}`,
+      titulo: `${numero(a, i)}. ${a.baseCode} · ${quando(a.date, a.period, a.shift)}`,
       detalhe: `${a.tipo ?? "?"} · ${a.fonte === "TROCA" ? `troca com ${a.quem ?? "colega"}` : a.fonte === "LIBERADA" ? "vaga liberada" : a.fonte === "EXTRA" ? "extra" : "sobra da grade"} · ${ROTULO_STATUS[a.status as keyof typeof ROTULO_STATUS] ?? ""}`,
       mapa: a.baseCode,
       ...acaoDa(a, lider),
@@ -172,6 +172,10 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   const somente = (args.opcoes ?? [])
     .map((n) => memoria?.opcoes?.find((r) => r.n === n))
     .filter((r): r is LunaRef => Boolean(r));
+  // "Dessas" sem lista numerada antes: não há o que reavaliar.
+  if (args.opcoes?.length && !somente.length) {
+    return { status: "INSUFFICIENT_DATA", registros: 0, texto: "A última resposta não trouxe uma lista numerada de vagas. Quer que eu procure de novo?" };
+  }
   const objetivo = args.objetivo ?? (somente.length && somente.every((s) => s.fonte === "TROCA") ? "troca" : "plantao");
   let fontes = somente.length ? [...new Set(somente.map((s) => s.fonte))] : args.fontes ?? FONTES_PADRAO[objetivo];
 
@@ -209,7 +213,8 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     if (completos.length === tiposDoPedido.length && !candidatura.length) fontes = fontes.filter((x) => x !== "LIBERADA");
     // Quem ainda precisa de algum tipo não recebe sermão de fila dos outros.
     if (fechados.length && completos.length === tiposDoPedido.length) {
-      fila = `Vaga livre vai primeiro para quem precisa de reposição${atual ? `: ${fechados.map((k) => textoDaFila(k, atual[k])).join("; ")}` : ""}. Candidatura abre quando sobrar vaga.`;
+      const quem = atual ? fechados.filter((k) => atual[k].precisam > 0).map((k) => `${atual[k].precisam} em ${k}`) : [];
+      fila = `Vaga liberada vai primeiro para quem precisa de reposição${quem.length ? ` (hoje: ${quem.join(", ")})` : ""}. Candidatura abre quando sobrar vaga.`;
     }
     if (candidatura.length) fila += `${fila ? "\n" : ""}Sobra vaga livre de ${candidatura.join(" e ")}: como sua meta está completa, você se candidata e a coordenação decide.`;
   }
@@ -251,8 +256,12 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
 
   const mostradas = busca.opcoes.slice(0, MOSTRAR);
   const lider = mostradas.some((a) => a.fonte === "LIBERADA") ? await f.lider() : null;
-  let texto = textoDaBusca(busca);
-  if (fila) texto += `\n${fila}`;
+  // Reavaliando opções da lista anterior: mesmo número e mesma memória, para
+  // "a primeira" continuar sendo a primeira daquela lista.
+  const original = new Map(somente.map((r) => [`${r.fonte}|${r.id}`, r.n]));
+  const numero = (a: Avaliada, i: number) => original.get(`${a.fonte}|${a.id}`) ?? i + 1;
+  let texto = textoDaBusca(busca, numero);
+  if (fila && busca.status !== "META_COMPLETA") texto += `\n${fila}`;
   if (largar) texto = `Para largar seu **${largar.baseCode} ${quando(largar.date, largar.period, largar.shift)}**:\n${texto}`;
   if (mostradas.some((a) => a.fonte === "LIBERADA") && !lider) texto += "\nSua faculdade está sem líder ativo cadastrado: a vaga liberada depende dele.";
 
@@ -262,11 +271,10 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     status: busca.status,
     registros: ofertas.length,
     texto,
-    cartao: cartaoDaBusca(busca, lider),
-    memoria: {
-      busca: semRefs,
-      opcoes: mostradas.map((a, i) => ({ n: i + 1, fonte: a.fonte, id: a.id })),
-    },
+    cartao: cartaoDaBusca(busca, lider, numero),
+    memoria: somente.length
+      ? memoria
+      : { busca: semRefs, opcoes: mostradas.map((a, i) => ({ n: i + 1, fonte: a.fonte, id: a.id })) },
   };
 }
 
@@ -383,15 +391,15 @@ export const FERRAMENTAS: {
         fontes: { type: "array", items: { type: "string", enum: ["liberada", "extra", "grade", "troca"] }, description: "Só se o interno pediu uma fonte específica" },
         nao_posso: {
           type: "array",
-          description: "Dias/turnos em que ele disse que não pode. Sem periodo = o dia inteiro.",
+          description: "Só dias/turnos que ele disse que não pode (prova, compromisso). Plantão que ele já tem não entra aqui. Sem periodo = o dia inteiro.",
           items: { type: "object", additionalProperties: false, properties: { dia_semana: { type: "string", enum: DIA_ENUM }, data: { type: "string", description: "YYYY-MM-DD" }, periodo: { type: "string", enum: ["dia", "noite"] } } },
         },
         prefere_periodo: { type: "string", enum: ["dia", "noite"] },
-        prefere_dias_semana: { type: "array", items: { type: "string", enum: DIA_ENUM } },
+        prefere_dias_semana: { type: "array", items: { type: "string", enum: DIA_ENUM }, description: "Fim de semana = sex, sab, dom" },
         dias: { type: "integer", description: "Janela em dias a partir de hoje (padrão 21; meta: até o fim do rodízio)" },
         trocar_data: { type: "string", description: "YYYY-MM-DD do plantão DELE que quer largar (objetivo troca)" },
         trocar_periodo: { type: "string", enum: ["dia", "noite"] },
-        opcoes: { type: "array", items: { type: "integer" }, description: "Números das opções da última lista para reavaliar ('a segunda' = [2])" },
+        opcoes: { type: "array", items: { type: "integer" }, description: "Números da ÚLTIMA LISTA para reavaliar ('a segunda' = [2]); só se houver lista" },
       },
     },
     run: (f, ctx, args, memoria) => buscar(f, ctx, args, memoria),

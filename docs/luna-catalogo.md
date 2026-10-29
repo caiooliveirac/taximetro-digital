@@ -124,8 +124,24 @@ domínio, não no banco.
 | Leituras de meta/agenda por pergunta | 1 por ferramenta chamada (2–5×) | 1× cada (memo) |
 | Quem calcula descanso, meta, elegibilidade | backend parcial + modelo | backend inteiro |
 
-Os números do "depois" com modelo são estimativa por tamanho do corpo
-(chars/3,6); o log `luna_interno` em produção mede os reais.
+### Avaliação com o modelo real (29/10, `gpt-6-luna`, dado real só leitura)
+
+18 perguntas (as 12 do pedido, seguimentos e fora do tema), interno real com
+USA no sábado e meta completa:
+
+| | Antes (#108, log do LIVE) | Depois (medido) |
+|---|---|---|
+| Diretas (meta, amanhã, descanso, checkout, "fecham minha meta") | 2 chamadas | 0 chamadas, 1–2.000 ms (banco) |
+| Com modelo | 2–4 chamadas, 1,7–2,7 mil tokens, 3–5,7 s | 1 chamada, 1,65–2,0 mil tokens de entrada, 17–61 de saída, 1,4–5 s |
+
+Erros de tradução achados na 1ª rodada e corrigidos no prompt/ferramentas:
+"já tenho plantão sexta" virava bloqueio da sexta; "fim de semana" não
+virava preferência; "dessas" sem lista inventava número; pergunta de regra
+("fecha com uma falta?") ia para ferramenta. Defeitos do backend achados:
+troca no mesmo turno do plantão do interno, turno já começado na sobra da
+grade, reavaliação renumerando a lista ("a primeira" mudava de sentido),
+texto de meta completa e de fila longos demais. Todos com teste de regressão
+em `tests/luna-avaliacao.test.ts`. Na 2ª rodada, as traduções saíram certas.
 
 ## Decidido em 2026-10-29 (depois do #111)
 

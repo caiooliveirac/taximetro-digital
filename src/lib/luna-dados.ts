@@ -20,7 +20,7 @@ import { getRequestableSlots } from "@/lib/slots";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
 import { goalKindOf } from "@/lib/goal-slots";
 import { filaDeReposicao, type Fila } from "@/features/extra-offers/application/fila-de-reposicao";
-import { addDaysToDateStr, operationalDateStr } from "@/lib/utils";
+import { addDaysToDateStr, hasShiftStarted, operationalDateStr } from "@/lib/utils";
 import type { Meta, MeuPlantao, Oferta, Periodo } from "@/lib/luna-inteligencia";
 
 export type LunaCtx = { internId: string; facultyId: string | null; hoje: string };
@@ -139,7 +139,8 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
 
     liberadas: (ate) => lido(`liberadas:${ate}`, async () => {
       if (!ctx.facultyId) return [];
-      const vagas = await listFreeOffers({ excludeFacultyId: ctx.facultyId, from: ctx.hoje, to: ate });
+      const vagas = (await listFreeOffers({ excludeFacultyId: ctx.facultyId, from: ctx.hoje, to: ate }))
+        .filter((v) => !hasShiftStarted(dia(v.date), v.period as Periodo, v.shift));
       return soAsQueCabem(vagas.map((v): Oferta => ({
         fonte: "LIBERADA", id: v.id, baseCode: v.baseCode, tipo: goalKindOf(v.baseType),
         date: dia(v.date), period: v.period as Periodo, shift: v.shift, faculdade: v.releasedFacultyAbbr ?? null,
@@ -157,10 +158,13 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
     grade: () => lido("grade", async () => {
       if (!ctx.facultyId) return [];
       const slots = await getRequestableSlots(ctx.facultyId, ctx.internId);
-      return slots.map((s): Oferta => ({
-        fonte: "GRADE", id: `${s.baseId}|${s.nextDate}|${s.period}`, baseCode: s.baseCode, tipo: goalKindOf(s.baseType),
-        date: dia(s.nextDate), period: s.period as Periodo, shift: null,
-      }));
+      return slots
+        // Turno que já começou não é vaga para pedir.
+        .filter((s) => !hasShiftStarted(dia(s.nextDate), s.period as Periodo, null))
+        .map((s): Oferta => ({
+          fonte: "GRADE", id: `${s.baseId}|${s.nextDate}|${s.period}`, baseCode: s.baseCode, tipo: goalKindOf(s.baseType),
+          date: dia(s.nextDate), period: s.period as Periodo, shift: null,
+        }));
     }),
 
     trocas: () => lido("trocas", async () => {

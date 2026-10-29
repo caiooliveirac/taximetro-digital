@@ -9,6 +9,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { Fontes, LunaCtx } from "../src/lib/luna-dados";
 import type { Fila } from "../src/features/extra-offers/application/fila-de-reposicao";
 import { sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
@@ -155,6 +157,34 @@ test("'Consigo fechar minha meta?' — direto: plano que cobre o que falta, sem 
 // ---------------------------------------------------------------------------
 // Uma chamada ao modelo: ele só traduz o pedido em parâmetros.
 
+test("avaliação real 29/10: 'dessas' sem lista anterior não inventa número", async () => {
+  const { r } = await perguntar("Quais dessas vagas ainda estão abertas?", { passos: [{ tool: { name: "buscar_opcoes", args: { objetivo: "meta", opcoes: [7] } } }] });
+  assert.match(r.texto, /não trouxe uma lista numerada/);
+});
+
+test("avaliação real 29/10: troca nunca oferece o mesmo turno do plantão que ele quer largar", async () => {
+  const mesmo = oferta("TROCA", "TX", "USA", "2026-10-31", "DAY", { quem: "Colega", quemId: "u-x", assignmentId: "a-x" });
+  const { r } = await perguntar("Quero trocar minha USA de sábado", {
+    fx: { trocas: [mesmo, ...TROCAS] },
+    passos: [{ tool: { name: "buscar_opcoes", args: { objetivo: "troca", trocar_data: "2026-10-31" } } }],
+  });
+  assert.doesNotMatch(r.texto, /TX sáb/);
+  assert.match(r.texto, /no mesmo turno do seu plantão/);
+});
+
+test("avaliação real 29/10: meta toda completa responde curto, sem lista de descarte nem fila", async () => {
+  const { r } = await perguntar("Que vagas fecham minha meta?", { fx: { meta: { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } } } });
+  assert.match(r.texto, /^Sua meta já está toda marcada/);
+  assert.doesNotMatch(r.texto, /Deixei de fora|reposição/);
+});
+
+test("prompt: plantão que ele já tem não vira bloqueio; fim de semana vira preferência; regra sem ferramenta", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/lib/luna-interno.ts"), "utf8");
+  assert.match(src, /Plantão que ele já tem NÃO entra/);
+  assert.match(src, /"Fim de semana" = prefere_dias_semana sex, sab, dom/);
+  assert.match(src, /Pergunta de regra/);
+});
+
 test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho sexta", async () => {
   const { r, chamadas, corpos } = await perguntar(
     "Faltam duas USA na minha meta, não posso segunda nem quarta, prefiro noturno e já tenho um plantão sexta. O que você consegue encontrar para mim?",
@@ -253,7 +283,7 @@ test("12. 'Posso pegar vaga mesmo já tendo completado a meta?' — liberada nã
   assert.match(r.texto, /PM01 .*extra/);
   // Nem busca vaga liberada: diz quem está na frente.
   assert.ok(!lidas.includes("liberadas"));
-  assert.match(r.texto, /vai primeiro para quem precisa de reposição: 131 colegas ainda precisam de reposição de USA e há 43 vagas livres nos próximos 10 dias/);
+  assert.match(r.texto, /Vaga liberada vai primeiro para quem precisa de reposição \(hoje: 131 em USA, 112 em CRU, 60 em CRL\)/);
   assert.match(r.texto, /Candidatura abre quando sobrar vaga/);
   assert.ok(!r.cartoes.some((c) => c.itens.some((i) => i.candidatar)));
 });
@@ -290,8 +320,10 @@ test("11/'E a segunda opção?' — reavalia o id guardado, não o texto", async
   const antes = await primeiraLista();
   const { r, corpos } = await perguntar("E a segunda opção?", { antes, passos: [{ tool: { name: "buscar_opcoes", args: { opcoes: [2] } } }] });
   assert.match(corpos[0].messages[0].content, /ÚLTIMA LISTA: 1=grade, 2=liberada/);
-  assert.match(r.texto, /1\. \*\*CB05 qui 05\/11 noite\*\*/);
+  // Mantém o número da lista original e a memória dela: "a primeira" segue sendo a CRLG.
+  assert.match(r.texto, /2\. \*\*CB05 qui 05\/11 noite\*\*/);
   assert.doesNotMatch(r.texto, /CRLG|CB07/);
+  assert.deepEqual(r.memoria?.opcoes?.map((o) => o.n), antes[1].memoria?.opcoes?.map((o) => o.n));
 });
 
 test("'Quais dessas ainda estão abertas?' — a que foi pega aparece como fechada", async () => {

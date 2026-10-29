@@ -70,7 +70,8 @@ export type Motivo =
   | "NAO_CONTA_PARA_META"
   | "TIPO_DIFERENTE"
   | "SEM_PLANTAO_PARA_OFERECER"
-  | "REGRA_DA_TROCA";
+  | "REGRA_DA_TROCA"
+  | "MESMO_TURNO";
 
 export type Bloqueio = { data?: string; diaSemana?: number; periodo?: Periodo };
 
@@ -159,6 +160,7 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
   if (o.date < hoje) return fora("JA_PASSOU", "já passou");
   if (o.date > pedido.ate) return fora("FORA_DA_JANELA", `depois de ${ddmm(pedido.ate)}`);
   if (pedido.tipos?.length && (!o.tipo || !pedido.tipos.includes(o.tipo))) return fora("TIPO_NAO_PEDIDO", `é ${o.tipo ?? "outro tipo"}`);
+  if (o.fonte === "TROCA" && largar && largar.date === o.date && largar.period === o.period) return fora("MESMO_TURNO", "é o mesmo turno do seu plantão");
   const b = bloqueado(o.date, o.period, pedido.bloqueios);
   if (b) return fora("DIA_BLOQUEADO", `você não pode ${descreveBloqueio(b)}`);
   const choque = plantaoSemDescanso({ date: o.date, period: o.period, shift: o.shift, baseCode: o.baseCode }, ocupados);
@@ -180,6 +182,7 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
       // Algum plantão meu do mesmo tipo que eu possa entregar sem ficar sem descanso.
       ofereco = ocupados.find((m) =>
         m.tipo === o.tipo && !m.isExtraShift && m.date >= hoje && ["SCHEDULED", "CONFIRMED"].includes(m.status) &&
+        !(m.date === o.date && m.period === o.period) &&
         !plantaoSemDescanso({ date: o.date, period: o.period, shift: o.shift, baseCode: o.baseCode }, ocupados.filter((x) => x.id !== m.id)),
       ) ?? null;
       if (!ofereco) return fora("SEM_PLANTAO_PARA_OFERECER", `você não tem ${o.tipo} futuro para dar em troca`);
@@ -194,7 +197,8 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
 
   const avisos: string[] = [APROVACAO[o.fonte]];
   if (o.fonte === "EXTRA") avisos.push("não conta para a meta");
-  else if (o.fonte !== "TROCA" && !conta) avisos.push(noRodizio ? "não ajuda a meta (tipo já completo)" : "depois do fim do rodízio");
+  // Só vale dizer "não ajuda a meta" para quem ainda precisa de algum tipo.
+  else if (o.fonte !== "TROCA" && !conta && meta && Object.values(meta.faltam).some((n) => n > 0)) avisos.push(noRodizio ? "não ajuda a meta (tipo já completo)" : "depois do fim do rodízio");
   if (ofereco && !largar) avisos.push(`você daria o ${descreveTurno(ofereco)}`);
   return {
     ...o,
@@ -247,6 +251,7 @@ export function montarPlano(ordenadas: Avaliada[], faltam: Record<GoalKind, numb
 export type Busca = {
   status: "META_COMPLETA" | "OPPORTUNITIES_FOUND" | "PARTIAL" | "NO_OPTIONS" | "INSUFFICIENT_DATA";
   objetivo: Pedido["objetivo"];
+  tipos?: GoalKind[];
   faltam: Record<GoalKind, number> | null;
   fimRodizio: string | null;
   /** Compatíveis, na ordem em que aparecem (plano primeiro). */
@@ -313,6 +318,7 @@ export function buscarOpcoes(ofertas: Oferta[], cx: { meta: Meta | null; meus: M
   return {
     status,
     objetivo: pedido.objetivo,
+    tipos: pedido.tipos,
     faltam: faltamPedidos,
     fimRodizio: meta?.fim ?? null,
     opcoes: [...escolhidos, ...resto],
@@ -344,14 +350,18 @@ export function linhaDaOpcao(a: Avaliada, n: number) {
 
 export const MOSTRAR = 5;
 
-export function textoDaBusca(b: Busca): string {
+/** `numero`: na reavaliação ("e a segunda?"), a opção mantém o número da lista original. */
+export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => number = (_a, i) => i + 1): string {
   const linhas: string[] = [];
   const fim = b.fimRodizio ? ` até ${ddmm(b.fimRodizio)} (fim do rodízio)` : "";
   if (b.sumiram) linhas.push(b.sumiram === 1 ? "Essa opção não está mais aberta — alguém já pegou ou ela saiu da lista." : `${b.sumiram} dessas opções não estão mais abertas.`);
 
   if (b.objetivo === "meta") {
     if (b.status === "INSUFFICIENT_DATA") linhas.push("Não consegui achar sua meta, então não sei o que conta. Confira a aba Início ou fale com o líder.");
-    else if (b.status === "META_COMPLETA") linhas.push("Sua meta já está completa nesse tipo — nada a fechar. Plantão a mais só como extra ou sobra da grade.");
+    else if (b.status === "META_COMPLETA") {
+      const tipos = b.tipos?.length ? `de ${b.tipos.join(" e ")} ` : "";
+      return `Sua meta ${tipos}já está toda marcada — não há casinha vazia para fechar. Plantão a mais? Pergunte "tem extra aberto?" ou "sobrou vaga na grade?".`;
+    }
     else {
       if (b.status === "OPPORTUNITIES_FOUND") linhas.push(`Dá para fechar${fim}: ${b.plano.length === 1 ? "esta opção cobre" : `estas ${b.plano.length} opções cobrem`} o que falta, sem quebrar seu descanso.`);
       else if (b.status === "PARTIAL") linhas.push(`Dá para avançar${fim}, mas ainda ficariam faltando ${faltamEmTexto(b.aindaFaltam!)}.`);
@@ -363,7 +373,7 @@ export function textoDaBusca(b: Busca): string {
     linhas.push(`Achei ${b.totalCompativeis} ${b.totalCompativeis === 1 ? "opção compatível" : "opções compatíveis"}${b.precisamAprovacao ? ` (${b.precisamAprovacao} dependem de aprovação)` : ""}.`);
   }
 
-  b.opcoes.slice(0, MOSTRAR).forEach((a, i) => linhas.push(`- ${linhaDaOpcao(a, i + 1)}`));
+  b.opcoes.slice(0, MOSTRAR).forEach((a, i) => linhas.push(`- ${linhaDaOpcao(a, numero(a, i))}`));
   if (b.opcoes.length > MOSTRAR) linhas.push(`(+${b.opcoes.length - MOSTRAR} outras compatíveis)`);
 
   const descartadas = b.descartes.reduce((s, d) => s + d.n, 0);
@@ -386,6 +396,7 @@ const ROTULO_MOTIVO: Record<Motivo, string> = {
   NAO_CONTA_PARA_META: "que não contam para a meta",
   TIPO_DIFERENTE: "de outro tipo que o seu plantão",
   SEM_PLANTAO_PARA_OFERECER: "sem plantão seu do mesmo tipo para dar",
+  MESMO_TURNO: "no mesmo turno do seu plantão",
   REGRA_DA_TROCA: "barradas pelo lado do colega (descanso, cota de CRU ou pedido pendente)",
 };
 
