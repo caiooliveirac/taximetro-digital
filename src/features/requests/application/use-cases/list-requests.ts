@@ -1,7 +1,9 @@
 import {
   findFacultyInternIds,
   listRequestsRows,
+  type FiltroDePedidos,
 } from "@/features/requests/infra/repositories/request-repository";
+import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 import { shiftAlreadyStarted } from "@/features/requests/domain/request-shift-window";
 import { podeTrocarEntreFaculdades } from "@/shared/domain/policies/cross-faculty-swap-policy";
 
@@ -43,11 +45,21 @@ export async function executeListRequests(params: {
   const { actor, scope, selfOnly = false, internId } = params;
 
   const now = new Date();
-  const rows = (await listRequestsRows()).filter((r) => !isStaleSwap(r, now));
+  const trocasAbertas = scope === "open-swaps" && (actor.role === "INTERN" || actor.role === "LEADER") && Boolean(actor.facultyId);
+  const daFaculdade = !trocasAbertas && !selfOnly && actor.role === "LEADER" && actor.facultyId ? await findFacultyInternIds(actor.facultyId) : null;
+
+  // O mesmo recorte de baixo, já no SQL: a tabela inteira só para a coordenação.
+  let filtro: FiltroDePedidos = {};
+  if (trocasAbertas) filtro = { trocasAbertasDesde: addDaysToDateStr(localDateStr(now), -1) };
+  else if (actor.role === "COORDINATOR" && internId) filtro = { solicitantes: [internId] };
+  else if ((selfOnly && (actor.role === "INTERN" || actor.role === "LEADER")) || actor.role === "INTERN") filtro = { pessoa: actor.id };
+  else if (daFaculdade) filtro = { solicitantes: [...daFaculdade] };
+
+  const rows = (await listRequestsRows(filtro)).filter((r) => !isStaleSwap(r, now));
 
   // Oferta da própria faculdade, de qualquer tipo; de outra faculdade, só USA
   // (ver cross-faculty-swap-policy.ts).
-  if (scope === "open-swaps" && (actor.role === "INTERN" || actor.role === "LEADER") && actor.facultyId) {
+  if (trocasAbertas && actor.facultyId) {
     const facultyInternIds = await findFacultyInternIds(actor.facultyId);
     const filtered = rows.filter((r) =>
       r.type === "SWAP" &&
@@ -63,10 +75,9 @@ export async function executeListRequests(params: {
     filtered = rows.filter((r) => r.requesterId === actor.id || r.targetInternId === actor.id);
   } else if (actor.role === "INTERN") {
     filtered = rows.filter((r) => r.requesterId === actor.id || r.targetInternId === actor.id);
-  } else if (actor.role === "LEADER" && actor.facultyId) {
-    const facultyInternIds = await findFacultyInternIds(actor.facultyId);
+  } else if (daFaculdade) {
     // Pedido de vaga livre acima da meta é decisão da coordenação, não do líder.
-    filtered = rows.filter((r) => facultyInternIds.has(r.requesterId) && r.type !== "FREE_SLOT");
+    filtered = rows.filter((r) => daFaculdade.has(r.requesterId) && r.type !== "FREE_SLOT");
   }
 
   if (actor.role === "COORDINATOR" && internId) {
