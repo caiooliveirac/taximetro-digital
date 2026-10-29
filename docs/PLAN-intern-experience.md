@@ -25,10 +25,15 @@ Dados de produção (2026-10-29):
 - Vagas liberadas USA abertas no futuro: **229** (213 sem dono, 16 manuais).
   Usadas nos últimos 30 dias: 32.
 
-### 2a. Troca com interno de outra faculdade (só USA) — no ar
+### 2a. Troca com interno de outra faculdade (USA e CRU) — no ar
 
-Confirmado pelo Caio em 2026-10-29: só USA. Implementado como abaixo
-(`src/shared/domain/policies/cross-faculty-swap-policy.ts`). Plantão vindo de
+Confirmado pelo Caio em 2026-10-29: primeiro só USA; no mesmo dia, CRU também,
+com a mesma cota de uma troca de CRU por rodízio. CRL segue dentro da
+faculdade. Implementado como abaixo
+(`src/shared/domain/policies/cross-faculty-swap-policy.ts`). Como a CRU não tem
+teto físico, a vaga cedida (liberada ou trocada) passou a sair da grade da
+faculdade dona também em `getRequestableSlots` e `checkSlotAvailability` — antes
+só a view `turnos_livres` descontava —, e a troca não tira o dia do CRU fixo. Plantão vindo de
 troca que a coordenação cancela depois mantém a oferta `TROCA`, igual a vaga
 liberada usada hoje: não existe "devolver" vaga cedida.
 

@@ -14,6 +14,7 @@
  * plantão meu ele aceita em troca.
  */
 import { hasShiftStarted } from "@/lib/utils";
+import { podeTrocarEntreFaculdades } from "./cross-faculty-swap-policy";
 import { plantaoSemDescanso, turnosColados, type TurnoDePlantao } from "./rest-policy";
 import type { SinalMarcado } from "./day-signal-policy";
 
@@ -187,7 +188,7 @@ function avaliarPelasRegras(oferta: OfertaAberta, internId: string, ctx: Context
   const mesmoTipo = meus.filter(
     (p) => p.baseType === o.baseType && Boolean(p.shift) === Boolean(o.shift) &&
       plantaoTrocavel(p, ctx.agora) && !ctx.bloqueados.has(p.id) &&
-      (p.facultyId === o.facultyId || o.baseType === "USA"),
+      (p.facultyId === o.facultyId || podeTrocarEntreFaculdades(o.baseType)),
   );
   if (mesmoTipo.length === 0) {
     return fora(`Você não tem plantão de ${TIPO[o.baseType] ?? o.baseType} livre para dar em troca.`);
@@ -257,11 +258,11 @@ function avaliarPelasRegras(oferta: OfertaAberta, internId: string, ctx: Context
 
 /**
  * Mesmo recorte do mural de hoje (list-requests.ts): oferta da própria
- * faculdade, de qualquer tipo; de outra faculdade, só USA.
+ * faculdade, de qualquer tipo; de outra faculdade, USA ou CRU.
  */
 export function visivelPara(oferta: OfertaAberta, internId: string, faculdades: Set<string>): boolean {
   if (oferta.plantao.internId === internId) return false;
-  return oferta.plantao.baseType === "USA" || faculdades.has(oferta.plantao.facultyId);
+  return podeTrocarEntreFaculdades(oferta.plantao.baseType) || faculdades.has(oferta.plantao.facultyId);
 }
 
 export type Interessado = { internId: string; nome: string; sinal: "QUERO" | "POSSO"; perfeita: boolean };
