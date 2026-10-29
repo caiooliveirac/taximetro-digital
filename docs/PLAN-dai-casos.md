@@ -157,7 +157,9 @@ Registro de "abriu a ficha": evento no `audit_log` (`DAI_FICHA_ABERTA`,
 
 ## Fases
 
-1. **Tentar um caso**: exportar as 60 (sem o título no cartão fechado, MINOCA
+1. **Tentar um caso** — no ar desde 2026-10-29 (`src/content/dai-casos.json`,
+   `src/lib/dai-casos.ts`, `src/lib/dai-temas.ts`, `api/intern/casos`, atalho
+   "Discutir um caso" no Dai; evento `DAI_CASO_ABERTO` com `payload.caso`): exportar as 60 (sem o título no cartão fechado, MINOCA
    corrigida), tema no roteador do Dai, cartão com tentativa obrigatória e
    depois "Ver resposta". Atalho "Tentar um caso". Custo de modelo: 0.
 2. **Fichas de plantão** para os 6 temas que mais aparecem: PCR, trauma,

@@ -2,16 +2,19 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeftRight, CalendarClock, Loader2, MapPin, RotateCcw, Send, Sparkles, Target, Ticket, Zap } from "lucide-react";
+import { ArrowLeftRight, CalendarClock, Loader2, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Target, Ticket, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LunaCartao, LunaMemoria } from "@/lib/luna-ferramentas";
+import type { CasoAberto, CasoFechado, TemaResumo } from "@/lib/dai-casos";
+import { pedidoDeCaso, rotuloDoTema } from "@/lib/dai-temas";
 
-type Msg = { role: "user" | "assistant"; content: string; cartoes?: LunaCartao[]; erro?: boolean; memoria?: LunaMemoria };
+type Msg = { role: "user" | "assistant"; content: string; cartoes?: LunaCartao[]; erro?: boolean; memoria?: LunaMemoria; temas?: TemaResumo[]; caso?: CasoFechado };
 
 const GUARDA = "luna-interno-conversa";
 
 // Os atalhos caem no caminho direto do Dai (sem modelo): ver luna-roteador.ts.
+// "Discutir um caso" nem passa pelo Dai de plantões: é texto pronto (dai-casos.ts).
 const ATALHOS = [
   { icone: Sparkles, rotulo: "Consigo fechar minha meta?", pergunta: "Consigo fechar minha meta?" },
   { icone: Target, rotulo: "Quanto falta pra minha meta?", pergunta: "Quanto falta para fechar minha meta?" },
@@ -19,6 +22,7 @@ const ATALHOS = [
   { icone: ArrowLeftRight, rotulo: "Quero trocar um plantão", pergunta: "Quero trocar um plantão: que trocas servem pra mim?" },
   { icone: Zap, rotulo: "Tem extra aberto?", pergunta: "Tem plantão extra aberto pra mim?" },
   { icone: CalendarClock, rotulo: "Meus próximos plantões", pergunta: "Quais são meus próximos plantões?" },
+  { icone: Stethoscope, rotulo: "Discutir um caso", pergunta: "Quero discutir um caso" },
 ] as const;
 
 /** **negrito** e listas com "- ", sem HTML do modelo. */
@@ -82,6 +86,97 @@ function Cartao({ cartao }: { cartao: LunaCartao }) {
   );
 }
 
+function TemasCartao({ temas, escolher }: { temas: TemaResumo[]; escolher: (tema: string) => void }) {
+  return (
+    <section className="flex flex-wrap gap-2">
+      {temas.map((t) => (
+        <button
+          key={t.tema}
+          type="button"
+          onClick={() => escolher(t.tema)}
+          className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 hover:ring-accent-300"
+        >
+          {t.rotulo} <span className="text-slate-400">{t.vistos}/{t.total}</span>
+        </button>
+      ))}
+    </section>
+  );
+}
+
+const TENTATIVA_MIN = 40;
+
+/** Fechado: só tema, nível e estímulo. O nome do caso entrega o diagnóstico, por isso só vem depois. */
+function CasoCartao({ caso, outro }: { caso: CasoFechado; outro: (tema: string, pular: string) => void }) {
+  const [tentativa, setTentativa] = useState("");
+  const [aberto, setAberto] = useState<CasoAberto | null>(null);
+  const [abrindo, setAbrindo] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const falta = TENTATIVA_MIN - tentativa.trim().length;
+
+  async function verResposta() {
+    setAbrindo(true);
+    setErro(null);
+    const r = await fetch("/taximetro/api/intern/casos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: caso.id, tentativa }),
+    }).catch(() => null);
+    const j = r ? await r.json().catch(() => null) : null;
+    setAbrindo(false);
+    if (j?.success) setAberto(j.data.caso);
+    else setErro(j?.error ?? "Sem conexão. Tente de novo.");
+  }
+
+  return (
+    <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Caso · {caso.rotulo} · nível {caso.nivel}
+      </h3>
+      <p className="whitespace-pre-line">{caso.estimulo}</p>
+      {!aberto ? (
+        <div className="space-y-2">
+          <textarea
+            value={tentativa}
+            onChange={(e) => setTentativa(e.target.value)}
+            maxLength={4000}
+            rows={4}
+            placeholder="Sua conduta: o que você faz e por quê"
+            className="w-full rounded-xl border border-slate-200 p-2 text-sm outline-none focus:border-accent-300"
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-500">{falta > 0 ? `Escreva mais ${falta} caracteres para ver a resposta.` : "Pronto para comparar."}</span>
+            <Button type="button" size="sm" disabled={falta > 0 || abrindo} onClick={verResposta}>
+              {abrindo ? <Loader2 className="h-4 w-4 animate-spin" /> : "Ver resposta"}
+            </Button>
+          </div>
+          {erro ? <p className="text-xs text-amber-700">{erro}</p> : null}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="rounded-xl bg-slate-50 p-2">
+            <p className="text-xs font-semibold text-slate-500">Sua conduta</p>
+            <p className="whitespace-pre-line">{tentativa.trim()}</p>
+          </div>
+          <p className="font-semibold text-slate-900">Era: {aberto.nome}</p>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Armadilha</p>
+            <p>{aberto.armadilha}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resposta</p>
+            <Texto texto={aberto.resposta} />
+          </div>
+          <p className="italic text-slate-600">{aberto.fechamento}</p>
+          <p className="text-xs text-slate-500">Referência: {aberto.referencia}</p>
+          <button type="button" onClick={() => outro(caso.tema, caso.id)} className="text-xs font-semibold text-accent-600">
+            Outro caso de {caso.rotulo} →
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function LunaPage() {
   const [conversa, setConversa] = useState<Msg[]>([]);
   const [texto, setTexto] = useState("");
@@ -107,12 +202,37 @@ export default function LunaPage() {
     fim.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [conversa, pensando]);
 
+  async function casos(nova: Msg[], tema: string | null, pular?: string) {
+    setPensando(true);
+    const qs = tema ? `?tema=${encodeURIComponent(tema)}${pular ? `&pular=${encodeURIComponent(pular)}` : ""}` : "";
+    const r = await fetch(`/taximetro/api/intern/casos${qs}`).catch(() => null);
+    const j = r ? await r.json().catch(() => null) : null;
+    setPensando(false);
+    setConversa([
+      ...nova,
+      !j?.success
+        ? { role: "assistant", content: j?.error ?? "Sem conexão. Tente de novo.", erro: true }
+        : j.data.caso
+          ? { role: "assistant", content: "Escreva sua conduta antes de ver a resposta. Texto de diretriz, sem IA.", caso: j.data.caso }
+          : { role: "assistant", content: "Qual tema? O número é quantos casos você já abriu.", temas: j.data.temas },
+    ]);
+  }
+
+  function pedirCaso(tema: string, pular?: string) {
+    if (pensando) return;
+    const nova = [...conversa, { role: "user" as const, content: `${pular ? "Outro caso" : "Caso"} de ${rotuloDoTema(tema)}` }];
+    setConversa(nova);
+    casos(nova, tema, pular);
+  }
+
   async function perguntar(pergunta: string) {
     const conteudo = pergunta.trim();
     if (!conteudo || pensando) return;
     const nova = [...conversa, { role: "user" as const, content: conteudo }];
     setConversa(nova);
     setTexto("");
+    const tema = pedidoDeCaso(conteudo);
+    if (tema !== undefined) return casos(nova, tema);
     setPensando(true);
     const r = await fetch("/taximetro/api/intern/luna", {
       method: "POST",
@@ -168,7 +288,7 @@ export default function LunaPage() {
             <button
               key={a.rotulo}
               type="button"
-              disabled={ligada === false || pensando}
+              disabled={(ligada === false && pedidoDeCaso(a.pergunta) === undefined) || pensando}
               onClick={() => perguntar(a.pergunta)}
               className="flex flex-col items-start gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-left text-sm font-medium text-slate-800 shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition hover:border-accent-300 active:scale-[0.98] disabled:opacity-50"
             >
@@ -190,6 +310,8 @@ export default function LunaPage() {
                   <Texto texto={m.content} />
                 </div>
                 {m.cartoes?.map((c) => <Cartao key={c.tipo} cartao={c} />)}
+                {m.temas ? <TemasCartao temas={m.temas} escolher={(t) => pedirCaso(t)} /> : null}
+                {m.caso ? <CasoCartao key={m.caso.id} caso={m.caso} outro={pedirCaso} /> : null}
               </div>
             ),
           )}
