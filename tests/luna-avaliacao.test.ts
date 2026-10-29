@@ -75,7 +75,7 @@ function fontes(fx: Fixture = {}) {
     meta: le("meta", fx.meta === undefined ? META : fx.meta),
     meusPlantoes: le("meus", fx.meus ?? MEUS),
     fila: le("fila", fx.fila ?? FILA),
-    bases: le("bases", [{ code: "CB02", name: "Base Cabula" }, { code: "PM04", name: "Base Pituba" }, { code: "PR03", name: "Base Periperi" }]),
+    bases: le("bases", [{ code: "CB02", name: "Base Cabula" }, { code: "PM04", name: "Base Pau Miúdo" }, { code: "PM40", name: "Base Pau Miúdo (2)" }, { code: "PR03", name: "Base Periperi" }]),
     situacaoDoTurno: async (codigo, inicio) => {
       lidas.push(`plantoes:${codigo}:${inicio.toISOString()}`);
       return fx.situacao ?? { consultado: true, chegaram: [], saindo: [], desativada: null };
@@ -210,6 +210,18 @@ test("'A Cabula vai ativar no dia 30/12 à noite?' — turno futuro: médico pre
   assert.equal(chamadas, 0);
   assert.match(r.texto, /^CB02, qua 30\/12 noite: Pela escala médica, o previsto é Dr\(a\)\. Carla M\./);
   assert.ok(lidas.some((l) => l.startsWith("plantoes:CB02:2026-12-30T22")));
+});
+
+test("base pelo nome: duas viaturas no mesmo endereço pede qual; nome desconhecido diz as bases", async () => {
+  const duas = await perguntar("A Pau Miúdo vai ativar?", { fx: { meus: [] } });
+  assert.match(duas.r.texto, /A Pau Miúdo tem 2 viaturas: PM04 e PM40\. Qual delas\?/);
+  // Plantão dele numa delas: é essa.
+  const dele = await perguntar("A Pau Miúdo vai ativar?", { fx: { meus: [{ ...MEUS[3], id: "pm", baseCode: "PM40", date: "2026-11-20" }] } });
+  assert.match(dele.r.texto, /PM40/);
+  const pituba = await perguntar("Vou cobrir na Pituba sábado à noite, vai ter médico?", {
+    passos: [{ tool: { name: "situacao_da_base", args: { base: "Pituba", periodo: "noite" } } }],
+  });
+  assert.match(pituba.r.texto, /^Não conheço a base "Pituba"\. As bases são: CB02 \(Cabula\), PM04 \(Pau Miúdo\)/);
 });
 
 test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho sexta", async () => {

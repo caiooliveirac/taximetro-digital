@@ -448,7 +448,8 @@ export const FERRAMENTAS: {
       // Vira texto e passa pelo mesmo leitor da pergunta direta.
       const data = typeof args.data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.data) ? `${args.data.slice(8, 10)}/${args.data.slice(5, 7)}` : "";
       const periodo = args.periodo === "noite" ? "noite" : args.periodo === "dia" ? "de dia" : "";
-      return situacaoDaBase(f, ctx, [typeof args.base === "string" ? args.base : "", data, periodo].join(" "));
+      const base = typeof args.base === "string" ? args.base : "";
+      return situacaoDaBase(f, ctx, [base, data, periodo].join(" "), new Date(), base);
     },
   },
 ];
@@ -456,17 +457,28 @@ export const FERRAMENTAS: {
 const semAcentoMaiusculo = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
 /** "Estou na base tal, vai ativar?" — a base citada (código ou nome) ou a do plantão dele. */
-export async function situacaoDaBase(f: Fontes, ctx: LunaCtx, texto: string, now: Date = new Date()): Promise<Resultado> {
+export async function situacaoDaBase(f: Fontes, ctx: LunaCtx, texto: string, now: Date = new Date(), baseDita = ""): Promise<Resultado> {
   const [lista, meus] = await Promise.all([f.bases(), f.meusPlantoes()]);
   const t = semAcentoMaiusculo(texto);
   const codigo = t.match(/\b([A-Z]{2})\s?(\d{2})\b/);
-  const citada =
-    (codigo && lista.find((b) => b.code === `${codigo[1]}${codigo[2]}`)?.code) ||
-    lista.find((b) => {
-      const nome = semAcentoMaiusculo(b.name).replace(/^BASE\s+/, "").trim();
-      return nome.length >= 4 && t.includes(nome);
-    })?.code ||
-    null;
+  // "Base Pau Miúdo (2)" é a segunda viatura do mesmo endereço: o nome é o mesmo.
+  const nomeDe = (b: { name: string }) => semAcentoMaiusculo(b.name).replace(/^BASE\s+/, "").replace(/\s*\(\d\)\s*$/, "").trim();
+  const porNome = lista.filter((b) => nomeDe(b).length >= 4 && t.includes(nomeDe(b)));
+  const exibido = (b: { name: string }) => b.name.replace(/^Base\s+/i, "").replace(/\s*\(\d\)\s*$/, "").trim();
+  let citada = (codigo && lista.find((b) => b.code === `${codigo[1]}${codigo[2]}`)?.code) || null;
+  if (!citada && porNome.length === 1) citada = porNome[0].code;
+  if (!citada && porNome.length > 1) {
+    // Duas viaturas no mesmo endereço: vale a do plantão dele, se for uma delas.
+    const dele = ativos(meus).filter((m) => m.date >= ctx.hoje).find((m) => porNome.some((b) => b.code === m.baseCode));
+    if (dele) citada = dele.baseCode;
+    else {
+      return { status: "INSUFFICIENT_DATA", registros: 0, texto: `A ${exibido(porNome[0])} tem ${porNome.length} viaturas: ${porNome.map((b) => b.code).join(" e ")}. Qual delas?` };
+    }
+  }
+  if (!citada && baseDita.trim()) {
+    const usa = lista.filter((b) => /^[A-Z]{2}\d{2}$/.test(b.code));
+    return { status: "INSUFFICIENT_DATA", registros: 0, texto: `Não conheço a base "${baseDita.trim()}". As bases são: ${usa.map((b) => `${b.code} (${exibido(b)})`).join(", ")}.` };
+  }
   const { baseCode, turno } = baseETurno(meus, now, citada, turnoPedido(texto, now));
   if (!baseCode) {
     return { status: "INSUFFICIENT_DATA", registros: 0, texto: "Não achei plantão seu agora. Diga a base (ex.: \"estou na CB02, vai ativar?\")." };
