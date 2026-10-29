@@ -2,7 +2,7 @@
  * /api/intern/luna — pergunta à Luna (ver src/lib/luna-interno.ts).
  *
  * GET  → { ligada } (sem OPENAI_API_KEY a tela mostra só os atalhos)
- * POST → { mensagens: [{ role, content }] } → { texto, cartoes }
+ * POST → { mensagens: [{ role, content, memoria? }] } → { texto, cartoes, memoria }
  *
  * Teto por pessoa: 40 perguntas por dia e uma de cada vez — custo do modelo.
  */
@@ -14,9 +14,22 @@ import { lunaLigada, perguntarLuna } from "@/lib/luna-interno";
 import { checkRateLimit } from "@/shared/infra/rate-limit";
 import { localDateStr } from "@/lib/utils";
 
+// Memória da conversa: só referências (número → fonte + id) e os parâmetros da
+// última busca. As ferramentas revalidam cada id contra a lista atual do
+// próprio interno, então um id forjado aqui não mostra nada alheio.
+const memoria = z
+  .object({
+    busca: z.record(z.string(), z.unknown()).optional(),
+    opcoes: z
+      .array(z.object({ n: z.number().int().min(1).max(20), fonte: z.enum(["LIBERADA", "EXTRA", "GRADE", "TROCA"]), id: z.string().max(120) }))
+      .max(12)
+      .optional(),
+  })
+  .optional();
+
 const pedido = z.object({
   mensagens: z
-    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(2000) }))
+    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(2000), memoria }))
     .min(1)
     .max(20),
 });
