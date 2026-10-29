@@ -64,7 +64,7 @@ export function InternDaySheet({ open, dateStr, assignments, onClose, colisoes }
       <div className="relative z-10 w-full max-w-lg animate-in slide-in-from-bottom rounded-t-2xl bg-white shadow-xl duration-200 pointer-events-auto flex flex-col">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3 shrink-0">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold capitalize text-slate-900">{humanDate}</p>
+            <p className="truncate text-sm font-semibold text-slate-900 first-letter:uppercase">{humanDate}</p>
             <p className="text-xs text-slate-500">
               {assignments.length} plantão{plural ? "ões" : ""}
             </p>
