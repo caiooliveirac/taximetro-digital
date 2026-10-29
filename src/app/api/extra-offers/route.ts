@@ -4,7 +4,8 @@ import {
   listExtraOffers,
   listExtraOffersForAdmin,
 } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
-import { vagasNaRepescagem } from "@/features/extra-offers/application/repescagem";
+import { comExtraNoHistorico, vagasNaRepescagem } from "@/features/extra-offers/application/repescagem";
+import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import {
   executePublishExtraOffer,
   publishExtraOfferSchema,
@@ -44,14 +45,20 @@ export async function GET(req: NextRequest) {
     ? await listExtraOffersForAdmin()
     : await listExtraOffers({ includeUnavailable });
 
-  // Vaga livre a menos de 8h do turno também é extra para o interno (repescagem.ts).
-  const repescagem = user.role === "INTERN" && !includeUnavailable && user.facultyId
-    ? (await vagasNaRepescagem(user.facultyId)).map((v) => ({
+  // Vaga livre a menos de 8h do turno também é extra para o interno
+  // (repescagem.ts). Quem já teve extra só vê as do tipo que ainda falta na meta.
+  let vagas = user.role === "INTERN" && !includeUnavailable && user.facultyId ? await vagasNaRepescagem(user.facultyId) : [];
+  if (vagas.length && !user.isImpersonating && (await comExtraNoHistorico([user.id])).has(user.id)) {
+    const { data } = await executeGetComplianceOverview({ actor: { id: "", role: "COORDINATOR", facultyId: null }, internId: user.id });
+    const r = data.find((x) => x.userId === user.id);
+    const falta = { USA: r?.missingUSA ?? 0, CRU: r?.missingCRU ?? 0, CRL: r?.missingCRL ?? 0 };
+    vagas = vagas.filter((v) => v.tipo && falta[v.tipo] > 0);
+  }
+  const repescagem = vagas.map((v) => ({
       id: v.id, baseId: v.baseId, baseCode: v.baseCode, baseName: v.baseName, baseType: v.baseType,
       date: v.date, period: v.period, shift: v.shift, facultyId: null, facultyAbbreviation: null, notes: null,
       publishedAt: null, repescagem: true, liberadaPor: v.releasedFacultyAbbr ?? null,
-    }))
-    : [];
+    }));
 
   return NextResponse.json({ success: true, data: [...repescagem, ...rows] });
 }

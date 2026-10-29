@@ -10,7 +10,8 @@
  *    nos próximos 7 dias e quantos internos ainda precisam.
  *  - repescagem: vaga livre que segue aberta 8h antes do turno virou extra
  *    (repescagem.ts): vai a quem ainda precisa do tipo e a quem marcou Quero
- *    no turno, uma vez por vaga para cada interno, com "pega direto".
+ *    no turno sem nunca ter tido extra, uma vez por vaga para cada interno,
+ *    com "pega direto".
  *  - trocas:  oferta de troca que apareceu num turno em que o interno marcou
  *    Quero/Posso no calendário e que ele consegue fechar (swap-match-policy.ts).
  *    Feature `avisoDeTrocas`: desligada até o texto ser aprovado; `?dry=1`
@@ -27,7 +28,7 @@ import { assignments, auditLog, bases, cohorts, extraShiftOffers, faculties, int
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import { AUDIT_CASO_ABERTO } from "@/lib/dai-casos";
 import { internDaySignals } from "@/db/schema";
-import { naRepescagem } from "@/features/extra-offers/application/repescagem";
+import { comExtraNoHistorico, naRepescagem } from "@/features/extra-offers/application/repescagem";
 import { GOAL_KINDS, goalKindOf, type GoalKind } from "@/lib/goal-slots";
 import { quando } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr, hasShiftStarted, localDateStr } from "@/lib/utils";
@@ -274,8 +275,10 @@ async function avisarRepescagem(now: Date, dry: boolean): Promise<ResultadoDosAv
     const turno = `${dia(s.date)}|${s.period}`;
     if (s.signal === "QUERO" && turnosAbertos.has(turno)) quer.set(s.internId, (quer.get(s.internId) ?? new Set()).add(turno));
   }
+  // Quero de quem já teve extra não conta: a vaga como extra é de quem ainda não teve.
+  const jaTeveExtra = await comExtraNoHistorico([...quer.keys()]);
   const internos = todos
-    .map((i) => ({ ...i, quer: quer.get(i.userId) }))
+    .map((i) => ({ ...i, quer: jaTeveExtra.has(i.userId) ? undefined : quer.get(i.userId) }))
     .filter((i) => i.quer || GOAL_KINDS.some((k) => tiposAbertos.has(k) && i.faltam[k] > 0));
   if (!internos.length) return { tipo: "repescagem", enviados: 0, considerados: vagas.length, dry };
 

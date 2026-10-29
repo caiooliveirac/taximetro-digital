@@ -109,7 +109,7 @@ export default function InternExtrasPage() {
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" strokeWidth={2} />
         <div className="text-xs text-amber-800">
           <strong>Atenção:</strong> Plantões extras <strong>não contabilizam carga horária obrigatória</strong> da rotação. São oportunidades adicionais fora da escala regular.
-          {" "}A exceção é a <strong>vaga livre de última hora</strong>: se ainda falta esse tipo na sua meta, ela conta.
+          {" "}A exceção é a <strong>vaga livre de última hora</strong>: se ainda falta esse tipo na sua meta, ela conta. Como extra, é uma por interno: quem já teve extra só vê as que contam na meta.
         </div>
       </div>
 

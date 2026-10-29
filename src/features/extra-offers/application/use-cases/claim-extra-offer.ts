@@ -13,7 +13,7 @@ import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 import { findPendingFreeSlotRequest, insertRequest } from "@/features/requests/infra/repositories/request-repository";
 import { semDescansoPara } from "@/features/scheduling/application/descanso";
 import { metaDoInternoNoTipo, textoMetaCumprida } from "./free-slot-goal";
-import { naRepescagem } from "../repescagem";
+import { comExtraNoHistorico, naRepescagem, TEXTO_JA_TEVE_EXTRA } from "../repescagem";
 import { soAsQueCabem } from "../lotacao";
 import { goalKindOf } from "@/lib/goal-slots";
 
@@ -188,6 +188,11 @@ export async function executeClaimExtraOffer(params: {
   // não conta na meta, como o extra comum.
   const metaNaRepescagem = repescagem && baseDaVaga ? await metaDoInternoNoTipo(internId, baseDaVaga.type) : null;
   const comoExtra = !vagaLivre || Boolean(metaNaRepescagem?.cumprida);
+  // Extra de última hora é um por interno: quem já teve não ganha outro por
+  // ter visto primeiro. A coordenação decide por fora dessa trava.
+  if (repescagem && comoExtra && actor.role !== "COORDINATOR" && !params.isImpersonating && (await comExtraNoHistorico([internId])).has(internId)) {
+    return { status: 409, body: { success: false, code: "JA_TEVE_EXTRA", error: `${alocandoOutro ? "O interno" : "Você"} ${TEXTO_JA_TEVE_EXTRA}` } } as const;
+  }
 
   // Vaga livre é para quem precisa: o líder só escala sozinho interno abaixo
   // da meta do tipo da vaga. Acima disso, só com aprovação da coordenação.

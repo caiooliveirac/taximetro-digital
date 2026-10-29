@@ -11,12 +11,17 @@
  *
  * Continua valendo: 12h de descanso, lugar na viatura (lotacao.ts) e a
  * faculdade que liberou não pega. Quem ainda tem casinha vazia no tipo ganha
- * plantão da meta; quem já fechou, plantão extra (não conta na meta).
+ * plantão da meta; quem já fechou, plantão extra (não conta na meta) — mas só
+ * se nunca teve extra: quem já tem um no histórico não leva outro só por ter
+ * visto primeiro.
  *
  * Nada muda no banco: a janela sai do horário. A regra é pura, para teste;
  * vagasNaRepescagem, no fim, é a leitura que a aba Extras e a Dai usam.
  */
 
+import { and, eq, inArray, ne } from "drizzle-orm";
+import { db } from "@/db";
+import { assignments } from "@/db/schema";
 import { listFreeOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import { goalKindOf } from "@/lib/goal-slots";
 import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted, localDateStr, type ShiftPeriod } from "@/lib/utils";
@@ -60,3 +65,15 @@ export async function vagasNaRepescagem(facultyId: string, now: Date = new Date(
     .map((v) => ({ ...v, date: String(v.date).slice(0, 10), period: v.period as ShiftPeriod, tipo: goalKindOf(v.baseType) }))
     .filter((v) => naRepescagem(v.date, v.period, v.shift, now)));
 }
+
+/** Dos internos, os que já têm plantão extra no histórico (não cancelado, inclusive agendado). */
+export async function comExtraNoHistorico(internIds: string[]): Promise<Set<string>> {
+  if (!internIds.length) return new Set();
+  const rows = await db
+    .selectDistinct({ id: assignments.internId })
+    .from(assignments)
+    .where(and(inArray(assignments.internId, internIds), eq(assignments.isExtraShift, true), ne(assignments.status, "CANCELLED")));
+  return new Set(rows.map((r) => r.id));
+}
+
+export const TEXTO_JA_TEVE_EXTRA = "já tem um plantão extra no histórico: a vaga de última hora fica para quem precisa da meta ou ainda não teve extra.";

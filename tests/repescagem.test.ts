@@ -57,7 +57,7 @@ test("texto: pega direto na aba Extras, sem o líder, e conta na meta se falta",
   const t = textoRepescagem([{ baseCode: "CB02", quando: "sex 30/10 noite", tipo: "USA", liberadaPor: null }]);
   assert.match(t, /- CB02 sex 30\/10 noite \(USA, sem dono\)/);
   assert.match(t, /pega direto na aba Extras, sem passar pelo líder/);
-  assert.match(t, /conta na meta; se já fechou, entra como extra/);
+  assert.match(t, /conta na meta; se já fechou, entra como extra — um por interno/);
 });
 
 const meta = (usa: number): Meta => ({ faculdade: "X", inicio: "2026-10-01", fim: "2026-11-30", alvo: { USA: 8, CRU: 4, CRL: 4 }, faltam: { USA: usa, CRU: 0, CRL: 0 }, realizados: 0, faltas: 0 });
@@ -70,6 +70,10 @@ test("Dai no chat: na repescagem a vaga é de pegar direto, até de meta fechada
   assert.match(fechada.opcoes[0].porque, /pega direto na aba Extras.*não conta para a meta/);
   const precisa = buscarOpcoes([liberada(true)], { meta: meta(2), meus: [], pedido, hoje: "2026-10-30" });
   assert.equal(precisa.opcoes[0].contaParaMeta, true);
+  // Já teve extra: de meta fechada não leva; precisando do tipo, leva.
+  const jaTeve = { ...meta(0), jaTemExtra: true };
+  assert.equal(buscarOpcoes([liberada(true)], { meta: jaTeve, meus: [], pedido, hoje: "2026-10-30" }).opcoes.length, 0);
+  assert.equal(buscarOpcoes([liberada(true)], { meta: { ...meta(1), jaTemExtra: true }, meus: [], pedido, hoje: "2026-10-30" }).opcoes[0]?.status, "ELIGIBLE");
   // Fora da repescagem segue a regra antiga: meta fechada não vê vaga liberada.
   assert.equal(buscarOpcoes([liberada(false)], { meta: meta(0), meus: [], pedido, hoje: "2026-10-30" }).opcoes.length, 0);
 });
@@ -79,5 +83,9 @@ test("servidor: interno só se escala em vaga livre na repescagem, e a viatura c
   assert.match(claim, /vagaLivre && !repescagem && actor\.role === "INTERN"/);
   assert.match(claim, /code: "BASE_CHEIA"/);
   assert.match(claim, /isExtraShift: comoExtra/);
+  // Quem já teve extra não leva outro como extra só por ter visto primeiro.
+  const trava = claim.indexOf('code: "JA_TEVE_EXTRA"');
+  assert.ok(trava > 0 && trava < claim.indexOf("isExtraShift: comoExtra"), "trava antes de gravar");
+  assert.match(claim, /repescagem && comoExtra && actor\.role !== "COORDINATOR"[^\n]*comExtraNoHistorico\(\[internId\]\)/);
   assert.match(ler("scripts/container-entrypoint.sh"), /trigger-dai-avisos\.mjs repescagem/);
 });

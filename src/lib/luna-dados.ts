@@ -18,7 +18,7 @@ import { findInternOverCruQuota, findSwapRestConflict } from "@/features/request
 import { findPendingRequestByAssignment } from "@/features/requests/infra/repositories/request-repository";
 import { getRequestableSlots } from "@/lib/slots";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
-import { naRepescagem } from "@/features/extra-offers/application/repescagem";
+import { comExtraNoHistorico, naRepescagem } from "@/features/extra-offers/application/repescagem";
 import { goalKindOf } from "@/lib/goal-slots";
 import { situacaoDoTurnoNaBase, type SituacaoDoTurno } from "@/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import { medicosPrevistos, type MedicosPrevistos } from "@/features/scheduling/infra/repositories/escala-medica-repository";
@@ -85,6 +85,7 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
         faltam: { USA: r.missingUSA, CRU: r.missingCRU, CRL: r.missingCRL },
         realizados: r.totalCompleted,
         faltas: r.totalAbsent,
+        jaTemExtra: (await comExtraNoHistorico([ctx.internId])).has(ctx.internId),
       } satisfies Meta;
     }),
 

@@ -38,6 +38,8 @@ export type Meta = {
   faltam: Record<GoalKind, number>;
   realizados: number;
   faltas: number;
+  /** Já tem plantão extra no histórico: não leva vaga de última hora como extra (repescagem.ts). */
+  jaTemExtra?: boolean;
 };
 
 export type Oferta = {
@@ -168,6 +170,9 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
   const choque = plantaoSemDescanso({ date: o.date, period: o.period, shift: o.shift, baseCode: o.baseCode }, ocupados);
   if (choque) return fora("SEM_DESCANSO", `sem 12h de descanso por causa do seu ${descreveTurno(choque)}`);
 
+  if (o.repescagem && faltaDoTipo <= 0 && meta?.jaTemExtra) {
+    return fora("META_DO_TIPO_FECHADA", "vaga de última hora: você já teve um extra, fica para quem precisa da meta ou ainda não teve");
+  }
   if (o.fonte === "LIBERADA" && faltaDoTipo <= 0 && !o.repescagem) {
     if (pedido.objetivo !== "meta" && o.tipo && pedido.candidatura?.includes(o.tipo)) {
       return { ...o, status: "REQUIRES_APPROVAL", motivo: null, porque: "candidatura: a coordenação decide (sua meta do tipo já fechou)", contaParaMeta: false, candidatura: true };
