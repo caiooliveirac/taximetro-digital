@@ -1,4 +1,7 @@
-# Luna do interno — arquitetura e catálogo de dados
+# Dai (ex-Luna) do interno — arquitetura e catálogo de dados
+
+Nome visível desde 2026-10-29: **Dai** (a Central do SAMU já tem a sua Luna).
+Arquivos, rota `/intern/luna`, tipos e o log `luna_interno` mantêm o nome antigo.
 
 Verificado em 2026-10-29 contra o banco de produção (role `leitor`, só
 catálogo e SELECT) e contra o código em `master`.

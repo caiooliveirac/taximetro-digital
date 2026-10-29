@@ -11,7 +11,7 @@ type Msg = { role: "user" | "assistant"; content: string; cartoes?: LunaCartao[]
 
 const GUARDA = "luna-interno-conversa";
 
-// Os atalhos caem no caminho direto da Luna (sem modelo): ver luna-roteador.ts.
+// Os atalhos caem no caminho direto do Dai (sem modelo): ver luna-roteador.ts.
 const ATALHOS = [
   { icone: Sparkles, rotulo: "Consigo fechar minha meta?", pergunta: "Consigo fechar minha meta?" },
   { icone: Target, rotulo: "Quanto falta pra minha meta?", pergunta: "Quanto falta para fechar minha meta?" },
@@ -139,20 +139,20 @@ export default function LunaPage() {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <h1 className="text-2xl font-semibold text-slate-900">Luna</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">Dai</h1>
             {!vazia ? (
               <button type="button" onClick={() => setConversa([])} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
                 <RotateCcw className="h-3.5 w-3.5" /> Nova conversa
               </button>
             ) : null}
           </div>
-          <p className="text-sm text-slate-500">Achar plantão, trocar, fechar a meta. Ela consulta seus dados e aponta onde resolver.</p>
+          <p className="text-sm text-slate-500">Achar plantão, trocar, fechar a meta. Ele consulta seus dados e aponta onde resolver.</p>
         </div>
       </div>
 
       {ligada === false ? (
         <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p>A Luna está desligada agora. O mesmo caminho, à mão:</p>
+          <p>O Dai está desligado agora. O mesmo caminho, à mão:</p>
           <p className="flex flex-wrap gap-2">
             <Link href="/intern/trocas" className="rounded-full bg-white px-3 py-1 text-xs font-semibold ring-1 ring-amber-200">Trocas</Link>
             <Link href="/intern/extras" className="rounded-full bg-white px-3 py-1 text-xs font-semibold ring-1 ring-amber-200">Extras</Link>

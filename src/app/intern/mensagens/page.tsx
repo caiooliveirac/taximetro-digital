@@ -68,7 +68,7 @@ function Lista() {
           <MessageCircle className="mx-auto h-8 w-8 text-slate-300" strokeWidth={1.5} />
           <p className="text-sm text-slate-600">Nenhuma conversa ainda.</p>
           <p className="text-xs text-slate-500">
-            Em <Link href="/intern/trocas" className="font-semibold text-accent-600">Trocas</Link>, toque em <strong>Conversar</strong> numa oferta de colega. A Luna também abre conversa com o seu líder quando aparece vaga liberada para você.
+            Em <Link href="/intern/trocas" className="font-semibold text-accent-600">Trocas</Link>, toque em <strong>Conversar</strong> numa oferta de colega. O Dai também abre conversa com o seu líder quando aparece vaga liberada para você.
           </p>
         </div>
       ) : (

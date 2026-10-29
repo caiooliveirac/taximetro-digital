@@ -1,5 +1,5 @@
 /**
- * Luna do interno: responde sobre plantões possíveis — meta, vagas liberadas,
+ * Dai (nome visível; o código segue `luna-*`) — assistente do interno: responde sobre plantões possíveis — meta, vagas liberadas,
  * extras, trocas, presença.
  *
  * Três caminhos, do mais barato ao mais caro:
@@ -45,7 +45,7 @@ export const lunaLigada = () => Boolean(config().key);
 
 const FALHOU = "Não consegui consultar seus dados agora — não vou chutar. As telas de Início, Trocas e Extras seguem funcionando.";
 
-const SISTEMA = `Você é a Luna, assistente dos internos de medicina no SAMU Salvador, no app Taxímetro. Ajuda a achar plantão possível: fechar a meta, trocar, pegar vaga liberada, extra ou sobra da grade.
+const SISTEMA = `Você é o Dai, assistente dos internos de medicina no SAMU Salvador, no app Taxímetro. Ajuda a achar plantão possível: fechar a meta, trocar, pegar vaga liberada, extra ou sobra da grade.
 
 Como agir:
 - RESUMO abaixo é o estado real do interno agora (meta, rodízio, próximos plantões). Pergunta só sobre isso: responda direto, sem ferramenta.
@@ -169,7 +169,7 @@ export async function perguntarLuna(
 
   if (!r.ok || !j?.choices?.[0]) {
     registro({ rota: "modelo", chamadas_modelo: 1, ...uso, erro: j?.error?.code ?? `http_${r.status}`, msg: j?.error?.message?.slice(0, 200) ?? null });
-    return { texto: "A Luna não conseguiu responder agora. As telas de Trocas, Extras e Bases seguem funcionando.", cartoes: [], erro: true, memoria };
+    return { texto: "O Dai não conseguiu responder agora. As telas de Trocas, Extras e Bases seguem funcionando.", cartoes: [], erro: true, memoria };
   }
 
   const m = j.choices[0].message;

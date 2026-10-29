@@ -103,11 +103,11 @@ export default function InternLayout({ children }: { children: React.ReactNode }
       {pathname !== "/intern/luna" && pathname !== "/intern/mensagens" ? (
         <Link
           href="/intern/luna"
-          aria-label="Perguntar à Luna sobre plantões, trocas e vagas"
+          aria-label="Perguntar ao Dai sobre plantões, trocas e vagas"
           className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-4 z-40 inline-flex items-center gap-1.5 rounded-full bg-navy-900 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-navy-700 active:scale-95"
         >
           <Sparkles className="h-4 w-4" strokeWidth={1.8} />
-          Luna
+          Dai
         </Link>
       ) : null}
       <InternPhotoChangeModal open={photoModalOpen} onClose={() => setPhotoModalOpen(false)} />

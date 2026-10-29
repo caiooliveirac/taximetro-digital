@@ -1,5 +1,5 @@
 /**
- * /api/intern/luna — pergunta à Luna (ver src/lib/luna-interno.ts).
+ * /api/intern/luna — pergunta ao Dai (ver src/lib/luna-interno.ts).
  *
  * GET  → { ligada } (sem OPENAI_API_KEY a tela mostra só os atalhos)
  * POST → { mensagens: [{ role, content, memoria? }] } → { texto, cartoes, memoria }
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await quem(req);
   if (!user) return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
-  if (!lunaLigada()) return NextResponse.json({ success: false, error: "A Luna está desligada no momento." }, { status: 503 });
+  if (!lunaLigada()) return NextResponse.json({ success: false, error: "O Dai está desligado no momento." }, { status: 503 });
 
   const parsed = pedido.safeParse(await req.json().catch(() => null));
   if (!parsed.success || parsed.data.mensagens.at(-1)?.role !== "user") {

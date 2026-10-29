@@ -142,7 +142,7 @@ export function BasesMap({ bases, mapsKey }: { bases: MapBase[]; mapsKey: string
       if (pontos.length) motor.enquadrar(pontos.map((p) => [p.latitude, p.longitude]), 28);
       mapa.current = motor;
       setMapaPronto(true);
-      // Vindo de outra tela (cartão da Luna, por exemplo): ?base=CB02 já abre nela.
+      // Vindo de outra tela (cartão do Dai, por exemplo): ?base=CB02 já abre nela.
       const pedida = new URLSearchParams(window.location.search).get("base");
       const alvo = pedida ? pontos.find((p) => p.bases.some((b) => b.code === pedida)) : null;
       if (alvo) {
