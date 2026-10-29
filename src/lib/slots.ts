@@ -3,7 +3,7 @@ import { slotRules, assignments, bases, cohorts, faculties, requests, userRoles 
 import { eq, and, sql, ne, gte, lte, inArray } from "drizzle-orm";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
-import { countLiveReservations, listLiveReservations } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
+import { countLiveCessions, countLiveReservations, listLiveCessions, listLiveReservations } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import { plantaoSemDescanso } from "@/shared/domain/policies/rest-policy";
 
 function normalizeDateKey(date: string): string {
@@ -158,7 +158,17 @@ export async function getRequestableSlots(facultyId: string, internId: string) {
   const limite = fim && fim < janela ? fim : janela;
   // getAvailableSlots olha uma semana; 10 dias são duas.
   const semanas = await Promise.all([getAvailableSlots(facultyId, today), getAvailableSlots(facultyId, addDaysToDateStr(today, 7))]);
-  const slots = semanas.flat().filter((slot) => slot.available > 0 && Boolean(slot.nextDate) && slot.nextDate <= limite);
+  // Vaga que a faculdade cedeu (liberou, ou trocou com interno de outra
+  // faculdade) não é vaga para o interno dela pedir. Na USA o teto físico da
+  // base já barrava; na CRU e na CRL, sem isso, o pedido aprovado lotava a grade.
+  const cedidas = new Map<string, number>();
+  for (const c of await listLiveCessions({ facultyId, from: today, to: limite })) {
+    const k = `${c.baseId}|${normalizeDateKey(String(c.date))}|${c.period}`;
+    cedidas.set(k, (cedidas.get(k) ?? 0) + 1);
+  }
+  const slots = semanas.flat()
+    .map((slot) => ({ ...slot, available: slot.available - (cedidas.get(`${slot.baseId}|${slot.nextDate}|${slot.period}`) ?? 0) }))
+    .filter((slot) => slot.available > 0 && Boolean(slot.nextDate) && slot.nextDate <= limite);
   if (slots.length === 0) return [];
 
   const slotDates = [...new Set(slots.map((slot) => slot.nextDate))].sort();
@@ -285,7 +295,9 @@ export async function checkSlotAvailability(
 
   const assigned = Number(result?.count ?? 0);
   const reserved = await countLiveReservations({ facultyId, baseId, date, period });
-  const capacity = Math.max(rule.capacity - reserved, 0);
+  // Vaga cedida (liberada ou trocada com outra faculdade) também sai da grade.
+  const cedidas = await countLiveCessions({ facultyId, baseId, date, period });
+  const capacity = Math.max(rule.capacity - reserved - cedidas, 0);
   return { available: assigned < capacity, capacity, assigned };
 }
 

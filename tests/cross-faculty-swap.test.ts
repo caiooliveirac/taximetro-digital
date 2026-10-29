@@ -1,9 +1,11 @@
 /**
- * Troca de USA entre internos de faculdades diferentes.
+ * Troca de USA e CRU entre internos de faculdades diferentes.
  *
- * O que estes testes seguram: só USA atravessa faculdade, e cada plantão
- * cedido vira vaga liberada já ocupada (`TROCA`) da faculdade dona — senão a
- * grade dela mostra a vaga vazia e o líder ou o cron a preenchem de novo.
+ * O que estes testes seguram: só USA e CRU atravessam faculdade (CRL não), e
+ * cada plantão cedido vira vaga liberada já ocupada (`TROCA`) da faculdade
+ * dona — e sai da grade dela em toda conta. Na CRU não há teto físico: sem o
+ * desconto, o interno da faculdade dona pediria a vaga cedida e o líder
+ * aprovaria, lotando a grade.
  */
 
 import test from "node:test";
@@ -18,9 +20,9 @@ const plantao = (internId: string, facultyId: string, baseId: string, date: stri
   internId, facultyId, baseId, date, period: "DAY" as const, shift: null,
 });
 
-test("só USA troca entre faculdades", () => {
+test("USA e CRU trocam entre faculdades; CRL não", () => {
   assert.equal(podeTrocarEntreFaculdades("USA"), true);
-  assert.equal(podeTrocarEntreFaculdades("CENTRAL"), false);
+  assert.equal(podeTrocarEntreFaculdades("CENTRAL"), true);
   assert.equal(podeTrocarEntreFaculdades("CRL"), false);
   assert.equal(podeTrocarEntreFaculdades(null), false);
 });
@@ -82,4 +84,25 @@ test("vaga cedida em troca fica fora do painel de vaga livre e conta como vaga l
   assert.match(src, /autoRelease\} is distinct from 'TROCA'/);
   // O cron não conta o plantão vindo de vaga cedida como a faculdade usando a grade dela.
   assert.match(src, /o\.assignmentId && \(o\.releasedFacultyId \|\| o\.autoRelease === "SEM_DONO"\)/);
+});
+
+test("vaga cedida sai da grade da faculdade dona no pedido do interno e na checagem da vaga", () => {
+  const slots = ler("src/lib/slots.ts");
+  // Lista que o interno vê (Trocas → Extra e a Dai).
+  assert.match(slots, /listLiveCessions\(\{ facultyId, from: today, to: limite \}\)/);
+  // Checagem de toda alocação pela grade (pedido aprovado, líder, reserva).
+  assert.match(slots, /const capacity = Math\.max\(rule\.capacity - reserved - cedidas, 0\)/);
+  // Cessão viva = liberada pela faculdade, não cancelada, não reserva.
+  const repo = ler("src/features/extra-offers/infra/repositories/extra-offer-repository.ts");
+  assert.match(repo, /const cessaoViva = \(facultyId: string\) => and\(\s*eq\(extraShiftOffers\.releasedFacultyId, facultyId\),\s*isNull\(extraShiftOffers\.cancelledAt\),\s*isNull\(extraShiftOffers\.reservedBy\),/);
+});
+
+test("troca de CRU não tira o dia do CRU fixo da faculdade", () => {
+  assert.match(ler("src/lib/cru-fixed.ts"), /autoRelease\} is distinct from 'TROCA'/);
+});
+
+test("mercado de trocas usa a mesma regra de faculdade", () => {
+  const src = ler("src/shared/domain/policies/swap-match-policy.ts");
+  assert.match(src, /p\.facultyId === o\.facultyId \|\| podeTrocarEntreFaculdades\(o\.baseType\)/);
+  assert.match(src, /return podeTrocarEntreFaculdades\(oferta\.plantao\.baseType\) \|\| faculdades\.has/);
 });

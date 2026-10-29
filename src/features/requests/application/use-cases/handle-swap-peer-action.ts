@@ -144,7 +144,7 @@ export async function executeSwapPeerAction(params: {
       }
 
       if (!sharesFaculty && !podeTrocarEntreFaculdades(offeredType)) {
-        return { status: 400, body: { success: false, error: "Com interno de outra faculdade, só dá para trocar plantão de USA" } } as const;
+        return { status: 400, body: { success: false, error: "Com interno de outra faculdade, só dá para trocar plantão de USA ou CRU" } } as const;
       }
 
       // Cota checada já aqui para não deixar o colega esperando por uma proposta
@@ -235,7 +235,7 @@ export async function executeSwapPeerAction(params: {
     // O que vale para a grade é a faculdade de cada plantão, não a do vínculo.
     const entreFaculdades = origAssignment.facultyId !== targetAssignment.facultyId;
     if (entreFaculdades && !podeTrocarEntreFaculdades(baseType)) {
-      return { status: 400, body: { success: false, error: "Com interno de outra faculdade, só dá para trocar plantão de USA" } } as const;
+      return { status: 400, body: { success: false, error: "Com interno de outra faculdade, só dá para trocar plantão de USA ou CRU" } } as const;
     }
 
     // Troca efetivada na hora

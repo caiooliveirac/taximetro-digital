@@ -59,7 +59,8 @@ export type Feature =
   | "sinaisDeTroca"
   /**
    * A Dai avisa no chat quem marcou Quero/Posso quando aparece oferta de troca
-   * que cabe naquele turno. É mensagem real: liga só com aprovação do texto.
+   * que cabe naquele turno. É mensagem real: ligada no SAMU em 2026-10-29,
+   * com o texto aprovado pelo dono.
    */
   | "avisoDeTrocas";
 
@@ -75,7 +76,7 @@ const FEATURES: Record<Instancia, Record<Feature, boolean>> = {
     liberacaoAutomatica: true,
     avisosDaDai: true,
     sinaisDeTroca: true,
-    avisoDeTrocas: false,
+    avisoDeTrocas: true,
   },
   vitalmed: {
     adminLottery: true,

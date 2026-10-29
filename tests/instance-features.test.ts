@@ -44,10 +44,10 @@ test("sinais de troca no calendário: só no SAMU (a Vitalmed tem a indisponibil
   assert.equal(temFeature("sinaisDeTroca", "vitalmed"), false);
 });
 
-test("aviso de trocas da Dai desligado nas duas instâncias até o texto ser aprovado", () => {
-  // Mensagem real no chat de todo interno que marcou Quero/Posso. Ligar é
-  // decisão explícita do dono, depois de ver o texto no modo de teste (?dry=1).
-  assert.equal(temFeature("avisoDeTrocas", "samu"), false);
+test("aviso de trocas da Dai: ligado no SAMU (texto aprovado em 2026-10-29), desligado na Vitalmed", () => {
+  // Mensagem real no chat de todo interno que marcou Quero/Posso. Na Vitalmed
+  // não há Quero/Posso (sinaisDeTroca) nem avisos da Dai.
+  assert.equal(temFeature("avisoDeTrocas", "samu"), true);
   assert.equal(temFeature("avisoDeTrocas", "vitalmed"), false);
 });
 
