@@ -61,3 +61,12 @@ test("mensagens: só interno ou líder, e quem personifica não escreve", () => 
   // Leitura personificada não marca como lida a mensagem do interno.
   assert.match(src, /if \(!user\.isImpersonating\) \{\s*await db\s*\.update\(internMessages\)/);
 });
+
+test("vaga livre: interno não se escala sozinho; candidatura passa pela coordenação", () => {
+  const claim = ler("src/features/extra-offers/application/use-cases/claim-extra-offer.ts");
+  assert.match(claim, /if \(vagaLivre && actor\.role === "INTERN" && !alocandoOutro\) \{\s*return \{ status: 403/);
+  const candidatura = ler("src/features/extra-offers/application/use-cases/candidatar-vaga-livre.ts");
+  assert.match(candidatura, /semDescansoPara/);
+  assert.match(candidatura, /candidaturaAberta\(fila\)/);
+  assert.match(ler("src/app/api/intern/vagas-livres/candidatura/route.ts"), /if \(user\.isImpersonating\)/);
+});

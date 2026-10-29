@@ -156,6 +156,12 @@ export async function executeClaimExtraOffer(params: {
   // Vaga sem dono (auto-release-slots.ts) também é vaga livre: vira plantão
   // normal do interno, só não tem faculdade que liberou.
   const vagaLivre = Boolean(offer.releasedFacultyId) || offer.autoRelease === "SEM_DONO";
+  // Interno não se escala em vaga livre: quem escala é o líder (abaixo da
+  // meta) ou a coordenação, pela candidatura (candidatar-vaga-livre.ts). A
+  // tela não oferece isso; aqui fecha o POST direto.
+  if (vagaLivre && actor.role === "INTERN" && !alocandoOutro) {
+    return { status: 403, body: { success: false, code: "VAGA_LIVRE_PELO_LIDER", error: "Vaga livre é escalada pelo líder da sua faculdade. Se sua meta já fechou, candidate-se pela Dai." } } as const;
+  }
   const [quemLiberou] = vagaLivre
     ? await db.select({ abbr: faculties.abbreviation }).from(faculties).where(eq(faculties.id, offer.releasedFacultyId!)).limit(1)
     : [null];
