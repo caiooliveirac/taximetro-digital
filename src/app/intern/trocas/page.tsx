@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { localDateStr, getShiftShortLabel } from "@/lib/utils";
+import { temFeature } from "@/lib/instance";
+import type { MercadoDeTrocas } from "@/features/requests/application/use-cases/get-swap-market";
+import { CAIXAS, CartaoDaOferta, JanelaDeTrocas, ResumoDaOferta, turnoCurto } from "@/components/intern/mercado-de-trocas";
+
+const COM_MERCADO = temFeature("sinaisDeTroca");
 
 /* ═══════════ Types ═══════════ */
 
@@ -104,6 +109,7 @@ export default function InternTrocas() {
   const [myRequests, setMyRequests] = useState<Request[]>([]);
   const [openSwaps, setOpenSwaps] = useState<Request[]>([]);
   const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>([]);
+  const [mercado, setMercado] = useState<MercadoDeTrocas | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"EXTRA" | "SWAP" | "HISTORY">("SWAP");
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -134,6 +140,11 @@ export default function InternTrocas() {
       if (rJson.success) setMyRequests(rJson.data);
       if (osJson.success) setOpenSwaps(osJson.data);
       if (shJson.success) setSwapHistory(shJson.data);
+      if (COM_MERCADO) {
+        // O mercado é um extra: se falhar, o mural simples continua lá.
+        const mJson = await fetch("/taximetro/api/intern/trocas/mercado").then((r) => r.json()).catch(() => null);
+        setMercado(mJson?.success ? mJson.data : null);
+      }
       // Vindo do calendário ("Ofertar para troca"): já abre com o plantão
       // escolhido. Sai da URL para o recarregar depois de publicar não repetir.
       const ofertar = new URLSearchParams(window.location.search).get("ofertar");
@@ -182,6 +193,7 @@ export default function InternTrocas() {
     if (proposeTarget && proposeAssignmentId) apiPatch({ id: proposeTarget.id, action: "propose", assignmentId: proposeAssignmentId });
     setProposeTarget(null); setProposeAssignmentId("");
   }
+  function proporDireto(id: string, assignmentId: string) { apiPatch({ id, action: "propose", assignmentId }); }
   function confirmSwap(id: string) { apiPatch({ id, action: "confirm" }); }
   function rejectProposal(id: string) { apiPatch({ id, action: "reject_proposal" }); }
   function withdrawProposal(id: string) { apiPatch({ id, action: "withdraw_proposal" }); }
@@ -298,8 +310,23 @@ export default function InternTrocas() {
                     </div>
                   )}
                   {r.status === "OPEN" && (
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <p className="text-xs text-slate-400">Aguardando propostas de colegas...</p>
+                      {(() => {
+                        const resumo = mercado?.minhasOfertas.find((m) => m.requestId === r.id);
+                        return resumo ? (
+                          <ResumoDaOferta
+                            resumo={resumo}
+                            conversar={(internId) => (
+                              <ConversarLink
+                                com={internId}
+                                troca={r.id}
+                                texto={`Oi! Vi que você marcou o turno do meu ${r.baseName ?? r.baseCode} de ${r.assignmentDate ? fmtDate(r.assignmentDate) : ""}. Ofertei ele para troca, topa?`}
+                              />
+                            )}
+                          />
+                        ) : null;
+                      })()}
                       <p className="text-[11px] text-slate-500">Seu plantão continua na sua escala até você cancelar ou confirmar uma troca.</p>
                     </div>
                   )}
@@ -340,8 +367,97 @@ export default function InternTrocas() {
             </section>
           )}
 
-          {/* Open swaps from colleagues */}
-          {openSwaps.length > 0 && (
+          {/* Mercado: ofertas separadas pelo que resolvem para você */}
+          {mercado && (
+            <div className="space-y-5">
+              {CAIXAS.map(({ caixa, titulo, explica }) => {
+                const lista = mercado.paraVoce
+                  .filter((o) => o.caixa === caixa)
+                  .sort((a, b) => b.forca - a.forca || a.date.localeCompare(b.date));
+                if (lista.length === 0) return null;
+                return (
+                  <section key={caixa} className="space-y-2">
+                    <h2 className="flex items-baseline gap-2 text-sm font-semibold text-slate-900">
+                      {titulo} <span className="text-xs font-medium text-slate-500">{lista.length}</span>
+                    </h2>
+                    <p className="-mt-1 text-xs text-slate-500">{explica}</p>
+                    {lista.map((o) => {
+                      const doMural = openSwaps.find((r) => r.id === o.requestId);
+                      return (
+                        <CartaoDaOferta key={o.requestId} oferta={o}>
+                          {proposeTarget?.id === o.requestId && doMural ? (
+                            <div className="mt-2 space-y-2 rounded-lg bg-slate-50 p-2">
+                              <p className="text-xs font-medium text-slate-700">Qual plantão seu você oferece em troca?</p>
+                              <select value={proposeAssignmentId} onChange={(e) => setProposeAssignmentId(e.target.value)} className={selectClass}>
+                                <option value="">Selecionar...</option>
+                                {availableAssignments.filter((a) => !a.baseType || a.baseType === o.baseType).map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.baseCode} — {fmtDate(a.date)} ({a.shift ? getShiftShortLabel(a.shift) : a.period === "DAY" ? "Diurno" : "Noturno"})
+                                  </option>
+                                ))}
+                              </select>
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={submitSwapPropose} disabled={!proposeAssignmentId || submitting} className="h-7 gap-1.5 px-3 text-xs">
+                                  <Send className="h-3 w-3" /> Propor Troca
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => { setProposeTarget(null); setProposeAssignmentId(""); }} className="h-7 px-3 text-xs">
+                                  Cancelar
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {o.entregar && (
+                                <Button size="sm" onClick={() => proporDireto(o.requestId, o.entregar!.id)} disabled={submitting} className="h-7 gap-1.5 px-3 text-xs">
+                                  <ArrowLeftRight className="h-3 w-3" /> Propor: dar {o.entregar.baseName.replace(/^Base\s+/i, "")}, {turnoCurto(o.entregar.date, o.entregar.period)}
+                                </Button>
+                              )}
+                              {doMural && (
+                                <Button size="sm" variant="outline" onClick={() => setProposeTarget(doMural)} className="h-7 px-3 text-xs">
+                                  Outro plantão
+                                </Button>
+                              )}
+                              <ConversarLink
+                                com={o.quemId}
+                                troca={o.requestId}
+                                texto={`Oi! Vi sua oferta de ${o.baseName.replace(/^Base\s+/i, "")} (${turnoCurto(o.date, o.period)}). Tenho interesse.`}
+                              />
+                            </div>
+                          )}
+                        </CartaoDaOferta>
+                      );
+                    })}
+                  </section>
+                );
+              })}
+
+              {mercado.paraVoce.some((o) => o.caixa === "FORA") && (
+                <details className="rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-600">
+                  <summary className="cursor-pointer font-medium">
+                    {mercado.paraVoce.filter((o) => o.caixa === "FORA").length} ofertas fora do seu alcance
+                  </summary>
+                  <ul className="mt-2 space-y-1.5 pl-4">
+                    {mercado.paraVoce.filter((o) => o.caixa === "FORA").map((o) => (
+                      <li key={o.requestId} className="list-disc">
+                        <b className="font-semibold">{o.baseName.replace(/^Base\s+/i, "")}</b>, {turnoCurto(o.date, o.period)}, de {o.quem}: {o.motivo}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+
+              {mercado.paraVoce.length === 0 && (
+                <p className="py-4 text-center text-sm text-slate-400">
+                  Nenhuma oferta aberta de colegas agora. Marque Quero ou Posso no Calendário para ver primeiro as que aparecerem nesses turnos.
+                </p>
+              )}
+
+              <JanelaDeTrocas janela={mercado.janela} />
+            </div>
+          )}
+
+          {/* Open swaps from colleagues (sem o mercado: Vitalmed, ou se ele falhar) */}
+          {!mercado && openSwaps.length > 0 && (
             <section className="space-y-2">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <HandshakeIcon className="h-4 w-4 text-emerald-500" strokeWidth={1.5} />
@@ -397,7 +513,7 @@ export default function InternTrocas() {
             </section>
           )}
 
-          {activeSwaps.length === 0 && openSwaps.length === 0 && (
+          {!mercado && activeSwaps.length === 0 && openSwaps.length === 0 && (
             <p className="py-6 text-center text-sm text-slate-400">Nenhuma troca ativa. Publique uma oferta ou aguarde colegas!</p>
           )}
         </div>

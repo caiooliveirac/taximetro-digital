@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarDays } from "lucide-react";
@@ -12,6 +13,7 @@ import {
   type SinalDoDia,
   type SinalMarcado,
 } from "@/shared/domain/policies/day-signal-policy";
+import type { MercadoDeTrocas } from "@/features/requests/application/use-cases/get-swap-market";
 
 type ApiAssignment = CalendarAssignment & { internId?: string };
 
@@ -25,6 +27,14 @@ export default function InternCalendarPage() {
   const [sheetDate, setSheetDate] = useState<string | null>(null);
   const [sheetItems, setSheetItems] = useState<CalendarAssignment[]>([]);
   const [sinais, setSinais] = useState<SinalMarcado[]>([]);
+  const [mercado, setMercado] = useState<MercadoDeTrocas | null>(null);
+  const router = useRouter();
+
+  const carregarMercado = () =>
+    fetch("/taximetro/api/intern/trocas/mercado")
+      .then((r) => r.json())
+      .then((json) => { if (json?.success) setMercado(json.data); })
+      .catch(() => {});
 
   useEffect(() => {
     fetch("/taximetro/api/assignments?selfOnly=true")
@@ -44,6 +54,7 @@ export default function InternCalendarPage() {
         .then((r) => r.json())
         .then((json) => { if (json?.success) setSinais(json.data); })
         .catch(() => {});
+      carregarMercado();
     }
   }, []);
 
@@ -65,6 +76,8 @@ export default function InternCalendarPage() {
         trocar(anterior);
         return json?.error ?? "Não foi possível salvar. Tente de novo.";
       }
+      // Marcar Quero/Posso muda o que é troca perfeita para você.
+      carregarMercado();
       return null;
     } catch {
       trocar(anterior);
@@ -146,6 +159,8 @@ export default function InternCalendarPage() {
           onDayPick={handleDayPick}
           sinais={sinais}
           onMarcar={COM_SINAIS ? marcar : undefined}
+          mercado={mercado}
+          onAbrirTrocas={() => router.push("/intern/trocas")}
         />
       )}
 
