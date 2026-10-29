@@ -4,14 +4,15 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowRight, MapPin, Moon, Sun, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, MapPin, Moon, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { NavigationLinks } from "@/components/navigation-links";
-import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
+import { estiloDoTipo, getPeriodStyle, nomeCurtoDaBase, rotuloDoTipo } from "@/lib/base-colors";
 import {
   cn,
   getShiftShortLabel,
+  hasShiftStarted,
   isCurrentOperationalAssignment,
   isWithinAttendanceWindow,
 } from "@/lib/utils";
@@ -86,8 +87,12 @@ export function InternDaySheet({ open, dateStr, assignments, onClose }: Props) {
 }
 
 function AssignmentCard({ assignment: a }: { assignment: CalendarAssignment }) {
-  const bs = getBaseStyle(a.baseType ?? undefined);
+  const tipo = estiloDoTipo(a.baseType);
   const ps = getPeriodStyle(a.period);
+  const canOffer =
+    (a.status === "SCHEDULED" || a.status === "CONFIRMED") &&
+    !a.isExtraShift &&
+    !hasShiftStarted(a.date, a.period, a.shift ?? null);
   const canCheckIn =
     (a.status === "SCHEDULED" || a.status === "CONFIRMED") &&
     (isWithinAttendanceWindow(a.date, a.period) || isCurrentOperationalAssignment(a.date, a.period));
@@ -95,18 +100,17 @@ function AssignmentCard({ assignment: a }: { assignment: CalendarAssignment }) {
   return (
     <div
       className={cn(
-        "space-y-3 rounded-xl border bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]",
-        bs.border,
+        "space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]",
       )}
     >
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <p className="text-xs font-medium text-slate-500">Base</p>
+          <p className="text-xs font-medium text-slate-500">{rotuloDoTipo(a.baseType)}</p>
           <div className="mt-0.5 flex items-center gap-2">
-            <span className={cn("inline-block h-2.5 w-2.5 rounded-full", bs.dot)} />
-            <p className="text-base font-semibold text-slate-900">{a.baseCode}</p>
+            <span className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-full", tipo.amostra)} />
+            <p className="text-base font-semibold leading-tight text-slate-900">{nomeCurtoDaBase(a.baseName)}</p>
           </div>
-          <p className="text-xs text-slate-500">{a.baseName}</p>
+          <p className="text-xs text-slate-500">{a.baseCode}</p>
         </div>
         <div>
           <p className="text-xs font-medium text-slate-500">Turno</p>
@@ -137,6 +141,14 @@ function AssignmentCard({ assignment: a }: { assignment: CalendarAssignment }) {
         longitude={a.baseLongitude}
         label={`${a.baseCode} - ${a.baseName}`}
       />
+      {canOffer && (
+        <Link href={`/intern/trocas?ofertar=${a.id}`}>
+          <Button variant="outline" className="w-full gap-2">
+            <ArrowLeftRight className="h-4 w-4" strokeWidth={1.5} />
+            Ofertar para troca
+          </Button>
+        </Link>
+      )}
       {canCheckIn && (
         <Link href={`/intern/checkin?assignmentId=${a.id}`}>
           <Button className="w-full gap-2">
