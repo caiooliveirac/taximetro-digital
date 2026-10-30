@@ -66,10 +66,10 @@ append_vagas_livres_cron() {
 }
 
 # Sorteio da repescagem (sorteio-repescagem.ts): as aberturas são às 11h e às
-# 20h; de hora em hora no minuto 0 pega as duas e qualquer atraso. Fora dos
+# 20h (adiado sem inscrito: 13h e 22h); de hora em hora no minuto 0. Fora dos
 # avisos da Dai: sem ele, a vaga ficaria presa 30 min a cada abertura.
 append_sorteio_cron() {
-  schedule="${SORTEIO_CRON:-0 8-21 * * *}"
+  schedule="${SORTEIO_CRON:-0 8-22 * * *}"
 
   printf "%s\n" "${schedule} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs sortear' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   echo "[entrypoint] sorteio da repescagem habilitado em ${schedule} (${TZ})"
