@@ -653,3 +653,30 @@ export const cohortCommitments = pgTable("cohort_commitments", {
   index("idx_commitment_faculty_date").on(t.facultyId, t.date),
   index("idx_commitment_cohort").on(t.cohortId),
 ]);
+
+// ── Liberações da agenda acadêmica ────────────────────────────────────────────
+// Um registro por plantão que o interno perdeu por compromisso da turma. A
+// coordenação (ou o líder) decide: ABONADO conta na meta como plantão abonado
+// (só na conta da meta: o plantão segue cancelado e a vaga, livre); REPOR deixa
+// o interno devendo, com prioridade no sorteio da repescagem e aviso diário da
+// Dai enquanto faltar plantão no tipo. Regras em commitment-release-policy.ts.
+export const releaseResolutionEnum = pgEnum("release_resolution", ["PENDENTE", "ABONADO", "REPOR"]);
+
+export const commitmentReleases = pgTable("commitment_releases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  commitmentId: uuid("commitment_id").notNull().references(() => cohortCommitments.id),
+  assignmentId: uuid("assignment_id").notNull().references(() => assignments.id),
+  internId: uuid("intern_id").notNull().references(() => users.id),
+  facultyId: uuid("faculty_id").notNull().references(() => faculties.id),
+  date: date("date").notNull(),
+  period: shiftPeriodEnum("period").notNull(),
+  baseType: varchar("base_type", { length: 20 }).notNull(),
+  resolution: releaseResolutionEnum("resolution").notNull().default("PENDENTE"),
+  resolvedBy: uuid("resolved_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_release_assignment").on(t.assignmentId),
+  index("idx_release_faculty").on(t.facultyId, t.resolution),
+  index("idx_release_intern").on(t.internId),
+]);
