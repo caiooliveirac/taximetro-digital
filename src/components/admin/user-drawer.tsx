@@ -7,6 +7,7 @@ import { getFacultyStyle } from "@/lib/base-colors";
 import { PhotoLightbox } from "@/components/photo-lightbox";
 import { InternHistorySection } from "@/components/admin/intern-history-section";
 import { isPending } from "@/app/admin/usuarios/filter-users";
+import { ehContaArquivadaNoRecadastro } from "@/features/registration/domain/recadastro";
 import {
   ROLES, ROLE_LABEL, ROLE_BADGE_CLASS, formatCpf,
   type User, type Faculty, type Base,
@@ -385,6 +386,15 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
                 {isPending(detail) && (
                   <button onClick={() => patchUser({ isActive: true })} disabled={busy} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
                     Aprovar
+                  </button>
+                )}
+                {!detail.isActive && detail.isArchived && !ehContaArquivadaNoRecadastro(detail.email) && (
+                  <button
+                    onClick={() => patchUser({ isActive: true }, `Reativar ${detail.name}? O login volta a funcionar, com os papéis que tinha ao ser desativado.`)}
+                    disabled={busy}
+                    className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    Reativar
                   </button>
                 )}
                 {detail.isActive && isIntern && (

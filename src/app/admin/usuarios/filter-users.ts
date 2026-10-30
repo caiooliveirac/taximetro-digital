@@ -26,11 +26,12 @@ type FilterableUser = {
 };
 
 /**
- * Pendente é cadastro esperando aprovação. Conta desligada e arquivada (como a
- * antiga de quem se recadastrou) não é pendência: é arquivo.
+ * Pendente é cadastro esperando aprovação: desligado, com papel pedido e não
+ * arquivado. Conta desativada ou antiga de recadastro é arquivo; conta de
+ * sistema sem papel (Dai) não é nenhum dos dois.
  */
-export function isPending(u: { isActive: boolean; isArchived?: boolean }) {
-  return !u.isActive && !u.isArchived;
+export function isPending(u: { isActive: boolean; isArchived?: boolean; role: string | null }) {
+  return !u.isActive && !u.isArchived && u.role !== null;
 }
 
 export function filterUsers<T extends FilterableUser>(users: T[], f: UserFilters): T[] {

@@ -77,3 +77,7 @@ test("conta desligada e arquivada (recadastro) não é pendência, só arquivada
   assert.deepEqual(filterUsers(lista, f({ status: "pending" })).map((u) => u.name), ["Bruno Costa"]);
   assert.deepEqual(filterUsers(lista, f({ status: "archived" })).map((u) => u.name), ["Carla Dias", "Elisa Antiga"]);
 });
+
+test("conta de sistema sem papel não é pendência", () => {
+  assert.equal(isPending(makeUser({ name: "Dai", isActive: false, role: null, allRoles: [] })), false);
+});

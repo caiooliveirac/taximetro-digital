@@ -5,7 +5,7 @@ import { users, userRoles, faculties, bases, cohorts, assignments, checkins, req
 import { cohortHasLeaderRoom, ensureInternCohort, peekInternCohort } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
 import { MAX_LEADERS_PER_COHORT } from "@/features/cohorts/domain/intern-cohort";
 import { ehContaArquivadaNoRecadastro } from "@/features/registration/domain/recadastro";
-import { eq, and, inArray, ne, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, ne, or, sql } from "drizzle-orm";
 import { hash } from "bcryptjs";
 import { logAudit } from "@/lib/audit";
 import { computeRoleDiff, normalizeRolesPayload, type RoleAssignment, type ExistingRoleRow } from "@/lib/roles";
@@ -473,7 +473,12 @@ export async function GET(req: NextRequest) {
       isArchived: sql<boolean>`COALESCE(${userRoles.isArchived}, false)`,
     })
     .from(users)
-    .leftJoin(userRoles, and(eq(userRoles.userId, users.id), eq(userRoles.isActive, true)))
+    // Conta desligada traz também os papéis arquivados: é o que separa
+    // "arquivado" (desativado, recadastro) de "pendente" (aguardando aprovação).
+    .leftJoin(userRoles, and(
+      eq(userRoles.userId, users.id),
+      or(eq(userRoles.isActive, true), and(eq(users.isActive, false), eq(userRoles.isArchived, true))),
+    ))
     .leftJoin(faculties, eq(faculties.id, userRoles.facultyId))
     .leftJoin(bases, eq(bases.id, userRoles.baseId))
     .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
@@ -631,8 +636,14 @@ export async function PUT(req: NextRequest) {
     if (password) updateData.passwordHash = await hash(password, 12);
     if (forcePasswordChange !== undefined) updateData.forcePasswordChange = forcePasswordChange;
 
+    const [antes] = userData.isActive === true
+      ? await db.select({ isActive: users.isActive }).from(users).where(eq(users.id, id)).limit(1)
+      : [];
+
     const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
     if (!updated) return NextResponse.json({ success: false, error: "Usuário não encontrado" }, { status: 404 });
+
+    if (antes && !antes.isActive) await restaurarPapeisDaDesativacao(id);
 
     let appliedDiff: { toInsert: RoleAssignment[]; toDeactivate: string[]; toReactivate: string[] } | null = null;
     if (desiredRoles) {
@@ -1021,6 +1032,22 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
+/** Devolve os papéis que a última desativação arquivou, no estado em que estavam. */
+async function restaurarPapeisDaDesativacao(userId: string) {
+  const [ultima] = await db
+    .select({ payload: auditLog.payload })
+    .from(auditLog)
+    .where(and(eq(auditLog.action, "DEACTIVATE_USER"), eq(auditLog.entityId, userId)))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(1);
+  const papeis = (ultima?.payload as { papeis?: { id: string; isArchived: boolean }[] } | null)?.papeis ?? [];
+  for (const p of papeis) {
+    await db.update(userRoles)
+      .set(p.isArchived ? { isActive: true } : { isActive: true, isArchived: false, archivedAt: null, archivedBy: null })
+      .where(and(eq(userRoles.id, p.id), eq(userRoles.userId, userId), eq(userRoles.isActive, false)));
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   const token = await requireCoordinator(req);
   if (!token) return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
@@ -1034,10 +1061,23 @@ export async function DELETE(req: NextRequest) {
     const [existing] = await db.select({ id: users.id, isActive: users.isActive }).from(users).where(eq(users.id, id)).limit(1);
     if (!existing) return NextResponse.json({ success: false, error: "Usuário não encontrado" }, { status: 404 });
 
-    await db.update(users).set({ isActive: false, updatedAt: new Date() }).where(eq(users.id, id));
+    // Desativado vai para Arquivados (não Pendentes): os papéis ativos são
+    // arquivados e anotados no audit, para a reativação devolver só eles.
+    const papeis = await db
+      .select({ id: userRoles.id, isArchived: userRoles.isArchived })
+      .from(userRoles)
+      .where(and(eq(userRoles.userId, id), eq(userRoles.isActive, true)));
+    const now = new Date();
+    await db.update(users).set({ isActive: false, updatedAt: now }).where(eq(users.id, id));
     await db.update(userRoles).set({ isActive: false }).where(eq(userRoles.userId, id));
+    const aArquivar = papeis.filter((p) => !p.isArchived).map((p) => p.id);
+    if (aArquivar.length > 0) {
+      await db.update(userRoles)
+        .set({ isArchived: true, archivedAt: now, archivedBy: token.id as string })
+        .where(inArray(userRoles.id, aArquivar));
+    }
 
-    await logAudit({ userId: token.id as string, action: "DEACTIVATE_USER", entity: "user", entityId: id, payload: { previousIsActive: existing.isActive } });
+    await logAudit({ userId: token.id as string, action: "DEACTIVATE_USER", entity: "user", entityId: id, payload: { previousIsActive: existing.isActive, papeis } });
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro interno";
