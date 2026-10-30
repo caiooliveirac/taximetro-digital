@@ -44,6 +44,10 @@ export async function gravarPergunta(userId: string, conversa: { content: string
       ferramentas: (meta.ferramentas as { nome: string; status: string }[] | undefined)?.map((f) => `${f.nome}:${f.status}`),
       args: meta.args,
       ms: meta.ms,
+      // Tokens da chamada ao modelo (0 no caminho direto): o log do container some a cada deploy.
+      entrada: meta.entrada ?? 0,
+      saida: meta.saida ?? 0,
+      cache: meta.cache ?? 0,
     },
   });
   await db

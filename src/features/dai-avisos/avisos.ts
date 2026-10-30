@@ -45,7 +45,7 @@ import { carregarMercado, type FotografiaDoMercado } from "@/features/requests/a
 import { findInternOverCruQuota } from "@/features/requests/application/use-cases/handle-swap-peer-action";
 import { avaliarOferta, visivelPara, type Avaliacao, type OfertaAberta } from "@/shared/domain/policies/swap-match-policy";
 
-export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM", RODAS: "DAI_AVISO_RODAS" } as const;
+export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM", RODAS: "DAI_AVISO_RODAS", SOLICITACAO: "DAI_AVISO_SOLICITACAO" } as const;
 export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas" | "repescagem" | "rodas";
 export type ResultadoDosAvisos = { tipo: TipoDeAviso; enviados: number; considerados: number; dry: boolean; amostra?: string };
 
@@ -67,6 +67,28 @@ export async function enviar(envios: Envio[], dry: boolean) {
     await tx.insert(internMessages).values(envios.map((e) => ({ fromUserId: dai, toUserId: e.para, body: e.texto })));
     await tx.insert(auditLog).values(envios.map((e) => ({ userId: dai, action: e.action, entity: "dai_aviso", entityId: e.entityId, payload: { para: e.para, ...e.payload } })));
   });
+}
+
+/**
+ * Interno perguntou à Dai pelos pedidos sem decisão: ela manda ao líder a lista
+ * (já pronta em luna-ferramentas.ts, sem modelo). Não repete em 20h para os
+ * mesmos pedidos — quem decide isso é `Fontes.avisoAoLider`, antes de chegar aqui.
+ */
+export async function avisarLiderDasSolicitacoes(internId: string, aviso: { para: string; ids: string[]; itens: string[] }) {
+  const [eu] = await db
+    .select({ nome: users.name, faculdade: faculties.abbreviation })
+    .from(users)
+    .leftJoin(userRoles, and(eq(userRoles.userId, users.id), eq(userRoles.isActive, true), inArray(userRoles.role, ["INTERN", "LEADER"])))
+    .leftJoin(faculties, eq(faculties.id, userRoles.facultyId))
+    .where(eq(users.id, internId))
+    .limit(1);
+  const n = aviso.itens.length;
+  const texto = [
+    `Oi! ${eu?.nome ?? "Um interno"}${eu?.faculdade ? ` (${eu.faculdade})` : ""} me perguntou por ${n === 1 ? "uma solicitação que ainda espera" : `${n} solicitações que ainda esperam`} sua decisão:`,
+    ...aviso.itens.map((i) => `- ${i}`),
+    "Estão em **Solicitações**, no seu menu de líder.",
+  ].join("\n");
+  await enviar([{ para: aviso.para, texto, action: AVISO.SOLICITACAO, entityId: aviso.ids[0], payload: { de: internId, ids: aviso.ids } }], false);
 }
 
 // ---------------------------------------------------------------------------
