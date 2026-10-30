@@ -10,6 +10,7 @@ import { useImpersonate } from "@/components/impersonate/impersonate-provider";
 import { getBaseStyle, getPeriodStyle } from "@/lib/base-colors";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
+import { AgendaAcademicaButton } from "@/components/scheduling/agenda-academica-modal";
 import { addDaysToDateStr, localDateStr, startOfWeekDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 import { filterCruFixedCandidates } from "@/features/scheduling/domain/policies/cru-fixed-candidates";
 import { contarSemanas } from "@/features/scheduling/domain/policies/cru-fixed-window";
@@ -980,6 +981,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
       <div className="flex flex-wrap items-center gap-4">
         <h1 className="text-2xl font-bold text-slate-900">Montar Escala</h1>
         <div className="flex-1" />
+        <AgendaAcademicaButton facultyId={facultyId} onChanged={load} />
         <LiberarVagasButton facultyId={facultyId} onChanged={load} />
         <button
           onClick={openLottery}

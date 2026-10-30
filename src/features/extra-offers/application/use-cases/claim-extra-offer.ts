@@ -11,7 +11,7 @@ import { getValidInternIdsForFaculty } from "@/features/scheduling/infra/reposit
 import { localDateStr } from "@/lib/utils";
 import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 import { findPendingFreeSlotRequest, insertRequest } from "@/features/requests/infra/repositories/request-repository";
-import { semDescansoPara } from "@/features/scheduling/application/descanso";
+import { compromissoAcademicoPara, semDescansoPara } from "@/features/scheduling/application/descanso";
 import { metaDoInternoNoTipo, textoMetaCumprida } from "./free-slot-goal";
 import { comExtraNoHistorico, naRepescagem, sorteioPendente, TEXTO_JA_TEVE_EXTRA } from "../repescagem";
 import { soAsQueCabem } from "../lotacao";
@@ -162,6 +162,8 @@ export async function executeClaimExtraOffer(params: {
       baseCode: baseDaVaga?.code ?? "",
     });
     if (semDescanso) return { status: 409, body: { success: false, code: "SEM_DESCANSO", error: semDescanso } } as const;
+    const compromisso = await compromissoAcademicoPara(internId, alocandoOutro ? "O interno" : "Você", { date: offer.date, period: offer.period as "DAY" | "NIGHT" });
+    if (compromisso) return { status: 409, body: { success: false, code: "AGENDA_DA_TURMA", error: compromisso } } as const;
   }
 
   // Vaga sem dono (auto-release-slots.ts) também é vaga livre: vira plantão

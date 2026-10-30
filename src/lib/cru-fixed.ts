@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, bases, cruFixedAssignments, extraShiftOffers, users } from "@/db/schema";
+import { academicBlocks } from "@/features/scheduling/infra/repositories/academic-commitment-repository";
 
 export const CRU_FIXED_NOTE = "CRU fixo semanal";
 export const CRU_FIXED_REMOVED_NOTE = "CRU fixo semanal removido";
@@ -245,6 +246,9 @@ export async function materializeCruFixedAssignments(params: {
         ));
     for (const row of releasedRows) releasedCru.add(`${normalizeDate(row.date)}|${row.period}`);
 
+    // Prova/atividade fixa da turma: o fixo não nasce (nem reativa) no turno.
+    const bloqueioAcademico = await academicBlocks({ internIds, dateFrom: normalizedStart, dateTo: normalizedEnd });
+
     const result: CruFixedMaterializationResult = {
         plannedCount: 0,
         createdCount: 0,
@@ -269,6 +273,19 @@ export async function materializeCruFixedAssignments(params: {
             result.plannedCount += 1;
             const key = `${template.internId}|${date}|${template.period}`;
             const existing = assignmentByKey.get(key);
+
+            if ((!existing || existing.status === "CANCELLED")
+                && bloqueioAcademico.get(template.internId)?.has(`${date}|${template.period}`)) {
+                result.skippedCount += 1;
+                result.skipped.push({
+                    internId: template.internId,
+                    internName: template.internName,
+                    date,
+                    period: template.period,
+                    status: "ACADEMIC",
+                });
+                continue;
+            }
 
             if (!existing && releasedCru.has(`${date}|${template.period}`)) {
                 result.skippedCount += 1;

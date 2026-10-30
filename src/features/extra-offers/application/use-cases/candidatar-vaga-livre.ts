@@ -14,7 +14,7 @@ import { eq } from "drizzle-orm";
 import { bases, users } from "@/shared/db/schema";
 import { getExtraOfferById } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import { findAssignmentByInternSlot } from "@/features/scheduling/infra/repositories/assignment-repository";
-import { semDescansoPara } from "@/features/scheduling/application/descanso";
+import { compromissoAcademicoPara, semDescansoPara } from "@/features/scheduling/application/descanso";
 import { goalKindOf } from "@/lib/goal-slots";
 import { hasShiftStarted } from "@/lib/utils";
 import { candidaturaAberta, filaDeReposicao, textoDaFila } from "../fila-de-reposicao";
@@ -47,6 +47,8 @@ export async function executeCandidatarVagaLivre(params: {
   const [base] = await db.select({ code: bases.code, type: bases.type }).from(bases).where(eq(bases.id, offer.baseId)).limit(1);
   const semDescanso = await semDescansoPara(intern.id, "Você", { date: offer.date, period, shift: offer.shift, baseCode: base?.code ?? "" });
   if (semDescanso) return erro(409, "SEM_DESCANSO", semDescanso);
+  const compromisso = await compromissoAcademicoPara(intern.id, "Você", { date: offer.date, period });
+  if (compromisso) return erro(409, "AGENDA_DA_TURMA", compromisso);
 
   const tipo = goalKindOf(base?.type);
   const meta = base ? await metaDoInternoNoTipo(intern.id, base.type) : null;

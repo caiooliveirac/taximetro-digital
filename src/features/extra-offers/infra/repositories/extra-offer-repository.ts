@@ -185,6 +185,7 @@ export type InsertExtraOffer = {
   publishedBy: string;
   releasedFacultyId?: string | null;
   reservedBy?: string | null;
+  commitmentId?: string | null;
 };
 
 export async function insertExtraOffer(data: InsertExtraOffer) {
@@ -218,6 +219,7 @@ export async function insertExtraOffers(rows: InsertExtraOffer[]) {
       notes: data.notes ?? null,
       publishedBy: data.publishedBy,
       releasedFacultyId: data.releasedFacultyId ?? null,
+      commitmentId: data.commitmentId ?? null,
     })))
     .returning({ id: extraShiftOffers.id });
 }

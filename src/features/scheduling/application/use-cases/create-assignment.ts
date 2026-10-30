@@ -3,6 +3,7 @@ import { checkCruConflict, checkPeriodOccupancy, checkSlotAvailability } from "@
 import { localDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { canLeaderManageFaculty } from "@/features/scheduling/domain/policies/assignment-policy";
+import { compromissoAcademicoPara } from "@/features/scheduling/application/descanso";
 import {
   createAssignment,
   findAssignmentByInternSlot,
@@ -80,6 +81,13 @@ export async function executeCreateAssignment(params: {
       status: 409,
       body: { success: false, error: "Interno já possui plantão neste dia e turno" },
     } as const;
+  }
+
+  // Prova/atividade fixa da turma no turno. Só o registro retroativo da
+  // coordenação passa (é o que já aconteceu).
+  if (!allowCoordinatorRetroactiveOverride) {
+    const compromisso = await compromissoAcademicoPara(input.internId, "O interno", { date: input.date, period: input.period });
+    if (compromisso) return { status: 409, body: { success: false, error: compromisso } } as const;
   }
 
   const isCancelledSameSlot = existingAssignment?.status === "CANCELLED"

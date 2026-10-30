@@ -11,7 +11,7 @@ import {
 import { logAudit } from "@/shared/infra/logger/audit";
 import { checkPeriodOccupancy } from "@/lib/slots";
 import { executeClaimExtraOffer } from "@/features/extra-offers/application/use-cases/claim-extra-offer";
-import { semDescansoPara } from "@/features/scheduling/application/descanso";
+import { compromissoAcademicoPara, semDescansoPara } from "@/features/scheduling/application/descanso";
 
 type ReviewActor = {
   id: string;
@@ -110,6 +110,11 @@ export async function executeReviewRequest(params: {
           baseCode: extraBaseRow.code,
         });
         if (semDescanso) return { status: 409, body: { success: false, error: semDescanso } } as const;
+        const compromisso = await compromissoAcademicoPara(request.requesterId, "O interno", {
+          date: request.extraDate,
+          period: request.extraPeriod as "DAY" | "NIGHT",
+        });
+        if (compromisso) return { status: 409, body: { success: false, error: compromisso } } as const;
 
         const existingAssignment = await findExistingAssignmentForInternSlot({
           internId: request.requesterId,

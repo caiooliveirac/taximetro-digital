@@ -19,6 +19,7 @@ import {
   bloqueiosCompostos,
   internosParaBloqueio,
 } from "@/features/scheduling/infra/repositories/unavailability-repository";
+import { academicBlocks } from "@/features/scheduling/infra/repositories/academic-commitment-repository";
 import {
   buildUnallocatedDiagnostics,
   type UnallocatedDiagnosticItem,
@@ -323,6 +324,13 @@ export async function executeRunLeaderLottery(params: {
     for (const [internId, porSlot] of compostos.mapa) {
       unavailable.set(internId, new Set(porSlot.keys()));
     }
+  }
+
+  // Prova/atividade fixa da turma (agenda acadêmica): vale nas duas instâncias.
+  for (const [internId, porTurno] of await academicBlocks({ internIds: safeIds, dateFrom: windowStart, dateTo: windowEnd })) {
+    const atual = unavailable.get(internId) ?? new Set<string>();
+    for (const chave of porTurno.keys()) atual.add(chave);
+    unavailable.set(internId, atual);
   }
 
   // Vagas e plantões USA já existentes, semana a semana (o teto é POR semana).
