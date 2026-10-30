@@ -180,7 +180,10 @@ export async function executeCreateCommitment(params: {
     createdBy: autor,
   });
 
-  const rotulo = `${ROTULO_TIPO[input.kind]}: ${input.title}`;
+  // "Prova de Clínica" já diz o tipo; "Clínica" ganha o prefixo.
+  const rotulo = input.title.toLowerCase().startsWith(ROTULO_TIPO[input.kind].toLowerCase())
+    ? input.title
+    : `${ROTULO_TIPO[input.kind]}: ${input.title}`;
   for (const p of plano) {
     const quando = `${p.turno.date.slice(8, 10)}/${p.turno.date.slice(5, 7)} ${p.turno.period === "DAY" ? "diurno" : "noturno"}`;
     for (const a of p.daGrade) {
