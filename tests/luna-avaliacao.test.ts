@@ -327,7 +327,7 @@ test("12. 'Posso pegar vaga mesmo já tendo completado a meta?' — liberada nã
   assert.match(r.texto, /PM01 .*extra/);
   // Vaga liberada não é dele agora, mas pode cair na repescagem: diz quando abre.
   assert.ok(lidas.includes("liberadas"));
-  assert.match(r.texto, /Pode abrir na repescagem/);
+  assert.match(r.texto, /Pode ir a sorteio na repescagem/);
   assert.match(r.texto, /sua meta de USA e CRU e CRL já está completa: ela vai primeiro para quem ainda precisa repor plantão \(hoje esperam reposição 131 colegas em USA, 112 em CRU e 60 em CRL\)/);
   assert.match(r.texto, /Quando houver mais vaga livre do que gente nessa fila, você pode se candidatar/);
   assert.ok(!r.cartoes.some((c) => c.itens.some((i) => i.candidatar)));
@@ -657,47 +657,47 @@ test("fila de reposição explicada: o número diz o que é", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Repescagem prevista: vaga livre aberta agora que ainda não é dele cai na
-// repescagem numa hora sabida. Sem modelo.
+// Sorteio previsto: vaga livre aberta agora que ainda não é dele vai a
+// sorteio numa hora sabida. Sem modelo.
 
 const COMPLETA: Meta = { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } };
 
-test("meta fechada e sem extra: diz o que pode abrir, a hora e manda marcar Quero — sem modelo", async () => {
+test("meta fechada e sem extra: diz o que vai a sorteio, a hora, o lugar dele na ordem e manda se inscrever — sem modelo", async () => {
   const { r, chamadas } = await perguntar("Tem vaga pra mim?", { fx: { meta: COMPLETA } });
   assert.equal(chamadas, 0);
-  assert.match(r.texto, /\*\*Pode abrir na repescagem\*\*/);
-  // Ordem pela hora em que abre: CRL4 (qua 04/11 dia, véspera 20h) antes de CB05 (qui 05/11 noite, 11h do dia).
-  assert.match(r.texto, /\*\*qua 04\/11 dia\*\*: 1 vaga \(CRL\) — abre \*\*ter 03\/11 às 20h\*\*, entra como extra[\s\S]*\*\*qui 05\/11 noite\*\*: 1 vaga \(USA\) — abre \*\*qui 05\/11 às 11h\*\*/);
+  assert.match(r.texto, /\*\*Pode ir a sorteio na repescagem\*\*/);
+  // Ordem pela hora do sorteio: CRL4 (qua 04/11 dia, véspera 20h) antes de CB05 (qui 05/11 noite, 11h do dia).
+  assert.match(r.texto, /\*\*qua 04\/11 dia\*\*: 1 vaga \(CRL\) — sorteio \*\*ter 03\/11 às 20h\*\*; entra como extra, você vem depois de quem precisa da meta[\s\S]*\*\*qui 05\/11 noite\*\*: 1 vaga \(USA\) — sorteio \*\*qui 05\/11 às 11h\*\*/);
   // IT30 (sáb noite) bate no descanso do plantão de sáb dia: não entra.
   assert.doesNotMatch(r.texto, /sáb 31\/10 noite/);
-  assert.match(r.texto, /Marque \*\*Quero\*\*/);
+  assert.match(r.texto, /inscreva-se em \*\*Extras → Sorteios\*\*/);
   const c = r.cartoes.find((x) => x.tipo === "previsao");
   assert.equal(c?.itens.length, 3);
-  assert.equal(c?.itens[0].acao, "Me avise");
-  assert.equal(c?.itens[0].href, "/intern/calendario");
+  assert.equal(c?.itens[0].acao, "Me inscrever");
+  assert.equal(c?.itens[0].href, "/intern/extras");
 });
 
-test("meta fechada e já teve extra: a repescagem não é para ele, e a Dai diz isso", async () => {
+test("meta fechada e já teve extra: concorre também, mas a Dai diz que fica por último", async () => {
   const { r } = await perguntar("Tem vaga pra mim?", { fx: { meta: { ...COMPLETA, jaTemExtra: true } } });
-  assert.match(r.texto, /mas ela não é para você: .*já teve um extra/);
-  assert.ok(!r.cartoes.some((c) => c.tipo === "previsao"));
+  assert.match(r.texto, /você fica por último \(já teve extra\)/);
+  assert.ok(r.cartoes.some((c) => c.tipo === "previsao"));
 });
 
 test("ainda precisa do tipo: o que já pode pedir ao líder não vira previsão; o tipo completo vira extra", async () => {
   const { r } = await perguntar("Tem vaga pra mim?");
   const c = r.cartoes.find((x) => x.tipo === "previsao");
   assert.deepEqual(c?.itens.map((i) => i.tipoVaga), ["CRU"]);
-  assert.match(r.texto, /\*\*sex 06\/11 dia\*\*: 1 vaga \(CRU\) — abre \*\*qui 05\/11 às 20h\*\*, entra como extra/);
+  assert.match(r.texto, /\*\*sex 06\/11 dia\*\*: 1 vaga \(CRU\) — sorteio \*\*qui 05\/11 às 20h\*\*; entra como extra/);
 });
 
-test("'Dia 05/11 tem?' com meta fechada: só o turno pedido, abre hoje/amanhã quando for o caso", async () => {
+test("'Dia 05/11 tem?' com meta fechada: só o turno pedido; 'hoje às 20h' quando for o caso", async () => {
   const { r, chamadas } = await perguntar("Dia 05/11 tem?", { fx: { meta: COMPLETA } });
   assert.equal(chamadas, 0);
   assert.match(r.texto, /^Só no dia 05\/11:/);
-  assert.match(r.texto, /\*\*qui 05\/11 noite\*\*: 1 vaga \(USA\) — abre \*\*qui 05\/11 às 11h\*\*/);
+  assert.match(r.texto, /\*\*qui 05\/11 noite\*\*: 1 vaga \(USA\) — sorteio \*\*qui 05\/11 às 11h\*\*/);
   assert.doesNotMatch(r.texto, /04\/11|06\/11/);
   const amanha = await perguntar("Dia 30/10 tem?", { fx: { meta: COMPLETA, meus: [], liberadas: [oferta("LIBERADA", "AM01", "USA", "2026-10-30", "DAY")] } });
-  assert.match(amanha.r.texto, /abre \*\*hoje às 20h\*\*/);
+  assert.match(amanha.r.texto, /sorteio \*\*hoje às 20h\*\*/);
 });
 
 test("vaga que já está na repescagem não é previsão: aparece como opção para pegar", async () => {

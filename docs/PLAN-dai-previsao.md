@@ -122,6 +122,122 @@ gera aviso passa a saber.
   20h". Acaba com a necessidade de voltar ao site numa hora certa. É mais
   justo, mas muda o jogo (o "primeiro que pegar" sai).
 
+## A em detalhe: sobra da grade (medido em 30/10)
+
+**Por que sobra.** A liberação automática por prazo
+(`auto-release-slots.ts`) só olha base **USA** (`eq(bases.type, "USA")`): a
+sobra de USA vira vaga liberada (347 ofertas PRAZO criadas, 353 nas últimas
+24h). **CRU (central) e CRL nunca são liberadas** — se o líder não escala,
+o lugar some.
+
+**Quanto.** Faculdades em turma, próximos 10 dias:
+
+| | Sobra CRU | Internos sem CRU | Sobra CRL | Internos sem CRL |
+|---|---|---|---|---|
+| EBMSP | 73 | 50 | 16 | 44 |
+| AFYA | 26 | 37 | 6 | 0 |
+| UNIFACS | 52 | 18 | 18 | 7 |
+| ZARNS | 17 | 2 | 6 | 5 |
+| UFBA | 7 | 1 | — | 0 |
+| OPTAT | 9 | 0 | — | 0 |
+| **Total** | **184** | **108** | **46** | **56** |
+
+"Internos sem X" = internos com casinha vazia no tipo (contagem de pessoas,
+não de plantões). Nos 15 dias passados: ~6,6 lugares de CRU e ~2,1 de CRL
+por dia ficaram sem ninguém.
+
+**A demanda está na própria faculdade.** Só com a sobra da casa:
+CRU cobre ~97 dos 108 internos; CRL ~28 dos 56. Abrir para outras faculdades
+acrescenta pouco (CRU: AFYA ainda teria 11 sem; CRL: EBMSP 28 sem, mas a
+regra de troca já diz "CRL só com a mesma faculdade").
+
+**O caminho do líder trava.** Pedidos de sobra (EXTRA_SHIFT) em 45 dias:
+39 aprovados, 32 recusados (todos sem nota), 20 pendentes — 17 morreram sem
+decisão, a data passou. Decisão média: 32h.
+
+**Proposta A1.** Sobra de CRU/CRL da faculdade X num turno T:
+- até a janela: só o líder escala (como hoje);
+- na janela: interno de X com casinha vazia no tipo pega direto, sem líder,
+  conta na meta; 12h de descanso e cota valem;
+- (opcional) na repescagem (8h antes): abre para os demais — de X com meta
+  fechada como extra, e/ou de outras faculdades (só CRU).
+
+Implementação provável: o job de liberação ganha `autoRelease = "SOBRA"`
+para CRU/CRL, com a faculdade dona, e um recorte "só a casa" até a
+repescagem; claim, avisos e a previsão da Dai seguem pelo caminho das vagas
+livres.
+
+**Antes de ligar:** a capacidade de CRU na grade é real (cabem esses
+internos na central, há preceptor)? As 32 recusas sem nota podem ser
+exatamente isso.
+
+## Sorteio da repescagem — implementado (30/10)
+
+Decisão do Caio: o sistema sorteia (não o admin), inscritos públicos, hora
+divulgada, aviso pela mensageria. `sorteio-repescagem.ts`:
+
+- inscrição em Extras → Sorteios até a hora (tabela `sorteio_inscricoes`);
+- na abertura da repescagem (11h / 20h, cron `sortear` de hora em hora no
+  minuto 0) distribui: critério 1 → 2 → 3, dentro dele a ordem
+  sha256(semente:id), semente publicada em `sorteios`; cada lugar passa pelo
+  claim da repescagem (descanso, viatura, meta/extra) com a Dai como coordenação;
+- até o sorteio rodar ninguém pega a vaga direto (trava de no máximo 30 min:
+  se o cron falhar, volta ao primeiro que pegar);
+- Dai anuncia nas 5h antes (casinha vazia no tipo ou Quero no turno) e conta
+  o resultado a cada inscrito; o que sobra segue no aviso "pega direto".
+
+Ainda **só vagas livres** (liberadas e sem dono). A sobra de CRU/CRL entra
+quando a capacidade da grade for confirmada (pergunta abaixo).
+
+## Fila no lugar da corrida (pedido do Caio, 30/10 — junta A e C)
+
+Plantão desprezado (vaga livre que chega à repescagem **e** sobra de CRU/CRL
+da faculdade) deixa de ser "quem clicar primeiro" e passa a ser distribuído
+por fila.
+
+**Entrar na fila.** Marcar **Quero** no turno do calendário (o sinal que já
+existe; o "Me avise" da Dai passa a dizer "Entrar na fila"). Quem marca
+entra na fila de todo lugar desprezado daquele turno que caiba no descanso
+dele e na viatura. Sobra da faculdade X: só internos de X. Vaga livre: todos,
+menos a faculdade que liberou (como hoje).
+
+**Ordem** (por lugar, pelo tipo dele):
+
+1. meta abaixo: casinha vazia no tipo (conta na meta);
+2. meta completa e nenhum extra até agora (entra como extra);
+3. já pegou extra (entra como extra, só com o que sobrar).
+
+**Empate**: o admin (coordenação) desempata.
+
+**Linha do tempo de um turno T**
+
+```
+até T−24h   fila aberta; líder ainda escala normalmente (sai da fila quem ele escalar)
+T−24h       fila fecha; ordem calculada; se o corte cai no meio de um empate,
+            a Dai manda à coordenação a lista empatada com "escolher"
+T−8h        abertura da repescagem: distribui pela ordem (e pela escolha do admin);
+            a Dai avisa quem levou e quem ficou de fora
+depois      o que sobrar volta ao "primeiro que pegar", como hoje
+```
+
+**O que os números dizem sobre empate.** Próximos 7 dias: 26 filas
+faculdade×turno de CRU com ~5 lugares cada (máximo 20), 7 de CRL com ~4.
+Só a EBMSP tem 50 internos sem CRU: se 10 entram na fila de um turno de 5
+lugares, os 10 estão no critério 1 — **empate quase sempre**. Com admin
+desempatando tudo, são ~5 decisões por dia para 7 coordenadores, e de
+madrugada no diurno se a janela não fechar antes (por isso o fecho em T−24h).
+
+**Sugestão para o admin decidir pouco**: dentro do mesmo critério, uma ordem
+sugerida — mais casinhas vazias primeiro, depois rodízio que acaba antes,
+depois quem marcou Quero antes. O admin vê a lista já ordenada e confirma
+ou muda; se não mexer até T−8h, vale a sugestão. Empate "de verdade"
+(iguais em tudo) é raro.
+
+**Ainda em aberto, herdado de A:**
+- a capacidade de CRU na grade é real (cabe, tem preceptor)?
+- pedido de sobra pendente com o líder: entra na fila na frente de quem
+  marcou depois? (17 morreram sem decisão em 45 dias.)
+
 ## Perguntas abertas
 
 1. Começar só por 1 e 2 (não mudam regra)?

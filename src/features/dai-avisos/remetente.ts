@@ -1,12 +1,15 @@
 /**
  * A Dai no chat é um usuário sem login: `is_active = false` e hash de senha
  * que não é bcrypt (nenhuma senha confere). Ela só escreve — por jobs com
- * texto pronto (avisos.ts) — e não recebe: a conversa com ela é na aba Dai.
+ * texto pronto (avisos.ts, sorteio-repescagem.ts) — e não recebe: a conversa
+ * com ela é na aba Dai.
  */
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { auditLog, internMessages, users } from "@/db/schema";
+
+export type Envio = { para: string; texto: string; action: string; entityId: string; payload: Record<string, unknown> };
 
 export const DAI_EMAIL = "dai@assistente.taximetro";
 export const DAI_NOME = "Dai";
@@ -26,4 +29,15 @@ export async function idDaDai(opts: { criar?: boolean } = {}): Promise<string | 
     .returning({ id: users.id });
   if (novo) return (cache = novo.id);
   return idDaDai();
+}
+
+/** Mensagem da Dai no chat + registro no audit_log (é o registro que impede repetir). */
+export async function enviar(envios: Envio[], dry: boolean) {
+  if (dry || envios.length === 0) return;
+  const dai = await idDaDai({ criar: true });
+  if (!dai) throw new Error("Dai sem usuário");
+  await db.transaction(async (tx) => {
+    await tx.insert(internMessages).values(envios.map((e) => ({ fromUserId: dai, toUserId: e.para, body: e.texto })));
+    await tx.insert(auditLog).values(envios.map((e) => ({ userId: dai, action: e.action, entity: "dai_aviso", entityId: e.entityId, payload: { para: e.para, ...e.payload } })));
+  });
 }

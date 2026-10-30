@@ -55,11 +55,22 @@ export function textoVagasAbertas(vagas: VagaAvisada[]) {
 /** Vaga livre a menos de 8h do turno: virou extra, o interno pega direto (repescagem.ts). */
 export function textoRepescagem(vagas: VagaAvisada[]) {
   return [
-    `Vaga de última hora, ainda sem ninguém, que cabe na sua agenda:`,
+    `Sobrou do sorteio da repescagem, ainda sem ninguém, e cabe na sua agenda:`,
     ...vagas.map((v) => `- ${v.baseCode} ${v.quando} (${v.tipo}${v.liberadaPor ? `, liberada pela ${v.liberadaPor}` : ", sem dono"})`),
-    `Falta pouco para o turno, então virou extra: você pega direto na aba Extras, sem passar pelo líder. Quem pegar primeiro leva.`,
+    `O sorteio já rodou e ninguém inscrito pôde levar: agora você pega direto na aba Extras, sem passar pelo líder. Quem pegar primeiro leva.`,
     `Se ainda falta esse tipo na sua meta, conta na meta; se já fechou, entra como extra — um por interno: quem já teve extra não pega.`,
   ].join("\n");
+}
+
+/** Anúncio do sorteio da repescagem (sorteio-repescagem.ts), horas antes. */
+export function textoAnuncioSorteio(s: { turno: string; hora: string; vagas: { tipo: GoalKind; n: number }[]; precisa: GoalKind[] }) {
+  const total = s.vagas.reduce((n, v) => n + v.n, 0);
+  return [
+    `Sorteio da repescagem **${s.hora}** para **${s.turno}**: ${total} ${total === 1 ? "vaga livre" : "vagas livres"} (${s.vagas.map((v) => `${v.n} ${v.tipo}`).join(", ")}).`,
+    `A ordem: primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra, por último quem já teve. Empate, o sorteio decide.`,
+    s.precisa.length ? `Você ainda tem ${s.precisa.join(" e ")} faltando na meta: se levar, conta.` : "",
+    `Para concorrer, inscreva-se em **Extras → Sorteios** até a hora. Inscritos e resultado ficam públicos, e eu te conto aqui como foi.`,
+  ].filter(Boolean).join("\n");
 }
 
 export type SobraDaFaculdade = {

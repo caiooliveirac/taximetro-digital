@@ -218,10 +218,10 @@ const GUIA_EXTRAS: LunaCartao = {
   titulo: "Como funciona o jogo dos extras",
   itens: [
     "**Extra comum**: o líder ou a coordenação publica e leva quem pegar primeiro na aba Extras. Não conta para a meta.",
-    "**Repescagem**: vaga livre que ninguém ocupou vira extra 8h antes do turno — o noturno abre às 11h do dia, o diurno às 20h da véspera — e fecha quando o turno começa.",
-    "Na repescagem você pega direto, sem líder. Falta esse tipo na sua meta? Conta como plantão normal. Meta já fechada? Vira extra, e esse é **um só por interno**.",
+    "**Repescagem**: vaga livre que ninguém ocupou vai a **sorteio** 8h antes do turno — o noturno às 11h do dia, o diurno às 20h da véspera. Inscreva-se antes em Extras → Sorteios; inscritos e resultado são públicos.",
+    "A ordem do sorteio: primeiro quem tem casinha vazia no tipo (conta na meta), depois quem nunca teve extra, por último quem já teve (entra como extra). Empate, a ordem sorteada decide. O que sobrar fica para quem pegar primeiro.",
     "Em qualquer extra: 12h de descanso e nada no mesmo turno. Pegou, é seu — só o líder ou a coordenação tiram.",
-    "Quem ainda precisa do tipo, ou marcou **Quero** naquele turno e ainda não teve extra, recebe meu aviso aqui quando a repescagem abre.",
+    "Quem ainda precisa do tipo, ou marcou **Quero** naquele turno, recebe meu aviso aqui horas antes do sorteio — e o resultado depois.",
   ].map((titulo) => ({ titulo })),
 };
 
@@ -575,18 +575,11 @@ export async function preverRepescagem(f: Fontes, ctx: LunaCtx, meta: Meta | nul
   // Já pode agora (direto ou pelo líder): não é previsão. Candidatura é — a coordenação pode não decidir a tempo.
   const jaPode = new Set(busca.opcoes.filter((a) => !a.candidatura).map((a) => a.id));
   const livres = (await f.liberadas(pedido.ate)).filter((o) => !o.repescagem && !jaPode.has(o.id));
-  // Avaliada como se já estivesse na repescagem: descanso, agenda, dias e tipos pedidos, e o "um extra só".
-  const cx = { meta, meus, pedido: { ...pedido, candidatura: [] }, hoje: ctx.hoje };
-  const avaliadas = livres.map((o) => avaliarOferta({ ...o, repescagem: true }, cx));
-  const servem = avaliadas.filter((a) => a.status === "ELIGIBLE");
-  if (!servem.length) {
-    const soPeloExtra = avaliadas.filter((a) => a.motivo === "META_DO_TIPO_FECHADA").length;
-    if (!soPeloExtra || !meta?.jaTemExtra) return null;
-    return {
-      texto: `Há ${soPeloExtra} ${soPeloExtra === 1 ? "vaga livre que pode cair" : "vagas livres que podem cair"} na repescagem, mas ela não é para você: sua meta desse tipo está completa e você já teve um extra (é um só por interno).`,
-      cartao: { tipo: "previsao", titulo: "Repescagem", itens: [] },
-    };
-  }
+  // Avaliada como se já estivesse no sorteio: descanso, agenda, dias e tipos
+  // pedidos. Quem já teve extra também concorre — só fica por último.
+  const cx = { meta: meta && { ...meta, jaTemExtra: false }, meus, pedido: { ...pedido, candidatura: [] }, hoje: ctx.hoje };
+  const servem = livres.map((o) => avaliarOferta({ ...o, repescagem: true }, cx)).filter((a) => a.status === "ELIGIBLE");
+  if (!servem.length) return null;
 
   const turnos = new Map<string, { date: string; period: Periodo; shift: string | null; tipos: Set<string>; n: number; conta: boolean }>();
   for (const a of servem) {
@@ -602,30 +595,28 @@ export async function preverRepescagem(f: Fontes, ctx: LunaCtx, meta: Meta | nul
     .sort((x, y) => `${x.abre.date}${String(x.abre.hour).padStart(2, "0")}`.localeCompare(`${y.abre.date}${String(y.abre.hour).padStart(2, "0")}`))
     .slice(0, pedido.datas?.length ? 6 : TURNOS_PREVISTOS);
 
-  const abreEm = (t: (typeof lista)[number]) => `${diaRelativo(t.abre.date, ctx.hoje)} às ${t.abre.hour}h`;
+  const sorteioEm = (t: (typeof lista)[number]) => `${diaRelativo(t.abre.date, ctx.hoje)} às ${t.abre.hour}h`;
   const vagas = (n: number) => `${n} ${n === 1 ? "vaga" : "vagas"}`;
-  // Quem precisa do tipo recebe o aviso da repescagem de qualquer jeito; quem
-  // já fechou a meta só recebe se marcar Quero no turno (avisos.ts).
-  const precisaQuero = lista.some((t) => !t.conta);
+  // Ordem do sorteio (sorteio-repescagem.ts): casinha vazia, nunca teve extra, já teve.
+  const lugar = (conta: boolean) => (conta ? "conta na sua meta, você entra na frente" : meta?.jaTemExtra ? "entra como extra, você fica por último (já teve extra)" : "entra como extra, você vem depois de quem precisa da meta");
   const linhas = [
-    "**Pode abrir na repescagem** — se até a hora ninguém for escalado, a vaga livre vira extra e pega quem chegar primeiro:",
-    ...lista.map((t) => `- **${quando(t.date, t.period, t.shift)}**: ${vagas(t.n)} (${[...t.tipos].join(", ")}) — abre **${abreEm(t)}**${t.conta ? ", conta na sua meta" : ", entra como extra"}`),
-    precisaQuero
-      ? "Como extra é um só por interno. Marque **Quero** nesses turnos no calendário que eu te aviso aqui quando abrir — não precisa ficar olhando o site."
-      : "Como esse tipo ainda falta na sua meta, eu te aviso aqui quando abrir — não precisa ficar olhando o site.",
+    "**Pode ir a sorteio na repescagem** — vaga livre que ninguém for escalado até a hora é sorteada entre os inscritos:",
+    ...lista.map((t) => `- **${quando(t.date, t.period, t.shift)}**: ${vagas(t.n)} (${[...t.tipos].join(", ")}) — sorteio **${sorteioEm(t)}**; ${lugar(t.conta)}`),
+    "Para concorrer, inscreva-se em **Extras → Sorteios** até a hora. Inscritos e resultado são públicos, e eu te conto aqui como foi — não precisa ficar olhando o site.",
   ];
   return {
     texto: linhas.join("\n"),
     cartao: {
       tipo: "previsao",
-      titulo: "Pode abrir na repescagem",
+      titulo: "Sorteios da repescagem",
       itens: lista.map((t) => ({
-        titulo: `${quando(t.date, t.period, t.shift)} · abre ${abreEm(t)}`,
+        titulo: `${quando(t.date, t.period, t.shift)} · sorteio ${sorteioEm(t)}`,
         quando: { data: t.date, periodo: t.period, turno: t.shift },
-        base: `abre ${abreEm(t)}`,
+        base: `sorteio ${sorteioEm(t)}`,
         tipoVaga: [...t.tipos].join(", ") || null,
         detalhe: `${vagas(t.n)} livre${t.n === 1 ? "" : "s"} · ${t.conta ? "conta na sua meta" : "entra como extra"}`,
-        ...(t.conta ? {} : { href: "/intern/calendario", acao: "Me avise" }),
+        href: "/intern/extras",
+        acao: "Me inscrever",
       })),
     },
   };

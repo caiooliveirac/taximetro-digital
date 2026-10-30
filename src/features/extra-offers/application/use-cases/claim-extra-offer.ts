@@ -13,7 +13,7 @@ import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 import { findPendingFreeSlotRequest, insertRequest } from "@/features/requests/infra/repositories/request-repository";
 import { semDescansoPara } from "@/features/scheduling/application/descanso";
 import { metaDoInternoNoTipo, textoMetaCumprida } from "./free-slot-goal";
-import { comExtraNoHistorico, naRepescagem, TEXTO_JA_TEVE_EXTRA } from "../repescagem";
+import { comExtraNoHistorico, naRepescagem, sorteioPendente, TEXTO_JA_TEVE_EXTRA } from "../repescagem";
 import { soAsQueCabem } from "../lotacao";
 import { goalKindOf } from "@/lib/goal-slots";
 
@@ -171,6 +171,11 @@ export async function executeClaimExtraOffer(params: {
   // (candidatar-vaga-livre.ts). A tela não oferece isso; aqui fecha o POST direto.
   if (vagaLivre && !repescagem && actor.role === "INTERN" && !alocandoOutro) {
     return { status: 403, body: { success: false, code: "VAGA_LIVRE_PELO_LIDER", error: "Vaga livre é escalada pelo líder da sua faculdade. Se sua meta já fechou, candidate-se pela Dai." } } as const;
+  }
+  // Na abertura da repescagem a vaga vai a sorteio (sorteio-repescagem.ts):
+  // até ele rodar, ninguém pega para si. O que sobrar fica livre logo depois.
+  if (repescagem && !alocandoOutro && actor.role !== "COORDINATOR" && (await sorteioPendente(offer.date, offer.period as "DAY" | "NIGHT"))) {
+    return { status: 409, body: { success: false, code: "SORTEIO_PENDENTE", error: "Esta vaga está no sorteio da repescagem, que roda na abertura. O que sobrar fica livre logo depois — confira em Extras → Sorteios." } } as const;
   }
   const [quemLiberou] = vagaLivre && offer.releasedFacultyId
     ? await db.select({ abbr: faculties.abbreviation }).from(faculties).where(eq(faculties.id, offer.releasedFacultyId)).limit(1)

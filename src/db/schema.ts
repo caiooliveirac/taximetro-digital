@@ -592,3 +592,32 @@ export const swapCycleLegs = pgTable("swap_cycle_legs", {
   index("idx_swap_cycle_leg_intern").on(t.internId),
   index("idx_swap_cycle_leg_gives").on(t.givesAssignmentId),
 ]);
+
+// ── Sorteio da repescagem ─────────────────────────────────────────────────────
+// Vaga livre que chega à repescagem não vai mais para quem clicar primeiro:
+// quem quer o turno se inscreve, e na abertura da repescagem o sistema sorteia
+// por prioridade (meta abaixo > nunca teve extra > já teve extra). Inscritos e
+// resultado são públicos. Regras em sorteio-repescagem.ts.
+export const sorteioInscricoes = pgTable("sorteio_inscricoes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  internId: uuid("intern_id").notNull().references(() => users.id),
+  date: date("date").notNull(),
+  period: shiftPeriodEnum("period").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_sorteio_inscricao").on(t.internId, t.date, t.period),
+  index("idx_sorteio_inscricao_turno").on(t.date, t.period),
+]);
+
+export const sorteios = pgTable("sorteios", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  date: date("date").notNull(),
+  period: shiftPeriodEnum("period").notNull(),
+  ranAt: timestamp("ran_at").defaultNow().notNull(),
+  // Semente pública: com ela qualquer um refaz a ordem (sha256(semente + id)).
+  semente: varchar("semente", { length: 64 }).notNull(),
+  // [{ internId, nome, faculdade, prioridade, posicao, levou: { offerId, baseCode, comoExtra } | null, motivo? }]
+  resultado: jsonb("resultado").notNull(),
+}, (t) => [
+  uniqueIndex("uq_sorteio_turno").on(t.date, t.period),
+]);
