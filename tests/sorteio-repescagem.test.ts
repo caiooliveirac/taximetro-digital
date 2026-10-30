@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deveSortear, distribuir, horaDoSorteio, ordemDoSorteio, prioridadeNoTipo, type Candidato, type VagaDoSorteio } from "../src/features/extra-offers/application/sorteio-repescagem";
+import { deveSortear, distribuir, entraNoSorteio, horaDoSorteio, ordemDoSorteio, prioridadeNoTipo, type Candidato, type VagaDoSorteio } from "../src/features/extra-offers/application/sorteio-repescagem";
 import { horaDoSorteioAdiado, minutosDesdeAbertura } from "../src/features/extra-offers/application/repescagem";
 import { textoAnuncioSorteio } from "../src/features/dai-avisos/textos";
 
@@ -107,4 +107,10 @@ test("anúncio do adiamento diz que ninguém se inscreveu, a nova hora e o que a
   const t = textoAnuncioSorteio({ turno: "sex 30/10 noite", hora: "hoje às 13h", vagas: [{ tipo: "USA", n: 4 }], precisa: [], adiado: true });
   assert.match(t, /Ninguém tinha se inscrito, então o sorteio da repescagem de \*\*sex 30\/10 noite\*\* foi adiado para \*\*hoje às 13h\*\*/);
   assert.match(t, /Sem inscritos até lá, vão para quem pegar primeiro/);
+});
+
+test("CRU não vai a sorteio: só troca", () => {
+  assert.equal(entraNoSorteio("CRU"), false);
+  assert.equal(entraNoSorteio("USA"), true);
+  assert.equal(entraNoSorteio("CRL"), true);
 });

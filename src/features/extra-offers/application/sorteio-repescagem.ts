@@ -106,6 +106,9 @@ export function textoDaHora(h: { date: string; hour: number }, hoje: string) {
   return `${d} às ${h.hour}h`;
 }
 
+/** CRU não vai a sorteio: só muda de mãos por troca (decisão do Caio, 30/10). */
+export const entraNoSorteio = (tipo: GoalKind | null) => tipo !== "CRU";
+
 /** Vagas livres abertas no turno que cabem na viatura — as que vão a sorteio. */
 export async function vagasDoTurno(de: string, ate: string) {
   const ofertas = await db
@@ -118,7 +121,9 @@ export async function vagasDoTurno(de: string, ate: string) {
       isNull(extraShiftOffers.claimedBy), isNull(extraShiftOffers.cancelledAt), isNull(extraShiftOffers.reservedBy),
       gte(extraShiftOffers.date, de), lte(extraShiftOffers.date, ate),
     ));
-  return soAsQueCabem(ofertas.map((o) => ({ ...o, date: dia(o.date), period: o.period as ShiftPeriod, tipo: goalKindOf(o.baseType) })));
+  return soAsQueCabem(ofertas
+    .map((o) => ({ ...o, date: dia(o.date), period: o.period as ShiftPeriod, tipo: goalKindOf(o.baseType) }))
+    .filter((o) => entraNoSorteio(o.tipo)));
 }
 
 /** Inscritos com nome e faculdade (vínculo ativo de interno ou líder). */

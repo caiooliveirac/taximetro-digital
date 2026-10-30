@@ -186,8 +186,11 @@ divulgada, aviso pela mensageria. `sorteio-repescagem.ts`:
 - Dai anuncia nas 5h antes (casinha vazia no tipo ou Quero no turno) e conta
   o resultado a cada inscrito; o que sobra segue no aviso "pega direto".
 
-Ainda **só vagas livres** (liberadas e sem dono). A sobra de CRU/CRL entra
-quando a capacidade da grade for confirmada (pergunta abaixo).
+Ainda **só vagas livres** (liberadas e sem dono). **CRU não vai a sorteio**:
+só muda de mãos por troca (decisão do Caio, 30/10; `entraNoSorteio`). Hoje
+nem existe vaga livre de CRU — as 492 abertas são USA. Sem inscrito na
+abertura, o sorteio espera 2h e a Dai anuncia de novo (#126). Em aberto:
+a sobra de CRL da faculdade entra no sorteio?
 
 ## Fila no lugar da corrida (pedido do Caio, 30/10 — junta A e C)
 
