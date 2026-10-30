@@ -171,6 +171,24 @@ livres.
 internos na central, há preceptor)? As 32 recusas sem nota podem ser
 exatamente isso.
 
+## Sorteio da repescagem — implementado (30/10)
+
+Decisão do Caio: o sistema sorteia (não o admin), inscritos públicos, hora
+divulgada, aviso pela mensageria. `sorteio-repescagem.ts`:
+
+- inscrição em Extras → Sorteios até a hora (tabela `sorteio_inscricoes`);
+- na abertura da repescagem (11h / 20h, cron `sortear` de hora em hora no
+  minuto 0) distribui: critério 1 → 2 → 3, dentro dele a ordem
+  sha256(semente:id), semente publicada em `sorteios`; cada lugar passa pelo
+  claim da repescagem (descanso, viatura, meta/extra) com a Dai como coordenação;
+- até o sorteio rodar ninguém pega a vaga direto (trava de no máximo 30 min:
+  se o cron falhar, volta ao primeiro que pegar);
+- Dai anuncia nas 5h antes (casinha vazia no tipo ou Quero no turno) e conta
+  o resultado a cada inscrito; o que sobra segue no aviso "pega direto".
+
+Ainda **só vagas livres** (liberadas e sem dono). A sobra de CRU/CRL entra
+quando a capacidade da grade for confirmada (pergunta abaixo).
+
 ## Fila no lugar da corrida (pedido do Caio, 30/10 — junta A e C)
 
 Plantão desprezado (vaga livre que chega à repescagem **e** sobra de CRU/CRL

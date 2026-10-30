@@ -28,28 +28,31 @@
 
 import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, auditLog, bases, cohorts, extraShiftOffers, faculties, internMessages, userRoles, users } from "@/db/schema";
+import { assignments, auditLog, bases, cohorts, extraShiftOffers, faculties, userRoles, users } from "@/db/schema";
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import { AUDIT_CASO_ABERTO } from "@/lib/dai-casos";
 import { internDaySignals } from "@/db/schema";
 import { comExtraNoHistorico, naRepescagem } from "@/features/extra-offers/application/repescagem";
 import { GOAL_KINDS, goalKindOf, type GoalKind } from "@/lib/goal-slots";
 import { quando } from "@/lib/luna-inteligencia";
-import { addDaysToDateStr, hasShiftStarted, localDateStr } from "@/lib/utils";
+import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted, localDateStr } from "@/lib/utils";
+import { horaDoSorteio, textoDaHora, vagasDoTurno } from "@/features/extra-offers/application/sorteio-repescagem";
+import { sorteioFeito } from "@/features/extra-offers/application/repescagem";
+import { sorteioInscricoes } from "@/db/schema";
 import { plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
-import { idDaDai } from "./remetente";
-import { temaParaPlantao, textoProximoPlantao, textoRepescagem, textoRodaSugerida, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type PernaAvisada, type VagaAvisada } from "./textos";
+import { enviar, type Envio } from "./remetente";
+import { temaParaPlantao, textoAnuncioSorteio, textoProximoPlantao, textoRepescagem, textoRodaSugerida, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type PernaAvisada, type VagaAvisada } from "./textos";
 import { encontrarRodas, minhaPerna, problemaNaRoda, type RodaSugerida } from "@/shared/domain/policies/swap-cycle-policy";
 import { carregarMercado, type FotografiaDoMercado } from "@/features/requests/application/use-cases/load-swap-market";
 import { findInternOverCruQuota } from "@/features/requests/application/use-cases/handle-swap-peer-action";
 import { avaliarOferta, visivelPara, type Avaliacao, type OfertaAberta } from "@/shared/domain/policies/swap-match-policy";
 
-export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM", RODAS: "DAI_AVISO_RODAS", SOLICITACAO: "DAI_AVISO_SOLICITACAO" } as const;
-export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas" | "repescagem" | "rodas";
+export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM", RODAS: "DAI_AVISO_RODAS", SOLICITACAO: "DAI_AVISO_SOLICITACAO", SORTEIO: "DAI_AVISO_SORTEIO_ANUNCIO" } as const;
+export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas" | "repescagem" | "rodas" | "sorteio";
 export type ResultadoDosAvisos = { tipo: TipoDeAviso; enviados: number; considerados: number; dry: boolean; amostra?: string };
 
-export type Envio = { para: string; texto: string; action: string; entityId: string; payload: Record<string, unknown> };
+export { enviar, type Envio } from "./remetente";
 
 const VAGAS_POR_AVISO = 3;
 const JANELA_VAGAS_DIAS = 10;
@@ -58,16 +61,6 @@ const JANELA_SOBRA_DIAS = 7;
 const UM_DIA_MS = 20 * 60 * 60_000;
 
 const dia = (d: unknown) => String(d).slice(0, 10);
-
-export async function enviar(envios: Envio[], dry: boolean) {
-  if (dry || envios.length === 0) return;
-  const dai = await idDaDai({ criar: true });
-  if (!dai) throw new Error("Dai sem usuário");
-  await db.transaction(async (tx) => {
-    await tx.insert(internMessages).values(envios.map((e) => ({ fromUserId: dai, toUserId: e.para, body: e.texto })));
-    await tx.insert(auditLog).values(envios.map((e) => ({ userId: dai, action: e.action, entity: "dai_aviso", entityId: e.entityId, payload: { para: e.para, ...e.payload } })));
-  });
-}
 
 /**
  * Interno perguntou à Dai pelos pedidos sem decisão: ela manda ao líder a lista
@@ -344,6 +337,69 @@ async function avisarRepescagem(now: Date, dry: boolean): Promise<ResultadoDosAv
 
 // ---------------------------------------------------------------------------
 
+/** Antecedência do anúncio: o das 11h sai às 8h15, o das 20h às 15h15. */
+const ANUNCIO_HORAS_ANTES = 5;
+
+/**
+ * Sorteio da repescagem chegando: avisa quem tem casinha vazia no tipo de
+ * alguma vaga (e não é da faculdade que liberou) e quem marcou Quero no
+ * turno. Quem já se inscreveu não recebe; ninguém recebe duas vezes o mesmo turno.
+ */
+async function anunciarSorteios(now: Date, dry: boolean): Promise<ResultadoDosAvisos> {
+  const hoje = localDateStr(now);
+  const p = getBrazilNowParts(now);
+  const agora = p.hour + p.minute / 60;
+  const turnos = (["DAY", "NIGHT"] as const)
+    .flatMap((period) => [hoje, addDaysToDateStr(hoje, 1)].map((date) => ({ date, period, hora: horaDoSorteio(date, period) })))
+    .filter((t) => t.hora.date === hoje && t.hora.hour > agora && t.hora.hour - agora <= ANUNCIO_HORAS_ANTES && !hasShiftStarted(t.date, t.period, null, now));
+  const envios: Envio[] = [];
+  let considerados = 0;
+  for (const t of turnos) {
+    if (await sorteioFeito(t.date, t.period)) continue;
+    const vagas = (await vagasDoTurno(t.date, t.date)).filter((v) => v.period === t.period);
+    if (!vagas.length) continue;
+    const chave = `${t.date}|${t.period}`;
+    const [todos, sinais, inscritos, jaAvisados] = await Promise.all([
+      internosDoCompliance(),
+      db.select({ internId: internDaySignals.internId }).from(internDaySignals)
+        .where(and(eq(internDaySignals.date, t.date), eq(internDaySignals.period, t.period), eq(internDaySignals.signal, "QUERO"))),
+      db.select({ internId: sorteioInscricoes.internId }).from(sorteioInscricoes).where(and(eq(sorteioInscricoes.date, t.date), eq(sorteioInscricoes.period, t.period))),
+      db.select({ para: auditLog.entityId }).from(auditLog)
+        .where(and(eq(auditLog.action, AVISO.SORTEIO), sql`${auditLog.payload}->>'turno' = ${chave}`, gte(auditLog.createdAt, new Date(now.getTime() - 2 * UM_DIA_MS)))),
+    ]);
+    const quer = new Set(sinais.map((s) => s.internId));
+    const fora = new Set([...inscritos.map((i) => i.internId), ...jaAvisados.map((a) => a.para).filter((x): x is string => Boolean(x))]);
+    const porTipo = new Map<GoalKind, number>();
+    for (const v of vagas) porTipo.set(v.tipo!, (porTipo.get(v.tipo!) ?? 0) + 1);
+    const candidatos = todos.filter((i) => !fora.has(i.userId) && (quer.has(i.userId) || vagas.some((v) => v.tipo && i.faltam[v.tipo] > 0 && v.releasedFacultyId !== i.facultyId)));
+    considerados += candidatos.length;
+    if (!candidatos.length) continue;
+    // Descanso: quem não cabe em nenhuma vaga do turno não é chamado.
+    const turnosDe = await turnosDosInternos(candidatos.map((c) => c.userId), addDaysToDateStr(t.date, -1), addDaysToDateStr(t.date, 1));
+    for (const c of candidatos) {
+      const meus = turnosDe.get(c.userId) ?? [];
+      const cabem = vagas.filter((v) => v.releasedFacultyId !== c.facultyId && !plantaoSemDescanso({ date: v.date, period: v.period, shift: v.shift, baseCode: v.baseCode }, meus));
+      if (!cabem.length) continue;
+      envios.push({
+        para: c.userId,
+        texto: textoAnuncioSorteio({
+          turno: quando(t.date, t.period),
+          hora: textoDaHora(t.hora, hoje),
+          vagas: GOAL_KINDS.filter((k) => porTipo.get(k)).map((k) => ({ tipo: k, n: porTipo.get(k)! })),
+          precisa: GOAL_KINDS.filter((k) => porTipo.get(k) && c.faltam[k] > 0),
+        }),
+        action: AVISO.SORTEIO,
+        entityId: c.userId,
+        payload: { turno: chave },
+      });
+    }
+  }
+  await enviar(envios, dry);
+  return { tipo: "sorteio", enviados: envios.length, considerados, dry, amostra: envios[0]?.texto };
+}
+
+// ---------------------------------------------------------------------------
+
 async function avisarLideres(now: Date, dry: boolean): Promise<ResultadoDosAvisos> {
   const hoje = localDateStr(now);
   const ate = addDaysToDateStr(hoje, JANELA_SOBRA_DIAS - 1);
@@ -554,5 +610,6 @@ export async function executarAvisosDaDai(tipo: TipoDeAviso, params: { now?: Dat
   if (tipo === "trocas") return avisarTrocas(now, dry);
   if (tipo === "repescagem") return avisarRepescagem(now, dry);
   if (tipo === "rodas") return avisarRodas(now, dry);
+  if (tipo === "sorteio") return anunciarSorteios(now, dry);
   return avisarLideres(now, dry);
 }

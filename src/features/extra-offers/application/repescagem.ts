@@ -1,8 +1,9 @@
 /**
  * Repescagem: vaga livre (liberada por faculdade ou sem dono) que continua
- * aberta 8h antes do início do turno vira extra — o interno pega direto, sem
- * o líder e sem a trava da meta, quem chegar primeiro leva. Até ali o caminho
- * pelo líder é o certo; depois dele não dá mais tempo.
+ * aberta 8h antes do início do turno vira extra, sem o líder e sem a trava da
+ * meta. Na abertura ela vai a sorteio entre os inscritos (sorteio-repescagem.ts);
+ * o que sobrar, quem chegar primeiro leva. Até ali o caminho pelo líder é o
+ * certo; depois dele não dá mais tempo.
  *
  * Abertura fora de 8h–20h recua para as 20h anteriores, que é a última
  * rodada do aviso da Dai e ninguém recebe mensagem de madrugada: noturno
@@ -21,7 +22,7 @@
 
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments } from "@/db/schema";
+import { assignments, sorteios } from "@/db/schema";
 import { listFreeOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import { goalKindOf } from "@/lib/goal-slots";
 import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted, localDateStr, type ShiftPeriod } from "@/lib/utils";
@@ -74,6 +75,25 @@ export async function comExtraNoHistorico(internIds: string[]): Promise<Set<stri
     .from(assignments)
     .where(and(inArray(assignments.internId, internIds), eq(assignments.isExtraShift, true), ne(assignments.status, "CANCELLED")));
   return new Set(rows.map((r) => r.id));
+}
+
+/** Se o cron do sorteio não rodar, a vaga não fica presa: passado isso da abertura, volta ao primeiro que pegar. */
+const ESPERA_DO_SORTEIO_MIN = 30;
+
+/** Vaga do turno está esperando o sorteio (aberta há menos de 30 min e ele não rodou)? */
+export async function sorteioPendente(date: string, period: ShiftPeriod, now: Date = new Date()): Promise<boolean> {
+  if (!naRepescagem(date, period, null, now)) return false;
+  const abre = aberturaDaRepescagem(date, period, null);
+  const p = getBrazilNowParts(now);
+  const hoje = `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+  const minutos = hoje === abre.date ? (p.hour - abre.hour) * 60 + p.minute : Infinity;
+  return minutos < ESPERA_DO_SORTEIO_MIN && !(await sorteioFeito(date, period));
+}
+
+/** O sorteio do turno já rodou (sorteio-repescagem.ts)? */
+export async function sorteioFeito(date: string, period: ShiftPeriod): Promise<boolean> {
+  const [r] = await db.select({ id: sorteios.id }).from(sorteios).where(and(eq(sorteios.date, date), eq(sorteios.period, period))).limit(1);
+  return Boolean(r);
 }
 
 export const TEXTO_JA_TEVE_EXTRA = "já tem um plantão extra no histórico: a vaga de última hora fica para quem precisa da meta ou ainda não teve extra.";

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Zap, Clock, CheckCircle2, Loader2, AlertTriangle } from "lucide-react";
 import { getBaseStyle } from "@/lib/base-colors";
+import { Sorteios } from "./sorteios";
 
 /* ═══════════ Types ═══════════ */
 
@@ -19,7 +20,7 @@ type Offer = {
   facultyAbbreviation: string | null;
   notes: string | null;
   publishedAt: string | null;
-  /** Vaga livre a menos de 8h do turno: qualquer interno pega direto. */
+  /** Vaga livre a menos de 8h do turno que sobrou do sorteio: qualquer interno pega direto. */
   repescagem?: boolean;
   liberadaPor?: string | null;
 };
@@ -109,9 +110,11 @@ export default function InternExtrasPage() {
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" strokeWidth={2} />
         <div className="text-xs text-amber-800">
           <strong>Atenção:</strong> Plantões extras <strong>não contabilizam carga horária obrigatória</strong> da rotação. São oportunidades adicionais fora da escala regular.
-          {" "}A exceção é a <strong>vaga livre de última hora</strong>: se ainda falta esse tipo na sua meta, ela conta. Como extra, é uma por interno: quem já teve extra só vê as que contam na meta.
+          {" "}A exceção é a <strong>vaga livre de última hora</strong>: vai a sorteio na abertura da repescagem (inscreva-se abaixo) e conta na meta se ainda falta esse tipo. O que sobrar do sorteio fica aqui para quem pegar primeiro.
         </div>
       </div>
+
+      {tab === "available" ? <Sorteios /> : null}
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 w-fit">

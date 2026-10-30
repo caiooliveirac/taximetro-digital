@@ -65,6 +65,16 @@ append_vagas_livres_cron() {
   echo "[entrypoint] liberação automática de vagas habilitada em ${schedule} (${TZ})"
 }
 
+# Sorteio da repescagem (sorteio-repescagem.ts): as aberturas são às 11h e às
+# 20h; de hora em hora no minuto 0 pega as duas e qualquer atraso. Fora dos
+# avisos da Dai: sem ele, a vaga ficaria presa 30 min a cada abertura.
+append_sorteio_cron() {
+  schedule="${SORTEIO_CRON:-0 8-21 * * *}"
+
+  printf "%s\n" "${schedule} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs sortear' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  echo "[entrypoint] sorteio da repescagem habilitado em ${schedule} (${TZ})"
+}
+
 append_dai_avisos_cron() {
   # Véspera do plantão às 17h; vaga livre que abriu, de hora em hora no dia
   # (depois da liberação automática do minuto 10); resumo do líder às 8h.
@@ -73,6 +83,8 @@ append_dai_avisos_cron() {
   printf "%s\n" "${DAI_AVISO_LIDERES_CRON:-0 8 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs lideres' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   # Repescagem: vaga livre que virou extra 8h antes do turno (abre às 11h e às 20h).
   printf "%s\n" "${DAI_AVISO_REPESCAGEM_CRON:-15 8-20 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs repescagem' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
+  # Sorteio da repescagem chegando: anúncio nas 5h antes (o das 11h sai às 8h15, o das 20h às 15h15).
+  printf "%s\n" "${DAI_AVISO_SORTEIO_CRON:-15 8-20 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs sorteio' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   # Trocas: sem efeito enquanto a feature avisoDeTrocas estiver desligada (instance.ts).
   printf "%s\n" "${DAI_AVISO_TROCAS_CRON:-40 8-20 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs trocas' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   # Rodas (troca a três): uma vez por dia, de manhã.
@@ -130,6 +142,12 @@ elif [ -z "${AUTH_SECRET:-}" ]; then
   echo "[entrypoint] liberação automática de vagas desabilitada por configuração incompleta (AUTH_SECRET)"
 else
   append_vagas_livres_cron
+fi
+
+if [ -z "${AUTH_SECRET:-}" ]; then
+  echo "[entrypoint] sorteio da repescagem desabilitado por configuração incompleta (AUTH_SECRET)"
+else
+  append_sorteio_cron
 fi
 
 if [ "${DAI_AVISOS_ENABLED:-true}" = "false" ]; then
