@@ -117,4 +117,4 @@ export async function sorteioFeito(date: string, period: ShiftPeriod): Promise<b
   return Boolean(r);
 }
 
-export const TEXTO_JA_TEVE_EXTRA = "já tem um plantão extra no histórico: a vaga de última hora fica para quem precisa da meta ou ainda não teve extra.";
+export const TEXTO_JA_TEVE_EXTRA = "já tem um plantão extra no histórico: é um extra por interno, para todo mundo ter a vez. Vaga que conta na meta continua valendo.";

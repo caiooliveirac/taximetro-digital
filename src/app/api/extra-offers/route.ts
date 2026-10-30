@@ -41,14 +41,17 @@ export async function GET(req: NextRequest) {
   const isAdmin = user.role === "COORDINATOR";
   const includeUnavailable = req.nextUrl.searchParams.get("all") === "true";
 
-  const rows = isAdmin
+  let rows = isAdmin
     ? await listExtraOffersForAdmin()
     : await listExtraOffers({ includeUnavailable });
 
-  // Vaga livre a menos de 8h do turno também é extra para o interno
-  // (repescagem.ts). Quem já teve extra só vê as do tipo que ainda falta na meta.
+  // Extra é um por interno (claim-extra-offer.ts): quem já teve não vê extra
+  // comum, e da vaga de última hora (repescagem.ts) só as do tipo que ainda
+  // falta na meta — essas contam na meta, não são extra.
+  const jaTeveExtra = user.role === "INTERN" && !includeUnavailable && !user.isImpersonating && (await comExtraNoHistorico([user.id])).has(user.id);
+  if (jaTeveExtra) rows = [];
   let vagas = user.role === "INTERN" && !includeUnavailable && user.facultyId ? await vagasNaRepescagem(user.facultyId) : [];
-  if (vagas.length && !user.isImpersonating && (await comExtraNoHistorico([user.id])).has(user.id)) {
+  if (vagas.length && jaTeveExtra) {
     const { data } = await executeGetComplianceOverview({ actor: { id: "", role: "COORDINATOR", facultyId: null }, internId: user.id });
     const r = data.find((x) => x.userId === user.id);
     const falta = { USA: r?.missingUSA ?? 0, CRU: r?.missingCRU ?? 0, CRL: r?.missingCRL ?? 0 };

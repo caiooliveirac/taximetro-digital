@@ -68,6 +68,7 @@ export type Motivo =
   | "JA_PASSOU"
   | "FORA_DA_JANELA"
   | "TIPO_NAO_PEDIDO"
+  | "JA_TEVE_EXTRA"
   | "DIA_BLOQUEADO"
   | "SEM_DESCANSO"
   | "META_DO_TIPO_FECHADA"
@@ -174,6 +175,8 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
   const choque = plantaoSemDescanso({ date: o.date, period: o.period, shift: o.shift, baseCode: o.baseCode }, ocupados);
   if (choque) return fora("SEM_DESCANSO", `sem 12h de descanso por causa do seu ${descreveTurno(choque)}`);
 
+  // Extra é um por interno (claim-extra-offer.ts): o comum também.
+  if (o.fonte === "EXTRA" && meta?.jaTemExtra) return fora("JA_TEVE_EXTRA", "extra é um por interno e você já teve o seu");
   if (o.repescagem && faltaDoTipo <= 0 && meta?.jaTemExtra) {
     return fora("META_DO_TIPO_FECHADA", "vaga de última hora: você já teve um extra, fica para quem precisa da meta ou ainda não teve");
   }
@@ -408,6 +411,7 @@ const ROTULO_MOTIVO: Record<Motivo, string> = {
   JA_PASSOU: "que já passaram",
   FORA_DA_JANELA: "fora da janela",
   TIPO_NAO_PEDIDO: "de outro tipo",
+  JA_TEVE_EXTRA: "de extra (é um por interno e você já teve)",
   DIA_BLOQUEADO: "em dia que você não pode",
   SEM_DESCANSO: "sem 12h de descanso",
   META_DO_TIPO_FECHADA: "de tipo com meta completa",
