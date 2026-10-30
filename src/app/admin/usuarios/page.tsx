@@ -7,7 +7,7 @@ import { InviteButton } from "@/components/invite-button";
 import { PhotoLightbox } from "@/components/photo-lightbox";
 import { UserAvatar as Avatar } from "@/components/user-avatar";
 import { formatBrazilTime } from "@/lib/utils";
-import { filterUsers, countActiveFilters, EMPTY_FILTERS, type UserFilters } from "./filter-users";
+import { filterUsers, countActiveFilters, isPending, EMPTY_FILTERS, type UserFilters } from "./filter-users";
 import { ROLES, ROLE_LABEL, ROLE_BADGE_CLASS, type User, type Faculty, type Base, type Cohort } from "./user-meta";
 import { UserDrawer } from "@/components/admin/user-drawer";
 import { ehContaArquivadaNoRecadastro } from "@/features/registration/domain/recadastro";
@@ -198,7 +198,7 @@ export default function AdminUsuarios() {
     }
   }
 
-  const pendingCount = users.filter((u) => !u.isActive).length;
+  const pendingCount = users.filter(isPending).length;
 
   const filtered = filterUsers(users, filters);
   // "ativos" é o basal — só conta como filtro o que desvia do padrão
@@ -551,7 +551,7 @@ export default function AdminUsuarios() {
               <button
                 key={u.id}
                 onClick={() => openDrawer(u.id)}
-                className={`group overflow-hidden rounded-xl border text-left shadow-sm transition-shadow hover:shadow-md ${!u.isActive ? "border-amber-200 bg-amber-50/50" : "border-slate-200 bg-white"}`}
+                className={`group overflow-hidden rounded-xl border text-left shadow-sm transition-shadow hover:shadow-md ${isPending(u) ? "border-amber-200 bg-amber-50/50" : "border-slate-200 bg-white"}`}
               >
                 <Avatar
                   userId={u.id}
@@ -563,8 +563,8 @@ export default function AdminUsuarios() {
                   <p className="truncate text-xs text-slate-500">
                     {[u.facultyAbbr, u.allRoles?.find((r) => r.role === "INTERN")?.cohortName].filter(Boolean).join(" · ") || ROLE_LABEL[u.role ?? ""] || "—"}
                   </p>
-                  {!u.isActive && <p className="text-[10px] font-medium text-amber-700">Pendente</p>}
-                  {u.isActive && u.isArchived && <p className="text-[10px] font-medium text-slate-500">Arquivado</p>}
+                  {isPending(u) && <p className="text-[10px] font-medium text-amber-700">Pendente</p>}
+                  {u.isArchived && <p className="text-[10px] font-medium text-slate-500">Arquivado</p>}
                 </div>
               </button>
             ))}
@@ -579,7 +579,7 @@ export default function AdminUsuarios() {
             <button
               key={u.id}
               onClick={() => openDrawer(u.id)}
-              className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left shadow-sm ${!u.isActive ? "border-amber-200 bg-amber-50/50" : "border-slate-200 bg-white"}`}
+              className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left shadow-sm ${isPending(u) ? "border-amber-200 bg-amber-50/50" : "border-slate-200 bg-white"}`}
             >
               <Avatar userId={u.id} name={u.name} className="h-12 w-12 shrink-0 rounded-full text-base" />
               <div className="min-w-0 flex-1">
@@ -588,10 +588,10 @@ export default function AdminUsuarios() {
                   {[u.facultyAbbr, u.allRoles?.find((r) => r.role === "INTERN")?.cohortName].filter(Boolean).join(" · ") || ROLE_LABEL[u.role ?? ""] || "—"}
                 </p>
               </div>
-              {!u.isActive && (
+              {isPending(u) && (
                 <span className="shrink-0 rounded px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700">Pendente</span>
               )}
-              {u.isActive && u.isArchived && (
+              {u.isArchived && (
                 <span className="shrink-0 rounded px-2 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600">Arquivado</span>
               )}
               <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" aria-hidden="true" />
@@ -621,7 +621,7 @@ export default function AdminUsuarios() {
               <tr
                 key={u.id}
                 onClick={() => openDrawer(u.id)}
-                className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 ${!u.isActive ? "bg-amber-50/50" : ""}`}
+                className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 ${isPending(u) ? "bg-amber-50/50" : ""}`}
               >
                 <td className="py-2 pr-2">
                   <Avatar
@@ -697,19 +697,17 @@ export default function AdminUsuarios() {
                   })()}
                 </td>
                 <td className="py-2 pr-4">
-                  {u.isActive ? (
-                    u.isArchived ? (
-                      <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600">Arquivado</span>
-                    ) : (
-                      <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700">Ativo</span>
-                    )
+                  {u.isArchived ? (
+                    <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600">Arquivado</span>
+                  ) : u.isActive ? (
+                    <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700">Ativo</span>
                   ) : (
                     <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700">Pendente</span>
                   )}
                 </td>
                 <td className="py-2">
                   <div className="flex items-center justify-end gap-2">
-                    {!u.isActive && (
+                    {isPending(u) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); approve(u.id); }}
                         className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700"

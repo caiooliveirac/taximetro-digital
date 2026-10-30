@@ -25,11 +25,19 @@ type FilterableUser = {
   allRoles?: Array<{ role: string; facultyId: string | null; cohortId: string | null }>;
 };
 
+/**
+ * Pendente é cadastro esperando aprovação. Conta desligada e arquivada (como a
+ * antiga de quem se recadastrou) não é pendência: é arquivo.
+ */
+export function isPending(u: { isActive: boolean; isArchived?: boolean }) {
+  return !u.isActive && !u.isArchived;
+}
+
 export function filterUsers<T extends FilterableUser>(users: T[], f: UserFilters): T[] {
   const q = f.q.trim().toLowerCase();
   const out = users.filter((u) => {
     if (f.status === "active" && (!u.isActive || u.isArchived)) return false;
-    if (f.status === "pending" && u.isActive) return false;
+    if (f.status === "pending" && !isPending(u)) return false;
     if (f.status === "archived" && !u.isArchived) return false;
     if (f.fac && !(u.facultyId === f.fac || u.allRoles?.some((r) => r.facultyId === f.fac))) return false;
     if (f.turma && !u.allRoles?.some((r) => r.cohortId === f.turma)) return false;

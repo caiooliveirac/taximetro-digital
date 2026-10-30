@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { filterUsers, countActiveFilters, EMPTY_FILTERS, type UserFilters } from "../src/app/admin/usuarios/filter-users";
+import { filterUsers, countActiveFilters, isPending, EMPTY_FILTERS, type UserFilters } from "../src/app/admin/usuarios/filter-users";
 
 function makeUser(over: Record<string, unknown> = {}) {
   return {
@@ -68,4 +68,12 @@ test("ordenação por data de cadastro", () => {
 test("countActiveFilters ignora q e sort", () => {
   assert.equal(countActiveFilters(f({ status: "active", fac: "f1", q: "x", sort: "newest" })), 2);
   assert.equal(countActiveFilters(EMPTY_FILTERS), 0);
+});
+
+test("conta desligada e arquivada (recadastro) não é pendência, só arquivada", () => {
+  const antiga = makeUser({ name: "Elisa Antiga", email: "arquivado+x@recadastro.local", isActive: false, isArchived: true });
+  const lista = [...users, antiga];
+  assert.equal(isPending(antiga), false);
+  assert.deepEqual(filterUsers(lista, f({ status: "pending" })).map((u) => u.name), ["Bruno Costa"]);
+  assert.deepEqual(filterUsers(lista, f({ status: "archived" })).map((u) => u.name), ["Carla Dias", "Elisa Antiga"]);
 });

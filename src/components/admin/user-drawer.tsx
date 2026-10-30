@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { getFacultyStyle } from "@/lib/base-colors";
 import { PhotoLightbox } from "@/components/photo-lightbox";
 import { InternHistorySection } from "@/components/admin/intern-history-section";
+import { isPending } from "@/app/admin/usuarios/filter-users";
 import {
   ROLES, ROLE_LABEL, ROLE_BADGE_CLASS, formatCpf,
   type User, type Faculty, type Base,
@@ -345,12 +346,10 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
                         {ROLE_LABEL[detail.role ?? ""] ?? detail.role ?? "—"}
                       </span>
                     )}
-                    {detail.isActive ? (
-                      detail.isArchived ? (
-                        <span className="rounded px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">Arquivado</span>
-                      ) : (
-                        <span className="rounded px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700">Ativo</span>
-                      )
+                    {detail.isArchived ? (
+                      <span className="rounded px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">Arquivado</span>
+                    ) : detail.isActive ? (
+                      <span className="rounded px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700">Ativo</span>
                     ) : (
                       <span className="rounded px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700">Pendente</span>
                     )}
@@ -383,7 +382,7 @@ export function UserDrawer({ userId, initialUser, faculties, bases, prevId, next
                     {isLeader ? "Tornar só interno" : "Tornar líder"}
                   </button>
                 )}
-                {!detail.isActive && (
+                {isPending(detail) && (
                   <button onClick={() => patchUser({ isActive: true })} disabled={busy} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
                     Aprovar
                   </button>
