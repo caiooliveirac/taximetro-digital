@@ -13,9 +13,10 @@
  * meta/extra, mesmo turno) é o mesmo claim da repescagem
  * (claim-extra-offer.ts), com a Dai no papel da coordenação.
  *
- * Inscritos e resultado são públicos (/api/intern/sorteios). Até o sorteio
- * rodar, ninguém pega a vaga direto; depois, o que sobrou volta ao "primeiro
- * que pegar".
+ * Inscritos e resultado são públicos (/api/intern/sorteios). Só entre
+ * interessados: sem inscrito na abertura, o sorteio espera 2h e a Dai anuncia
+ * de novo. Até ele rodar, ninguém pega a vaga direto; depois, o que sobrou
+ * volta ao "primeiro que pegar".
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -28,7 +29,7 @@ import { GOAL_KINDS, goalKindOf, type GoalKind } from "@/lib/goal-slots";
 import { quando } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr, hasShiftStarted, localDateStr, type ShiftPeriod } from "@/lib/utils";
 import { soAsQueCabem } from "./lotacao";
-import { aberturaDaRepescagem, comExtraNoHistorico, naRepescagem, sorteioFeito } from "./repescagem";
+import { ADIAMENTO_DO_SORTEIO_H, ESPERA_DO_SORTEIO_MIN, aberturaDaRepescagem, comExtraNoHistorico, horaDoSorteioAdiado, minutosDesdeAbertura, sorteioFeito } from "./repescagem";
 import { executeClaimExtraOffer } from "./use-cases/claim-extra-offer";
 
 export const AVISO_SORTEIO = "DAI_AVISO_SORTEIO";
@@ -81,6 +82,15 @@ export async function distribuir(
     }
   }
   return { levou, motivos };
+}
+
+/**
+ * Roda agora? Na abertura (até a folga do cron), só se já houver inscrito;
+ * sem ninguém, espera a hora adiada e então roda com quem houver.
+ */
+export function deveSortear(minutosDesdeAbertura: number, inscritos: number): boolean {
+  if (minutosDesdeAbertura >= ADIAMENTO_DO_SORTEIO_H * 60) return true;
+  return minutosDesdeAbertura < ESPERA_DO_SORTEIO_MIN && inscritos > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,8 +175,11 @@ export async function executarSorteios(params: { now?: Date; dry?: boolean } = {
 
   for (const date of [hoje, addDaysToDateStr(hoje, 1)]) {
     for (const period of PERIODOS) {
-      if (!naRepescagem(date, period, null, now) || hasShiftStarted(date, period, null, now)) continue;
+      const m = minutosDesdeAbertura(date, period, now);
+      if (m === null || hasShiftStarted(date, period, null, now)) continue;
       if (await sorteioFeito(date, period)) continue;
+      // Ninguém inscrito na hora: adiado (a Dai anuncia de novo, avisos.ts).
+      if (!deveSortear(m, (await inscritosDe(date, period)).length)) continue;
 
       const semente = randomBytes(16).toString("hex");
       if (!dry) {
@@ -257,14 +270,18 @@ export async function painelDosSorteios(eu: string, now: Date = new Date()) {
       if (!doTurno.length && !inscritos.length) continue;
       const porTipo: Partial<Record<GoalKind, number>> = {};
       for (const v of doTurno) if (v.tipo) porTipo[v.tipo] = (porTipo[v.tipo] ?? 0) + 1;
-      const hora = horaDoSorteio(d, period);
+      // Sem inscrito na abertura, o sorteio foi adiado; com inscrito, está rodando.
+      const m = minutosDesdeAbertura(d, period, now);
+      const adiado = m !== null && m < ADIAMENTO_DO_SORTEIO_H * 60 && !(inscritos.length && m < ESPERA_DO_SORTEIO_MIN);
+      const hora = adiado ? horaDoSorteioAdiado(d, period) : horaDoSorteio(d, period);
       proximos.push({
         date: d,
         period,
         turno: quando(d, period),
         hora: textoDaHora(hora, hoje),
         // Passou da hora e o cron ainda não rodou: alguns minutos.
-        sorteando: naRepescagem(d, period, null, now),
+        sorteando: m !== null && !adiado,
+        adiado,
         vagas: GOAL_KINDS.filter((k) => porTipo[k]).map((k) => ({ tipo: k, n: porTipo[k]! })),
         inscritos: inscritos.map((i) => ({ nome: i.nome, faculdade: i.faculdade ?? null, eu: i.internId === eu })),
         inscrito: inscritos.some((i) => i.internId === eu),
@@ -284,9 +301,16 @@ export async function painelDosSorteios(eu: string, now: Date = new Date()) {
   return { proximos, resultados };
 }
 
+/** Inscrição aberta até o sorteio rodar: antes da abertura e, se adiado, até a hora adiada. */
+function inscricaoAberta(date: string, period: ShiftPeriod, now: Date) {
+  if (hasShiftStarted(date, period, null, now)) return false;
+  const m = minutosDesdeAbertura(date, period, now);
+  return m === null || m < ADIAMENTO_DO_SORTEIO_H * 60;
+}
+
 /** Inscrição aberta até a hora do sorteio. */
 export async function inscrever(internId: string, date: string, period: ShiftPeriod, now: Date = new Date()) {
-  if (date < localDateStr(now) || naRepescagem(date, period, null, now) || hasShiftStarted(date, period, null, now) || (await sorteioFeito(date, period))) {
+  if (date < localDateStr(now) || !inscricaoAberta(date, period, now) || (await sorteioFeito(date, period))) {
     return { ok: false as const, erro: "A inscrição deste turno já fechou: o sorteio é na abertura da repescagem." };
   }
   await db.insert(sorteioInscricoes).values({ internId, date, period }).onConflictDoNothing();
@@ -294,7 +318,7 @@ export async function inscrever(internId: string, date: string, period: ShiftPer
 }
 
 export async function desistir(internId: string, date: string, period: ShiftPeriod, now: Date = new Date()) {
-  if (naRepescagem(date, period, null, now) || (await sorteioFeito(date, period))) {
+  if (!inscricaoAberta(date, period, now) || (await sorteioFeito(date, period))) {
     return { ok: false as const, erro: "O sorteio deste turno já começou." };
   }
   await db.delete(sorteioInscricoes).where(and(eq(sorteioInscricoes.internId, internId), eq(sorteioInscricoes.date, date), eq(sorteioInscricoes.period, period)));

@@ -63,10 +63,13 @@ export function textoRepescagem(vagas: VagaAvisada[]) {
 }
 
 /** Anúncio do sorteio da repescagem (sorteio-repescagem.ts), horas antes. */
-export function textoAnuncioSorteio(s: { turno: string; hora: string; vagas: { tipo: GoalKind; n: number }[]; precisa: GoalKind[] }) {
+export function textoAnuncioSorteio(s: { turno: string; hora: string; vagas: { tipo: GoalKind; n: number }[]; precisa: GoalKind[]; adiado?: boolean }) {
   const total = s.vagas.reduce((n, v) => n + v.n, 0);
+  const vagas = `${total} ${total === 1 ? "vaga livre" : "vagas livres"} (${s.vagas.map((v) => `${v.n} ${v.tipo}`).join(", ")})`;
   return [
-    `Sorteio da repescagem **${s.hora}** para **${s.turno}**: ${total} ${total === 1 ? "vaga livre" : "vagas livres"} (${s.vagas.map((v) => `${v.n} ${v.tipo}`).join(", ")}).`,
+    s.adiado
+      ? `Ninguém tinha se inscrito, então o sorteio da repescagem de **${s.turno}** foi adiado para **${s.hora}**: ${vagas} esperando interessados. Sem inscritos até lá, vão para quem pegar primeiro.`
+      : `Sorteio da repescagem **${s.hora}** para **${s.turno}**: ${vagas}.`,
     `A ordem: primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra, por último quem já teve. Empate, o sorteio decide.`,
     s.precisa.length ? `Você ainda tem ${s.precisa.join(" e ")} faltando na meta: se levar, conta.` : "",
     `Para concorrer, inscreva-se em **Extras → Sorteios** até a hora. Inscritos e resultado ficam públicos, e eu te conto aqui como foi.`,

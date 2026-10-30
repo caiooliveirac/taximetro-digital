@@ -77,17 +77,38 @@ export async function comExtraNoHistorico(internIds: string[]): Promise<Set<stri
   return new Set(rows.map((r) => r.id));
 }
 
-/** Se o cron do sorteio não rodar, a vaga não fica presa: passado isso da abertura, volta ao primeiro que pegar. */
-const ESPERA_DO_SORTEIO_MIN = 30;
+/**
+ * Sorteio só entre interessados (sorteio-repescagem.ts): sem inscrito na
+ * abertura, ele espera estas horas e a Dai anuncia de novo; depois disso, com
+ * ou sem inscrito, roda — e o que sobrar vai para quem pegar primeiro.
+ */
+export const ADIAMENTO_DO_SORTEIO_H = 2;
+/** Folga para o cron: passado isso da hora, a vaga não fica presa se ele falhar. */
+export const ESPERA_DO_SORTEIO_MIN = 30;
 
-/** Vaga do turno está esperando o sorteio (aberta há menos de 30 min e ele não rodou)? */
-export async function sorteioPendente(date: string, period: ShiftPeriod, now: Date = new Date()): Promise<boolean> {
-  if (!naRepescagem(date, period, null, now)) return false;
+/** Minutos desde a abertura da repescagem; null antes dela; Infinity se abriu em outro dia. */
+export function minutosDesdeAbertura(date: string, period: ShiftPeriod, now: Date = new Date()): number | null {
+  if (!naRepescagem(date, period, null, now)) return null;
   const abre = aberturaDaRepescagem(date, period, null);
   const p = getBrazilNowParts(now);
   const hoje = `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
-  const minutos = hoje === abre.date ? (p.hour - abre.hour) * 60 + p.minute : Infinity;
-  return minutos < ESPERA_DO_SORTEIO_MIN && !(await sorteioFeito(date, period));
+  return hoje === abre.date ? (p.hour - abre.hour) * 60 + p.minute : Infinity;
+}
+
+/** Hora do sorteio adiado (sem inscrito na abertura): 13h no noturno, 22h no diurno. */
+export function horaDoSorteioAdiado(date: string, period: ShiftPeriod) {
+  const abre = aberturaDaRepescagem(date, period, null);
+  return { date: abre.date, hour: abre.hour + ADIAMENTO_DO_SORTEIO_H };
+}
+
+/**
+ * Vaga do turno está esperando o sorteio? Da abertura até a hora adiada (mais
+ * a folga do cron), enquanto ele não rodou, ninguém pega direto.
+ */
+export async function sorteioPendente(date: string, period: ShiftPeriod, now: Date = new Date()): Promise<boolean> {
+  const m = minutosDesdeAbertura(date, period, now);
+  if (m === null || m >= ADIAMENTO_DO_SORTEIO_H * 60 + ESPERA_DO_SORTEIO_MIN) return false;
+  return !(await sorteioFeito(date, period));
 }
 
 /** O sorteio do turno já rodou (sorteio-repescagem.ts)? */

@@ -11,6 +11,8 @@ type Proximo = {
   turno: string;
   hora: string;
   sorteando: boolean;
+  /** Ninguém se inscreveu até a abertura: o sorteio espera 2h. */
+  adiado: boolean;
   vagas: { tipo: string; n: number }[];
   inscritos: { nome: string; faculdade: string | null; eu: boolean }[];
   inscrito: boolean;
@@ -63,7 +65,7 @@ export function Sorteios() {
         <h2 className="text-sm font-bold text-slate-900">Sorteios da repescagem</h2>
       </div>
       <p className="text-xs text-slate-500">
-        Vaga livre que ninguém escalar até a repescagem vai a sorteio na hora em que ela abre. Primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra, por último quem já teve; no empate, a ordem sorteada.
+        Vaga livre que ninguém escalar até a repescagem vai a sorteio na hora em que ela abre, só entre os inscritos (sem ninguém, espera 2h). Primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra, por último quem já teve; no empate, a ordem sorteada.
       </p>
       {erro ? <p className="text-xs font-medium text-red-600">{erro}</p> : null}
 
@@ -75,7 +77,7 @@ export function Sorteios() {
               <div className="space-y-1">
                 <p className="text-sm font-bold text-slate-900">{p.turno}</p>
                 <p className="text-xs text-slate-600">
-                  {p.sorteando ? "Sorteando agora…" : <>Sorteio <strong>{p.hora}</strong></>} ·{" "}
+                  {p.sorteando ? "Sorteando agora…" : p.adiado ? <>Ninguém tinha se inscrito: sorteio adiado para <strong>{p.hora}</strong></> : <>Sorteio <strong>{p.hora}</strong></>} ·{" "}
                   {p.vagas.length ? p.vagas.map((v) => `${v.n} ${v.tipo}`).join(", ") + " em jogo agora" : "nenhuma vaga livre agora (o líder ainda pode escalar ou liberar)"}
                 </p>
               </div>

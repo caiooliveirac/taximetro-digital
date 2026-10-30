@@ -37,7 +37,7 @@ import { GOAL_KINDS, goalKindOf, type GoalKind } from "@/lib/goal-slots";
 import { quando } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted, localDateStr } from "@/lib/utils";
 import { horaDoSorteio, textoDaHora, vagasDoTurno } from "@/features/extra-offers/application/sorteio-repescagem";
-import { sorteioFeito } from "@/features/extra-offers/application/repescagem";
+import { ADIAMENTO_DO_SORTEIO_H, ESPERA_DO_SORTEIO_MIN, horaDoSorteioAdiado, minutosDesdeAbertura, sorteioFeito } from "@/features/extra-offers/application/repescagem";
 import { sorteioInscricoes } from "@/db/schema";
 import { plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
@@ -349,16 +349,22 @@ async function anunciarSorteios(now: Date, dry: boolean): Promise<ResultadoDosAv
   const hoje = localDateStr(now);
   const p = getBrazilNowParts(now);
   const agora = p.hour + p.minute / 60;
+  // Antes da abertura: o anúncio normal. Passada a abertura sem sorteio
+  // (ninguém inscrito): o adiamento, para a hora adiada.
   const turnos = (["DAY", "NIGHT"] as const)
-    .flatMap((period) => [hoje, addDaysToDateStr(hoje, 1)].map((date) => ({ date, period, hora: horaDoSorteio(date, period) })))
-    .filter((t) => t.hora.date === hoje && t.hora.hour > agora && t.hora.hour - agora <= ANUNCIO_HORAS_ANTES && !hasShiftStarted(t.date, t.period, null, now));
+    .flatMap((period) => [hoje, addDaysToDateStr(hoje, 1)].map((date) => {
+      const m = minutosDesdeAbertura(date, period, now);
+      const adiado = m !== null && m < ADIAMENTO_DO_SORTEIO_H * 60;
+      return { date, period, m, adiado, hora: adiado ? horaDoSorteioAdiado(date, period) : horaDoSorteio(date, period) };
+    }))
+    .filter((t) => !hasShiftStarted(t.date, t.period, null, now) && (t.adiado || (t.m === null && t.hora.date === hoje && t.hora.hour > agora && t.hora.hour - agora <= ANUNCIO_HORAS_ANTES)));
   const envios: Envio[] = [];
   let considerados = 0;
   for (const t of turnos) {
     if (await sorteioFeito(t.date, t.period)) continue;
     const vagas = (await vagasDoTurno(t.date, t.date)).filter((v) => v.period === t.period);
     if (!vagas.length) continue;
-    const chave = `${t.date}|${t.period}`;
+    const chave = `${t.date}|${t.period}${t.adiado ? "|adiado" : ""}`;
     const [todos, sinais, inscritos, jaAvisados] = await Promise.all([
       internosDoCompliance(),
       db.select({ internId: internDaySignals.internId }).from(internDaySignals)
@@ -367,6 +373,8 @@ async function anunciarSorteios(now: Date, dry: boolean): Promise<ResultadoDosAv
       db.select({ para: auditLog.entityId }).from(auditLog)
         .where(and(eq(auditLog.action, AVISO.SORTEIO), sql`${auditLog.payload}->>'turno' = ${chave}`, gte(auditLog.createdAt, new Date(now.getTime() - 2 * UM_DIA_MS)))),
     ]);
+    // Com inscrito na hora o sorteio está rodando: não é adiamento.
+    if (t.adiado && inscritos.length && t.m! < ESPERA_DO_SORTEIO_MIN) continue;
     const quer = new Set(sinais.map((s) => s.internId));
     const fora = new Set([...inscritos.map((i) => i.internId), ...jaAvisados.map((a) => a.para).filter((x): x is string => Boolean(x))]);
     const porTipo = new Map<GoalKind, number>();
@@ -387,6 +395,7 @@ async function anunciarSorteios(now: Date, dry: boolean): Promise<ResultadoDosAv
           hora: textoDaHora(t.hora, hoje),
           vagas: GOAL_KINDS.filter((k) => porTipo.get(k)).map((k) => ({ tipo: k, n: porTipo.get(k)! })),
           precisa: GOAL_KINDS.filter((k) => porTipo.get(k) && c.faltam[k] > 0),
+          adiado: t.adiado,
         }),
         action: AVISO.SORTEIO,
         entityId: c.userId,

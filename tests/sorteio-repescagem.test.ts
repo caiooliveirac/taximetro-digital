@@ -6,7 +6,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { distribuir, horaDoSorteio, ordemDoSorteio, prioridadeNoTipo, type Candidato, type VagaDoSorteio } from "../src/features/extra-offers/application/sorteio-repescagem";
+import { deveSortear, distribuir, horaDoSorteio, ordemDoSorteio, prioridadeNoTipo, type Candidato, type VagaDoSorteio } from "../src/features/extra-offers/application/sorteio-repescagem";
+import { horaDoSorteioAdiado, minutosDesdeAbertura } from "../src/features/extra-offers/application/repescagem";
 import { textoAnuncioSorteio } from "../src/features/dai-avisos/textos";
 
 const zero = { USA: 0, CRU: 0, CRL: 0 };
@@ -80,4 +81,30 @@ test("anúncio: hora, turno, vagas, a ordem e onde se inscrever", () => {
   assert.match(t, /primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra/);
   assert.match(t, /Você ainda tem USA faltando na meta/);
   assert.match(t, /Extras → Sorteios/);
+});
+
+// ---------------------------------------------------------------------------
+// Só entre interessados: sem inscrito na abertura, espera 2h e anuncia de novo.
+
+test("roda na abertura só com inscrito; sem ninguém, espera a hora adiada e então roda", () => {
+  assert.equal(deveSortear(0, 3), true);
+  assert.equal(deveSortear(0, 0), false);
+  assert.equal(deveSortear(45, 2), false); // cron atrasado com inscrito: espera a hora adiada, que foi anunciada
+  assert.equal(deveSortear(119, 0), false);
+  assert.equal(deveSortear(120, 0), true);
+  assert.equal(deveSortear(Infinity, 0), true);
+});
+
+test("hora adiada: 13h no noturno, 22h no diurno; minutos contados do horário de Salvador", () => {
+  assert.deepEqual(horaDoSorteioAdiado("2026-10-30", "NIGHT"), { date: "2026-10-30", hour: 13 });
+  assert.deepEqual(horaDoSorteioAdiado("2026-10-31", "DAY"), { date: "2026-10-30", hour: 22 });
+  assert.equal(minutosDesdeAbertura("2026-10-30", "NIGHT", new Date("2026-10-30T10:59:00-03:00")), null);
+  assert.equal(minutosDesdeAbertura("2026-10-30", "NIGHT", new Date("2026-10-30T11:20:00-03:00")), 20);
+  assert.equal(minutosDesdeAbertura("2026-10-31", "DAY", new Date("2026-10-30T21:05:00-03:00")), 65);
+});
+
+test("anúncio do adiamento diz que ninguém se inscreveu, a nova hora e o que acontece depois", () => {
+  const t = textoAnuncioSorteio({ turno: "sex 30/10 noite", hora: "hoje às 13h", vagas: [{ tipo: "USA", n: 4 }], precisa: [], adiado: true });
+  assert.match(t, /Ninguém tinha se inscrito, então o sorteio da repescagem de \*\*sex 30\/10 noite\*\* foi adiado para \*\*hoje às 13h\*\*/);
+  assert.match(t, /Sem inscritos até lá, vão para quem pegar primeiro/);
 });
