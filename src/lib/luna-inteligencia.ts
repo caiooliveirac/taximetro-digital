@@ -88,6 +88,8 @@ export type Pedido = {
   bloqueios?: Bloqueio[];
   preferePeriodo?: Periodo;
   prefereDias?: number[];
+  /** Só estes dias ("dia 09/11 tem?", "preciso pegar 29, 30 e 01"); sem período = o dia inteiro. */
+  datas?: Bloqueio[];
   ate: string;
   /** Plantão meu que quero largar (troca). */
   largar?: MeuPlantao | null;
@@ -121,7 +123,7 @@ export function quando(date: string, period: string, shift?: string | null) {
   return `${DIAS[diaDaSemana(d)]} ${dia}/${mes} ${turno}`;
 }
 
-const ddmm = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+export const ddmm = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
 
 /** Plantões que ainda ocupam o interno (para descanso e troca). */
 export const ativos = (meus: MeuPlantao[]) => meus.filter((m) => ["SCHEDULED", "CONFIRMED", "CHECKED_IN"].includes(m.status));
@@ -136,7 +138,7 @@ function bloqueado(date: string, period: Periodo, bloqueios: Bloqueio[] = []): B
   ) ?? null;
 }
 
-function descreveBloqueio(b: Bloqueio) {
+export function descreveBloqueio(b: Bloqueio) {
   const dia = b.data ? ddmm(b.data) : b.diaSemana !== undefined ? DIAS_LONGOS[b.diaSemana] : "";
   const turno = b.periodo === "NIGHT" ? " à noite" : b.periodo === "DAY" ? " de dia" : "";
   return `${dia}${turno}`.trim();
@@ -164,6 +166,7 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
 
   if (o.date < hoje) return fora("JA_PASSOU", "já passou");
   if (o.date > pedido.ate) return fora("FORA_DA_JANELA", `depois de ${ddmm(pedido.ate)}`);
+  if (pedido.datas?.length && !bloqueado(o.date, o.period, pedido.datas)) return fora("FORA_DA_JANELA", "fora dos dias pedidos");
   if (pedido.tipos?.length && (!o.tipo || !pedido.tipos.includes(o.tipo))) return fora("TIPO_NAO_PEDIDO", `é ${o.tipo ?? "outro tipo"}`);
   if (o.fonte === "TROCA" && largar && largar.date === o.date && largar.period === o.period) return fora("MESMO_TURNO", "é o mesmo turno do seu plantão");
   const b = bloqueado(o.date, o.period, pedido.bloqueios);
@@ -359,6 +362,14 @@ export function linhaDaOpcao(a: Avaliada, n: number) {
 export const MOSTRAR = 5;
 
 /** `numero`: na reavaliação ("e a segunda?"), a opção mantém o número da lista original. */
+/** "(todas precisam de aprovação…)": diz que achar não é garantir, e de quem depende. */
+function aprovacao(n: number, total: number): string {
+  if (!n) return "";
+  const quem = "antes de virar plantão seu — do líder ou, na candidatura, da coordenação";
+  if (n === total) return n === 1 ? ` (precisa de aprovação ${quem})` : ` (todas precisam de aprovação ${quem})`;
+  return ` (${n} ${n === 1 ? "precisa" : "precisam"} de aprovação ${quem})`;
+}
+
 export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => number = (_a, i) => i + 1, v?: string): string {
   const linhas: string[] = [];
   const fim = b.fimRodizio ? ` até ${ddmm(b.fimRodizio)} (fim do rodízio)` : "";
@@ -378,7 +389,7 @@ export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => numbe
   } else if (b.status === "NO_OPTIONS") {
     linhas.push(b.objetivo === "troca" ? voz.semTroca(v) : voz.semNada(v));
   } else {
-    linhas.push(voz.achei(v, b.totalCompativeis, b.precisamAprovacao ? ` (${b.precisamAprovacao} dependem de aprovação)` : ""));
+    linhas.push(voz.achei(v, b.totalCompativeis, aprovacao(b.precisamAprovacao, b.totalCompativeis)));
   }
 
   b.opcoes.slice(0, MOSTRAR).forEach((a, i) => linhas.push(`- ${linhaDaOpcao(a, numero(a, i))}`));
@@ -410,6 +421,34 @@ const ROTULO_MOTIVO: Record<Motivo, string> = {
 
 // ---------------------------------------------------------------------------
 // Resumo, agenda, presença e "por que não contou".
+
+/** Pedido do interno ainda sem decisão (PENDING, ou ESCALATED para a coordenação). */
+export type Solicitacao = {
+  id: string;
+  tipo: "SWAP" | "EXTRA_SHIFT" | "DROP_SHIFT" | "FREE_SLOT";
+  baseCode: string | null;
+  date: string | null;
+  period: string | null;
+  shift: string | null;
+  /** Dia em que ele pediu (YYYY-MM-DD). */
+  criada: string;
+  decide: "LIDER" | "COORDENACAO";
+};
+
+const ROTULO_SOLICITACAO: Record<Solicitacao["tipo"], string> = {
+  SWAP: "Troca do seu",
+  EXTRA_SHIFT: "Sobra da grade",
+  DROP_SHIFT: "Descarte do seu",
+  FREE_SLOT: "Candidatura à vaga livre",
+};
+
+/** "Sobra da grade CRL qua 04/11 dia — pedida em 27/10, há 3 dias". */
+export function linhaDaSolicitacao(s: Solicitacao, hoje: string): string {
+  const onde = [s.baseCode, s.date && s.period ? quando(s.date, s.period, s.shift) : null].filter(Boolean).join(" ");
+  const dias = Math.round((Date.parse(hoje) - Date.parse(s.criada)) / 86_400_000);
+  const ha = dias <= 0 ? "hoje" : dias === 1 ? "ontem" : `há ${dias} dias`;
+  return `${ROTULO_SOLICITACAO[s.tipo]}${onde ? ` **${onde}**` : ""} — pedida em ${ddmm(s.criada)} (${ha})`;
+}
 
 /** `janela`: "hoje", "amanhã"… quando a pergunta é de um dia só. */
 export function textoDaAgenda(meus: MeuPlantao[], de: string, ate: string | null, janela?: string, v?: string) {

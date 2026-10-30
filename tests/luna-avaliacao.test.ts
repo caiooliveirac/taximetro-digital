@@ -17,9 +17,9 @@ import type { SituacaoDoTurno } from "../src/features/scheduling/infra/repositor
 import type { MedicosPrevistos } from "../src/features/scheduling/infra/repositories/escala-medica-repository";
 import { sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
 import { perguntarLuna, type LunaPergunta } from "../src/lib/luna-interno";
-import { explicarPlantao, textoDaPresenca, type Meta, type MeuPlantao, type Oferta } from "../src/lib/luna-inteligencia";
+import { explicarPlantao, textoDaPresenca, type Meta, type MeuPlantao, type Oferta, type Solicitacao } from "../src/lib/luna-inteligencia";
 import { voz } from "../src/lib/dai-voz";
-import { rotear } from "../src/lib/luna-roteador";
+import { datasDaPergunta, rotear } from "../src/lib/luna-roteador";
 
 const HOJE = "2026-10-29";
 const ctx: LunaCtx = { internId: "eu", facultyId: "fac-a", hoje: HOJE };
@@ -60,7 +60,7 @@ const TROCAS: Oferta[] = [
   oferta("TROCA", "T3", "USA", "2026-10-31", "NIGHT", { quem: "Davi Reis", quemId: "u-d", assignmentId: "a-t3", faculdade: "FAC-A" }),
 ];
 
-type Fixture = { meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; situacao?: SituacaoDoTurno; previstos?: MedicosPrevistos; falha?: string };
+type Fixture = { solicitacoes?: Solicitacao[]; avisoAoLider?: { ids: string[]; hora: string } | null; meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; situacao?: SituacaoDoTurno; previstos?: MedicosPrevistos; falha?: string };
 
 // Números de 29/10/2026: a demanda passa da oferta em todo tipo.
 const FILA: Fila = { USA: { precisam: 131, casinhas: 611, vagasAbertas: 43 }, CRU: { precisam: 112, casinhas: 356, vagasAbertas: 0 }, CRL: { precisam: 60, casinhas: 60, vagasAbertas: 0 } };
@@ -83,6 +83,8 @@ function fontes(fx: Fixture = {}) {
     },
     medicosPrevistos: async () => fx.previstos ?? { consultado: true, diaSemEscala: false, porBase: { CB02: ["Carla M."] } },
     lider: le("lider", { id: "lider-a", nome: "Líder A" }),
+    solicitacoes: le("solicitacoes", fx.solicitacoes ?? []),
+    avisoAoLider: le("aviso_lider", fx.avisoAoLider ?? null),
     liberadas: async (ate) => (await le("liberadas", fx.liberadas ?? LIBERADAS)()).filter((o) => o.date <= ate),
     extras: le("extras", fx.extras ?? EXTRAS),
     grade: le("grade", fx.grade ?? GRADE),
@@ -325,8 +327,8 @@ test("12. 'Posso pegar vaga mesmo já tendo completado a meta?' — liberada nã
   assert.match(r.texto, /PM01 .*extra/);
   // Nem busca vaga liberada: diz quem está na frente.
   assert.ok(!lidas.includes("liberadas"));
-  assert.match(r.texto, /Vaga liberada vai primeiro para quem precisa de reposição \(hoje: 131 em USA, 112 em CRU, 60 em CRL\)/);
-  assert.match(r.texto, /Candidatura abre quando sobrar vaga/);
+  assert.match(r.texto, /sua meta de USA e CRU e CRL já está completa: ela vai primeiro para quem ainda precisa repor plantão \(hoje esperam reposição 131 colegas em USA, 112 em CRU e 60 em CRL\)/);
+  assert.match(r.texto, /Quando houver mais vaga livre do que gente nessa fila, você pode se candidatar/);
   assert.ok(!r.cartoes.some((c) => c.itens.some((i) => i.candidatar)));
 });
 
@@ -335,7 +337,7 @@ test("meta completa e sobra vaga livre depois da fila: candidatura, a coordenaç
   const sobra: Fila = { ...FILA, USA: { precisam: 2, casinhas: 3, vagasAbertas: 9 } };
   const { r, chamadas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: completa, fila: sobra } });
   assert.equal(chamadas, 0);
-  assert.match(r.texto, /Sobra vaga livre de USA: como sua meta está completa, você se candidata/);
+  assert.match(r.texto, /Em USA há mais vaga livre do que colegas precisando repor: como sua meta desse tipo está completa, você pode se candidatar/);
   assert.match(r.texto, /CB05 .*candidatura: a coordenação decide/);
   assert.doesNotMatch(r.texto, /CRUX|CRL4/); // CRU e CRL seguem na fila
   const item = r.cartoes[0].itens.find((i) => i.titulo.includes("CB05"))!;
@@ -545,4 +547,110 @@ test("'Tem extra aberto?' — explica o jogo dos extras: aberto sem extra, fecha
   assert.equal(sem.r.cartoes.find((x) => x.tipo === "guia")?.aberto, true);
   const meta = await perguntar("Que vagas fecham minha meta?");
   assert.ok(!meta.r.cartoes.some((x) => x.tipo === "guia"));
+});
+
+// ---------------------------------------------------------------------------
+// Frases reais do audit_log (DAI_PERGUNTA, 29–30/10). Pergunta nova que foi ao
+// modelo e devia ter ido direto entra aqui primeiro (docs/luna-catalogo.md).
+
+test("roteador: pergunta por dia vai direto, só naqueles dias; dia que ele não pode vai ao modelo", () => {
+  const datas = (q: string) => {
+    const r = rotear(q, HOJE);
+    return r?.tipo === "BUSCA" ? r.args.datas?.map((d) => d.data + (d.periodo ? ` ${d.periodo}` : "")) : r?.tipo ?? null;
+  };
+  assert.deepEqual(datas("Dia 09/11 tem?"), ["2026-11-09"]);
+  assert.deepEqual(datas("Preciso pegar dia 29, 30 e 01"), ["2026-10-29", "2026-10-30", "2026-11-01"]);
+  assert.deepEqual(datas("tem vaga sábado?"), ["2026-10-31"]);
+  assert.deepEqual(datas("Tem extra amanhã à noite?"), ["2026-10-30 noite"]);
+  assert.deepEqual(datas("consigo pegar algo dia 5 e 6?"), ["2026-11-05", "2026-11-06"]);
+  assert.deepEqual(datas("Tem plantão livre na sexta-feira?"), ["2026-10-30"]);
+  const r = rotear("Tem vaga liberada de USA dia 04/11?", HOJE);
+  assert.deepEqual(r?.tipo === "BUSCA" && [r.args.tipos, r.args.fontes], [["USA"], ["LIBERADA"]]);
+  const agenda = rotear("Tenho plantão dia 03/11?", HOJE);
+  assert.deepEqual(agenda?.tipo === "AGENDA" && [agenda.de, agenda.ate, agenda.janela], [5, 5, "em 03/11"]);
+  for (const q of [
+    "Dia 08 tem prova na faculdade",
+    "Não posso dia 08 de novembro",
+    "Preciso trocar o dia 05/11. Tenho disponibilidade dias 29, 30 e 1/11",
+    "Nao posso dia 08",
+    "Retire dia 08. Eu não posso",
+    "E a segunda opção do dia 04?",
+    "Tem enfermeiro na 30 hoje?",
+  ]) assert.equal(rotear(q, HOJE), null, q);
+  assert.deepEqual(datas("tem algo dia 15?"), ["2026-11-15"]);
+  // "segunda" sozinha é ambígua ("a segunda opção"); dia que já passou não conta.
+  assert.deepEqual(datasDaPergunta("a segunda", HOJE), []);
+  assert.deepEqual(datasDaPergunta("dia 10/10", HOJE), []);
+  assert.deepEqual(datasDaPergunta("dia 31", "2026-11-05"), ["2026-12-31"]);
+});
+
+test("roteador: pergunta de explicação e de solicitação não viram busca", () => {
+  assert.equal(rotear("Sobra da grade significa o quê?", HOJE), null);
+  assert.equal(rotear("O que é vaga liberada?", HOJE), null);
+  assert.equal(rotear("Tenho solicitações pendentes", HOJE)?.tipo, "SOLICITACOES");
+  assert.equal(rotear("Tenho solicitações que fiz a certo tempo e não analisaram", HOJE)?.tipo, "SOLICITACOES");
+  assert.equal(rotear("o líder ainda não aprovou meu pedido?", HOJE)?.tipo, "SOLICITACOES");
+});
+
+test("'Dia 01/11 tem?' — sem modelo, só o que cai em 01/11, e diz o recorte", async () => {
+  const { r, chamadas } = await perguntar("Dia 01/11 tem?");
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /^Só no dia 01\/11:/);
+  assert.match(r.texto, /CRLG/);
+  assert.doesNotMatch(r.texto, /IT30|CB05|PM01/);
+});
+
+test("modelo com datas: busca recorta nos dias pedidos e estica a janela até o último", async () => {
+  const { r } = await perguntar("Quero algo nos dias que eu posso, mas prefiro noite", {
+    passos: [{ tool: { name: "buscar_opcoes", args: { objetivo: "plantao", datas: [{ data: "2026-11-05", periodo: "noite" }, { data: "2026-12-01" }] } } }],
+  });
+  assert.match(r.texto, /Só nos dias 05\/11 noite e 01\/12/);
+  assert.match(r.texto, /CB05/);
+  assert.doesNotMatch(r.texto, /IT30|CRLG|PM01/);
+});
+
+test("atalho depois de 'não posso dia 01/11': a restrição da conversa continua valendo", async () => {
+  const antes: LunaPergunta[] = [
+    { role: "user", content: "não posso dia 01/11" },
+    { role: "assistant", content: "…", memoria: { busca: { objetivo: "troca", nao_posso: [{ data: "2026-11-01" }] } } },
+  ];
+  const sem = await perguntar("Quero trocar um plantão: que trocas servem pra mim?");
+  assert.match(sem.r.texto, /T1|01\/11/);
+  const com = await perguntar("Quero trocar um plantão: que trocas servem pra mim?", { antes });
+  assert.equal(com.chamadas, 0);
+  assert.doesNotMatch(com.r.texto, /dom 01\/11/);
+  assert.match(com.r.texto, /Levei em conta que você não pode 01\/11/);
+});
+
+const PEDIDO: Solicitacao = { id: "req-1", tipo: "EXTRA_SHIFT", baseCode: "CRL", date: "2026-11-04", period: "DAY", shift: null, criada: "2026-10-27", decide: "LIDER" };
+
+test("solicitações pendentes: lista, de quem é a decisão, e avisa o líder uma vez — sem modelo", async () => {
+  const { r, chamadas } = await perguntar("Tenho solicitações que fiz a certo tempo e não analisaram", {
+    fx: { solicitacoes: [PEDIDO, { ...PEDIDO, id: "req-2", tipo: "FREE_SLOT", decide: "COORDENACAO", criada: "2026-10-29" }] },
+  });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /2 solicitações esperando decisão/);
+  assert.match(r.texto, /Sobra da grade \*\*CRL qua 04\/11 dia\*\* — pedida em 27\/10 \(há 2 dias\) · decide o líder/);
+  assert.match(r.texto, /Candidatura à vaga livre .* · decide a coordenação/);
+  assert.deepEqual(r.aviso && [r.aviso.para, r.aviso.ids], ["lider-a", ["req-1"]]);
+  assert.match(r.aviso!.feito, /Avisei Líder A/);
+
+  const ja = await perguntar("Tenho solicitação pendente?", { fx: { solicitacoes: [PEDIDO], avisoAoLider: { ids: ["req-1"], hora: "14:05" } } });
+  assert.equal(ja.r.aviso, undefined);
+  assert.match(ja.r.texto, /Já avisei Líder A, seu líder, hoje às 14:05/);
+
+  const nova = await perguntar("Tenho solicitação pendente?", { fx: { solicitacoes: [PEDIDO, { ...PEDIDO, id: "req-3" }], avisoAoLider: { ids: ["req-1"], hora: "14:05" } } });
+  assert.deepEqual(nova.r.aviso?.ids, ["req-1", "req-3"]);
+
+  const coord = await perguntar("Tenho solicitação pendente?", { fx: { solicitacoes: [{ ...PEDIDO, decide: "COORDENACAO" }] } });
+  assert.equal(coord.r.aviso, undefined);
+
+  const nada = await perguntar("Tenho solicitação pendente?");
+  assert.match(nada.r.texto, /não tem solicitação esperando decisão/);
+});
+
+test("fila de reposição explicada: o número diz o que é", async () => {
+  const { r } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } } } });
+  assert.match(r.texto, /meta de USA e CRU e CRL já está completa/);
+  assert.match(r.texto, /esperam reposição 131 colegas em USA/);
 });

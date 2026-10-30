@@ -8,9 +8,11 @@
  * em docs/luna-catalogo.md.
  */
 
-import { and, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, bases, checkins, userRoles, users } from "@/db/schema";
+import { assignments, auditLog, bases, checkins, userRoles, users } from "@/db/schema";
+import { AVISO } from "@/features/dai-avisos/avisos";
+import { isTodayOrFutureRequest } from "@/features/requests/domain/request-shift-window";
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import { listExtraOffers, listFreeOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import { executeListRequests } from "@/features/requests/application/use-cases/list-requests";
@@ -24,7 +26,7 @@ import { situacaoDoTurnoNaBase, type SituacaoDoTurno } from "@/features/scheduli
 import { medicosPrevistos, type MedicosPrevistos } from "@/features/scheduling/infra/repositories/escala-medica-repository";
 import { filaDeReposicao, type Fila } from "@/features/extra-offers/application/fila-de-reposicao";
 import { addDaysToDateStr, hasShiftStarted, operationalDateStr } from "@/lib/utils";
-import type { Meta, MeuPlantao, Oferta, Periodo } from "@/lib/luna-inteligencia";
+import type { Meta, MeuPlantao, Oferta, Periodo, Solicitacao } from "@/lib/luna-inteligencia";
 
 /** `voz`: semente da redação das respostas diretas (dai-voz.ts); sem ela, sempre a mesma. */
 export type LunaCtx = { internId: string; facultyId: string | null; hoje: string; voz?: string };
@@ -42,6 +44,10 @@ export type Fontes = {
   /** Do rodízio recente em diante, com presença; inclui cancelados (para explicar). */
   meusPlantoes(): Promise<MeuPlantao[]>;
   lider(): Promise<{ id: string; nome: string } | null>;
+  /** Pedidos dele ainda sem decisão, de hoje em diante (os de data passada o líder já não vê). */
+  solicitacoes(): Promise<Solicitacao[]>;
+  /** Último aviso ao líder sobre os pedidos dele nas últimas 20h: quais pedidos e a hora. */
+  avisoAoLider(): Promise<{ ids: string[]; hora: string } | null>;
   liberadas(ate: string): Promise<Oferta[]>;
   extras(): Promise<Oferta[]>;
   grade(): Promise<Oferta[]>;
@@ -152,6 +158,38 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
           eq(users.isActive, true),
         ));
       return rows.find((r) => r.id !== ctx.internId) ?? null;
+    }),
+
+    solicitacoes: () => lido("solicitacoes", async () => {
+      const rows = await executeListRequests({ actor: { id: ctx.internId, role: "INTERN", facultyId: ctx.facultyId }, selfOnly: true });
+      return rows
+        .filter((r) => r.requesterId === ctx.internId && (r.status === "PENDING" || r.status === "ESCALATED") && isTodayOrFutureRequest(r))
+        .map((r): Solicitacao => {
+          const extra = r.type === "EXTRA_SHIFT" || r.type === "FREE_SLOT";
+          return {
+            id: r.id,
+            tipo: r.type as Solicitacao["tipo"],
+            baseCode: (extra ? r.extraBaseCode : r.baseCode) ?? r.baseCode ?? null,
+            date: (extra ? r.extraDate : r.assignmentDate) ? dia(extra ? r.extraDate : r.assignmentDate) : null,
+            period: (extra ? r.extraPeriod : r.assignmentPeriod) ?? null,
+            shift: extra ? null : r.assignmentShift ?? null,
+            criada: dia(r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt),
+            decide: r.type === "FREE_SLOT" || r.status === "ESCALATED" ? "COORDENACAO" : "LIDER",
+          };
+        });
+    }),
+
+    // created_at do audit_log é hora local (sessão America/Sao_Paulo): a hora sai formatada pelo banco.
+    avisoAoLider: () => lido("aviso_lider", async () => {
+      const [r] = await db
+        .select({ payload: auditLog.payload, hora: sql<string>`to_char(${auditLog.createdAt}, 'HH24:MI')` })
+        .from(auditLog)
+        .where(and(eq(auditLog.action, AVISO.SOLICITACAO), sql`${auditLog.payload}->>'de' = ${ctx.internId}`, sql`${auditLog.createdAt} > now() - interval '20 hours'`))
+        .orderBy(desc(auditLog.createdAt))
+        .limit(1);
+      if (!r) return null;
+      const ids = (r.payload as { ids?: unknown } | null)?.ids;
+      return { ids: Array.isArray(ids) ? ids.map(String) : [], hora: r.hora };
     }),
 
     liberadas: (ate) => lido(`liberadas:${ate}`, async () => {

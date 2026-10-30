@@ -8,12 +8,15 @@
  * audit_log, sobrevivem ao deploy); as que saem direto do banco seguem
  * respondendo. Uma de cada vez, pergunta de até 300 caracteres.
  * Cada pergunta do interno (não personificado) vira DAI_PERGUNTA no audit_log, 90 dias.
+ * "Tenho solicitação pendente?" manda a lista ao líder por mensagem da Dai —
+ * a escrita é aqui, não nos arquivos luna-* (só leitura).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { gravarPergunta, perguntasComModeloHoje } from "@/lib/dai-perguntas";
+import { avisarLiderDasSolicitacoes } from "@/features/dai-avisos/avisos";
 import { lunaLigada, perguntarLuna } from "@/lib/luna-interno";
 import { checkRateLimit } from "@/shared/infra/rate-limit";
 import { localDateStr } from "@/lib/utils";
@@ -85,7 +88,7 @@ export async function POST(req: NextRequest) {
   emCurso.add(pessoa);
   try {
     let meta: Record<string, unknown> = {};
-    const resposta = await perguntarLuna(
+    const { aviso, ...resposta } = await perguntarLuna(
       { internId: user.id, facultyId: user.facultyId, hoje, voz: crypto.randomUUID() },
       parsed.data.mensagens,
       (o) => {
@@ -94,6 +97,10 @@ export async function POST(req: NextRequest) {
       },
       { semModelo: comModelo >= TETO_MODELO_DIA ? SEM_TOKENS : undefined },
     );
+    if (aviso) {
+      if (user.realUserId) resposta.texto += "\n(Personificando: o aviso ao líder não foi enviado.)";
+      else resposta.texto += `\n${await avisarLiderDasSolicitacoes(user.id, aviso).then(() => aviso.feito, () => aviso.falhou)}`;
+    }
     // Personificando, só olha: não entra no estudo do uso real.
     if (!user.realUserId) await gravarPergunta(user.id, parsed.data.mensagens, resposta, meta).catch(() => {});
     return NextResponse.json({ success: true, data: resposta });

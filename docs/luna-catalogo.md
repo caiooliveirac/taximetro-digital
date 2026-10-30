@@ -230,6 +230,38 @@ médica do mês fica em rascunho por sigilo no app; a Dai pede `rascunho=1`
 (aberto no Escalas em 29/10, como já fazem o resumo de turno e o bot do
 grupo). O painel do plantoes continua só com a escala publicada.
 
+## Uso real e "ensinar o roteador" (30/10)
+
+Primeiras 16h (29/10 16h → 30/10 08h): 61 perguntas, 7 internos, 48 diretas,
+12 ao modelo (~2,1k tokens de entrada e ~40 de saída cada), 1 barrada pelo
+teto. Metade do teto do interno mais ativo foi para lacunas — daí:
+
+- **Tokens no audit_log**: `payload.entrada`, `saida`, `cache` em todo
+  `DAI_PERGUNTA` (o log do container some a cada deploy).
+- **Pergunta por dia vai direto** (`porDia` no roteador): "dia 09/11 tem?",
+  "preciso pegar dia 29, 30 e 01", "tem vaga sábado?", "extra amanhã à noite?"
+  viram `buscar` com `datas` (só aqueles dias). Com "não posso", "prova",
+  "troca", referência ou explicação, segue ao modelo, que também tem `datas`.
+- **Atalho herda o "não posso"** da última busca da conversa.
+- **"Significa", "o que é", "como funciona"** vão ao modelo (regra), não à busca.
+- **Solicitações pendentes**: direto; lista as do interno e quem decide; as do
+  líder vão a ele por mensagem da Dai (`DAI_AVISO_SOLICITACAO`, uma vez por
+  20h para os mesmos pedidos; quem personifica não envia).
+
+Para ensinar o roteador, olhar o que ainda vai ao modelo com cara de atalho:
+
+```sql
+SELECT created_at, payload->>'pergunta', payload->'args'
+FROM audit_log
+WHERE action = 'DAI_PERGUNTA' AND payload->>'rota' LIKE 'modelo%'
+ORDER BY created_at DESC LIMIT 50;
+```
+
+Forma nova e inequívoca (ex.: `args` com só `datas`) → frase entra no teste
+"roteador: pergunta por dia…" de `tests/luna-avaliacao.test.ts` e a regex em
+`luna-roteador.ts`. Custo do modelo por dia:
+`SUM((payload->>'entrada')::int)` no mesmo recorte.
+
 ## Pontos em aberto
 
 1. **Vitalmed** ainda tem a matview antiga com triggers: o banco dela não tem

@@ -12,7 +12,7 @@
 import { GOAL_KINDS, type GoalKind } from "@/lib/goal-slots";
 import type { Fontes, LunaCtx } from "@/lib/luna-dados";
 import {
-  FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, explicarPlantao, quando, textoDaBusca,
+  FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, ddmm, descreveBloqueio, explicarPlantao, linhaDaSolicitacao, quando, textoDaBusca,
   type Avaliada, type Bloqueio, type Busca, type Fonte, type Meta, type MeuPlantao, type Oferta, type Pedido, type Periodo,
 } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr } from "@/lib/utils";
@@ -53,8 +53,12 @@ export type LunaRef = { n: number; fonte: Fonte; id: string };
 /** Memória conversacional: só referências e parâmetros, nunca o estado da vaga. */
 export type LunaMemoria = { busca?: ArgsBusca; opcoes?: LunaRef[] };
 
+/** Mensagem que a rota manda ao líder (só ela escreve no banco); `feito`/`falhou` completam o texto ao interno. */
+export type AvisoAoLider = { para: string; ids: string[]; itens: string[]; feito: string; falhou: string };
+
 export type Resultado = {
   texto: string;
+  aviso?: AvisoAoLider;
   cartao?: LunaCartao;
   /** Explicação da regra, ao lado do cartão (ex.: o jogo dos extras). */
   guia?: LunaCartao;
@@ -74,6 +78,8 @@ export type ArgsBusca = {
   tipos?: GoalKind[];
   fontes?: Fonte[];
   nao_posso?: { dia_semana?: string; data?: string; periodo?: string }[];
+  /** Só estes dias: o que ele disse que pode ou quer ("dia 09/11 tem?"). */
+  datas?: { data: string; periodo?: string }[];
   prefere_periodo?: string;
   prefere_dias_semana?: string[];
   dias?: number;
@@ -121,6 +127,10 @@ export function sanearArgs(raw: Record<string, unknown>): ArgsBusca {
     }))
     .filter((b) => Object.keys(b).length);
   if (np.length) a.nao_posso = np;
+  const ds = lista(raw.datas)
+    .filter((b): b is Record<string, unknown> => Boolean(b) && typeof b === "object" && typeof (b as Record<string, unknown>).data === "string" && DATA.test(String((b as Record<string, unknown>).data)))
+    .map((b) => ({ data: String(b.data), ...(lerPeriodo(b.periodo) ? { periodo: String(b.periodo) } : {}) }));
+  if (ds.length) a.datas = ds;
   if (lerPeriodo(raw.prefere_periodo)) a.prefere_periodo = String(raw.prefere_periodo);
   const pd = lista(raw.prefere_dias_semana).filter((d) => lerDiaSemana(d) !== undefined).map(String);
   if (pd.length) a.prefere_dias_semana = pd;
@@ -215,6 +225,12 @@ const GUIA_EXTRAS: LunaCartao = {
 // ---------------------------------------------------------------------------
 // buscar_opcoes
 
+/** "Para 29/10, 30/10 e 01/11" — o recorte que a busca usou, para o interno conferir. */
+function diasPedidos(datas: { data: string; periodo?: string }[]): string {
+  const ds = datas.map((d) => `${ddmm(d.data)}${lerPeriodo(d.periodo) === "NIGHT" ? " noite" : lerPeriodo(d.periodo) === "DAY" ? " dia" : ""}`);
+  return `Só ${ds.length === 1 ? "no dia" : "nos dias"} ${ds.length === 1 ? ds[0] : `${ds.slice(0, -1).join(", ")} e ${ds.at(-1)}`}`;
+}
+
 const FONTES_PADRAO: Record<Pedido["objetivo"], Fonte[]> = {
   meta: ["LIBERADA", "GRADE", "EXTRA"],
   plantao: ["LIBERADA", "EXTRA", "GRADE"],
@@ -234,7 +250,10 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   let fontes = somente.length ? [...new Set(somente.map((s) => s.fonte))] : args.fontes ?? FONTES_PADRAO[objetivo];
 
   const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
-  const limite = addDaysToDateStr(ctx.hoje, args.dias ?? (objetivo === "meta" ? 45 : 21));
+  // Dia pedido além da janela padrão estica a janela até ele.
+  const ultimaPedida = args.datas?.map((d) => d.data).sort().at(-1);
+  const padrao = addDaysToDateStr(ctx.hoje, args.dias ?? (objetivo === "meta" ? 45 : 21));
+  const limite = ultimaPedida && ultimaPedida > padrao ? ultimaPedida : padrao;
   const ate = objetivo === "meta" && meta?.fim && meta.fim < limite ? meta.fim : limite;
 
   let largar: MeuPlantao | null = null;
@@ -267,10 +286,11 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     if (completos.length === tiposDoPedido.length && !candidatura.length) fontes = fontes.filter((x) => x !== "LIBERADA");
     // Quem ainda precisa de algum tipo não recebe sermão de fila dos outros.
     if (fechados.length && completos.length === tiposDoPedido.length) {
-      const quem = atual ? fechados.filter((k) => atual[k].precisam > 0).map((k) => `${atual[k].precisam} em ${k}`) : [];
-      fila = `Vaga liberada vai primeiro para quem precisa de reposição${quem.length ? ` (hoje: ${quem.join(", ")})` : ""}. Candidatura abre quando sobrar vaga.`;
+      const quem = atual ? fechados.filter((k) => atual[k].precisam > 0).map((k, i) => `${atual[k].precisam}${i ? "" : ` ${atual[k].precisam === 1 ? "colega" : "colegas"}`} em ${k}`) : [];
+      const naFila = quem.length > 1 ? `${quem.slice(0, -1).join(", ")} e ${quem.at(-1)}` : quem[0];
+      fila = `Vaga liberada não aparece para você porque sua meta de ${fechados.join(" e ")} já está completa: ela vai primeiro para quem ainda precisa repor plantão${naFila ? ` (hoje esperam reposição ${naFila})` : ""}. Quando houver mais vaga livre do que gente nessa fila, você pode se candidatar.`;
     }
-    if (candidatura.length) fila += `${fila ? "\n" : ""}Sobra vaga livre de ${candidatura.join(" e ")}: como sua meta está completa, você se candidata e a coordenação decide.`;
+    if (candidatura.length) fila += `${fila ? "\n" : ""}Em ${candidatura.join(" e ")} há mais vaga livre do que colegas precisando repor: como sua meta desse tipo está completa, você pode se candidatar, e a coordenação decide quem fica.`;
   }
 
   const leituras: Record<Fonte, () => Promise<Oferta[]>> = {
@@ -286,6 +306,7 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     tipos: args.tipos,
     fontes,
     bloqueios: bloqueios(args),
+    datas: args.datas?.map((d) => ({ data: d.data, ...(lerPeriodo(d.periodo) ? { periodo: lerPeriodo(d.periodo) } : {}) })),
     preferePeriodo: lerPeriodo(args.prefere_periodo),
     prefereDias: args.prefere_dias_semana?.map((d) => lerDiaSemana(d)!),
     ate,
@@ -316,6 +337,8 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   const numero = (a: Avaliada, i: number) => original.get(`${a.fonte}|${a.id}`) ?? i + 1;
   let texto = textoDaBusca(busca, numero, ctx.voz);
   if (fila && busca.status !== "META_COMPLETA") texto += `\n${fila}`;
+  if (args.datas?.length) texto = `${diasPedidos(args.datas)}:\n${texto}`;
+  if (args.nao_posso?.length) texto += `\nLevei em conta que você não pode ${bloqueios(args).map(descreveBloqueio).join(", ")}.`;
   if (largar) texto = `Para largar seu **${largar.baseCode} ${quando(largar.date, largar.period, largar.shift)}**:\n${texto}`;
   if (mostradas.some((a) => a.fonte === "LIBERADA") && !lider) texto += "\nSua faculdade está sem líder ativo cadastrado: a vaga liberada depende dele.";
 
@@ -450,6 +473,11 @@ export const FERRAMENTAS: {
           description: "Só dias/turnos que ele disse que não pode (prova, compromisso). Plantão que ele já tem não entra aqui. Sem periodo = o dia inteiro.",
           items: { type: "object", additionalProperties: false, properties: { dia_semana: { type: "string", enum: DIA_ENUM }, data: { type: "string", description: "YYYY-MM-DD" }, periodo: { type: "string", enum: ["dia", "noite"] } } },
         },
+        datas: {
+          type: "array",
+          description: "Só estes dias: os que ele disse que pode ou quer pegar ('dia 09/11 tem?', 'preciso pegar 29, 30 e 01'). Não confundir com nao_posso.",
+          items: { type: "object", additionalProperties: false, required: ["data"], properties: { data: { type: "string", description: "YYYY-MM-DD" }, periodo: { type: "string", enum: ["dia", "noite"] } } },
+        },
         prefere_periodo: { type: "string", enum: ["dia", "noite"] },
         prefere_dias_semana: { type: "array", items: { type: "string", enum: DIA_ENUM }, description: "Fim de semana = sex, sab, dom" },
         dias: { type: "integer", description: "Janela em dias a partir de hoje (padrão 21; meta: até o fim do rodízio)" },
@@ -512,6 +540,42 @@ export const FERRAMENTAS: {
 const semAcentoMaiusculo = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
 /** "Estou na base tal, vai ativar?" — a base citada (código ou nome) ou a do plantão dele. */
+// ---------------------------------------------------------------------------
+// Solicitações pendentes: lista e avisa o líder. Sem modelo — é só cruzar.
+
+export async function solicitacoesPendentes(f: Fontes, ctx: LunaCtx): Promise<Resultado> {
+  const pend = await f.solicitacoes();
+  if (!pend.length) {
+    return { status: "NO_OPTIONS", registros: 0, texto: "Você não tem solicitação esperando decisão agora. As que já foram decididas (e as de dias que já passaram) ficam na aba **Trocas**." };
+  }
+  const doLider = pend.filter((s) => s.decide === "LIDER");
+  const daCoordenacao = pend.length - doLider.length;
+  const linhas = [
+    pend.length === 1 ? "Você tem 1 solicitação esperando decisão:" : `Você tem ${pend.length} solicitações esperando decisão:`,
+    ...pend.map((s) => `- ${linhaDaSolicitacao(s, ctx.hoje)} · decide ${s.decide === "LIDER" ? "o líder" : "a coordenação"}`),
+  ];
+  if (daCoordenacao) linhas.push(`${daCoordenacao === 1 ? "A que a coordenação decide segue" : "As que a coordenação decide seguem"} na fila dela: essa eu não consigo cobrar daqui.`);
+  const pronto = (aviso?: AvisoAoLider): Resultado => ({ status: "OK", registros: pend.length, texto: linhas.join("\n"), aviso });
+  if (!doLider.length) return pronto();
+
+  const [lider, ultimo] = await Promise.all([f.lider(), f.avisoAoLider()]);
+  if (!lider) {
+    linhas.push("Sua faculdade está sem líder ativo cadastrado, então não tenho a quem avisar. Fale com a coordenação.");
+    return pronto();
+  }
+  if (ultimo && doLider.every((s) => ultimo.ids.includes(s.id))) {
+    linhas.push(`Já avisei ${lider.nome}, seu líder, hoje às ${ultimo.hora}. Se até amanhã ninguém decidir, pergunte de novo que eu lembro.`);
+    return pronto();
+  }
+  return pronto({
+    para: lider.id,
+    ids: doLider.map((s) => s.id),
+    itens: doLider.map((s) => linhaDaSolicitacao(s, ctx.hoje)),
+    feito: `Avisei ${lider.nome}, seu líder, agora por mensagem aqui no app, com essa lista.`,
+    falhou: `Tentei avisar ${lider.nome}, seu líder, mas a mensagem não saiu agora. Pergunte de novo daqui a pouco.`,
+  });
+}
+
 export async function situacaoDaBase(f: Fontes, ctx: LunaCtx, texto: string, now: Date = new Date(), baseDita = ""): Promise<Resultado> {
   const [lista, meus] = await Promise.all([f.bases(), f.meusPlantoes()]);
   const t = semAcentoMaiusculo(texto);
