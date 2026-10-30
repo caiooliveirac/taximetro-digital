@@ -31,6 +31,7 @@ import { addDaysToDateStr, hasShiftStarted, localDateStr, type ShiftPeriod } fro
 import { soAsQueCabem } from "./lotacao";
 import { ADIAMENTO_DO_SORTEIO_H, ESPERA_DO_SORTEIO_MIN, aberturaDaRepescagem, comExtraNoHistorico, horaDoSorteioAdiado, minutosDesdeAbertura, sorteioFeito } from "./repescagem";
 import { executeClaimExtraOffer } from "./use-cases/claim-extra-offer";
+import { liberarParaRepescagem } from "@/features/scheduling/application/use-cases/auto-release-slots";
 
 export const AVISO_SORTEIO = "DAI_AVISO_SORTEIO";
 const PERIODOS: ShiftPeriod[] = ["DAY", "NIGHT"];
@@ -112,7 +113,7 @@ export const entraNoSorteio = (tipo: GoalKind | null) => tipo !== "CRU";
 /** Vagas livres abertas no turno que cabem na viatura — as que vão a sorteio. */
 export async function vagasDoTurno(de: string, ate: string) {
   const ofertas = await db
-    .select({ id: extraShiftOffers.id, baseCode: bases.code, baseType: bases.type, date: extraShiftOffers.date, period: extraShiftOffers.period, shift: extraShiftOffers.shift, releasedFacultyId: extraShiftOffers.releasedFacultyId, liberadaPor: faculties.abbreviation })
+    .select({ id: extraShiftOffers.id, baseCode: bases.code, baseType: bases.type, date: extraShiftOffers.date, period: extraShiftOffers.period, shift: extraShiftOffers.shift, releasedFacultyId: extraShiftOffers.releasedFacultyId, autoRelease: extraShiftOffers.autoRelease, liberadaPor: faculties.abbreviation })
     .from(extraShiftOffers)
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.releasedFacultyId))
@@ -183,6 +184,8 @@ export async function executarSorteios(params: { now?: Date; dry?: boolean } = {
       const m = minutosDesdeAbertura(date, period, now);
       if (m === null || hasShiftStarted(date, period, null, now)) continue;
       if (await sorteioFeito(date, period)) continue;
+      // Lugar de USA da grade ainda vazio vira vaga livre agora (prazo e desfeita não seguram).
+      await liberarParaRepescagem({ date, period, now, dryRun: dry });
       // Ninguém inscrito na hora: adiado (a Dai anuncia de novo, avisos.ts).
       if (!deveSortear(m, (await inscritosDe(date, period)).length)) continue;
 
@@ -213,7 +216,8 @@ export async function executarSorteios(params: { now?: Date; dry?: boolean } = {
 
       const { levou, motivos } = await distribuir(
         ordem,
-        vagas.map((v) => ({ offerId: v.id, baseCode: v.baseCode, tipo: v.tipo, releasedFacultyId: v.releasedFacultyId })),
+        // Lugar da grade levado à repescagem é da faculdade dona: ela concorre também.
+        vagas.map((v) => ({ offerId: v.id, baseCode: v.baseCode, tipo: v.tipo, releasedFacultyId: v.autoRelease === "REPESCAGEM" ? null : v.releasedFacultyId })),
         async (c, v) => {
           if (dry) return null;
           if (!c.facultyId || !dai) return "sem faculdade ativa no cadastro";

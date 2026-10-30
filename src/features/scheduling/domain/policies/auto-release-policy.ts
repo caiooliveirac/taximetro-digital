@@ -10,6 +10,10 @@
  * 2. SEM_DONO — a base comporta mais internos do que a soma da grade de todas
  *    as faculdades naquele dia/turno. O que sobra fica livre desde já, nos
  *    dias que alguma turma aberta cobre (do início ao fim do rodízio dela).
+ * 3. REPESCAGEM — na abertura da repescagem (8h antes do turno), o lugar da
+ *    grade que segue vazio vira vaga livre e vai ao sorteio, mesmo que o líder
+ *    tenha desfeito a liberação ou a turma ainda esteja no prazo. Só a trava
+ *    da coordenação (regra bloqueada) segura. A própria faculdade concorre.
  *
  * Teto por base (CAPACIDADE_USA): é o que trava a liberação. Diurno cabem dois
  * em toda USA, menos BR60, BR05, PM04 e PM40, que têm um interno por turno e
@@ -19,7 +23,7 @@
  */
 
 export type Periodo = "DAY" | "NIGHT";
-export type OrigemAutomatica = "PRAZO" | "SEM_DONO";
+export type OrigemAutomatica = "PRAZO" | "SEM_DONO" | "REPESCAGEM";
 
 /** Prazo padrão, em dias, para faculdade sem configuração salva. */
 export const PRAZO_PADRAO_DIAS = 3;

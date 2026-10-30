@@ -325,6 +325,87 @@ export async function executeAutoReleaseSlots(params: { now?: Date; dryRun?: boo
   });
 }
 
+/**
+ * Abertura da repescagem (sorteio-repescagem.ts): todo lugar de USA da grade
+ * que segue vazio no turno vira vaga livre (`REPESCAGEM`), em nome da
+ * faculdade dona, dentro do teto da viatura. Ignora prazo da turma e
+ * liberação desfeita pelo líder — até aqui ele teve a vaga. Regra bloqueada
+ * e faculdade com a liberação desligada pela coordenação seguem presas.
+ * Idempotente: oferta viva já conta.
+ */
+export async function liberarParaRepescagem(params: { date: string; period: Periodo; now?: Date; dryRun?: boolean }) {
+  const { date, period } = params;
+  const now = params.now ?? new Date();
+  if (!temFeature("liberacaoAutomatica") || hasShiftStarted(date, period, null, now)) return { created: 0, byFaculty: {} as Record<string, number> };
+  const publishedBy = await autorDoSistema();
+  if (!publishedBy) return { created: 0, byFaculty: {} as Record<string, number> };
+  const dow = diaDaSemana(date);
+
+  return db.transaction(async (tx) => {
+    if (!params.dryRun) await tx.execute(sql`select pg_advisory_xact_lock(hashtext('auto-release-slots'))`);
+    const configs = await listarConfiguracoes();
+    const [basesUsa, regras, plantoes, ofertas, facs] = await Promise.all([
+      tx.select({ id: bases.id, code: bases.code }).from(bases).where(and(eq(bases.type, "USA"), eq(bases.isActive, true))),
+      tx.select({ baseId: slotRules.baseId, facultyId: slotRules.facultyId, capacity: slotRules.capacity, isBlocked: slotRules.isBlocked })
+        .from(slotRules)
+        .innerJoin(bases, eq(bases.id, slotRules.baseId))
+        .where(and(eq(slotRules.isActive, true), eq(slotRules.isExtraShift, false), eq(bases.type, "USA"), eq(slotRules.dayOfWeek, dow), eq(slotRules.period, period))),
+      tx.select({ id: assignments.id, baseId: assignments.baseId, facultyId: assignments.facultyId })
+        .from(assignments)
+        .where(and(eq(assignments.date, date), eq(assignments.period, period), ne(assignments.status, "CANCELLED"))),
+      tx.select({ baseId: extraShiftOffers.baseId, releasedFacultyId: extraShiftOffers.releasedFacultyId, autoRelease: extraShiftOffers.autoRelease, claimedBy: extraShiftOffers.claimedBy, assignmentId: extraShiftOffers.assignmentId, cancelledAt: extraShiftOffers.cancelledAt })
+        .from(extraShiftOffers)
+        .where(and(eq(extraShiftOffers.date, date), eq(extraShiftOffers.period, period))),
+      tx.select({ id: faculties.id, abbr: faculties.abbreviation }).from(faculties),
+    ]);
+    const abbrDe = new Map(facs.map((f) => [f.id, f.abbr]));
+    const vivas = ofertas.filter((o) => !o.cancelledAt);
+    const deVagaLivre = new Set(vivas.filter((o) => o.assignmentId && (o.releasedFacultyId || o.autoRelease === "SEM_DONO")).map((o) => o.assignmentId!));
+
+    const criar: (typeof extraShiftOffers.$inferInsert)[] = [];
+    const byFaculty: Record<string, number> = {};
+    for (const base of basesUsa) {
+      const regrasAqui = regras.filter((r) => r.baseId === base.id);
+      if (!regrasAqui.length) continue;
+      const plantoesAqui = plantoes.filter((p) => p.baseId === base.id);
+      const vivasAqui = vivas.filter((o) => o.baseId === base.id);
+      const plano = planejarVaga({
+        cap: capacidadeDaBase(base.code, period),
+        faculdades: regrasAqui.map((r) => ({
+          facultyId: r.facultyId,
+          capacity: r.capacity,
+          blocked: r.isBlocked || configs.get(r.facultyId)?.enabled === false,
+          eligible: true,
+          assigned: plantoesAqui.filter((p) => p.facultyId === r.facultyId && !deVagaLivre.has(p.id)).length,
+          // Só a oferta viva conta: a desfeita pelo líder volta aqui.
+          alreadyReleased: vivasAqui.filter((o) => o.releasedFacultyId === r.facultyId).length,
+        })),
+        totalAssigned: plantoesAqui.length,
+        openOffers: vivasAqui.filter((o) => !o.claimedBy).length,
+        // Sem dono é do job de hora em hora; aqui não cria.
+        semDonoExistentes: Number.MAX_SAFE_INTEGER,
+      });
+      for (const [facultyId, n] of plano.porFaculdade) {
+        const abbr = abbrDe.get(facultyId) ?? "faculdade";
+        byFaculty[abbr] = (byFaculty[abbr] ?? 0) + n;
+        for (let i = 0; i < n; i++) {
+          criar.push({
+            baseId: base.id, date, period, publishedBy,
+            releasedFacultyId: facultyId,
+            autoRelease: "REPESCAGEM",
+            notes: `Lugar da grade da ${abbr} ainda vazio na abertura da repescagem: vai a sorteio`,
+          });
+        }
+      }
+    }
+    if (!params.dryRun && criar.length) {
+      await tx.insert(extraShiftOffers).values(criar);
+      await logAudit({ action: "SLOTS_AUTO_RELEASED", entity: "extra_shift_offers", payload: { origem: "REPESCAGEM", date, period, created: criar.length, byFaculty } });
+    }
+    return { created: criar.length, byFaculty };
+  });
+}
+
 /* ═══════════ Tela de configuração ═══════════ */
 
 export async function getAutoReleaseOverview() {

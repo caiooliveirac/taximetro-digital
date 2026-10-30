@@ -194,6 +194,15 @@ CRL fica com o líder** (decisão do Caio, 30/10): não entra no sorteio. A
 regra A (sobra da grade no sorteio) está encerrada — só vaga livre vai a
 sorteio.
 
+**Lugar de USA vazio na abertura vai a sorteio** (decisão do Caio, 30/10):
+`liberarParaRepescagem` (auto-release-slots.ts) cria, na abertura, vaga livre
+`REPESCAGEM` para todo lugar de USA da grade ainda vazio, dentro do teto da
+viatura — mesmo com liberação desfeita pelo líder ou turma no prazo. Só a
+regra bloqueada e a faculdade com a liberação desligada pela coordenação
+seguram. A faculdade dona concorre no sorteio; durante a espera, nem o líder
+escala. Simulado com os dados de 30/10: 53 lugares de 02 a 05/11 (EBMSP e
+UNIFACS).
+
 ## Fila no lugar da corrida (pedido do Caio, 30/10 — junta A e C)
 
 Plantão desprezado (vaga livre que chega à repescagem **e** sobra de CRU/CRL
