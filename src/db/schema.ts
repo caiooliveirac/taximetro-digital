@@ -402,6 +402,9 @@ export const extraShiftOffers = pgTable("extra_shift_offers", {
   //   releasedFacultyId fica null e qualquer líder pode usar.
   // Liberação manual fica null.
   autoRelease: varchar("auto_release", { length: 10 }),
+  // Vaga cedida por prova/atividade fixa da turma (ver cohortCommitments).
+  // Apagar o compromisso cancela as ofertas dele que ninguém pegou.
+  commitmentId: uuid("commitment_id").references(() => cohortCommitments.id),
 }, (t) => [
   index("idx_extra_offer_date").on(t.date),
   index("idx_extra_offer_released").on(t.releasedFacultyId, t.date),
@@ -620,4 +623,33 @@ export const sorteios = pgTable("sorteios", {
   resultado: jsonb("resultado").notNull(),
 }, (t) => [
   uniqueIndex("uq_sorteio_turno").on(t.date, t.period),
+]);
+
+// ── Agenda acadêmica da turma ─────────────────────────────────────────────────
+// Prova, atividade fixa ou aula da faculdade num dia/turno, lançada pelo líder
+// (ou pelo coordenador pela faculdade). Os internos do compromisso ficam
+// bloqueados no turno em todo caminho de escala, e, quando é a turma inteira,
+// as vagas da grade vão para as outras faculdades como vaga liberada.
+// `internIds` null = turma inteira. Regras em academic-commitment-policy.ts.
+export const commitmentKindEnum = pgEnum("commitment_kind", ["PROVA", "ATIVIDADE", "AULA"]);
+
+export const cohortCommitments = pgTable("cohort_commitments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  cohortId: uuid("cohort_id").notNull().references(() => cohorts.id),
+  facultyId: uuid("faculty_id").notNull().references(() => faculties.id),
+  kind: commitmentKindEnum("kind").notNull(),
+  title: varchar("title", { length: 120 }).notNull(),
+  date: date("date").notNull(),
+  blocksDay: boolean("blocks_day").notNull().default(false),
+  blocksNight: boolean("blocks_night").notNull().default(false),
+  // Noturno da véspera (plantão que termina 7h antes de prova de manhã).
+  blocksEveNight: boolean("blocks_eve_night").notNull().default(false),
+  internIds: uuid("intern_ids").array(),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  cancelledAt: timestamp("cancelled_at"),
+  cancelledBy: uuid("cancelled_by").references(() => users.id),
+}, (t) => [
+  index("idx_commitment_faculty_date").on(t.facultyId, t.date),
+  index("idx_commitment_cohort").on(t.cohortId),
 ]);
