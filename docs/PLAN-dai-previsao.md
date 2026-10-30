@@ -171,6 +171,55 @@ livres.
 internos na central, há preceptor)? As 32 recusas sem nota podem ser
 exatamente isso.
 
+## Fila no lugar da corrida (pedido do Caio, 30/10 — junta A e C)
+
+Plantão desprezado (vaga livre que chega à repescagem **e** sobra de CRU/CRL
+da faculdade) deixa de ser "quem clicar primeiro" e passa a ser distribuído
+por fila.
+
+**Entrar na fila.** Marcar **Quero** no turno do calendário (o sinal que já
+existe; o "Me avise" da Dai passa a dizer "Entrar na fila"). Quem marca
+entra na fila de todo lugar desprezado daquele turno que caiba no descanso
+dele e na viatura. Sobra da faculdade X: só internos de X. Vaga livre: todos,
+menos a faculdade que liberou (como hoje).
+
+**Ordem** (por lugar, pelo tipo dele):
+
+1. meta abaixo: casinha vazia no tipo (conta na meta);
+2. meta completa e nenhum extra até agora (entra como extra);
+3. já pegou extra (entra como extra, só com o que sobrar).
+
+**Empate**: o admin (coordenação) desempata.
+
+**Linha do tempo de um turno T**
+
+```
+até T−24h   fila aberta; líder ainda escala normalmente (sai da fila quem ele escalar)
+T−24h       fila fecha; ordem calculada; se o corte cai no meio de um empate,
+            a Dai manda à coordenação a lista empatada com "escolher"
+T−8h        abertura da repescagem: distribui pela ordem (e pela escolha do admin);
+            a Dai avisa quem levou e quem ficou de fora
+depois      o que sobrar volta ao "primeiro que pegar", como hoje
+```
+
+**O que os números dizem sobre empate.** Próximos 7 dias: 26 filas
+faculdade×turno de CRU com ~5 lugares cada (máximo 20), 7 de CRL com ~4.
+Só a EBMSP tem 50 internos sem CRU: se 10 entram na fila de um turno de 5
+lugares, os 10 estão no critério 1 — **empate quase sempre**. Com admin
+desempatando tudo, são ~5 decisões por dia para 7 coordenadores, e de
+madrugada no diurno se a janela não fechar antes (por isso o fecho em T−24h).
+
+**Sugestão para o admin decidir pouco**: dentro do mesmo critério, uma ordem
+sugerida — mais casinhas vazias primeiro, depois rodízio que acaba antes,
+depois quem marcou Quero antes. O admin vê a lista já ordenada e confirma
+ou muda; se não mexer até T−8h, vale a sugestão. Empate "de verdade"
+(iguais em tudo) é raro.
+
+**Ainda em aberto, herdado de A:**
+- a capacidade de CRU na grade é real (cabe, tem preceptor)?
+- pedido de sobra pendente com o líder: entra na fila na frente de quem
+  marcou depois? (17 morreram sem decisão em 45 dias.)
+
 ## Perguntas abertas
 
 1. Começar só por 1 e 2 (não mudam regra)?
