@@ -1,6 +1,11 @@
 # PLAN — Dai prevê o turno: o que está em jogo e a que horas voltar
 
-Estado: proposta, 2026-10-30. Nada implementado.
+Estado: 1 e 2 implementados em 2026-10-30 (`preverRepescagem` em
+`luna-ferramentas.ts`, dentro de `buscar`: atalho e ferramenta do modelo
+usam o mesmo texto pronto, zero token a mais). 3 (A/B/C) segue em aberto.
+
+Junto saiu uma correção: com a meta fechada a busca nem lia as vagas livres
+e escondia as que **já** estavam na repescagem — que ele pega direto.
 
 ## O que as perguntas querem de verdade
 
