@@ -18,6 +18,7 @@ import {
 import { addDaysToDateStr } from "@/lib/utils";
 import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoPedido } from "@/lib/luna-base-agora";
 import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
+import { aberturaDaRepescagem } from "@/features/extra-offers/application/repescagem";
 
 export type { LunaCtx } from "@/lib/luna-dados";
 
@@ -39,7 +40,7 @@ export type LunaItem = {
 /** Meta tipo por tipo: casinhas marcadas, vazias e quantas a busca cobre. */
 export type LunaCasinhas = { tipo: GoalKind; alvo: number; marcadas: number; cobre: number }[];
 export type LunaCartao = {
-  tipo: "opcoes" | "troca" | "plantoes" | "guia";
+  tipo: "opcoes" | "troca" | "plantoes" | "guia" | "previsao";
   titulo: string;
   itens: LunaItem[];
   verTudo?: { href: string; rotulo: string };
@@ -60,6 +61,8 @@ export type Resultado = {
   texto: string;
   aviso?: AvisoAoLider;
   cartao?: LunaCartao;
+  /** O que pode cair na repescagem e quando (preverRepescagem). */
+  previsao?: LunaCartao;
   /** Explicação da regra, ao lado do cartão (ex.: o jogo dos extras). */
   guia?: LunaCartao;
   memoria?: LunaMemoria;
@@ -248,6 +251,7 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   }
   const objetivo = args.objetivo ?? (somente.length && somente.every((s) => s.fonte === "TROCA") ? "troca" : "plantao");
   let fontes = somente.length ? [...new Set(somente.map((s) => s.fonte))] : args.fontes ?? FONTES_PADRAO[objetivo];
+  const prever = objetivo === "plantao" && !somente.length && (fontes.includes("LIBERADA") || fontes.includes("EXTRA"));
 
   const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
   // Dia pedido além da janela padrão estica a janela até ele.
@@ -277,13 +281,18 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   // fechou, só entra como candidatura — e só quando sobra vaga depois da fila.
   let fila = "";
   let candidatura: GoalKind[] = [];
+  let soRepescagem = false;
   const tiposDoPedido = args.tipos?.length ? args.tipos : GOAL_KINDS.filter((k) => (meta?.alvo[k] ?? 0) > 0);
   const completos = meta ? tiposDoPedido.filter((k) => meta.faltam[k] === 0) : [];
   if (objetivo !== "troca" && !somente.length && fontes.includes("LIBERADA") && completos.length) {
     const atual = await f.fila().catch(() => null);
     candidatura = atual ? completos.filter((k) => candidaturaAberta(atual[k])) : [];
     const fechados = completos.filter((k) => !candidatura.includes(k));
-    if (completos.length === tiposDoPedido.length && !candidatura.length) fontes = fontes.filter((x) => x !== "LIBERADA");
+    // Só fica a que já caiu na repescagem: essa ele pega direto, meta fechada ou não.
+    if (completos.length === tiposDoPedido.length && !candidatura.length) {
+      fontes = fontes.filter((x) => x !== "LIBERADA");
+      soRepescagem = true;
+    }
     // Quem ainda precisa de algum tipo não recebe sermão de fila dos outros.
     if (fechados.length && completos.length === tiposDoPedido.length) {
       const quem = atual ? fechados.filter((k) => atual[k].precisam > 0).map((k, i) => `${atual[k].precisam}${i ? "" : ` ${atual[k].precisam === 1 ? "colega" : "colegas"}`} em ${k}`) : [];
@@ -299,7 +308,10 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     GRADE: () => f.grade(),
     TROCA: () => f.trocas(),
   };
-  const ofertas = (await Promise.all(fontes.map((x) => leituras[x]()))).flat();
+  const ofertas = (await Promise.all([
+    ...fontes.map((x) => leituras[x]()),
+    soRepescagem ? f.liberadas(ate).then((l) => l.filter((o) => o.repescagem)) : Promise.resolve([]),
+  ])).flat();
 
   const pedido: Pedido = {
     objetivo,
@@ -336,11 +348,15 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   const original = new Map(somente.map((r) => [`${r.fonte}|${r.id}`, r.n]));
   const numero = (a: Avaliada, i: number) => original.get(`${a.fonte}|${a.id}`) ?? i + 1;
   let texto = textoDaBusca(busca, numero, ctx.voz);
-  if (fila && busca.status !== "META_COMPLETA") texto += `\n${fila}`;
+  if (fila && busca.status !== "META_COMPLETA" && !mostradas.some((a) => a.repescagem)) texto += `\n${fila}`;
   if (args.datas?.length) texto = `${diasPedidos(args.datas)}:\n${texto}`;
   if (args.nao_posso?.length) texto += `\nLevei em conta que você não pode ${bloqueios(args).map(descreveBloqueio).join(", ")}.`;
   if (largar) texto = `Para largar seu **${largar.baseCode} ${quando(largar.date, largar.period, largar.shift)}**:\n${texto}`;
   if (mostradas.some((a) => a.fonte === "LIBERADA") && !lider) texto += "\nSua faculdade está sem líder ativo cadastrado: a vaga liberada depende dele.";
+
+  // Sem rodízio ativo não há meta para dizer se conta ou vira extra: sem previsão.
+  const previsao = prever && meta ? await preverRepescagem(f, ctx, meta, meus, pedido, busca) : null;
+  if (previsao) texto += `\n\n${previsao.texto}`;
 
   const semRefs = { ...args };
   delete semRefs.opcoes;
@@ -349,6 +365,7 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     registros: ofertas.length,
     texto,
     cartao: cartaoDaBusca(busca, lider, numero, casinhasDa(busca, meta)),
+    previsao: previsao?.cartao,
     // Pergunta só de extra: explica o jogo junto, aberto quando não há nenhum.
     guia: !somente.length && fontes.length === 1 && fontes[0] === "EXTRA" ? { ...GUIA_EXTRAS, aberto: !mostradas.length } : undefined,
     memoria: somente.length
@@ -540,6 +557,80 @@ export const FERRAMENTAS: {
 const semAcentoMaiusculo = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
 /** "Estou na base tal, vai ativar?" — a base citada (código ou nome) ou a do plantão dele. */
+// ---------------------------------------------------------------------------
+// Repescagem prevista. Vaga livre aberta agora que ainda não é dele (meta do
+// tipo fechada, fila de reposição, líder) e que, se ninguém for escalado,
+// vira extra numa hora sabida (repescagem.ts). Dizer a hora poupa o interno
+// de ficar olhando o site — e o modelo de responder "nada agora".
+
+const TURNOS_PREVISTOS = 3;
+
+function diaRelativo(data: string, hoje: string) {
+  if (data === hoje) return "hoje";
+  if (data === addDaysToDateStr(hoje, 1)) return "amanhã";
+  return quando(data, "DAY").replace(/ dia$/, "");
+}
+
+export async function preverRepescagem(f: Fontes, ctx: LunaCtx, meta: Meta | null, meus: MeuPlantao[], pedido: Pedido, busca: Busca): Promise<{ texto: string; cartao: LunaCartao } | null> {
+  // Já pode agora (direto ou pelo líder): não é previsão. Candidatura é — a coordenação pode não decidir a tempo.
+  const jaPode = new Set(busca.opcoes.filter((a) => !a.candidatura).map((a) => a.id));
+  const livres = (await f.liberadas(pedido.ate)).filter((o) => !o.repescagem && !jaPode.has(o.id));
+  // Avaliada como se já estivesse na repescagem: descanso, agenda, dias e tipos pedidos, e o "um extra só".
+  const cx = { meta, meus, pedido: { ...pedido, candidatura: [] }, hoje: ctx.hoje };
+  const avaliadas = livres.map((o) => avaliarOferta({ ...o, repescagem: true }, cx));
+  const servem = avaliadas.filter((a) => a.status === "ELIGIBLE");
+  if (!servem.length) {
+    const soPeloExtra = avaliadas.filter((a) => a.motivo === "META_DO_TIPO_FECHADA").length;
+    if (!soPeloExtra || !meta?.jaTemExtra) return null;
+    return {
+      texto: `Há ${soPeloExtra} ${soPeloExtra === 1 ? "vaga livre que pode cair" : "vagas livres que podem cair"} na repescagem, mas ela não é para você: sua meta desse tipo está completa e você já teve um extra (é um só por interno).`,
+      cartao: { tipo: "previsao", titulo: "Repescagem", itens: [] },
+    };
+  }
+
+  const turnos = new Map<string, { date: string; period: Periodo; shift: string | null; tipos: Set<string>; n: number; conta: boolean }>();
+  for (const a of servem) {
+    const k = `${a.date}|${a.period}|${a.shift ?? ""}`;
+    const t = turnos.get(k) ?? { date: a.date, period: a.period, shift: a.shift, tipos: new Set<string>(), n: 0, conta: false };
+    t.n += 1;
+    if (a.tipo) t.tipos.add(a.tipo);
+    t.conta ||= a.contaParaMeta;
+    turnos.set(k, t);
+  }
+  const lista = [...turnos.values()]
+    .map((t) => ({ ...t, abre: aberturaDaRepescagem(t.date, t.period, t.shift) }))
+    .sort((x, y) => `${x.abre.date}${String(x.abre.hour).padStart(2, "0")}`.localeCompare(`${y.abre.date}${String(y.abre.hour).padStart(2, "0")}`))
+    .slice(0, pedido.datas?.length ? 6 : TURNOS_PREVISTOS);
+
+  const abreEm = (t: (typeof lista)[number]) => `${diaRelativo(t.abre.date, ctx.hoje)} às ${t.abre.hour}h`;
+  const vagas = (n: number) => `${n} ${n === 1 ? "vaga" : "vagas"}`;
+  // Quem precisa do tipo recebe o aviso da repescagem de qualquer jeito; quem
+  // já fechou a meta só recebe se marcar Quero no turno (avisos.ts).
+  const precisaQuero = lista.some((t) => !t.conta);
+  const linhas = [
+    "**Pode abrir na repescagem** — se até a hora ninguém for escalado, a vaga livre vira extra e pega quem chegar primeiro:",
+    ...lista.map((t) => `- **${quando(t.date, t.period, t.shift)}**: ${vagas(t.n)} (${[...t.tipos].join(", ")}) — abre **${abreEm(t)}**${t.conta ? ", conta na sua meta" : ", entra como extra"}`),
+    precisaQuero
+      ? "Como extra é um só por interno. Marque **Quero** nesses turnos no calendário que eu te aviso aqui quando abrir — não precisa ficar olhando o site."
+      : "Como esse tipo ainda falta na sua meta, eu te aviso aqui quando abrir — não precisa ficar olhando o site.",
+  ];
+  return {
+    texto: linhas.join("\n"),
+    cartao: {
+      tipo: "previsao",
+      titulo: "Pode abrir na repescagem",
+      itens: lista.map((t) => ({
+        titulo: `${quando(t.date, t.period, t.shift)} · abre ${abreEm(t)}`,
+        quando: { data: t.date, periodo: t.period, turno: t.shift },
+        base: `abre ${abreEm(t)}`,
+        tipoVaga: [...t.tipos].join(", ") || null,
+        detalhe: `${vagas(t.n)} livre${t.n === 1 ? "" : "s"} · ${t.conta ? "conta na sua meta" : "entra como extra"}`,
+        ...(t.conta ? {} : { href: "/intern/calendario", acao: "Me avise" }),
+      })),
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Solicitações pendentes: lista e avisa o líder. Sem modelo — é só cruzar.
 

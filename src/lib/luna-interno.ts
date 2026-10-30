@@ -80,7 +80,7 @@ function calendario(hoje: string) {
   }).join(", ");
 }
 
-const cartoesDe = (r: Resultado) => [r.cartao, r.guia].filter((c): c is LunaCartao => Boolean(c));
+const cartoesDe = (r: Resultado) => [r.cartao, r.previsao, r.guia].filter((c): c is LunaCartao => Boolean(c) && (c!.tipo !== "previsao" || c!.itens.length > 0));
 
 function memoriaAtual(conversa: LunaPergunta[]): LunaMemoria | undefined {
   for (let i = conversa.length - 1; i >= 0; i--) if (conversa[i].role === "assistant" && conversa[i].memoria) return conversa[i].memoria;
