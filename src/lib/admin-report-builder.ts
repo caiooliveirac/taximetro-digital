@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lte, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import type { CohortGrouping, ReportFilterInput, ReportOrderBy } from "@/lib/report-filters";
 import { GEO_VALIDATOR_NAME, sumAssignmentHours } from "@/lib/utils";
+import { PADRAO_EMAIL_CONTA_ARQUIVADA } from "@/features/registration/domain/recadastro";
 
 export type ReportAssignmentGroup = "done" | "scheduled" | "absent";
 export type ReportTypeKey = "CENTRAL" | "CRL" | "USA";
@@ -518,8 +519,16 @@ export async function listReportCatalog(): Promise<{
     .leftJoin(cohorts, eq(cohorts.id, userRoles.cohortId))
     // Internos arquivados permanecem no catálogo: relatórios de turmas
     // fechadas continuam funcionando. O escopo (COHORT vs ALL_FACULTY)
-    // decide se eles entram no recorte — ver generateAdminReport.
-    .where(and(eq(userRoles.role, "INTERN"), eq(userRoles.isActive, true), eq(users.isActive, true)))
+    // decide se eles entram no recorte — ver generateAdminReport. A conta
+    // antiga de quem se recadastrou está desligada, mas o histórico dela
+    // segue reportável na turma em que foi feito.
+    .where(and(
+      eq(userRoles.role, "INTERN"),
+      or(
+        and(eq(userRoles.isActive, true), eq(users.isActive, true)),
+        like(users.email, PADRAO_EMAIL_CONTA_ARQUIVADA),
+      ),
+    ))
     .orderBy(faculties.abbreviation, users.name);
 
   const internIds = rows.map((row) => row.internId);

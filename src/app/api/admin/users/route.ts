@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { users, userRoles, faculties, bases, cohorts, assignments, checkins, requests, caseRecords, qrSessions, telegramBindings, auditLog, inviteLinks, passwordResetTokens, cruFixedAssignments, userMergeEvents } from "@/db/schema";
 import { cohortHasLeaderRoom, ensureInternCohort, peekInternCohort } from "@/features/cohorts/application/use-cases/ensure-intern-cohort";
 import { MAX_LEADERS_PER_COHORT } from "@/features/cohorts/domain/intern-cohort";
+import { ehContaArquivadaNoRecadastro } from "@/features/registration/domain/recadastro";
 import { eq, and, inArray, ne, sql } from "drizzle-orm";
 import { hash } from "bcryptjs";
 import { logAudit } from "@/lib/audit";
@@ -703,6 +704,10 @@ export async function PATCH(req: NextRequest) {
 
     if (targetUser.mergedIntoUserId) {
       return NextResponse.json({ success: false, error: "O cadastro de destino está marcado como mesclado e não pode receber vínculos" }, { status: 409 });
+    }
+
+    if (ehContaArquivadaNoRecadastro(sourceUser.email) || ehContaArquivadaNoRecadastro(targetUser.email)) {
+      return NextResponse.json({ success: false, error: "Conta antiga de recadastro não se mescla: ela fica separada da conta nova de propósito, com o histórico da turma anterior (que continua no relatório)." }, { status: 409 });
     }
 
     const targetAssignment = alias(assignments, "target_assignment");

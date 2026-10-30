@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
-import { decidirRecadastro } from "../src/features/registration/domain/recadastro";
+import { decidirRecadastro, ehContaArquivadaNoRecadastro, emailDeContaArquivada } from "../src/features/registration/domain/recadastro";
 
 type Status = "PLANNED" | "ACTIVE" | "CLOSED" | null;
 const interno = (cohortStatus: Status) => ({ role: "INTERN", cohortStatus, isActive: true });
@@ -37,4 +37,11 @@ test("coordenação e preceptoria nunca são arquivadas por convite", () => {
   const prec = { roles: [{ role: "PRECEPTOR", cohortStatus: null, isActive: true }, interno("CLOSED")], ultimoPlantaoPendente: null };
   assert.deepEqual(decidirRecadastro(coord), { tipo: "conta-de-equipe" });
   assert.deepEqual(decidirRecadastro(prec), { tipo: "conta-de-equipe" });
+});
+
+test("conta arquivada no recadastro é reconhecida pelo e-mail placeholder", () => {
+  const id = "b1dd8d33-4bc1-4427-bd20-82f6505ffe75";
+  assert.equal(ehContaArquivadaNoRecadastro(emailDeContaArquivada(id)), true);
+  assert.equal(ehContaArquivadaNoRecadastro("aluno@gmail.com"), false);
+  assert.equal(ehContaArquivadaNoRecadastro(`merged+${id}@rollback.local`), false);
 });

@@ -10,6 +10,7 @@ import { formatBrazilTime } from "@/lib/utils";
 import { filterUsers, countActiveFilters, EMPTY_FILTERS, type UserFilters } from "./filter-users";
 import { ROLES, ROLE_LABEL, ROLE_BADGE_CLASS, type User, type Faculty, type Base, type Cohort } from "./user-meta";
 import { UserDrawer } from "@/components/admin/user-drawer";
+import { ehContaArquivadaNoRecadastro } from "@/features/registration/domain/recadastro";
 
 const MERGE_ROLLBACK_WINDOW_DAYS = 7;
 
@@ -211,6 +212,8 @@ export default function AdminUsuarios() {
   const drawerPosition = drawerIndex >= 0 ? `${drawerIndex + 1} de ${filtered.length}` : undefined;
 
   const duplicateGroups = users.reduce<DuplicateGroup[]>((groups, user) => {
+    // Conta antiga de recadastro tem o mesmo nome da nova, mas não é duplicata.
+    if (ehContaArquivadaNoRecadastro(user.email)) return groups;
     const key = normalizeDuplicateKey(user.name);
     if (!key) return groups;
 
