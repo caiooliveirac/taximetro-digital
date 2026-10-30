@@ -9,7 +9,8 @@
  *  2. meta completa e nenhum extra até agora — entra como extra;
  *  3. já teve extra — entra como extra, só com o que sobrar.
  * Dentro do critério, a ordem sorteada: sha256(semente + id), semente
- * pública. Um lugar por pessoa. O que valida cada lugar (descanso, viatura,
+ * pública — com quem deve reposição (plantão perdido por compromisso da
+ * turma, marcado "repor" na aba Liberações) à frente dos demais. Um lugar por pessoa. O que valida cada lugar (descanso, viatura,
  * meta/extra, mesmo turno) é o mesmo claim da repescagem
  * (claim-extra-offer.ts), com a Dai no papel da coordenação.
  *
@@ -32,6 +33,8 @@ import { soAsQueCabem } from "./lotacao";
 import { ADIAMENTO_DO_SORTEIO_H, ESPERA_DO_SORTEIO_MIN, aberturaDaRepescagem, comExtraNoHistorico, horaDoSorteioAdiado, minutosDesdeAbertura, sorteioFeito } from "./repescagem";
 import { executeClaimExtraOffer } from "./use-cases/claim-extra-offer";
 import { liberarParaRepescagem } from "@/features/scheduling/application/use-cases/auto-release-slots";
+import { listToReplace } from "@/features/scheduling/infra/repositories/commitment-release-repository";
+import { aindaDeveRepor, JANELA_LIBERACOES_DIAS, ordemComReposicao } from "@/features/scheduling/domain/policies/commitment-release-policy";
 
 export const AVISO_SORTEIO = "DAI_AVISO_SORTEIO";
 const PERIODOS: ShiftPeriod[] = ["DAY", "NIGHT"];
@@ -210,9 +213,15 @@ export async function executarSorteios(params: { now?: Date; dry?: boolean } = {
         return { USA: r?.missingUSA ?? 0, CRU: r?.missingCRU ?? 0, CRL: r?.missingCRL ?? 0 } as Record<GoalKind, number>;
       };
       const porId = new Map(inscritos.map((i) => [i.internId, i]));
-      const ordem: Candidato[] = ordemDoSorteio(semente, ids).map((id) => ({
+      const sorteada: Candidato[] = ordemDoSorteio(semente, ids).map((id) => ({
         internId: id, facultyId: porId.get(id)!.facultyId ?? null, faltam: faltamDe(id), jaTeveExtra: jaTeveExtra.has(id),
       }));
+      // Quem deve reposição de plantão perdido por compromisso da turma
+      // (aba Liberações) vai à frente dentro de cada critério.
+      const devem = new Set((ids.length ? await listToReplace({ internIds: ids, from: addDaysToDateStr(hoje, -JANELA_LIBERACOES_DIAS) }) : [])
+        .filter((r) => aindaDeveRepor({ resolution: "REPOR", baseType: r.baseType }, faltamDe(r.internId)))
+        .map((r) => r.internId));
+      const ordem = ordemComReposicao(sorteada, devem);
 
       const { levou, motivos } = await distribuir(
         ordem,

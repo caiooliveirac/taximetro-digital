@@ -42,14 +42,16 @@ import { sorteioInscricoes } from "@/db/schema";
 import { plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
 import { enviar, type Envio } from "./remetente";
-import { temaParaPlantao, textoAnuncioSorteio, textoProximoPlantao, textoRepescagem, textoRodaSugerida, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type PernaAvisada, type VagaAvisada } from "./textos";
+import { listToReplace } from "@/features/scheduling/infra/repositories/commitment-release-repository";
+import { aindaDeveRepor, JANELA_LIBERACOES_DIAS } from "@/features/scheduling/domain/policies/commitment-release-policy";
+import { temaParaPlantao, textoAnuncioSorteio, textoProximoPlantao, textoRepescagem, textoReposicao, textoRodaSugerida, textoSobraParaLider, textoTrocasNosTurnosMarcados, textoVagasAbertas, type PernaAvisada, type VagaAvisada } from "./textos";
 import { encontrarRodas, minhaPerna, problemaNaRoda, type RodaSugerida } from "@/shared/domain/policies/swap-cycle-policy";
 import { carregarMercado, type FotografiaDoMercado } from "@/features/requests/application/use-cases/load-swap-market";
 import { findInternOverCruQuota } from "@/features/requests/application/use-cases/handle-swap-peer-action";
 import { avaliarOferta, visivelPara, type Avaliacao, type OfertaAberta } from "@/shared/domain/policies/swap-match-policy";
 
-export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM", RODAS: "DAI_AVISO_RODAS", SOLICITACAO: "DAI_AVISO_SOLICITACAO", SORTEIO: "DAI_AVISO_SORTEIO_ANUNCIO" } as const;
-export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas" | "repescagem" | "rodas" | "sorteio";
+export const AVISO = { PLANTAO: "DAI_AVISO_PLANTAO", VAGAS: "DAI_AVISO_VAGAS", SOBRA: "DAI_AVISO_SOBRA", TROCAS: "DAI_AVISO_TROCAS", REPESCAGEM: "DAI_AVISO_REPESCAGEM", RODAS: "DAI_AVISO_RODAS", SOLICITACAO: "DAI_AVISO_SOLICITACAO", SORTEIO: "DAI_AVISO_SORTEIO_ANUNCIO", REPOSICAO: "DAI_AVISO_REPOSICAO" } as const;
+export type TipoDeAviso = "plantao" | "vagas" | "lideres" | "trocas" | "repescagem" | "rodas" | "sorteio" | "reposicao";
 export type ResultadoDosAvisos = { tipo: TipoDeAviso; enviados: number; considerados: number; dry: boolean; amostra?: string };
 
 export { enviar, type Envio } from "./remetente";
@@ -459,6 +461,45 @@ async function avisarLideres(now: Date, dry: boolean): Promise<ResultadoDosAviso
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Reposição: quem perdeu plantão por compromisso da turma e foi marcado
+ * "repor" na aba Liberações, enquanto faltar plantão daquele tipo na meta.
+ * Uma vez por dia por interno.
+ */
+async function avisarReposicao(now: Date, dry: boolean): Promise<ResultadoDosAvisos> {
+  const hoje = localDateStr(now);
+  const [marcados, jaHoje] = await Promise.all([
+    listToReplace({ from: addDaysToDateStr(hoje, -JANELA_LIBERACOES_DIAS) }),
+    db.select({ id: auditLog.entityId }).from(auditLog).where(and(eq(auditLog.action, AVISO.REPOSICAO), gte(auditLog.createdAt, new Date(now.getTime() - UM_DIA_MS)))),
+  ]);
+  if (!marcados.length) return { tipo: "reposicao", enviados: 0, considerados: 0, dry };
+
+  const { data } = await executeGetComplianceOverview({ actor: { id: "", role: "COORDINATOR", facultyId: null } });
+  const avisados = new Set(jaHoje.map((a) => a.id));
+  const porInterno = new Map<string, typeof marcados>();
+  for (const m of marcados) porInterno.set(m.internId, [...(porInterno.get(m.internId) ?? []), m]);
+
+  const envios: Envio[] = [];
+  for (const [internId, perdidos] of porInterno) {
+    if (avisados.has(internId)) continue;
+    const r = data.find((x) => x.userId === internId);
+    if (!r) continue; // fora de turma ativa
+    const faltam = Object.fromEntries(GOAL_KINDS.map((k) => [k, r[`missing${k}`]])) as Record<GoalKind, number>;
+    const devidos = perdidos.filter((p) => aindaDeveRepor({ resolution: "REPOR", baseType: p.baseType }, faltam));
+    if (!devidos.length) continue;
+    const tipos = [...new Set(devidos.map((p) => goalKindOf(p.baseType)).filter((k): k is GoalKind => Boolean(k)))];
+    const texto = textoReposicao({
+      perdidos: devidos.map((p) => ({ quando: quando(dia(p.date), p.period as "DAY" | "NIGHT"), baseCode: p.baseCode, titulo: p.title })),
+      faltam: tipos.map((tipo) => ({ tipo, n: faltam[tipo] })),
+    });
+    envios.push({ para: internId, texto, action: AVISO.REPOSICAO, entityId: internId, payload: { perdidos: devidos.length, faltam } });
+  }
+  await enviar(envios, dry);
+  return { tipo: "reposicao", enviados: envios.length, considerados: porInterno.size, dry, amostra: envios[0]?.texto };
+}
+
+// ---------------------------------------------------------------------------
+
 const TROCAS_POR_AVISO = 3;
 
 /**
@@ -620,5 +661,6 @@ export async function executarAvisosDaDai(tipo: TipoDeAviso, params: { now?: Dat
   if (tipo === "repescagem") return avisarRepescagem(now, dry);
   if (tipo === "rodas") return avisarRodas(now, dry);
   if (tipo === "sorteio") return anunciarSorteios(now, dry);
+  if (tipo === "reposicao") return avisarReposicao(now, dry);
   return avisarLideres(now, dry);
 }

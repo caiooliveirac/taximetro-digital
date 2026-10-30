@@ -144,3 +144,14 @@ export function textoRodaFechada(eu: PernaAvisada) {
 export function textoRodaDesfeita(motivo: string) {
   return `A troca a três de que você fazia parte não vai acontecer: ${motivo} Nada mudou na sua escala.`;
 }
+
+/** Reposição de plantão perdido por compromisso da turma (aba Liberações), uma vez por dia. */
+export function textoReposicao(r: { perdidos: { quando: string; baseCode: string; titulo: string }[]; faltam: { tipo: GoalKind; n: number }[] }) {
+  return [
+    r.perdidos.length === 1
+      ? `Você saiu do plantão de **${r.perdidos[0].quando}** (${r.perdidos[0].baseCode}) por causa de ${r.perdidos[0].titulo}, e a coordenação marcou para **repor**.`
+      : `Você saiu de ${r.perdidos.length} plantões por compromisso da turma (${r.perdidos.map((p) => `${p.quando} ${p.baseCode}`).join(", ")}), e a coordenação marcou para **repor**.`,
+    `Ainda falta na sua meta: ${r.faltam.map((f) => `${f.n} ${f.tipo}`).join(" e ")}.`,
+    `Inscreva-se nos sorteios da repescagem em **Extras → Sorteios**: quem tem reposição entra na frente. Fechou a meta, a reposição está feita e eu paro de avisar.`,
+  ].join("\n");
+}

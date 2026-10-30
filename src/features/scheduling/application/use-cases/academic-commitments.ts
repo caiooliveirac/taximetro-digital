@@ -27,6 +27,7 @@ import {
   getCommitment,
   getRemovableForInterns,
   insertCommitment,
+  insertReleases,
   listCohortInterns,
   listCommitments,
   listOpenCohorts,
@@ -193,6 +194,10 @@ export async function executeCreateCommitment(params: {
         notes: `Removido da escala: ${rotulo} (agenda da turma) no ${quando}`,
       });
     }
+    await insertReleases(p.daGrade.map((a) => ({
+      commitmentId: novo.id, assignmentId: a.id, internId: a.internId, facultyId,
+      date: p.turno.date, period: p.turno.period, baseType: a.baseType,
+    })));
     await insertExtraOffers(p.vagas.map((v) => ({
       baseId: v.baseId,
       date: p.turno.date,

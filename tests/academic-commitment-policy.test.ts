@@ -54,3 +54,18 @@ test("mensagem diz o compromisso, o turno e o dia", () => {
     "Você tem Prova de Clínica no diurno de 11/11 (agenda da turma).",
   );
 });
+
+import { aindaDeveRepor, ordemComReposicao } from "../src/features/scheduling/domain/policies/commitment-release-policy";
+
+test("reposição vale enquanto faltar plantão no tipo do plantão perdido", () => {
+  assert.equal(aindaDeveRepor({ resolution: "REPOR", baseType: "USA" }, { USA: 1 }), true);
+  assert.equal(aindaDeveRepor({ resolution: "REPOR", baseType: "USA" }, { USA: 0, CRU: 2 }), false);
+  assert.equal(aindaDeveRepor({ resolution: "REPOR", baseType: "CENTRAL" }, { CRU: 1 }), true);
+  assert.equal(aindaDeveRepor({ resolution: "ABONADO", baseType: "USA" }, { USA: 3 }), false);
+  assert.equal(aindaDeveRepor({ resolution: "PENDENTE", baseType: "USA" }, { USA: 3 }), false);
+});
+
+test("quem deve reposição vai à frente, mantendo a ordem sorteada", () => {
+  const ordem = ["a", "b", "c", "d"].map((internId) => ({ internId }));
+  assert.deepEqual(ordemComReposicao(ordem, new Set(["c", "a"])).map((c) => c.internId), ["a", "c", "b", "d"]);
+});

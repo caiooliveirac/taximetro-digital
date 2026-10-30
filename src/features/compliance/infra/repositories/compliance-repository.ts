@@ -57,13 +57,17 @@ export async function listActiveComplianceSubjects(params: {
 }
 
 export async function listNonCancelledAssignmentsForInterns(internIds: string[]) {
+  // Plantão perdido por compromisso da turma e abonado (commitment_releases)
+  // conta na meta como abonado. Só aqui, na conta da meta: o plantão segue
+  // cancelado e a vaga continua livre para quem pegou.
+  const abonado = sql`exists (select 1 from commitment_releases cr where cr.assignment_id = ${assignments.id} and cr.resolution = 'ABONADO')`;
   return db
     .select({
       id: assignments.id,
       internId: assignments.internId,
       date: assignments.date,
       period: assignments.period,
-      status: assignments.status,
+      status: sql<typeof assignments.$inferSelect.status>`case when ${assignments.status} = 'CANCELLED' then 'EXCUSED' else ${assignments.status} end`,
       shift: assignments.shift,
       baseType: bases.type,
     })
@@ -71,7 +75,7 @@ export async function listNonCancelledAssignmentsForInterns(internIds: string[])
     .innerJoin(bases, eq(assignments.baseId, bases.id))
     .where(and(
       inArray(assignments.internId, internIds),
-      sql`${assignments.status} != 'CANCELLED'`,
+      sql`(${assignments.status} != 'CANCELLED' or ${abonado})`,
       eq(assignments.isExtraShift, false),
     ));
 }

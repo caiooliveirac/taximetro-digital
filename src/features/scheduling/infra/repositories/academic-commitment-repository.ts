@@ -9,6 +9,7 @@ import {
   bases,
   cohortCommitments,
   cohorts,
+  commitmentReleases,
   extraShiftOffers,
   userRoles,
   users,
@@ -159,6 +160,7 @@ export async function getRemovableForInterns(params: { internIds: string[]; date
       internName: users.name,
       baseId: assignments.baseId,
       baseCode: bases.code,
+      baseType: bases.type,
       shift: assignments.shift,
       isExtraShift: assignments.isExtraShift,
     })
@@ -238,4 +240,13 @@ export async function academicBlocks(params: { internIds: string[]; dateFrom: st
 export async function academicBlockFor(internId: string, date: string, period: Periodo) {
   const mapa = await academicBlocks({ internIds: [internId], dateFrom: date, dateTo: date });
   return mapa.get(internId)?.get(chaveDoTurno({ date, period })) ?? null;
+}
+
+/** Um registro por plantão perdido; a decisão (abonar/repor) vem depois. */
+export async function insertReleases(rows: Array<{
+  commitmentId: string; assignmentId: string; internId: string; facultyId: string;
+  date: string; period: Periodo; baseType: string;
+}>) {
+  if (rows.length === 0) return;
+  await db.insert(commitmentReleases).values(rows).onConflictDoNothing({ target: commitmentReleases.assignmentId });
 }

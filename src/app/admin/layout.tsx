@@ -22,6 +22,7 @@ import {
   CalendarPlus,
   Radio,
   Unlock,
+  CalendarClock,
 } from "lucide-react";
 import { escalasDaInstancia, temFeature } from "@/lib/instance";
 
@@ -45,6 +46,7 @@ const NAV_OPERACAO: NavItem[] = [
   { href: "/admin/plantao", label: "Plantão", icon: Radio },
   { href: "/admin/presencas", label: "Presenças", icon: CheckCircle },
   { href: "/admin/faltas", label: "Faltas", icon: XCircle },
+  { href: "/admin/liberacoes", label: "Liberações", icon: CalendarClock },
   { href: "/admin/escalas/grade", label: "Grade", icon: LayoutGrid },
   // Mesma tela do líder (CRU fixo semanal + sorteio), com seletor de faculdade.
   { href: "/admin/montar-escala", label: "Montar Escala", icon: CalendarPlus },

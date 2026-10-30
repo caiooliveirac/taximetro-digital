@@ -1,4 +1,4 @@
-// Dispara um tipo de aviso da Dai (ou o sorteio da repescagem): node scripts/trigger-dai-avisos.mjs plantao|vagas|lideres|trocas|repescagem|rodas|sorteio|sortear
+// Dispara um tipo de aviso da Dai (ou o sorteio da repescagem): node scripts/trigger-dai-avisos.mjs plantao|vagas|lideres|trocas|repescagem|rodas|sorteio|reposicao|sortear
 const key = process.env.AUTH_SECRET;
 const tipo = process.argv[2];
 

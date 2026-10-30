@@ -7,6 +7,7 @@ import { MetricCard } from "@/components/metric-card";
 import { InviteButton } from "@/components/invite-button";
 import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
 import { CockpitAlarms, type CockpitData } from "@/components/admin/cockpit-alarms";
+import { LiberacoesKpi } from "@/components/scheduling/liberacoes-view";
 import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
 import { InternDrawer } from "@/components/admin/intern-drawer";
 import { VagasLivresUso, type UsoVagaLivre } from "@/components/admin/vagas-livres-uso";
@@ -242,6 +243,8 @@ export function AdminDashboardClient({
 
       {/* Cockpit — alarmes ativos */}
       <CockpitAlarms data={cockpit} facultyFilter={selectedFacultyAbbr} />
+
+      <LiberacoesKpi escopo="admin" />
 
       {/* KPI — Operação */}
       <div>

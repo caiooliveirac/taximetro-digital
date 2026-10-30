@@ -19,6 +19,7 @@ import { sessionHasRole } from "@/lib/roles";
 import { isTodayOrFutureRequest, type RequestShiftRow } from "@/features/requests/domain/request-shift-window";
 import { PendingApprovals, type PendingRequest } from "@/components/pending-approvals";
 import { LiberarVagasButton } from "@/components/scheduling/liberar-vagas-modal";
+import { LiberacoesKpi } from "@/components/scheduling/liberacoes-view";
 
 type Stats = {
   totalInterns: number;
@@ -532,6 +533,8 @@ export default function LeaderDashboard() {
       </div>
 
       <EmCasaCard href="/leader/escala" />
+
+      <LiberacoesKpi escopo="leader" />
 
       {canActAsPreceptor && (
         <div className="rounded-2xl border border-emerald-200 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(13,148,136,0.18))] p-5 shadow-[0_14px_28px_rgba(15,23,42,0.05)]">

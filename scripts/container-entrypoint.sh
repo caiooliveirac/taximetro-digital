@@ -88,6 +88,7 @@ append_dai_avisos_cron() {
   # Trocas: sem efeito enquanto a feature avisoDeTrocas estiver desligada (instance.ts).
   printf "%s\n" "${DAI_AVISO_TROCAS_CRON:-40 8-20 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs trocas' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   # Rodas (troca a três): uma vez por dia, de manhã.
+  printf "%s\n" "${DAI_AVISO_REPOSICAO_CRON:-35 9 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs reposicao' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   printf "%s\n" "${DAI_AVISO_RODAS_CRON:-5 10 * * *} /bin/sh -lc '. /app/.cron-env.sh; node /app/scripts/trigger-dai-avisos.mjs rodas' >> /proc/1/fd/1 2>> /proc/1/fd/2" >> "$CRON_FILE"
   echo "[entrypoint] avisos da Dai habilitados (${TZ})"
 }
