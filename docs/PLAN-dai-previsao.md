@@ -122,6 +122,55 @@ gera aviso passa a saber.
   20h". Acaba com a necessidade de voltar ao site numa hora certa. É mais
   justo, mas muda o jogo (o "primeiro que pegar" sai).
 
+## A em detalhe: sobra da grade (medido em 30/10)
+
+**Por que sobra.** A liberação automática por prazo
+(`auto-release-slots.ts`) só olha base **USA** (`eq(bases.type, "USA")`): a
+sobra de USA vira vaga liberada (347 ofertas PRAZO criadas, 353 nas últimas
+24h). **CRU (central) e CRL nunca são liberadas** — se o líder não escala,
+o lugar some.
+
+**Quanto.** Faculdades em turma, próximos 10 dias:
+
+| | Sobra CRU | Internos sem CRU | Sobra CRL | Internos sem CRL |
+|---|---|---|---|---|
+| EBMSP | 73 | 50 | 16 | 44 |
+| AFYA | 26 | 37 | 6 | 0 |
+| UNIFACS | 52 | 18 | 18 | 7 |
+| ZARNS | 17 | 2 | 6 | 5 |
+| UFBA | 7 | 1 | — | 0 |
+| OPTAT | 9 | 0 | — | 0 |
+| **Total** | **184** | **108** | **46** | **56** |
+
+"Internos sem X" = internos com casinha vazia no tipo (contagem de pessoas,
+não de plantões). Nos 15 dias passados: ~6,6 lugares de CRU e ~2,1 de CRL
+por dia ficaram sem ninguém.
+
+**A demanda está na própria faculdade.** Só com a sobra da casa:
+CRU cobre ~97 dos 108 internos; CRL ~28 dos 56. Abrir para outras faculdades
+acrescenta pouco (CRU: AFYA ainda teria 11 sem; CRL: EBMSP 28 sem, mas a
+regra de troca já diz "CRL só com a mesma faculdade").
+
+**O caminho do líder trava.** Pedidos de sobra (EXTRA_SHIFT) em 45 dias:
+39 aprovados, 32 recusados (todos sem nota), 20 pendentes — 17 morreram sem
+decisão, a data passou. Decisão média: 32h.
+
+**Proposta A1.** Sobra de CRU/CRL da faculdade X num turno T:
+- até a janela: só o líder escala (como hoje);
+- na janela: interno de X com casinha vazia no tipo pega direto, sem líder,
+  conta na meta; 12h de descanso e cota valem;
+- (opcional) na repescagem (8h antes): abre para os demais — de X com meta
+  fechada como extra, e/ou de outras faculdades (só CRU).
+
+Implementação provável: o job de liberação ganha `autoRelease = "SOBRA"`
+para CRU/CRL, com a faculdade dona, e um recorte "só a casa" até a
+repescagem; claim, avisos e a previsão da Dai seguem pelo caminho das vagas
+livres.
+
+**Antes de ligar:** a capacidade de CRU na grade é real (cabem esses
+internos na central, há preceptor)? As 32 recusas sem nota podem ser
+exatamente isso.
+
 ## Perguntas abertas
 
 1. Começar só por 1 e 2 (não mudam regra)?
