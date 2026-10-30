@@ -706,3 +706,12 @@ test("vaga que já está na repescagem não é previsão: aparece como opção p
   assert.doesNotMatch(r.texto, /Vaga liberada não aparece para você/);
   assert.ok(!r.cartoes.some((c) => c.tipo === "previsao"));
 });
+
+test("extra é um por interno: quem já teve não recebe extra comum como opção, e a Dai diz por quê", async () => {
+  const { r, chamadas } = await perguntar("Tem plantão extra aberto pra mim?", { fx: { meta: { ...META, jaTemExtra: true } } });
+  assert.equal(chamadas, 0);
+  assert.doesNotMatch(r.texto, /PM01|CRLE/);
+  assert.match(r.texto, /de extra \(é um por interno e você já teve\)/);
+  const sem = await perguntar("Tem plantão extra aberto pra mim?");
+  assert.match(sem.r.texto, /PM01/);
+});

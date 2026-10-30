@@ -83,9 +83,9 @@ test("servidor: interno só se escala em vaga livre na repescagem, e a viatura c
   assert.match(claim, /vagaLivre && !repescagem && actor\.role === "INTERN"/);
   assert.match(claim, /code: "BASE_CHEIA"/);
   assert.match(claim, /isExtraShift: comoExtra/);
-  // Quem já teve extra não leva outro como extra só por ter visto primeiro.
+  // Extra é um por interno — comum ou de última hora: quem já teve não leva outro só por ter visto primeiro.
   const trava = claim.indexOf('code: "JA_TEVE_EXTRA"');
   assert.ok(trava > 0 && trava < claim.indexOf("isExtraShift: comoExtra"), "trava antes de gravar");
-  assert.match(claim, /repescagem && comoExtra && actor\.role !== "COORDINATOR"[^\n]*comExtraNoHistorico\(\[internId\]\)/);
+  assert.match(claim, /if \(comoExtra && actor\.role !== "COORDINATOR"[^\n]*comExtraNoHistorico\(\[internId\]\)/);
   assert.match(ler("scripts/container-entrypoint.sh"), /trigger-dai-avisos\.mjs repescagem/);
 });

@@ -197,9 +197,10 @@ export async function executeClaimExtraOffer(params: {
   // não conta na meta, como o extra comum.
   const metaNaRepescagem = repescagem && baseDaVaga ? await metaDoInternoNoTipo(internId, baseDaVaga.type) : null;
   const comoExtra = !vagaLivre || Boolean(metaNaRepescagem?.cumprida);
-  // Extra de última hora é um por interno: quem já teve não ganha outro por
-  // ter visto primeiro. A coordenação decide por fora dessa trava.
-  if (repescagem && comoExtra && actor.role !== "COORDINATOR" && !params.isImpersonating && (await comExtraNoHistorico([internId])).has(internId)) {
+  // Extra é um por interno — o comum, publicado pelo líder, e o de última
+  // hora: quem já teve não ganha outro por ter visto primeiro. A coordenação
+  // decide por fora dessa trava (é por ela que o sorteio dá a quem já teve).
+  if (comoExtra && actor.role !== "COORDINATOR" && !params.isImpersonating && (await comExtraNoHistorico([internId])).has(internId)) {
     return { status: 409, body: { success: false, code: "JA_TEVE_EXTRA", error: `${alocandoOutro ? "O interno" : "Você"} ${TEXTO_JA_TEVE_EXTRA}` } } as const;
   }
 

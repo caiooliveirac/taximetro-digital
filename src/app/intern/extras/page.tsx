@@ -101,7 +101,7 @@ export default function InternExtrasPage() {
         <Zap className="h-5 w-5 text-amber-500" strokeWidth={2} />
         <div>
           <h1 className="text-base font-bold text-slate-900">Plantões Extras</h1>
-          <p className="text-xs text-slate-500">Primeiro a pegar garante o plantão</p>
+          <p className="text-xs text-slate-500">Primeiro a pegar garante o plantão · um extra por interno</p>
         </div>
       </div>
 
@@ -109,7 +109,7 @@ export default function InternExtrasPage() {
       <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" strokeWidth={2} />
         <div className="text-xs text-amber-800">
-          <strong>Atenção:</strong> Plantões extras <strong>não contabilizam carga horária obrigatória</strong> da rotação. São oportunidades adicionais fora da escala regular.
+          <strong>Atenção:</strong> Plantões extras <strong>não contabilizam carga horária obrigatória</strong> da rotação. São oportunidades adicionais fora da escala regular, e é <strong>um extra por interno</strong>: depois do primeiro, aqui só aparece vaga que conta na sua meta.
           {" "}A exceção é a <strong>vaga livre de última hora</strong>: vai a sorteio na abertura da repescagem (inscreva-se abaixo) e conta na meta se ainda falta esse tipo. O que sobrar do sorteio fica aqui para quem pegar primeiro.
         </div>
       </div>

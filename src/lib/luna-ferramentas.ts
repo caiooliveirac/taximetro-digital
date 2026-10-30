@@ -217,7 +217,7 @@ const GUIA_EXTRAS: LunaCartao = {
   tipo: "guia",
   titulo: "Como funciona o jogo dos extras",
   itens: [
-    "**Extra comum**: o líder ou a coordenação publica e leva quem pegar primeiro na aba Extras. Não conta para a meta.",
+    "**Extra comum**: o líder ou a coordenação publica e leva quem pegar primeiro na aba Extras. Não conta para a meta, e é **um extra por interno** — depois do primeiro, só vaga que conta na meta.",
     "**Repescagem**: vaga livre que ninguém ocupou vai a **sorteio** 8h antes do turno — o noturno às 11h do dia, o diurno às 20h da véspera. Inscreva-se antes em Extras → Sorteios; inscritos e resultado são públicos.",
     "A ordem do sorteio: primeiro quem tem casinha vazia no tipo (conta na meta), depois quem nunca teve extra, por último quem já teve (entra como extra). Empate, a ordem sorteada decide. O que sobrar fica para quem pegar primeiro.",
     "Em qualquer extra: 12h de descanso e nada no mesmo turno. Pegou, é seu — só o líder ou a coordenação tiram.",
