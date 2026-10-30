@@ -12,10 +12,10 @@
 import { GOAL_KINDS, type GoalKind } from "@/lib/goal-slots";
 import type { Fontes, LunaCtx } from "@/lib/luna-dados";
 import {
-  FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, ddmm, descreveBloqueio, explicarPlantao, linhaDaSolicitacao, quando, textoDaBusca,
-  type Avaliada, type Bloqueio, type Busca, type Fonte, type Meta, type MeuPlantao, type Oferta, type Pedido, type Periodo,
+  FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, ddmm, descreveBloqueio, explicarPlantao, linhaDaOpcao, linhaDaSolicitacao, quando, textoDaBusca,
+  type Avaliada, type Bloqueio, type Busca, type Fonte, type Meta, type MeuPlantao, type Oferta, type Pedido, type Periodo, type Solicitacao,
 } from "@/lib/luna-inteligencia";
-import { addDaysToDateStr } from "@/lib/utils";
+import { addDaysToDateStr, getBrazilNowParts } from "@/lib/utils";
 import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoPedido } from "@/lib/luna-base-agora";
 import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
 import { aberturaDaRepescagem } from "@/features/extra-offers/application/repescagem";
@@ -254,11 +254,17 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   const prever = objetivo === "plantao" && !somente.length && (fontes.includes("LIBERADA") || fontes.includes("EXTRA"));
 
   const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
+  const tiposDoPedido = args.tipos?.length ? args.tipos : GOAL_KINDS.filter((k) => (meta?.alvo[k] ?? 0) > 0);
+  // "Tem vaga liberada pra mim?": responde pela situação dele (respostaDaLiberada),
+  // não pela lista — eram centenas de vagas até dezembro, e o que ele precisa é
+  // de duas ou três e de saber quem age.
+  const soLiberada = Boolean(meta) && objetivo === "plantao" && !somente.length && !args.trocar_data && fontes.length === 1 && fontes[0] === "LIBERADA";
+  const faltaNoPedido = meta ? tiposDoPedido.filter((k) => meta.faltam[k] > 0) : [];
   // Dia pedido além da janela padrão estica a janela até ele.
   const ultimaPedida = args.datas?.map((d) => d.data).sort().at(-1);
   const padrao = addDaysToDateStr(ctx.hoje, args.dias ?? (objetivo === "meta" ? 45 : 21));
   const limite = ultimaPedida && ultimaPedida > padrao ? ultimaPedida : padrao;
-  const ate = objetivo === "meta" && meta?.fim && meta.fim < limite ? meta.fim : limite;
+  const ate = (objetivo === "meta" || (soLiberada && faltaNoPedido.length)) && meta?.fim && meta.fim < limite ? meta.fim : limite;
 
   let largar: MeuPlantao | null = null;
   if (args.trocar_data) {
@@ -282,11 +288,12 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   let fila = "";
   let candidatura: GoalKind[] = [];
   let soRepescagem = false;
-  const tiposDoPedido = args.tipos?.length ? args.tipos : GOAL_KINDS.filter((k) => (meta?.alvo[k] ?? 0) > 0);
   const completos = meta ? tiposDoPedido.filter((k) => meta.faltam[k] === 0) : [];
   if (objetivo !== "troca" && !somente.length && fontes.includes("LIBERADA") && completos.length) {
     const atual = await f.fila().catch(() => null);
-    candidatura = atual ? completos.filter((k) => candidaturaAberta(atual[k])) : [];
+    // Na pergunta só de liberada, candidatura não entra: a coordenação ainda não
+    // decidiu nenhuma, e o caminho que anda para quem fechou a meta é o sorteio.
+    candidatura = atual && !soLiberada ? completos.filter((k) => candidaturaAberta(atual[k])) : [];
     const fechados = completos.filter((k) => !candidatura.includes(k));
     // Só fica a que já caiu na repescagem: essa ele pega direto, meta fechada ou não.
     if (completos.length === tiposDoPedido.length && !candidatura.length) {
@@ -360,6 +367,20 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
 
   const semRefs = { ...args };
   delete semRefs.opcoes;
+  if (soLiberada && meta) {
+    const pendentes = faltaNoPedido.length ? [] : (await f.solicitacoes().catch(() => [])).filter((s) => s.tipo === "FREE_SLOT");
+    const r = respostaDaLiberada({ busca, meta, falta: faltaNoPedido, lider: await f.lider(), pendentes, previsao, hoje: ctx.hoje });
+    const extra = [args.datas?.length ? diasPedidos(args.datas) + ":" : "", r.texto, args.nao_posso?.length ? `Levei em conta que você não pode ${bloqueios(args).map(descreveBloqueio).join(", ")}.` : ""];
+    return {
+      status: busca.status,
+      registros: ofertas.length,
+      texto: extra.filter(Boolean).join("\n"),
+      cartao: r.cartao,
+      // Falta meta: o que conta já está na lista, com a hora do sorteio de cada uma.
+      previsao: faltaNoPedido.length ? undefined : previsao?.cartao,
+      memoria: { busca: semRefs, opcoes: r.mostradas.map((a, i) => ({ n: i + 1, fonte: a.fonte, id: a.id })) },
+    };
+  }
   return {
     status: busca.status,
     registros: ofertas.length,
@@ -620,6 +641,94 @@ export async function preverRepescagem(f: Fontes, ctx: LunaCtx, meta: Meta | nul
       })),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// "Tem vaga liberada pra mim?" pela situação: quem ele é agora, o caminho que
+// anda para ele (com no máximo 3 vagas e um botão) e quando voltar a olhar.
+// Medido em 30/10: 491 vagas livres abertas, só 16 nas 48h seguintes; a
+// lista inteira não ajudava ninguém.
+
+const NA_LIBERADA = 3;
+
+/** Próxima abertura da repescagem: 11h (noturno do dia) e 20h (diurno do dia seguinte). */
+export function proximaAbertura(agora: Date = new Date()) {
+  const h = getBrazilNowParts(agora).hour;
+  return h < 11 ? "hoje às 11h" : h < 20 ? "hoje às 20h" : "amanhã às 11h";
+}
+
+export function respostaDaLiberada(p: {
+  busca: Busca;
+  meta: Meta;
+  falta: GoalKind[];
+  lider: { id: string; nome: string } | null;
+  pendentes: Solicitacao[];
+  previsao: { texto: string } | null;
+  hoje: string;
+  agora?: Date;
+}): { texto: string; cartao?: LunaCartao; mostradas: Avaliada[] } {
+  const { busca, meta, falta, lider, hoje } = p;
+  const numero = (_a: Avaliada, i: number) => i + 1;
+
+  if (falta.length) {
+    const faltaTxt = falta.map((k) => `${meta.faltam[k]} ${k}`).join(" e ");
+    const fecha = meta.fim ? ` e seu rodízio fecha **${diaRelativo(meta.fim, hoje)}**` : "";
+    const linhas = [`Falta **${faltaTxt}** na sua meta${fecha}.`];
+    const contam = busca.opcoes.filter((a) => a.contaParaMeta && !a.candidatura);
+    const mostradas = contam.slice(0, NA_LIBERADA);
+    if (!mostradas.length) {
+      linhas.push(`Nenhuma vaga liberada que conte na sua meta cabe no seu descanso${meta.fim ? ` até ${ddmm(meta.fim)}` : ""}.`);
+      linhas.push('Pergunte "que vagas fecham minha meta?": aí eu olho também sobra da grade e extras.');
+      return { texto: linhas.join("\n"), mostradas };
+    }
+    linhas.push(mostradas.length === 1 ? "Esta conta e cabe no seu descanso:" : "Estas contam e cabem no seu descanso:");
+    linhas.push(...mostradas.map((a, i) => `- ${linhaDaOpcao(a, i + 1)}`));
+    if (contam.length > mostradas.length) linhas.push(`(+${contam.length - mostradas.length} que também contam)`);
+
+    const peloLider = mostradas.filter((a) => !a.repescagem);
+    if (peloLider.length) {
+      linhas.push(lider
+        ? `Quem coloca você nelas é ${lider.nome}, seu líder. Toque em **Pedir ao líder**: a mensagem já vai pronta com ${peloLider.length === 1 ? "a vaga" : "essas vagas"}.`
+        : "Quem coloca você nelas é o líder da sua faculdade, e ela está sem líder ativo cadastrado: fale com a coordenação.");
+      // CRU nunca vai a sorteio (sorteio-repescagem.ts): só troca.
+      const turnos = new Map<string, string>();
+      for (const a of peloLider.filter((x) => x.tipo !== "CRU")) {
+        const abre = aberturaDaRepescagem(a.date, a.period, a.shift);
+        turnos.set(`${a.date}|${a.period}|${a.shift ?? ""}`, `${quando(a.date, a.period, a.shift)} (sorteio ${diaRelativo(abre.date, hoje)} às ${abre.hour}h)`);
+      }
+      const sorteios = [...turnos.values()];
+      if (sorteios.length) {
+        linhas.push(`Se ninguém escalar, vão a sorteio: ${sorteios.length > 1 ? `${sorteios.slice(0, -1).join(", ")} e ${sorteios.at(-1)}` : sorteios[0]}. Você entra na frente, por precisar da meta — inscreva-se em **Extras → Sorteios**.`);
+      }
+    }
+    const cartao = cartaoDaBusca({ ...busca, objetivo: "meta", opcoes: mostradas }, lider, numero);
+    if (cartao && lider && peloLider.length) {
+      const lista = peloLider.map((a) => `${a.baseCode} ${quando(a.date, a.period, a.shift)}`).join("; ");
+      const texto = `Oi! Ainda me falta ${faltaTxt} na meta. Tem vaga liberada que conta: ${lista}. Pode me escalar em uma delas?`;
+      cartao.verTudo = { href: `/intern/mensagens?com=${lider.id}&texto=${encodeURIComponent(texto)}`, rotulo: "Pedir ao líder" };
+    }
+    return { texto: linhas.join("\n"), cartao, mostradas };
+  }
+
+  // Meta fechada: vaga liberada, para ele, só na repescagem — já aberta (pega
+  // quem chegar) ou no sorteio. Quem já teve extra concorre, mas por último.
+  const linhas = [meta.jaTemExtra
+    ? "Sua meta está fechada e você já teve seu extra: no sorteio da repescagem você fica por último, depois de quem precisa da meta e de quem nunca teve extra."
+    : "Sua meta está fechada e você **ainda não teve extra**: tem direito a um, e o caminho é o sorteio da repescagem."];
+  const mostradas = busca.opcoes.filter((a) => a.repescagem).slice(0, NA_LIBERADA);
+  if (mostradas.length) {
+    linhas.push(`Já abertas agora, pega quem chegar primeiro em **Extras**:`);
+    linhas.push(...mostradas.map((a, i) => `- ${linhaDaOpcao(a, i + 1)}`));
+  }
+  linhas.push(p.previsao ? p.previsao.texto : "Nos próximos dias não há vaga livre que caiba no seu descanso indo a sorteio.");
+  if (p.pendentes.length) {
+    linhas.push(p.pendentes.length === 1
+      ? "Sua candidatura está com a coordenação: não precisa pedir de novo."
+      : `Suas ${p.pendentes.length} candidaturas estão com a coordenação: não precisa pedir de novo.`);
+  }
+  linhas.push(`Vaga liberada só abre para você na repescagem: 11h (turno da noite) e 20h (turno do dia seguinte). Próxima: **${proximaAbertura(p.agora)}** — entre uma e outra, nada novo aparece.`);
+  const cartao = mostradas.length ? cartaoDaBusca({ ...busca, opcoes: mostradas }, null, numero) : undefined;
+  return { texto: linhas.join("\n"), cartao, mostradas };
 }
 
 // ---------------------------------------------------------------------------

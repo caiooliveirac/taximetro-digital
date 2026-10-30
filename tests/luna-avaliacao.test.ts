@@ -15,7 +15,7 @@ import type { Fontes, LunaCtx } from "../src/lib/luna-dados";
 import type { Fila } from "../src/features/extra-offers/application/fila-de-reposicao";
 import type { SituacaoDoTurno } from "../src/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import type { MedicosPrevistos } from "../src/features/scheduling/infra/repositories/escala-medica-repository";
-import { sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
+import { proximaAbertura, sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
 import { perguntarLuna, type LunaPergunta } from "../src/lib/luna-interno";
 import { explicarPlantao, textoDaPresenca, type Meta, type MeuPlantao, type Oferta, type Solicitacao } from "../src/lib/luna-inteligencia";
 import { voz } from "../src/lib/dai-voz";
@@ -336,7 +336,7 @@ test("12. 'Posso pegar vaga mesmo já tendo completado a meta?' — liberada nã
 test("meta completa e sobra vaga livre depois da fila: candidatura, a coordenação decide", async () => {
   const completa: Meta = { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } };
   const sobra: Fila = { ...FILA, USA: { precisam: 2, casinhas: 3, vagasAbertas: 9 } };
-  const { r, chamadas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: completa, fila: sobra } });
+  const { r, chamadas } = await perguntar("Tem vaga pra mim?", { fx: { meta: completa, fila: sobra } });
   assert.equal(chamadas, 0);
   assert.match(r.texto, /Em USA há mais vaga livre do que colegas precisando repor: como sua meta desse tipo está completa, você pode se candidatar/);
   assert.match(r.texto, /CB05 .*candidatura: a coordenação decide/);
@@ -651,7 +651,7 @@ test("solicitações pendentes: lista, de quem é a decisão, e avisa o líder u
 });
 
 test("fila de reposição explicada: o número diz o que é", async () => {
-  const { r } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } } } });
+  const { r } = await perguntar("Tem vaga pra mim?", { fx: { meta: { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } } } });
   assert.match(r.texto, /meta de USA e CRU e CRL já está completa/);
   assert.match(r.texto, /esperam reposição 131 colegas em USA/);
 });
@@ -714,4 +714,62 @@ test("extra é um por interno: quem já teve não recebe extra comum como opçã
   assert.match(r.texto, /de extra \(é um por interno e você já teve\)/);
   const sem = await perguntar("Tem plantão extra aberto pra mim?");
   assert.match(sem.r.texto, /PM01/);
+});
+
+// ---------------------------------------------------------------------------
+// "Tem vaga liberada pra mim?" pela situação, não pela lista (30/10: 491 vagas
+// livres abertas, 269 numa resposta só).
+
+test("vaga liberada, falta meta: o que falta e até quando, só o que conta, quem age e o sorteio de cada uma", async () => {
+  const meta: Meta = { ...META, fim: "2026-11-06" };
+  const { r, chamadas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta } });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /^Falta \*\*2 USA e 1 CRL\*\* na sua meta e seu rodízio fecha \*\*sex 06\/11\*\*\./);
+  // Só o que conta até o fim do rodízio: CB07 (10/11) e CRUX (CRU completo) ficam fora.
+  assert.match(r.texto, /1\. \*\*CRL4 qua 04\/11 dia\*\*[\s\S]*2\. \*\*CB05 qui 05\/11 noite\*\*/);
+  assert.doesNotMatch(r.texto, /CB07|CRUX|candidat/);
+  assert.match(r.texto, /Quem coloca você nelas é Líder A, seu líder\. Toque em \*\*Pedir ao líder\*\*/);
+  assert.match(r.texto, /qua 04\/11 dia \(sorteio ter 03\/11 às 20h\) e qui 05\/11 noite \(sorteio qui 05\/11 às 11h\)\. Você entra na frente/);
+  const c = r.cartoes.find((x) => x.tipo === "opcoes")!;
+  assert.equal(c.itens.length, 2);
+  assert.equal(c.verTudo?.rotulo, "Pedir ao líder");
+  assert.match(decodeURIComponent(c.verTudo!.href), /com=lider-a&texto=Oi! Ainda me falta 2 USA e 1 CRL na meta\. Tem vaga liberada que conta: CRL4 qua 04\/11 dia; CB05 qui 05\/11 noite\./);
+  assert.ok(!r.cartoes.some((x) => x.tipo === "previsao"));
+  assert.deepEqual(r.memoria?.opcoes?.map((o) => o.id), ["CRL4", "CB05"]);
+});
+
+test("vaga liberada, falta meta e nada cabe: diz e aponta a busca da meta", async () => {
+  const { r } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: { ...META, fim: "2026-11-01" } } });
+  assert.match(r.texto, /Nenhuma vaga liberada que conte na sua meta cabe no seu descanso até 01\/11/);
+  assert.match(r.texto, /que vagas fecham minha meta\?/);
+});
+
+test("vaga liberada, meta fechada e sem extra: sorteio, candidaturas que já tem e a próxima abertura — sem lista de candidatura", async () => {
+  const pedida: Solicitacao = { id: "s1", tipo: "FREE_SLOT", baseCode: "CB05", date: "2026-11-05", period: "NIGHT", shift: null, criada: HOJE, decide: "COORDENACAO" };
+  const { r, chamadas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: COMPLETA, solicitacoes: [pedida, { ...pedida, id: "s2" }], fila: { ...FILA, USA: { precisam: 2, casinhas: 3, vagasAbertas: 9 } } } });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /^Sua meta está fechada e você \*\*ainda não teve extra\*\*: tem direito a um/);
+  assert.match(r.texto, /\*\*Pode ir a sorteio na repescagem\*\*/);
+  assert.match(r.texto, /Suas 2 candidaturas estão com a coordenação: não precisa pedir de novo\./);
+  assert.match(r.texto, /Próxima: \*\*(hoje às 11h|hoje às 20h|amanhã às 11h)\*\*/);
+  assert.doesNotMatch(r.texto, /candidatura: a coordenação decide|reposição/);
+  assert.ok(!r.cartoes.some((c) => c.itens.some((i) => i.candidatar)));
+  assert.ok(r.cartoes.some((c) => c.tipo === "previsao"));
+});
+
+test("vaga liberada, meta fechada e já teve extra: diz que fica por último", async () => {
+  const { r } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: { ...COMPLETA, jaTemExtra: true } } });
+  assert.match(r.texto, /^Sua meta está fechada e você já teve seu extra: no sorteio da repescagem você fica por último/);
+});
+
+test("vaga liberada já na repescagem com meta fechada: aparece para pegar", async () => {
+  const { r } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: COMPLETA, meus: [], liberadas: [oferta("LIBERADA", "JA01", "USA", "2026-10-30", "DAY", { repescagem: true })] } });
+  assert.match(r.texto, /Já abertas agora, pega quem chegar primeiro[\s\S]*1\. \*\*JA01 sex 30\/10 dia\*\*/);
+  assert.equal(r.cartoes.find((c) => c.tipo === "opcoes")?.itens[0].acao, "Pegar");
+});
+
+test("próxima abertura da repescagem pela hora de Salvador", () => {
+  assert.equal(proximaAbertura(new Date("2026-10-30T12:00:00Z")), "hoje às 11h"); // 9h
+  assert.equal(proximaAbertura(new Date("2026-10-30T17:00:00Z")), "hoje às 20h"); // 14h
+  assert.equal(proximaAbertura(new Date("2026-10-30T23:30:00Z")), "amanhã às 11h"); // 20h30
 });
