@@ -53,7 +53,9 @@ export function textoVagaAutomaticaUsada(p: {
   const turno = p.period === "NIGHT" ? "noturno" : "diurno";
   const origem = p.autoRelease === "SEM_DONO"
     ? "Vaga sem dono usada"
-    : `Vaga liberada pelo prazo da ${p.releasedByAbbr ?? "outra faculdade"} usada`;
+    : p.autoRelease === "REPESCAGEM"
+      ? `Lugar vazio da grade da ${p.releasedByAbbr ?? "faculdade"}, levado à repescagem, usado`
+      : `Vaga liberada pelo prazo da ${p.releasedByAbbr ?? "outra faculdade"} usada`;
   const quem = p.actorRole === "COORDINATOR"
     ? `${p.actorName} (coordenação)`
     : p.actorRole === "INTERN"
@@ -124,7 +126,9 @@ export async function executeClaimExtraOffer(params: {
 
   // Vaga que a própria faculdade liberou é para as outras — se ela usasse,
   // estaria ocupando a vaga que disse que não ia usar.
-  if (offer.releasedFacultyId && offer.releasedFacultyId === facultyId) {
+  // Exceção: lugar da grade levado à repescagem (auto-release-slots.ts) — a
+  // faculdade não cedeu, só não escalou; os internos dela concorrem também.
+  if (offer.releasedFacultyId && offer.releasedFacultyId === facultyId && offer.autoRelease !== "REPESCAGEM") {
     return { status: 409, body: { success: false, error: "Sua faculdade liberou esta vaga para as outras" } } as const;
   }
 
@@ -173,8 +177,8 @@ export async function executeClaimExtraOffer(params: {
     return { status: 403, body: { success: false, code: "VAGA_LIVRE_PELO_LIDER", error: "Vaga livre é escalada pelo líder da sua faculdade. Se sua meta já fechou, candidate-se pela Dai." } } as const;
   }
   // Na abertura da repescagem a vaga vai a sorteio (sorteio-repescagem.ts):
-  // até ele rodar, ninguém pega para si. O que sobrar fica livre logo depois.
-  if (repescagem && !alocandoOutro && actor.role !== "COORDINATOR" && (await sorteioPendente(offer.date, offer.period as "DAY" | "NIGHT"))) {
+  // até ele rodar, ninguém pega — nem o líder escala. O que sobrar fica livre logo depois.
+  if (repescagem && actor.role !== "COORDINATOR" && (await sorteioPendente(offer.date, offer.period as "DAY" | "NIGHT"))) {
     return { status: 409, body: { success: false, code: "SORTEIO_PENDENTE", error: "Esta vaga está no sorteio da repescagem, que roda na abertura. O que sobrar fica livre logo depois — confira em Extras → Sorteios." } } as const;
   }
   const [quemLiberou] = vagaLivre && offer.releasedFacultyId
