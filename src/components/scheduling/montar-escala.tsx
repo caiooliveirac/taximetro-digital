@@ -258,6 +258,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     baseId: string; baseCode: string; baseType: string; date: string; period: "DAY" | "NIGHT";
     /** Vaga livre de outra faculdade: a alocação passa pela oferta, não pela regra de vaga. */
     free?: { id: string; abbr: string };
+    /** Vaga que a própria faculdade cedeu e ninguém pegou: alocar desfaz a cessão. */
+    reclaimId?: string;
   } | null>(null);
   const [allocInternId, setAllocInternId] = useState("");
   const [allocSearch, setAllocSearch] = useState("");
@@ -612,9 +614,40 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
     setReleaseBusy("");
   }
 
+  /** Vaga cedida na grade. Ainda não pega: toque aloca um interno nela (a cessão se desfaz). */
+  function cardCedida(r: Released, base: { id: string; code: string; type: string }, d: string, period: "DAY" | "NIGHT") {
+    const retomavel = !r.claimedBy && r.autoRelease !== "TROCA" && d >= today;
+    return (
+      <div
+        key={r.id}
+        role={retomavel ? "button" : undefined}
+        tabIndex={retomavel ? 0 : undefined}
+        onClick={retomavel ? () => openAllocModal(base.id, base.code, base.type, d, period, false, undefined, r.id) : undefined}
+        onKeyDown={retomavel ? (e) => { if (e.key === "Enter") openAllocModal(base.id, base.code, base.type, d, period, false, undefined, r.id); } : undefined}
+        className={`flex items-center gap-1.5 rounded-md border border-dashed border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800 ${retomavel ? "cursor-pointer transition hover:bg-violet-100" : ""}`}
+        title={r.autoRelease === "TROCA" ? "Seu interno trocou este plantão com um interno de outra faculdade" : r.claimedBy ? "Vaga cedida e já usada por outra faculdade" : "Vaga cedida às outras faculdades — toque para alocar um interno seu nela"}
+      >
+        <Unlock className="h-3 w-3 shrink-0" />
+        <span className="truncate">{r.autoRelease === "TROCA" ? "Trocada · outra faculdade" : r.claimedBy ? "Cedida · em uso" : "Cedida a outras"}</span>
+        {!r.claimedBy && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); undoRelease({ id: r.id }); }}
+            disabled={releaseBusy !== ""}
+            className="ml-auto rounded p-0.5 text-violet-500 hover:bg-violet-100 hover:text-violet-800"
+            title="Desfazer liberação"
+            aria-label="Desfazer liberação da vaga"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        )}
+      </div>
+    );
+  }
+
   /* ── Manual allocation ── */
-  function openAllocModal(baseId: string, baseCode: string, baseType: string, date: string, period: "DAY" | "NIGHT", isExtra?: boolean, free?: { id: string; abbr: string }) {
-    setAllocSlot({ baseId, baseCode, baseType, date, period, free });
+  function openAllocModal(baseId: string, baseCode: string, baseType: string, date: string, period: "DAY" | "NIGHT", isExtra?: boolean, free?: { id: string; abbr: string }, reclaimId?: string) {
+    setAllocSlot({ baseId, baseCode, baseType, date, period, free, reclaimId });
     setAllocInternId("");
     setAllocSearch("");
     setAllocMsg("");
@@ -648,6 +681,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
           date: allocSlot.date,
           period: allocSlot.period,
           ...(allocShift ? { shift: allocShift } : {}),
+          ...(allocSlot.reclaimId ? { reclaimOfferId: allocSlot.reclaimId } : {}),
           ...(allocIsExtraShift ? { isExtraShift: true, extraShiftNotes: allocExtraShiftNotes || undefined } : {}),
         });
 
@@ -1169,28 +1203,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               );
                             })}
 
-                            {releasedHere.map((r) => (
-                              <div
-                                key={r.id}
-                                className="flex items-center gap-1.5 rounded-md border border-dashed border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800"
-                                title={r.autoRelease === "TROCA" ? "Seu interno trocou este plantão com um interno de outra faculdade" : r.claimedBy ? "Vaga cedida e já usada por outra faculdade" : "Vaga cedida às outras faculdades — fora do sorteio"}
-                              >
-                                <Unlock className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{r.autoRelease === "TROCA" ? "Trocada · outra faculdade" : r.claimedBy ? "Cedida · em uso" : "Cedida a outras"}</span>
-                                {!r.claimedBy && (
-                                  <button
-                                    type="button"
-                                    onClick={() => undoRelease({ id: r.id })}
-                                    disabled={releaseBusy !== ""}
-                                    className="ml-auto rounded p-0.5 text-violet-500 hover:bg-violet-100 hover:text-violet-800"
-                                    title="Desfazer liberação"
-                                    aria-label="Desfazer liberação da vaga"
-                                  >
-                                    <X className="h-2.5 w-2.5" />
-                                  </button>
-                                )}
-                              </div>
-                            ))}
+                            {releasedHere.map((r) => cardCedida(r, base, d, period))}
 
                             {freeIn(base.id, d, period).map((f) => (
                               <button
@@ -1341,6 +1354,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                               );
                             })}
 
+                            {releasedIn(crlBase.id, d, "DAY").map((r) => cardCedida(r, crlBase, d, "DAY"))}
+
                             {freeIn(crlBase.id, d, "DAY").map((f) => (
                               <button
                                 key={f.id}
@@ -1470,6 +1485,8 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                             </div>
                           );
                         })}
+
+                        {releasedIn(cruBase.id, d, period).map((r) => cardCedida(r, cruBase, d, period))}
 
                         {freeIn(cruBase.id, d, period).map((f) => (
                               <button
@@ -1963,6 +1980,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                 <p className="text-sm text-blue-100">
                   {allocSlot.baseCode} · {formatDateLabel(allocSlot.date, { day: "2-digit", month: "2-digit", year: "numeric" })} · {allocSlot.period === "DAY" ? "☀️ Diurno" : "🌙 Noturno"}
                   {allocSlot.free && ` · vaga livre ${allocSlot.free.abbr}`}
+                  {allocSlot.reclaimId && " · vaga que você cedeu"}
                 </p>
               </div>
               <button onClick={() => setAllocSlot(null)} className="rounded-lg p-1.5 hover:bg-white/20 transition">
@@ -2032,7 +2050,12 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                   {allocationCandidates.busyCount > 0 && <p>{allocationCandidates.busyCount} interno(s) já ocupados neste mesmo dia e turno.</p>}
                 </div>
               )}
-              {!allocSlot.free && <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-2">
+              {allocSlot.reclaimId && (
+                <p className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-800">
+                  Ao alocar, a vaga deixa de estar cedida às outras faculdades.
+                </p>
+              )}
+              {!allocSlot.free && !allocSlot.reclaimId && <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -2063,7 +2086,7 @@ export function MontarEscala({ facultyId }: { facultyId?: string | null } = {}) 
                   Pedir autorização à coordenação
                 </button>
               )}
-              {allocSlot.date >= today && !allocSlot.free && (
+              {allocSlot.date >= today && !allocSlot.free && !allocSlot.reclaimId && (
                 <button
                   type="button"
                   disabled={releaseBusy !== ""}

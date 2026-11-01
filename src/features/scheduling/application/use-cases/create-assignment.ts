@@ -4,6 +4,7 @@ import { localDateStr, usaMeioTurnoNaCru } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
 import { canLeaderManageFaculty } from "@/features/scheduling/domain/policies/assignment-policy";
 import { compromissoAcademicoPara } from "@/features/scheduling/application/descanso";
+import { cancelReleasedOffers } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
 import {
   createAssignment,
   findAssignmentByInternSlot,
@@ -25,6 +26,8 @@ export const createAssignmentSchema = z.object({
   allowAdminOpenAllocation: z.boolean().optional(),
   isExtraShift: z.boolean().optional().default(false),
   extraShiftNotes: z.string().nullish(),
+  /** Vaga que a própria faculdade cedeu e ninguém pegou: a alocação desfaz a cessão. */
+  reclaimOfferId: z.string().uuid().optional(),
 });
 
 export type AssignmentActor = {
@@ -68,6 +71,7 @@ export async function executeCreateAssignment(params: {
     && input.allowRetroactiveOverride === true
     && input.date < today;
   const allowCoordinatorOpenAllocation = actor.role === "COORDINATOR" && input.allowAdminOpenAllocation === true;
+  const reclaimOfferId = isExtra ? undefined : input.reclaimOfferId;
 
   const existingAssignment = await findAssignmentByInternSlot({
     internId: input.internId,
@@ -121,7 +125,9 @@ export async function executeCreateAssignment(params: {
         input.facultyId,
         shiftValue,
       );
-      if (!slot.available) {
+      // A vaga cedida que vai ser retomada ainda conta como cedida aqui.
+      const reclaimed = reclaimOfferId && slot.assigned < slot.capacity + 1;
+      if (!slot.available && !reclaimed) {
         return {
           status: 409,
           body: { success: false, error: `Sem vaga (${slot.assigned}/${slot.capacity})` },
@@ -134,6 +140,19 @@ export async function executeCreateAssignment(params: {
       if (cruCheck.conflicted) {
         return { status: 409, body: { success: false, error: cruCheck.reason } } as const;
       }
+    }
+  }
+
+  // Por último, depois de todas as checagens: desfeita a cessão, a vaga volta
+  // para a grade da faculdade. Zero cancelada = outra faculdade pegou antes.
+  if (reclaimOfferId) {
+    const cancelled = await cancelReleasedOffers({
+      facultyId: input.facultyId,
+      cancelledBy: actor.realUserId ?? actor.id,
+      ids: [reclaimOfferId],
+    });
+    if (cancelled === 0) {
+      return { status: 409, body: { success: false, error: "Esta vaga já foi pega por outra faculdade" } } as const;
     }
   }
 
@@ -165,6 +184,7 @@ export async function executeCreateAssignment(params: {
           extraShiftNotes: input.extraShiftNotes,
           allowRetroactiveOverride: allowCoordinatorRetroactiveOverride,
           allowAdminOpenAllocation: allowCoordinatorOpenAllocation,
+          ...(reclaimOfferId ? { reclaimOfferId } : {}),
           ...(actor.isImpersonating ? { impersonating: actor.id } : {}),
         },
       });
@@ -205,6 +225,7 @@ export async function executeCreateAssignment(params: {
         extraShiftNotes: input.extraShiftNotes,
         allowRetroactiveOverride: allowCoordinatorRetroactiveOverride,
         allowAdminOpenAllocation: allowCoordinatorOpenAllocation,
+        ...(reclaimOfferId ? { reclaimOfferId } : {}),
         ...(actor.isImpersonating ? { impersonating: actor.id } : {}),
       },
     });
