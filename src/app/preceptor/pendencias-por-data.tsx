@@ -4,10 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, LogIn, LogOut, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/table-skeleton";
-import { AttendanceQuickActions } from "@/components/attendance-quick-actions";
-import { baseViewIndex, getBaseStyleByCode, getFacultyStyle } from "@/lib/base-colors";
+import { baseViewIndex, getBaseStyleByCode } from "@/lib/base-colors";
 import { addDaysToDateStr, cn } from "@/lib/utils";
-import { CheckoutNpsForm, type CheckoutNps } from "./checkout-nps-form";
+import { InternAttendanceCard } from "./intern-attendance-card";
 
 /**
  * Checkout esquecido: o preceptor volta a uma data e vê só quem ficou sem
@@ -21,6 +20,7 @@ export type Pendencia = {
   id: string;
   internId: string;
   internName: string;
+  internPhone: string | null;
   facultyAbbr: string;
   baseCode: string;
   baseName: string;
@@ -52,7 +52,7 @@ function dayMonth(dateStr: string) {
   return utcNoon(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
 }
 
-function longDate(dateStr: string) {
+export function longDate(dateStr: string) {
   return utcNoon(dateStr).toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 }
 
@@ -65,12 +65,6 @@ function relativeLabel(dateStr: string, today: string) {
 function clockTime(iso: string | null) {
   if (!iso) return null;
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-}
-
-function shiftLabel(shift: string | null) {
-  if (shift === "MORNING") return "Manhã";
-  if (shift === "AFTERNOON") return "Tarde";
-  return null;
 }
 
 /**
@@ -194,8 +188,6 @@ export function PendenciasDoDia({ date, onChanged }: { date: string; onChanged: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [openCheckout, setOpenCheckout] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -210,37 +202,12 @@ export function PendenciasDoDia({ date, onChanged }: { date: string; onChanged: 
   useEffect(() => {
     setLoading(true);
     setMsg(null);
-    setOpenCheckout(null);
     load();
   }, [load]);
 
   async function refresh() {
     await load();
     onChanged();
-  }
-
-  async function checkout(id: string, nps: CheckoutNps, notes: string) {
-    setSubmitting(id);
-    setMsg(null);
-    try {
-      const res = await fetch("/taximetro/api/attendance/checkout", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId: id, nps, notes }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setMsg({ type: "success", text: "Checkout registrado." });
-        setOpenCheckout(null);
-        await refresh();
-      } else {
-        setMsg({ type: "error", text: json.error || "Não foi possível confirmar checkout." });
-      }
-    } catch {
-      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
-    } finally {
-      setSubmitting(null);
-    }
   }
 
   if (loading) return <TableSkeleton rows={4} cols={3} />;
@@ -307,64 +274,26 @@ export function PendenciasDoDia({ date, onChanged }: { date: string; onChanged: 
                   </p>
                   <ul className="divide-y divide-slate-100">
                     {items.map((r) => {
-                      const faculty = getFacultyStyle(r.facultyAbbr);
                       const entrou = clockTime(r.checkinAt);
                       return (
-                        <li key={r.id} className="px-3 py-2.5">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="break-words text-[15px] font-semibold leading-snug text-slate-900">{r.internName}</p>
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                                <span className={cn("rounded-md px-1.5 py-0.5 font-semibold", faculty.pill)}>{r.facultyAbbr || "Sem faculdade"}</span>
-                                {shiftLabel(r.shift) && (
-                                  <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-slate-600">{shiftLabel(r.shift)}</span>
-                                )}
-                                {r.kind === "CHECKOUT" ? (
-                                  <span className="flex items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 font-medium text-blue-700">
-                                    <LogOut className="h-3 w-3" strokeWidth={1.5} />
-                                    Sem checkout{entrou ? ` · entrou ${entrou}` : ""}
-                                  </span>
-                                ) : (
-                                  <span className="flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">
-                                    <LogIn className="h-3 w-3" strokeWidth={1.5} />
-                                    {r.status === "ABSENT" ? "Sem check-in · falta" : "Sem check-in"}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {r.kind === "CHECKOUT" && (
-                              <Button
-                                size="sm"
-                                variant={openCheckout === r.id ? "default" : "outline"}
-                                className="shrink-0 gap-1"
-                                onClick={() => setOpenCheckout((cur) => (cur === r.id ? null : r.id))}
-                              >
-                                <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                Checkout
-                              </Button>
-                            )}
-                          </div>
-
-                          {r.kind === "CHECKOUT" && openCheckout === r.id && (
-                            <CheckoutNpsForm
-                              submitting={submitting === r.id}
-                              onCancel={() => setOpenCheckout(null)}
-                              onSubmit={(nps, notes) => checkout(r.id, nps, notes)}
-                            />
+                        <InternAttendanceCard
+                          key={r.id}
+                          assignment={r}
+                          canCheckout={r.kind === "CHECKOUT"}
+                          checkinMode="manual"
+                          badge={r.kind === "CHECKOUT" ? (
+                            <span className="flex items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 font-medium text-blue-700">
+                              <LogOut className="h-3 w-3" strokeWidth={1.5} />
+                              Sem checkout{entrou ? ` · entrou ${entrou}` : ""}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">
+                              <LogIn className="h-3 w-3" strokeWidth={1.5} />
+                              Sem check-in
+                            </span>
                           )}
-
-                          {r.kind === "CHECKIN" && (
-                            <div className="mt-2">
-                              <AttendanceQuickActions
-                                assignmentId={r.id}
-                                status={r.status}
-                                assignment={{ date: r.date, period: r.period, baseCode: r.baseCode, internName: r.internName }}
-                                actions={["present", "excuse", "absent"]}
-                                onUpdated={refresh}
-                              />
-                            </div>
-                          )}
-                        </li>
+                          onUpdated={refresh}
+                        />
                       );
                     })}
                   </ul>

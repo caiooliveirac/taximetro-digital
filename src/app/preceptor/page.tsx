@@ -1,24 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Clock, Sun, Moon, KeyRound, Send, LogOut, Loader2 } from "lucide-react";
+import { Clock, Sun, Moon, KeyRound, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/table-skeleton";
-import { StatusBadge } from "@/components/status-badge";
-import { AttendanceQuickActions } from "@/components/attendance-quick-actions";
 import { usePreceptor } from "./preceptor-context";
-import { CheckoutNpsForm, type CheckoutNps } from "./checkout-nps-form";
-import { DateNavigator, PendenciasDoDia, STRIP_DAYS, fetchPendencias } from "./pendencias-por-data";
-import { baseViewIndex } from "@/lib/base-colors";
-import { addDaysToDateStr, localDateStr } from "@/lib/utils";
+import { DateNavigator, PendenciasDoDia, STRIP_DAYS, fetchPendencias, longDate } from "./pendencias-por-data";
+import { InternAttendanceCard } from "./intern-attendance-card";
+import { baseViewIndex, getBaseStyleByCode } from "@/lib/base-colors";
+import { addDaysToDateStr, cn, localDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
   internId: string;
   internName: string;
+  internPhone: string | null;
   baseCode: string;
   baseName: string;
   date: string;
@@ -29,25 +27,11 @@ type Assignment = {
   checkinStatus: string | null;
 };
 
-function shiftLabel(shift: string) {
-  if (shift === "MORNING") return "Manhã";
-  if (shift === "AFTERNOON") return "Tarde";
-  if (shift === "NIGHT") return "Noite";
-  return shift;
-}
-
 function shiftOrder(shift: string) {
   if (shift === "MORNING") return 0;
   if (shift === "AFTERNOON") return 1;
   if (shift === "NIGHT") return 2;
   return 99;
-}
-
-function shiftActionLabel(shift: string) {
-  if (shift === "MORNING") return "Check-in manhã";
-  if (shift === "AFTERNOON") return "Check-in tarde";
-  if (shift === "NIGHT") return "Check-in noite";
-  return "Check-in";
 }
 
 export default function PreceptorValidar() {
@@ -60,8 +44,6 @@ export default function PreceptorValidar() {
   const [codeObservations, setCodeObservations] = useState("");
   const [facultyFilter, setFacultyFilter] = useState<string>("ALL");
   const [validatingCode, setValidatingCode] = useState(false);
-  const [checkingOut, setCheckingOut] = useState<string | null>(null);
-  const [checkoutQuestionnaireId, setCheckoutQuestionnaireId] = useState<string | null>(null);
 
   const today = localDateStr();
   const fromDate = addDaysToDateStr(today, -1);
@@ -115,25 +97,6 @@ export default function PreceptorValidar() {
   useEffect(() => { load(); }, [base, shift]);
   useEffect(() => { const iv = setInterval(load, 15000); return () => clearInterval(iv); }, [base, shift]);
 
-  async function validateDirect(assignmentId: string) {
-    setMsg(null);
-    try {
-      const res = await fetch("/taximetro/api/attendance/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setMsg({ type: "success", text: "Presença validada" });
-        load();
-      }
-      else setMsg({ type: "error", text: json.error });
-    } catch {
-      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
-    }
-  }
-
   async function validateByCode() {
     if (codeInput.length !== 6) return;
     setValidatingCode(true);
@@ -159,39 +122,6 @@ export default function PreceptorValidar() {
       setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
     }
     setValidatingCode(false);
-  }
-
-  async function checkoutDirect(assignmentId: string, nps: CheckoutNps, notes: string) {
-    setCheckingOut(assignmentId);
-    setMsg(null);
-    try {
-      const res = await fetch("/taximetro/api/attendance/checkout", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "x-force-role": "PRECEPTOR" },
-        body: JSON.stringify({ assignmentId, nps, notes }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        const total = Array.isArray(json.data?.assignmentIds) ? json.data.assignmentIds.length : 1;
-        setMsg({
-          type: "success",
-          text: total > 1 ? `Checkout confirmado (${total} turnos encerrados)` : "Checkout confirmado",
-        });
-        setCheckoutQuestionnaireId(null);
-        load();
-      } else {
-        setMsg({ type: "error", text: json.error || "Não foi possível confirmar checkout." });
-      }
-    } catch {
-      setMsg({ type: "error", text: "Erro de conexão. Tente novamente." });
-    } finally {
-      setCheckingOut(null);
-    }
-  }
-
-  function openCheckoutQuestionnaire(assignmentId: string) {
-    setCheckoutQuestionnaireId((current) => (current === assignmentId ? null : assignmentId));
-    setMsg(null);
   }
 
   const filteredByName = assignments.filter((a) => !search || a.internName.toLowerCase().includes(search.toLowerCase()));
@@ -231,9 +161,21 @@ export default function PreceptorValidar() {
   }
   const pending = checkinQueue.filter((a) => a.checkinStatus === "PENDING");
 
+  const canCheckout = (a: Assignment) => a.status === "CHECKED_IN"
+    || (a.checkinStatus === "VALIDATED" && a.status !== "CHECKED_OUT" && a.status !== "CANCELLED");
+  // Quem pede ação primeiro (check-in, depois checkout); quem já fechou fica no fim.
+  const doneList = scoped.filter((a) => a.status === "CHECKED_OUT");
+  const ordered = [...checkinQueue.filter((a) => !canCheckout(a)), ...checkoutQueue, ...doneList];
+  const baseStyle = getBaseStyleByCode(base?.code);
+
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold text-slate-900">Validar Presença</h1>
+    <div className="mx-auto max-w-3xl space-y-4">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {selectedDate ? "Voltando no tempo" : "Hoje"}
+        </p>
+        <h1 className="text-3xl font-bold capitalize leading-tight text-slate-900">{longDate(selectedDate ?? today)}</h1>
+      </div>
 
       <DateNavigator today={today} selected={selectedDate} counts={dayCounts} onSelect={setSelectedDate} />
 
@@ -242,20 +184,18 @@ export default function PreceptorValidar() {
       ) : (
       <>
 
-      {/* Code validation */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-        <div className="flex items-center gap-2 mb-2">
-          <KeyRound className="h-4 w-4 text-accent-500" strokeWidth={1.5} />
-          <h2 className="text-sm font-semibold text-slate-900">Validar por código TOTP</h2>
-        </div>
-        <p className="text-xs text-slate-400 mb-1">Digite somente os 6 números exibidos na tela do interno.</p>
-        <p className="text-xs text-slate-400 mb-3">Sem nome, sem pontos, sem traços e sem texto adicional.</p>
-        <div className="flex gap-2">
+      <div className="rounded-xl border border-accent-200 bg-accent-50/60 p-3">
+        <p className="flex items-center gap-1.5 text-xs font-bold uppercase leading-snug tracking-wide text-accent-700">
+          <KeyRound className="h-4 w-4 shrink-0" strokeWidth={2} />
+          É aqui que você digita o código que o interno te mostra
+        </p>
+        <div className="mt-2 flex gap-2">
           <Input
             value={codeInput}
             onChange={(e) => setCodeInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onKeyDown={(e) => { if (e.key === "Enter") validateByCode(); }}
             placeholder="000000"
-            className="w-32 text-center font-mono text-lg tracking-widest"
+            className="w-32 bg-white text-center font-mono text-lg tracking-widest"
             maxLength={6}
             inputMode="numeric"
             pattern="[0-9]{6}"
@@ -265,17 +205,15 @@ export default function PreceptorValidar() {
             {validatingCode ? "Validando..." : "Validar"}
           </Button>
         </div>
-        <textarea
-          value={codeObservations}
-          onChange={(e) => setCodeObservations(e.target.value)}
-          placeholder="Observações"
-          maxLength={2000}
-          rows={3}
-          className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20"
-        />
-        <p className="mt-2 flex items-center gap-1 text-xs text-slate-400">
-          <Send className="h-3 w-3" strokeWidth={1.5} /> No Telegram, envie apenas os 6 números no grupo da base
-        </p>
+        {codeInput.length === 6 && (
+          <Input
+            value={codeObservations}
+            onChange={(e) => setCodeObservations(e.target.value)}
+            placeholder="Observação (opcional)"
+            maxLength={2000}
+            className="mt-2 bg-white text-sm"
+          />
+        )}
       </div>
 
       {msg && (
@@ -285,189 +223,70 @@ export default function PreceptorValidar() {
         </div>
       )}
 
-      {pending.length > 0 && (
-        <div className="flex items-center gap-1.5 text-xs text-amber-700">
-          <Clock className="h-3.5 w-3.5" strokeWidth={1.5} />
-          {pending.length} interno(s) aguardando validação
-        </div>
-      )}
-
-      {checkoutQueue.length > 0 && (
-        <div className="flex items-center gap-1.5 text-xs text-blue-700">
-          <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
-          {checkoutQueue.length} checkout(s) pendente(s)
-        </div>
-      )}
-
-      <Input placeholder="Buscar por nome do interno..." value={search} onChange={(e) => setSearch(e.target.value)} />
-
-      {base?.code === "CRU" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <label className="mb-1 block text-xs font-medium text-slate-600">Filtrar CRU por faculdade</label>
-          <select
-            value={facultyFilter}
-            onChange={(e) => setFacultyFilter(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-accent-500/30"
-          >
-            <option value="ALL">Todas as faculdades</option>
-            {facultyOptions.map((faculty) => (
-              <option key={faculty} value={faculty}>{faculty}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {loading ? <TableSkeleton rows={5} cols={5} /> : (
-        <>
-          {checkoutQueue.length > 0 && (
-            <div className="space-y-3">
-              <h2 className="text-sm font-semibold text-slate-900">Checkout pendente</h2>
-              <div className="space-y-3">
-                {checkoutQueue.map((a) => (
-                  <div key={`checkout-${a.id}`} className="rounded-xl border border-blue-200 bg-blue-50 p-3 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="whitespace-normal break-words text-sm font-semibold leading-tight text-slate-900">{a.internName}</p>
-                          {hasDoubleShift(a) && (
-                            <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno</Badge>
-                          )}
-                          <Badge variant="outline" className="text-[11px]">{shiftLabel(a.shift)} ({getShiftPosition(a)})</Badge>
-                        </div>
-                        <p className="text-xs text-slate-500">{a.facultyAbbr || "Sem faculdade"}</p>
-                      </div>
-                      <div className="shrink-0">
-                        <Button
-                          size="sm"
-                          variant={checkoutQuestionnaireId === a.id ? "default" : "outline"}
-                          onClick={() => openCheckoutQuestionnaire(a.id)}
-                          disabled={checkingOut === a.id}
-                          className="gap-1"
-                        >
-                          {checkingOut === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> : <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />}
-                          Checkout
-                        </Button>
-                      </div>
-                    </div>
-
-                    {checkoutQuestionnaireId === a.id && (
-                      <CheckoutNpsForm
-                        submitting={checkingOut === a.id}
-                        onCancel={() => setCheckoutQuestionnaireId(null)}
-                        onSubmit={(nps, notes) => checkoutDirect(a.id, nps, notes)}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+      {(pending.length > 0 || checkoutQueue.length > 0) && (
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          {pending.length > 0 && (
+            <span className="flex items-center gap-1.5 text-amber-700">
+              <Clock className="h-3.5 w-3.5" strokeWidth={1.5} /> {pending.length} aguardando validação
+            </span>
           )}
+          {checkoutQueue.length > 0 && (
+            <span className="flex items-center gap-1.5 text-blue-700">
+              <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} /> {checkoutQueue.length} checkout(s) pendente(s)
+            </span>
+          )}
+        </div>
+      )}
 
-          <h2 className="text-sm font-semibold text-slate-900">Validação de check-in</h2>
-          <div className="space-y-3 md:hidden">
-            {checkinQueue.map((a) => (
-              <div key={a.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <p className="whitespace-normal break-words text-sm font-semibold leading-tight text-slate-900">{a.internName}</p>
-                      {hasDoubleShift(a) && (
-                        <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno</Badge>
-                      )}
-                      <Badge variant="outline" className="text-[11px]">{shiftLabel(a.shift)} ({getShiftPosition(a)})</Badge>
-                      {a.status !== "SCHEDULED" && <StatusBadge status={a.status} />}
-                    </div>
-                    <p className="text-xs text-slate-500">{a.facultyAbbr || "Sem faculdade"}</p>
-                  </div>
-                  <div className="shrink-0">
-                    {a.status !== "ABSENT" && a.status !== "EXCUSED" && (
-                      <Button
-                        size="sm"
-                        className="bg-emerald-600 text-white hover:bg-emerald-700"
-                        onClick={() => validateDirect(a.id)}
-                      >
-                        <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        {shiftActionLabel(a.shift)}
-                      </Button>
-                    )}
-                  </div>
-                </div>
+      {assignments.length > 6 && (
+        <Input placeholder="Buscar interno..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      )}
 
-                <div className="mt-2">
-                  <AttendanceQuickActions
-                    assignmentId={a.id}
-                    status={a.status}
-                    assignment={{ date: a.date, period: a.period, baseCode: a.baseCode }}
-                    actions={a.status === "ABSENT" || a.status === "EXCUSED" ? ["present", "excuse", "absent"] : ["excuse", "absent"]}
-                    onUpdated={load}
-                  />
-                </div>
+      {base?.code === "CRU" && facultyOptions.length > 1 && (
+        <select
+          value={facultyFilter}
+          onChange={(e) => setFacultyFilter(e.target.value)}
+          aria-label="Filtrar CRU por faculdade"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-accent-500/30"
+        >
+          <option value="ALL">Todas as faculdades</option>
+          {facultyOptions.map((faculty) => (
+            <option key={faculty} value={faculty}>{faculty}</option>
+          ))}
+        </select>
+      )}
 
-                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                  <span className="flex items-center gap-1">
-                    {a.period === "DAY" ? <Sun className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.5} /> : <Moon className="h-3.5 w-3.5 text-indigo-500" strokeWidth={1.5} />}
-                    {a.period === "DAY" ? "Diurno" : "Noturno"}
-                  </span>
-                </div>
-              </div>
-            ))}
-            {checkinQueue.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Nenhum interno aguardando check-in na sua base/turno hoje.</p>}
-          </div>
-
-          <div className="hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] md:block">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Interno</TableHead>
-                <TableHead>Faculdade</TableHead>
-                <TableHead>Turno</TableHead>
-                <TableHead>Ação</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {checkinQueue.map((a) => (
-                <TableRow key={a.id}>
-                  <TableCell className="font-medium whitespace-normal break-words">{a.internName}</TableCell>
-                  <TableCell className="text-xs">{a.facultyAbbr}</TableCell>
-                  <TableCell>
-                    <span className="flex flex-wrap items-center gap-1">
-                      {a.period === "DAY" ? <Sun className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.5} /> : <Moon className="h-3.5 w-3.5 text-indigo-500" strokeWidth={1.5} />}
-                      {a.period === "DAY" ? "Diurno" : "Noturno"} · {shiftLabel(a.shift)}
-                      {hasDoubleShift(a) && (
-                        <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno</Badge>
-                      )}
-                      <Badge variant="outline" className="text-[11px]">{getShiftPosition(a)}</Badge>
-                      {a.status !== "SCHEDULED" && <StatusBadge status={a.status} />}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {a.status !== "ABSENT" && a.status !== "EXCUSED" && (
-                        <Button
-                          size="sm"
-                          className="bg-emerald-600 text-white hover:bg-emerald-700"
-                          onClick={() => validateDirect(a.id)}
-                        >
-                          <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                          {shiftActionLabel(a.shift)}
-                        </Button>
-                      )}
-                      <AttendanceQuickActions
-                        assignmentId={a.id}
-                        status={a.status}
-                        assignment={{ date: a.date, period: a.period, baseCode: a.baseCode }}
-                        actions={a.status === "ABSENT" || a.status === "EXCUSED" ? ["present", "excuse", "absent"] : ["excuse", "absent"]}
-                        onUpdated={load}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
+      {loading ? <TableSkeleton rows={5} cols={3} /> : (
+        <section className={cn("overflow-hidden rounded-xl border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]", baseStyle.border)}>
+          <header className={cn("flex items-center gap-2 px-3 py-2", baseStyle.bg)}>
+            <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", baseStyle.dot)} />
+            <span className={cn("text-sm font-bold", baseStyle.text)}>{base?.code}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-600">{base?.name}</span>
+            <span className={cn("flex items-center gap-1 text-[11px] font-semibold", shift === "DAY" ? "text-amber-700" : "text-indigo-700")}>
+              {shift === "DAY" ? <Sun className="h-3.5 w-3.5" strokeWidth={1.5} /> : <Moon className="h-3.5 w-3.5" strokeWidth={1.5} />}
+              {shift === "DAY" ? "Diurno" : "Noturno"}
+            </span>
+            <span className={cn("rounded-full px-2 text-[11px] font-semibold", baseStyle.badge)}>{ordered.length}</span>
+          </header>
+          {ordered.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">Nenhum interno escalado na sua base/turno hoje.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {ordered.map((a) => (
+                <InternAttendanceCard
+                  key={a.id}
+                  assignment={a}
+                  canCheckout={canCheckout(a)}
+                  checkinMode="validate"
+                  badge={hasDoubleShift(a) ? (
+                    <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno {getShiftPosition(a)}</Badge>
+                  ) : null}
+                  onUpdated={load}
+                />
               ))}
-            </TableBody>
-          </Table>
-          {checkinQueue.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Nenhum interno aguardando check-in na sua base/turno hoje.</p>}
-          </div>
-        </>
+            </ul>
+          )}
+        </section>
       )}
       </>
       )}

@@ -20,6 +20,7 @@ export async function listAssignmentsWithRelations(params: {
       id: assignments.id,
       internId: assignments.internId,
       internName: users.name,
+      internPhone: users.phone,
       facultyId: assignments.facultyId,
       facultyAbbr: faculties.abbreviation,
       baseId: assignments.baseId,

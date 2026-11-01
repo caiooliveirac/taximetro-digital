@@ -18,6 +18,14 @@ import { pickPlausibleShiftTimes } from "@/features/admin-attendance/application
 import { z } from "zod/v4";
 
 // GET: return checkin details for a CHECKED_IN assignment
+function checkoutWindowError(assignment: { period: string; shift: string | null }) {
+  const shiftInfo = assignment.shift ? ` (${getShiftLabel(assignment.shift)})` : "";
+  if (assignment.period !== "DAY") return "O checkout do plantão noturno só fica liberado entre 23:00 e 12:00.";
+  if (assignment.shift === "MORNING") return "O checkout do turno da manhã só fica liberado entre 11:00 e 00:00.";
+  if (assignment.shift === "AFTERNOON") return "O checkout do turno da tarde só fica liberado entre 17:00 e 00:00.";
+  return `O checkout do plantão diurno${shiftInfo} só fica liberado entre 11:00 e 00:00.`;
+}
+
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
   if (!token) return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
@@ -87,19 +95,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Check-in não realizado" }, { status: 400 });
   }
   if (!isWithinShiftCheckoutWindow(assignment.date, assignment.period as "DAY" | "NIGHT", assignment.shift)) {
-    const shiftInfo = assignment.shift ? ` (${getShiftLabel(assignment.shift)})` : "";
-    return NextResponse.json(
-      {
-        success: false, error: assignment.period === "DAY"
-          ? (assignment.shift === "MORNING"
-            ? "O checkout do turno da manhã só fica liberado entre 11:00 e 00:00."
-            : assignment.shift === "AFTERNOON"
-              ? "O checkout do turno da tarde só fica liberado entre 17:00 e 00:00."
-              : `O checkout do plantão diurno${shiftInfo} só fica liberado entre 11:00 e 00:00.`)
-          : "O checkout do plantão noturno só fica liberado entre 23:00 e 12:00."
-      },
-      { status: 409 },
-    );
+    return NextResponse.json({ success: false, error: checkoutWindowError(assignment) }, { status: 409 });
   }
 
   // Find validated checkin
@@ -226,10 +222,18 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Interno não está em check-in" }, { status: 400 });
   }
 
-  const assignmentIdsToCheckout = await resolvePendingCheckoutAssignmentIds(assignment);
   const now = new Date();
   const retroactive = reopensAutoAbsence
     || isRetroactiveCheckout({ date: assignment.date, period: assignment.period as "DAY" | "NIGHT", shift: assignment.shift }, now);
+
+  // Preceptor não encerra plantão antes da hora: mesma janela do interno.
+  // Depois dela (retroativo) continua liberado, para o checkout esquecido.
+  if (user.role === "PRECEPTOR" && !retroactive
+    && !isWithinShiftCheckoutWindow(assignment.date, assignment.period as "DAY" | "NIGHT", assignment.shift, now)) {
+    return NextResponse.json({ success: false, error: checkoutWindowError(assignment) }, { status: 409 });
+  }
+
+  const assignmentIdsToCheckout = await resolvePendingCheckoutAssignmentIds(assignment);
 
   // Horário plausível de fim de turno no retroativo; nunca antes do check-in real.
   let checkoutAt = now;
