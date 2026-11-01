@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
       id: r.id,
       internId: r.internId,
       internName: r.internName,
+      internPhone: r.internPhone,
       facultyAbbr: r.facultyAbbr,
       baseCode: r.baseCode,
       baseName: r.baseName,

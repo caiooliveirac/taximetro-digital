@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { tokenHasRole } from "@/lib/roles";
 
 // Serve a selfie como imagem binária com cache, para a lista/galeria
 // usar <img src> com lazy-load em vez de base64 gigante no JSON.
@@ -11,7 +12,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: process.env.NODE_ENV === "production" });
-  if (!token || !["COORDINATOR", "LEADER"].includes(token.role as string)) {
+  // Preceptor também: reconhece o interno na base antes de validar presença.
+  if (!token || !(["COORDINATOR", "LEADER", "PRECEPTOR"] as const).some((role) => tokenHasRole(token, role))) {
     return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
   }
 

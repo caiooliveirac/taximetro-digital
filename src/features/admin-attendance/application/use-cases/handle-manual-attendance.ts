@@ -75,6 +75,13 @@ export async function executeManualAttendance(params: {
 }) {
   const { assignmentId, action } = params.input;
 
+  // Abono e checkout em nome de outro são decisões da coordenação. O preceptor
+  // fecha o checkout pela própria tela (/api/attendance/checkout), que respeita
+  // a janela do turno.
+  if ((action === "EXCUSE_ABSENCE" || action === "CONFIRM_CHECKOUT") && params.actor.role !== "COORDINATOR") {
+    return { status: 403, body: { success: false, error: "Só a coordenação pode fazer isso" } } as const;
+  }
+
   const [assignment] = await db
     .select({
       id: assignments.id,
