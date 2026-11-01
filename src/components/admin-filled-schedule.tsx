@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, Unlock, User, UserX, Users, X, Zap } from "lucide-react";
-import { AdminManualAttendanceActions } from "@/components/admin-manual-attendance-actions";
+import { AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Filter, Loader2, MapPin, Moon, Plus, Search, ShieldCheck, Sun, Trash2, Unlock, UserX, Users, X, Zap } from "lucide-react";
 import { AttendanceQuickActions, attendanceQuickActionsAvailable } from "@/components/attendance-quick-actions";
 import { InternDrawer } from "@/components/admin/intern-drawer";
+import { InternContactCard } from "@/components/admin/intern-contact-card";
+import { AttendanceQuickButtons } from "@/components/admin/attendance-quick-buttons";
 import { StatusBadge } from "@/components/status-badge";
 import { getBaseStyle, getFacultyStyle, baseViewIndex } from "@/lib/base-colors";
 import { computeCapacityFlags, computePeriodLoad, splitPeriodSlots } from "@/features/scheduling/domain/policies/assignment-policy";
@@ -62,6 +63,8 @@ type AssignmentDetail = {
     id: string;
     intern_id: string;
     intern_name: string;
+    intern_phone: string | null;
+    intern_email: string | null;
     faculty_id: string;
     faculty_abbr: string;
     base_id: string;
@@ -2743,34 +2746,41 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
 
             {selectedAssignment && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setSelectedAssignmentId(null)}>
-                    <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
-                        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <h3 className="text-xl font-semibold text-slate-900">{selectedAssignment.intern_name}</h3>
-                                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                                        {selectedAssignment.faculty_abbr}
-                                    </span>
-                                </div>
-                                <p className="mt-1 text-sm text-slate-500">{selectedAssignment.base_code} — {selectedAssignment.base_name} · {formatDayMonth(selectedAssignment.date)} · {formatPeriod(selectedAssignment.period, selectedAssignment.shift)}</p>
-                                <button
-                                    type="button"
-                                    onClick={() => setInternDrawer({ id: selectedAssignment.intern_id, name: selectedAssignment.intern_name, facultyAbbr: selectedAssignment.faculty_abbr })}
-                                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
-                                >
-                                    <User className="h-3.5 w-3.5" /> Ver interno
-                                </button>
-                            </div>
+                    <div className="max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
+                        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                            <InternContactCard
+                                key={selectedAssignment.intern_id}
+                                internId={selectedAssignment.intern_id}
+                                name={selectedAssignment.intern_name}
+                                facultyAbbr={selectedAssignment.faculty_abbr}
+                                phone={selectedAssignment.intern_phone}
+                                email={selectedAssignment.intern_email}
+                                subtitle={`${selectedAssignment.base_code} · ${formatDayMonth(selectedAssignment.date)} · ${formatPeriod(selectedAssignment.period, selectedAssignment.shift)}`}
+                                onOpenHistory={() => setInternDrawer({ id: selectedAssignment.intern_id, name: selectedAssignment.intern_name, facultyAbbr: selectedAssignment.faculty_abbr })}
+                            />
                             <button type="button" onClick={() => setSelectedAssignmentId(null)} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
                         </div>
 
-                        <div className="grid gap-6 px-6 py-5 lg:grid-cols-[1.1fr,0.9fr]">
-                            <div className="space-y-4">
+                        <div className="space-y-4 px-5 py-4">
+                            <div className="space-y-2">
                                 <div className="flex items-center gap-2">
                                     <StatusBadge status={selectedAssignment.status} notes={selectedAssignment.notes} />
                                     {selectedAssignment.notes?.includes("[REMANEJADO]") && <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">Remanejado</span>}
                                 </div>
+                                <AttendanceQuickButtons
+                                    key={selectedAssignment.id}
+                                    assignmentId={selectedAssignment.id}
+                                    status={selectedAssignment.status}
+                                    assignment={{
+                                        date: selectedAssignment.date,
+                                        period: selectedAssignment.period,
+                                        baseCode: selectedAssignment.base_code,
+                                        internName: selectedAssignment.intern_name,
+                                    }}
+                                    onUpdated={loadAssignments}
+                                />
+                                <p className="text-[11px] text-slate-400">Vale até o dia seguinte ao plantão. Toda ação manual fica auditada.</p>
+                            </div>
 
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -2825,37 +2835,6 @@ export function AdminFilledSchedule({ scope = "all" }: { scope?: ScheduleScope }
                                         {removingId === selectedAssignment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Remover da escala
                                     </button>
                                 </div>
-                            </div>
-
-                            <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                <div>
-                                    <p className="text-sm font-semibold text-slate-900">Acompanhamento operacional</p>
-                                    <p className="text-xs text-slate-500">Ações manuais disponíveis até a data seguinte, inclusive.</p>
-                                </div>
-
-                                <AdminManualAttendanceActions
-                                    assignmentId={selectedAssignment.id}
-                                    status={selectedAssignment.status}
-                                    assignment={{
-                                        date: selectedAssignment.date,
-                                        period: selectedAssignment.period,
-                                        baseCode: selectedAssignment.base_code,
-                                        internName: selectedAssignment.intern_name,
-                                    }}
-                                    onUpdated={loadAssignments}
-                                />
-
-                                <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-500">
-                                    A coordenação pode registrar presença, checkout ou falta retroativamente. Toda ação manual fica auditada.
-                                </div>
-
-                                <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-500">
-                                    <p>Interno: <span className="font-medium text-slate-700">{selectedAssignment.intern_name}</span></p>
-                                    <p className="mt-1">Faculdade: <span className="font-medium text-slate-700">{selectedAssignment.faculty_abbr}</span></p>
-                                    <p className="mt-1">Base: <span className="font-medium text-slate-700">{selectedAssignment.base_code}</span></p>
-                                    <p className="mt-1">Turno: <span className="font-medium text-slate-700">{formatPeriod(selectedAssignment.period, selectedAssignment.shift)}</span></p>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
