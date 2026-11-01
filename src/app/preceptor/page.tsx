@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock, Sun, Moon, KeyRound, LogOut } from "lucide-react";
+import { CheckCircle2, Clock, History, KeyRound, LogIn, LogOut, Moon, Sun, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { usePreceptor } from "./preceptor-context";
 import { DateNavigator, PendenciasDoDia, STRIP_DAYS, fetchPendencias, longDate } from "./pendencias-por-data";
 import { InternAttendanceCard } from "./intern-attendance-card";
 import { baseViewIndex, getBaseStyleByCode } from "@/lib/base-colors";
-import { addDaysToDateStr, cn, localDateStr } from "@/lib/utils";
+import { addDaysToDateStr, cn, localDateStr, operationalDateStr } from "@/lib/utils";
 
 type Assignment = {
   id: string;
@@ -32,6 +32,20 @@ function shiftOrder(shift: string) {
   if (shift === "AFTERNOON") return 1;
   if (shift === "NIGHT") return 2;
   return 99;
+}
+
+type BoxTone = "previous" | "waiting" | "inShift" | "absent" | "done";
+
+const BOX_TONES: Record<BoxTone, { border: string; header: string; badge: string; icon: typeof Clock }> = {
+  previous: { border: "border-amber-300", header: "bg-amber-100 text-amber-900", badge: "bg-amber-600 text-white", icon: History },
+  waiting: { border: "border-slate-300", header: "bg-slate-100 text-slate-800", badge: "bg-slate-700 text-white", icon: LogIn },
+  inShift: { border: "border-blue-300", header: "bg-blue-50 text-blue-900", badge: "bg-blue-600 text-white", icon: LogOut },
+  absent: { border: "border-red-200", header: "bg-red-50 text-red-800", badge: "bg-red-600 text-white", icon: UserX },
+  done: { border: "border-emerald-200", header: "bg-emerald-50 text-emerald-800", badge: "bg-emerald-600 text-white", icon: CheckCircle2 },
+};
+
+function dayMonthLabel(dateStr: string) {
+  return new Date(`${dateStr}T12:00:00Z`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" }).replace(".", "");
 }
 
 export default function PreceptorValidar() {
@@ -163,9 +177,21 @@ export default function PreceptorValidar() {
 
   const canCheckout = (a: Assignment) => a.status === "CHECKED_IN"
     || (a.checkinStatus === "VALIDATED" && a.status !== "CHECKED_OUT" && a.status !== "CANCELLED");
-  // Quem pede ação primeiro (check-in, depois checkout); quem já fechou fica no fim.
-  const doneList = scoped.filter((a) => a.status === "CHECKED_OUT");
-  const ordered = [...checkinQueue.filter((a) => !canCheckout(a)), ...checkoutQueue, ...doneList];
+  // Cada interno numa caixa só, pela situação: o plantão anterior que ficou
+  // pendente vem separado no topo; no atual, quem nem entrou, quem está em
+  // plantão (falta checkout), faltas e, por último, quem já fechou.
+  const operationalToday = operationalDateStr();
+  const byName = (a: Assignment, b: Assignment) => a.internName.localeCompare(b.internName, "pt-BR") || shiftOrder(a.shift) - shiftOrder(b.shift);
+  const previous = scoped.filter((a) => a.date < operationalToday && a.status !== "CHECKED_OUT").sort(byName);
+  const current = scoped.filter((a) => a.date >= operationalToday);
+  const boxes: Array<{ key: string; tone: BoxTone; title: string; items: Assignment[] }> = [
+    { key: "ontem", tone: "previous", title: `Pendente do plantão anterior${previous[0] ? ` · ${dayMonthLabel(previous[0].date)}` : ""}`, items: previous },
+    { key: "sem-checkin", tone: "waiting", title: "Sem check-in", items: current.filter((a) => !canCheckout(a) && ["SCHEDULED", "CONFIRMED"].includes(a.status)).sort(byName) },
+    { key: "em-plantao", tone: "inShift", title: "Em plantão · falta checkout", items: current.filter(canCheckout).sort(byName) },
+    { key: "faltas", tone: "absent", title: "Faltas", items: current.filter((a) => !canCheckout(a) && ["ABSENT", "EXCUSED"].includes(a.status)).sort(byName) },
+    { key: "fechados", tone: "done", title: "Plantão encerrado", items: current.filter((a) => a.status === "CHECKED_OUT").sort(byName) },
+  ];
+  const total = boxes.reduce((sum, box) => sum + box.items.length, 0);
   const baseStyle = getBaseStyleByCode(base?.code);
 
   return (
@@ -257,8 +283,8 @@ export default function PreceptorValidar() {
       )}
 
       {loading ? <TableSkeleton rows={5} cols={3} /> : (
-        <section className={cn("overflow-hidden rounded-xl border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]", baseStyle.border)}>
-          <header className={cn("flex items-center gap-2 px-3 py-2", baseStyle.bg)}>
+        <div className="space-y-3">
+          <div className={cn("flex items-center gap-2 rounded-xl border px-3 py-2", baseStyle.bg, baseStyle.border)}>
             <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", baseStyle.dot)} />
             <span className={cn("text-sm font-bold", baseStyle.text)}>{base?.code}</span>
             <span className="min-w-0 flex-1 truncate text-xs text-slate-600">{base?.name}</span>
@@ -266,27 +292,40 @@ export default function PreceptorValidar() {
               {shift === "DAY" ? <Sun className="h-3.5 w-3.5" strokeWidth={1.5} /> : <Moon className="h-3.5 w-3.5" strokeWidth={1.5} />}
               {shift === "DAY" ? "Diurno" : "Noturno"}
             </span>
-            <span className={cn("rounded-full px-2 text-[11px] font-semibold", baseStyle.badge)}>{ordered.length}</span>
-          </header>
-          {ordered.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">Nenhum interno escalado na sua base/turno hoje.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {ordered.map((a) => (
-                <InternAttendanceCard
-                  key={a.id}
-                  assignment={a}
-                  canCheckout={canCheckout(a)}
-                  checkinMode="validate"
-                  badge={hasDoubleShift(a) ? (
-                    <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno {getShiftPosition(a)}</Badge>
-                  ) : null}
-                  onUpdated={load}
-                />
-              ))}
-            </ul>
+            <span className={cn("rounded-full px-2 text-[11px] font-semibold", baseStyle.badge)}>{total}</span>
+          </div>
+
+          {total === 0 && (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-white py-8 text-center text-sm text-slate-400">Nenhum interno escalado na sua base/turno hoje.</p>
           )}
-        </section>
+
+          {boxes.filter((box) => box.items.length > 0).map((box) => {
+            const tone = BOX_TONES[box.tone];
+            return (
+              <section key={box.key} className={cn("overflow-hidden rounded-xl border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]", tone.border)}>
+                <header className={cn("flex items-center gap-2 px-3 py-2", tone.header)}>
+                  <tone.icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+                  <h2 className="min-w-0 flex-1 truncate text-sm font-bold">{box.title}</h2>
+                  <span className={cn("rounded-full px-2 text-[11px] font-bold", tone.badge)}>{box.items.length}</span>
+                </header>
+                <ul className="divide-y divide-slate-100">
+                  {box.items.map((a) => (
+                    <InternAttendanceCard
+                      key={a.id}
+                      assignment={a}
+                      canCheckout={canCheckout(a)}
+                      checkinMode="validate"
+                      badge={hasDoubleShift(a) ? (
+                        <Badge className="bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300/60">Duplo turno {getShiftPosition(a)}</Badge>
+                      ) : null}
+                      onUpdated={load}
+                    />
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
       )}
       </>
       )}

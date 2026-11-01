@@ -148,7 +148,7 @@ export function InternAttendanceCard({
     <li className="px-3 py-3">
       <div className="flex items-center gap-3">
         {photoFailed ? (
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl font-semibold text-slate-400">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-2xl font-semibold text-slate-400">
             {a.internName.charAt(0)}
           </div>
         ) : (
@@ -159,7 +159,7 @@ export function InternAttendanceCard({
             loading="lazy"
             onError={() => setPhotoFailed(true)}
             onClick={() => setLightbox(true)}
-            className="h-14 w-14 shrink-0 cursor-zoom-in rounded-xl object-cover ring-1 ring-slate-200"
+            className="h-20 w-20 shrink-0 cursor-zoom-in rounded-2xl object-cover object-top ring-1 ring-slate-200"
           />
         )}
         <div className="min-w-0 flex-1">

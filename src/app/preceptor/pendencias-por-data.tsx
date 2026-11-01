@@ -261,7 +261,7 @@ export function PendenciasDoDia({ date, onChanged }: { date: string; onChanged: 
             {(["DAY", "NIGHT"] as const).map((period) => {
               const items = list
                 .filter((r) => r.period === period)
-                .sort((a, b) => a.internName.localeCompare(b.internName, "pt-BR"));
+                .sort((a, b) => a.kind.localeCompare(b.kind) || a.internName.localeCompare(b.internName, "pt-BR"));
               if (items.length === 0) return null;
               return (
                 <div key={period} className="border-t border-slate-100">

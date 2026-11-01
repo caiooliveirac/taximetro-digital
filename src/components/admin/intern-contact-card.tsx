@@ -46,7 +46,7 @@ export function InternContactCard({
                     alt={`Foto de ${name}`}
                     onError={() => setPhotoFailed(true)}
                     onClick={() => setLightbox(true)}
-                    className="h-20 w-20 shrink-0 cursor-zoom-in rounded-2xl object-cover ring-1 ring-slate-200"
+                    className="h-20 w-20 shrink-0 cursor-zoom-in rounded-2xl object-cover object-top ring-1 ring-slate-200"
                 />
             )}
             <div className="min-w-0 flex-1">
