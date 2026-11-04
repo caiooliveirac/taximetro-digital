@@ -45,6 +45,7 @@ import {
   semNotaDeReposicao,
   textoParaInternoDevolvido,
   textoParaInternoRemanejado,
+  textoParaInternoExtraEmCasa,
   textoParaInternoRepor,
   textoParaInternoReposicaoDesfeita,
 } from "@/lib/plantao-ao-vivo";
@@ -177,7 +178,6 @@ async function plantaoDoTurno(assignmentId: string) {
   if (!isCurrentOperationalAssignment(plantao.date, plantao.period)) {
     return falha(409, "O Plantão ao vivo só mexe no turno em andamento. Para outro dia, use o Remanejamento.");
   }
-  if (plantao.isExtraShift) return falha(409, "Plantão extra fica fora do Plantão ao vivo.");
   return plantao;
 }
 
@@ -331,7 +331,8 @@ async function executar(user: EffectiveUser, pedido: z.infer<typeof acaoSchema>)
         entityId: plantao.id,
         payload: { ...carimbo, baseId: plantao.baseId, baseCode: plantao.baseCode, previousStatus: plantao.status, motivo },
       });
-      const entregue = await avisarInternoNoTelegram(plantao.internId, textoParaInternoRepor({ baseCode: plantao.baseCode, motivo }));
+      const texto = plantao.isExtraShift ? textoParaInternoExtraEmCasa : textoParaInternoRepor;
+      const entregue = await avisarInternoNoTelegram(plantao.internId, texto({ baseCode: plantao.baseCode, motivo }));
       return { interno: plantao.interno, baseCode: plantao.baseCode, entregue };
     }
 

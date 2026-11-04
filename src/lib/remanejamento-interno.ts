@@ -62,8 +62,8 @@ export function horaDoTurno(period: "DAY" | "NIGHT", maisMinutos: number): strin
   return `${String(INICIO_DO_TURNO[period]).padStart(2, "0")}:${String(maisMinutos).padStart(2, "0")}`;
 }
 
-/** `extra`: plantão extra segura lugar físico mesmo sem check-in; a vaga dele não é reivindicável. */
-export type Ocupante = { faculdade: string; status: string; remanejado?: boolean; extra?: boolean };
+/** Plantão extra entra no mecanismo como qualquer outro: segura o lugar pelo check-in. */
+export type Ocupante = { faculdade: string; status: string; remanejado?: boolean };
 
 export type Celula =
   | { tipo: "livre" }
@@ -111,7 +111,7 @@ export function celulasDaBase(
     o.status === "CHECKED_IN" ? "checkin-ok" : o.status === "CHECKED_OUT" ? "saiu" : o.remanejado ? "remanejado" : "sem-checkin";
 
   const livres = opts.bloqueada ? 0 : vagasNaGrade({ capacity, occupied: ocupantes.length });
-  const segura = (o: Ocupante) => estadoDe(o) !== "sem-checkin" || o.extra === true;
+  const segura = (o: Ocupante) => estadoDe(o) !== "sem-checkin";
   const presentes = ocupantes.filter(segura).length;
   // Antes da tolerância todo escalado segura o lugar; depois, só quem conta como presente.
   const contados = opts.reivindicarSemCheckin === true ? presentes : ocupantes.length;
@@ -121,7 +121,7 @@ export function celulasDaBase(
   let restantes = reivindicaveis;
   const ocupadas: Celula[] = ocupantes.map((o) => {
     const estado = estadoDe(o);
-    const reivindicavel = estado === "sem-checkin" && !o.extra && restantes > 0;
+    const reivindicavel = estado === "sem-checkin" && restantes > 0;
     if (reivindicavel) restantes -= 1;
     return { tipo: "ocupada", faculdade: o.faculdade, estado, reivindicavel };
   });

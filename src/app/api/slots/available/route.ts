@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAvailableSlots, getRequestableSlots } from "@/lib/slots";
 import { getEffectiveUser } from "@/lib/impersonate";
+import { internoPegaExtraNoTipo } from "@/features/extra-offers/application/repescagem";
 
 export async function GET(req: NextRequest) {
   const user = await getEffectiveUser(req);
@@ -26,7 +27,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    const slots = await getRequestableSlots(user.facultyId, user.id);
+    // Pedido de extra do próprio interno: só USA (internoPegaExtraNoTipo).
+    const slots = (await getRequestableSlots(user.facultyId, user.id)).filter((s) => internoPegaExtraNoTipo(s.baseType));
     return NextResponse.json({ success: true, data: slots });
   }
 
@@ -35,7 +37,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    const slots = await getRequestableSlots(user.facultyId, user.id);
+    // Pedido de extra do próprio interno: só USA (internoPegaExtraNoTipo).
+    const slots = (await getRequestableSlots(user.facultyId, user.id)).filter((s) => internoPegaExtraNoTipo(s.baseType));
     return NextResponse.json({ success: true, data: slots });
   }
 

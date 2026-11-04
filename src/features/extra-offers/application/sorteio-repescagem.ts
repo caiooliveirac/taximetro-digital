@@ -110,8 +110,8 @@ export function textoDaHora(h: { date: string; hour: number }, hoje: string) {
   return `${d} às ${h.hour}h`;
 }
 
-/** CRU não vai a sorteio: só muda de mãos por troca (decisão do Caio, 30/10). */
-export const entraNoSorteio = (tipo: GoalKind | null) => tipo !== "CRU";
+/** Só USA vai a sorteio: CRU muda de mãos por troca (30/10) e CRL também saiu (04/11) — ver internoPegaExtraNoTipo. */
+export const entraNoSorteio = (tipo: GoalKind | null) => tipo === "USA";
 
 /** Vagas livres abertas no turno que cabem na viatura — as que vão a sorteio. */
 export async function vagasDoTurno(de: string, ate: string) {

@@ -1,4 +1,8 @@
 import { z } from "zod/v4";
+import { eq } from "drizzle-orm";
+import { db } from "@/shared/db/client";
+import { bases } from "@/shared/db/schema";
+import { internoPegaExtraNoTipo, TEXTO_EXTRA_SO_USA } from "@/features/extra-offers/application/repescagem";
 import { checkCruConflict, checkSlotAvailability } from "@/lib/slots";
 import { operationalDateStr } from "@/lib/utils";
 import { logAudit } from "@/shared/infra/logger/audit";
@@ -80,6 +84,11 @@ export async function executeCreateRequest(params: {
   if (input.type === "EXTRA_SHIFT") {
     if (input.extraDate < todayStr) {
       return { status: 400, body: { success: false, error: "Data do plantão extra deve ser futura" } } as const;
+    }
+
+    const [base] = await db.select({ type: bases.type }).from(bases).where(eq(bases.id, input.extraBaseId)).limit(1);
+    if (!internoPegaExtraNoTipo(base?.type)) {
+      return { status: 403, body: { success: false, error: TEXTO_EXTRA_SO_USA } } as const;
     }
 
     const reqRole = await findRequesterFacultyRole(requesterId);

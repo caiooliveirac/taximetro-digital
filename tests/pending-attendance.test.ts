@@ -55,11 +55,11 @@ test("resolvidos não aparecem", () => {
   }
 });
 
-test("sem check-in aparece; extra nunca reivindicado não", () => {
+test("sem check-in aparece; extra nunca é pendência (checkout ignorado)", () => {
   assert.equal(classifyPendingAttendance(base), "CHECKIN");
   assert.equal(classifyPendingAttendance({ ...base, status: "ABSENT" }), "CHECKIN");
   assert.equal(classifyPendingAttendance({ ...base, isExtraShift: true }), null);
-  assert.equal(classifyPendingAttendance({ ...base, isExtraShift: true, status: "CHECKED_IN" }), "CHECKOUT");
+  assert.equal(classifyPendingAttendance({ ...base, isExtraShift: true, status: "CHECKED_IN" }), null);
 });
 
 test("checkout retroativo só fora da janela do turno", () => {

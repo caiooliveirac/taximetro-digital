@@ -28,13 +28,25 @@ test("mensagem escapa HTML e traz base, faculdade e total", () => {
 
 import { celulaOcupavel, celulasDaBase } from "../src/lib/remanejamento-interno";
 
-test("extra sem check-in segura o lugar físico e não vira vaga depois da tolerância", () => {
+test("extra entra no mecanismo: sem check-in depois da tolerância, a vaga dele vira reivindicável", () => {
   // Grade de 1 (Débora, presente), limite físico 2, Karol extra sem check-in.
   const celulas = celulasDaBase(
     1,
     [
       { faculdade: "UNIFACS", status: "CHECKED_IN" },
-      { faculdade: "ZARNS", status: "SCHEDULED", extra: true },
+      { faculdade: "ZARNS", status: "SCHEDULED" },
+    ],
+    { reivindicarSemCheckin: true, extra: { limite: 2, podeUsar: true, reservadaPara: null } },
+  );
+  assert.equal(celulas.some(celulaOcupavel), true);
+});
+
+test("extra com check-in segura o lugar físico", () => {
+  const celulas = celulasDaBase(
+    1,
+    [
+      { faculdade: "UNIFACS", status: "CHECKED_IN" },
+      { faculdade: "ZARNS", status: "CHECKED_IN" },
     ],
     { reivindicarSemCheckin: true, extra: { limite: 2, podeUsar: true, reservadaPara: null } },
   );
@@ -49,8 +61,8 @@ test("sem o extra, o segundo lugar físico continua ocupável", () => {
   assert.equal(celulas.some(celulaOcupavel), true);
 });
 
-test("base com extra fica bloqueada para quem procura vaga (bloqueada zera as livres)", () => {
-  const celulas = celulasDaBase(2, [{ faculdade: "ZARNS", status: "SCHEDULED", extra: true }], {
+test("base bloqueada não oferece vaga (bloqueada zera as livres)", () => {
+  const celulas = celulasDaBase(2, [{ faculdade: "ZARNS", status: "SCHEDULED" }], {
     bloqueada: true,
     extra: { limite: 3, podeUsar: true, reservadaPara: null },
   });

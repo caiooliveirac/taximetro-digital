@@ -152,6 +152,12 @@ export function textoParaInternoRepor(p: { baseCode: string; motivo: string | nu
   return `🏠 Seu plantão de hoje na ${p.baseCode} foi liberado pela coordenação: a base parou${motivo} e não conseguimos te encaixar em outra. Isso não é falta e não pesa na sua meta. Você pode voltar para casa. Seu plantão será reposto em outro dia: o líder da sua faculdade foi avisado e as vagas abertas aparecem no app.`;
 }
 
+/** Extra mandado para casa: não há o que repor — extra não conta na meta. */
+export function textoParaInternoExtraEmCasa(p: { baseCode: string; motivo: string | null }): string {
+  const motivo = p.motivo ? ` (${p.motivo})` : "";
+  return `🏠 Seu plantão extra de hoje na ${p.baseCode} foi encerrado pela coordenação${motivo}. Você pode voltar para casa. Não é falta.`;
+}
+
 export function textoParaInternoReposicaoDesfeita(p: { baseCode: string }): string {
   return `↩️ A coordenação desfez a liberação: seu plantão de hoje na ${p.baseCode} voltou a valer.`;
 }

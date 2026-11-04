@@ -569,7 +569,11 @@ function InternCheckinContent() {
             </Link>
           </div>
 
-          {canRequestCheckout ? (
+          {assignment.isExtraShift ? (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-center text-sm text-blue-900">
+              Plantão extra não tem checkout: ao terminar, é só ir embora.
+            </div>
+          ) : canRequestCheckout ? (
             <>
               <Button
                 onClick={startCheckout}
@@ -882,24 +886,14 @@ function InternCheckinContent() {
               label={`${assignment.baseCode} - ${assignment.baseName}`}
             />
 
-            {assignment.isExtraShift ? (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" strokeWidth={1.5} />
-                  <span className="inline-flex items-center rounded-full bg-amber-200 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-amber-900">Plantão Extra</span>
-                </div>
-                <p className="text-sm font-semibold text-amber-900">
-                  Este é um plantão extra e não será contabilizado no seu rodízio oficial. Não há necessidade de fazer check-in pelo sistema.
-                </p>
-                <p className="text-xs text-amber-700">
-                  Compareça normalmente à base e siga as orientações do preceptor.
-                </p>
-              </div>
-            ) : (
-              <Button onClick={startCheckin} className="w-full gap-2" size="lg">
-                <MapPin className="h-4 w-4" strokeWidth={1.5} /> Iniciar Check-in
-              </Button>
+            {assignment.isExtraShift && (
+              <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                Plantão extra não conta no seu rodízio oficial. Faça o check-in para garantir seu lugar na base; o checkout não é necessário.
+              </p>
             )}
+            <Button onClick={startCheckin} className="w-full gap-2" size="lg">
+              <MapPin className="h-4 w-4" strokeWidth={1.5} /> Iniciar Check-in
+            </Button>
 
             {canManageAssignment && assignment && (
               <Button asChild variant="outline" className="w-full gap-2">

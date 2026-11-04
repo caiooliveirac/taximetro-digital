@@ -109,8 +109,8 @@ test("anúncio do adiamento diz que ninguém se inscreveu, a nova hora e o que a
   assert.match(t, /Sem inscritos até lá, vão para quem pegar primeiro/);
 });
 
-test("CRU não vai a sorteio: só troca", () => {
+test("só USA vai a sorteio: CRU e CRL não", () => {
   assert.equal(entraNoSorteio("CRU"), false);
   assert.equal(entraNoSorteio("USA"), true);
-  assert.equal(entraNoSorteio("CRL"), true);
+  assert.equal(entraNoSorteio("CRL"), false);
 });

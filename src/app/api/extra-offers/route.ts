@@ -4,7 +4,7 @@ import {
   listExtraOffers,
   listExtraOffersForAdmin,
 } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
-import { comExtraNoHistorico, vagasNaRepescagem } from "@/features/extra-offers/application/repescagem";
+import { comExtraNoHistorico, internoPegaExtraNoTipo, vagasNaRepescagem } from "@/features/extra-offers/application/repescagem";
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import {
   executePublishExtraOffer,
@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
   // falta na meta — essas contam na meta, não são extra.
   const jaTeveExtra = user.role === "INTERN" && !includeUnavailable && !user.isImpersonating && (await comExtraNoHistorico([user.id])).has(user.id);
   if (jaTeveExtra) rows = [];
+  if (user.role === "INTERN" && !includeUnavailable) rows = rows.filter((r) => internoPegaExtraNoTipo(r.baseType));
   let vagas = user.role === "INTERN" && !includeUnavailable && user.facultyId ? await vagasNaRepescagem(user.facultyId) : [];
   if (vagas.length && jaTeveExtra) {
     const { data } = await executeGetComplianceOverview({ actor: { id: "", role: "COORDINATOR", facultyId: null }, internId: user.id });

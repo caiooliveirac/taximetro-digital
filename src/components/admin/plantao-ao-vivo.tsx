@@ -49,6 +49,7 @@ type Ocupante = {
   status: string;
   remanejado: boolean;
   origem: string | null;
+  extra?: boolean;
 };
 
 type Celula =
@@ -264,13 +265,15 @@ export function PlantaoAoVivo() {
     const motivo = base.parada?.motivo ?? base.aviso?.tipo ?? null;
     if (
       !window.confirm(
-        `Liberar ${ocupante.interno} (${ocupante.faculdade}) do plantão de hoje na ${base.code}${motivo ? ` (${motivo})` : ""}?\n\nNão vira falta e não conta para a meta: ele repõe em outro dia. Dá para desfazer nesta tela.`,
+        ocupante.extra
+          ? `Mandar ${ocupante.interno} (${ocupante.faculdade}) para casa? O plantão extra de hoje na ${base.code} é encerrado, sem falta. Dá para desfazer nesta tela.`
+          : `Liberar ${ocupante.interno} (${ocupante.faculdade}) do plantão de hoje na ${base.code}${motivo ? ` (${motivo})` : ""}?\n\nNão vira falta e não conta para a meta: ele repõe em outro dia. Dá para desfazer nesta tela.`,
       )
     )
       return;
     const ok = await executar(
       { acao: "repor", assignmentId: ocupante.assignmentId },
-      (d) => `${d.interno} liberado para repor em outro dia.${avisoDeEntrega(d)}`,
+      (d) => (ocupante.extra ? `${d.interno} (extra) mandado para casa.` : `${d.interno} liberado para repor em outro dia.`) + avisoDeEntrega(d),
     );
     if (ok) setFolha(null);
   }
@@ -557,7 +560,10 @@ export function PlantaoAoVivo() {
                             <GripVertical className="h-4 w-4" strokeWidth={1.8} />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate font-semibold">{c.ocupante.interno}</span>
+                            <span className="block truncate font-semibold">
+                              {c.ocupante.extra && <span className="mr-1 rounded bg-indigo-600 px-1 text-[9px] font-bold uppercase text-white">Extra</span>}
+                              {c.ocupante.interno}
+                            </span>
                             <span className="flex items-center gap-1 text-[10px] opacity-90">
                               <span className={`inline-flex items-center gap-1 rounded-full px-1.5 ${fs.pill}`}>
                                 <span className={`h-1.5 w-1.5 rounded-full ${fs.dot}`} />
@@ -686,6 +692,7 @@ export function PlantaoAoVivo() {
               <p className="text-sm text-slate-500">
                 {folha.ocupante.facultyName ?? folha.ocupante.faculdade} · {folha.ocupante.status === "CHECKED_IN" ? "check-in feito" : folha.ocupante.status === "CHECKED_OUT" ? "já saiu" : "sem check-in"}
                 {folha.ocupante.remanejado ? " · remanejado" : ""}
+                {folha.ocupante.extra ? " · plantão extra" : ""}
               </p>
             </div>
             <div className="mt-4 space-y-2">
@@ -716,10 +723,12 @@ export function PlantaoAoVivo() {
                 disabled={ocupado || folha.ocupante.status === "CHECKED_OUT"}
                 onClick={() => repor(folha.ocupante, folha.base)}
               >
-                <CalendarClock className="h-4 w-4" /> Repor em outro dia
+                {folha.ocupante.extra ? <><Home className="h-4 w-4" /> Mandar para casa</> : <><CalendarClock className="h-4 w-4" /> Repor em outro dia</>}
               </Button>
               <p className="px-1 text-xs text-slate-500">
-                Repor é para quando não há mais vaga em base nenhuma: o plantão de hoje sai da conta sem virar falta, e o interno é avisado.
+                {folha.ocupante.extra
+                  ? "O extra sai da base sem virar falta e é avisado. Não há o que repor: extra não conta na meta."
+                  : "Repor é para quando não há mais vaga em base nenhuma: o plantão de hoje sai da conta sem virar falta, e o interno é avisado."}
               </p>
             </div>
             <div className="mt-4 flex justify-end">
