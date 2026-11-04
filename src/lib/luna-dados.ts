@@ -20,7 +20,7 @@ import { findInternOverCruQuota, findSwapRestConflict } from "@/features/request
 import { findPendingRequestByAssignment } from "@/features/requests/infra/repositories/request-repository";
 import { getRequestableSlots } from "@/lib/slots";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
-import { comExtraNoHistorico, naRepescagem } from "@/features/extra-offers/application/repescagem";
+import { comExtraNoHistorico, internoPegaExtraNoTipo, naRepescagem } from "@/features/extra-offers/application/repescagem";
 import { goalKindOf } from "@/lib/goal-slots";
 import { situacaoDoTurnoNaBase, type SituacaoDoTurno } from "@/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import { medicosPrevistos, type MedicosPrevistos } from "@/features/scheduling/infra/repositories/escala-medica-repository";
@@ -195,7 +195,7 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
     liberadas: (ate) => lido(`liberadas:${ate}`, async () => {
       if (!ctx.facultyId) return [];
       const vagas = (await listFreeOffers({ excludeFacultyId: ctx.facultyId, from: ctx.hoje, to: ate }))
-        .filter((v) => !hasShiftStarted(dia(v.date), v.period as Periodo, v.shift));
+        .filter((v) => internoPegaExtraNoTipo(v.baseType) && !hasShiftStarted(dia(v.date), v.period as Periodo, v.shift));
       return soAsQueCabem(vagas.map((v): Oferta => ({
         fonte: "LIBERADA", id: v.id, baseCode: v.baseCode, tipo: goalKindOf(v.baseType),
         date: dia(v.date), period: v.period as Periodo, shift: v.shift, faculdade: v.releasedFacultyAbbr ?? null,
@@ -204,7 +204,7 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
     }),
 
     extras: () => lido("extras", async () => {
-      const extras = await listExtraOffers();
+      const extras = (await listExtraOffers()).filter((e) => internoPegaExtraNoTipo(e.baseType));
       return soAsQueCabem(extras.map((e): Oferta => ({
         fonte: "EXTRA", id: e.id, baseCode: e.baseCode, tipo: goalKindOf(e.baseType),
         date: dia(e.date), period: e.period as Periodo, shift: e.shift, obs: e.notes ?? null,

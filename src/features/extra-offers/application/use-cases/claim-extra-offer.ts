@@ -13,7 +13,7 @@ import { avisarCoordenacaoNoTelegram } from "@/lib/telegram-coordenacao";
 import { findPendingFreeSlotRequest, insertRequest } from "@/features/requests/infra/repositories/request-repository";
 import { compromissoAcademicoPara, semDescansoPara } from "@/features/scheduling/application/descanso";
 import { metaDoInternoNoTipo, textoMetaCumprida } from "./free-slot-goal";
-import { comExtraNoHistorico, naRepescagem, sorteioPendente, TEXTO_JA_TEVE_EXTRA } from "../repescagem";
+import { comExtraNoHistorico, internoPegaExtraNoTipo, naRepescagem, sorteioPendente, TEXTO_EXTRA_SO_USA, TEXTO_JA_TEVE_EXTRA } from "../repescagem";
 import { soAsQueCabem } from "../lotacao";
 import { goalKindOf } from "@/lib/goal-slots";
 
@@ -154,6 +154,9 @@ export async function executeClaimExtraOffer(params: {
   // 12h de descanso em todo plantão novo — extra e vaga livre também. Só a
   // escala retroativa da coordenação (registro do que já aconteceu) passa.
   const [baseDaVaga] = await db.select({ code: bases.code, type: bases.type }).from(bases).where(eq(bases.id, offer.baseId)).limit(1);
+  if (actor.role === "INTERN" && !alocandoOutro && !internoPegaExtraNoTipo(baseDaVaga?.type)) {
+    return { status: 403, body: { success: false, code: "SO_USA", error: TEXTO_EXTRA_SO_USA } } as const;
+  }
   if (!retroativo) {
     const semDescanso = await semDescansoPara(internId, alocandoOutro ? "O interno" : "Você", {
       date: offer.date,

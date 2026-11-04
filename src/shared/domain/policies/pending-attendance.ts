@@ -31,9 +31,10 @@ export function isAutoAbsenceAfterCheckin(row: Omit<PendingAttendanceRow, "isExt
  */
 export function classifyPendingAttendance(row: PendingAttendanceRow): "CHECKOUT" | "CHECKIN" | null {
   if (row.status === "CHECKED_OUT" || row.status === "CANCELLED" || row.status === "EXCUSED") return null;
-  if (row.status === "CHECKED_IN" || isAutoAbsentOrOpen(row)) return "CHECKOUT";
-  // Extra nunca reivindicado fica SCHEDULED para sempre (o sweep ignora extras).
+  // Extra faz check-in (segura o lugar na base) mas não fecha checkout, e o
+  // sweep não o transforma em falta: nunca é pendência do preceptor.
   if (row.isExtraShift) return null;
+  if (row.status === "CHECKED_IN" || isAutoAbsentOrOpen(row)) return "CHECKOUT";
   if (row.status === "SCHEDULED" || row.status === "CONFIRMED" || row.status === "ABSENT") return "CHECKIN";
   return null;
 }

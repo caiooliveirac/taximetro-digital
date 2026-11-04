@@ -229,9 +229,10 @@ export async function GET(req: NextRequest) {
             null
         );
 
+    // Extra faz check-in mas não fecha checkout: nunca fica "checkout pendente".
     const latestPendingCheckout =
-        prioritized.find((row) => row.status === "CHECKED_IN" && row.activeSession && isCheckoutWindowForRow(row)) ??
-        prioritized.find((row) => row.status === "CHECKED_IN" && isCheckoutWindowForRow(row)) ??
+        prioritized.find((row) => row.status === "CHECKED_IN" && !row.isExtraShift && row.activeSession && isCheckoutWindowForRow(row)) ??
+        prioritized.find((row) => row.status === "CHECKED_IN" && !row.isExtraShift && isCheckoutWindowForRow(row)) ??
         null;
 
     const latestCompletedCheckout = prioritized.find((row) => row.status === "CHECKED_OUT" && row.isRecentCheckout) ?? null;
@@ -297,7 +298,7 @@ export async function GET(req: NextRequest) {
                 internObservations: selected.internObservations,
                 session,
                 checkoutPending: uiState === "CHECKOUT_AWAITING",
-                canRequestCheckout: selected.status === "CHECKED_IN" && uiState !== "CHECKOUT_AWAITING" && isCheckoutWindowForRow(selected),
+                canRequestCheckout: selected.status === "CHECKED_IN" && !selected.isExtraShift && uiState !== "CHECKOUT_AWAITING" && isCheckoutWindowForRow(selected),
             },
             checkoutStatus,
         },

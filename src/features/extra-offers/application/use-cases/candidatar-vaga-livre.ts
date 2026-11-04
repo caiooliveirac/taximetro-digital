@@ -20,7 +20,7 @@ import { hasShiftStarted } from "@/lib/utils";
 import { candidaturaAberta, filaDeReposicao, textoDaFila } from "../fila-de-reposicao";
 import { metaDoInternoNoTipo } from "./free-slot-goal";
 import { pedirVagaLivre } from "./claim-extra-offer";
-import { naRepescagem } from "../repescagem";
+import { internoPegaExtraNoTipo, naRepescagem, TEXTO_EXTRA_SO_USA } from "../repescagem";
 
 const erro = (status: number, code: string, error: string) => ({ status, body: { success: false, code, error } }) as const;
 
@@ -50,6 +50,7 @@ export async function executeCandidatarVagaLivre(params: {
   const compromisso = await compromissoAcademicoPara(intern.id, "Você", { date: offer.date, period });
   if (compromisso) return erro(409, "AGENDA_DA_TURMA", compromisso);
 
+  if (!internoPegaExtraNoTipo(base?.type)) return erro(403, "SO_USA", TEXTO_EXTRA_SO_USA);
   const tipo = goalKindOf(base?.type);
   const meta = base ? await metaDoInternoNoTipo(intern.id, base.type) : null;
   if (!tipo || !meta) return erro(422, "SEM_META", "Não achei sua meta nesse tipo — fale com o líder.");

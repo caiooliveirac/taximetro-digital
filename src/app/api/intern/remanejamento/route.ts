@@ -103,9 +103,6 @@ async function plantaoEmAndamento(user: EffectiveUser, assignmentId: string): Pr
   if (!STATUS_NA_BASE.has(plantao.status) || !isCurrentOperationalAssignment(plantao.date, plantao.period)) {
     return { status: 409, error: "O remanejamento só vale para o plantão em andamento." };
   }
-  if (plantao.isExtraShift) {
-    return { status: 409, error: "Plantão extra não pode ser remanejado pelo interno." };
-  }
   if (!participaDoRemanejamento(plantao.baseCode)) {
     return { status: 409, error: `A ${plantao.baseCode} fica fora do remanejamento.` };
   }
@@ -157,8 +154,7 @@ async function gradeDoTurno(plantao: Plantao, reivindicando: boolean) {
       desativada: base.desativada,
       medicos: base.medicos,
       celulas: celulasDaBase(base.capacity, base.ocupantes, {
-        // Extra não faz check-in: base com extra no turno não recebe quem procura vaga.
-        bloqueada: aviso !== null || parada !== null || base.desativada !== null || base.ocupantes.some((o) => o.extra),
+        bloqueada: aviso !== null || parada !== null || base.desativada !== null,
         reivindicarSemCheckin: reivindicando,
         extra,
       }),

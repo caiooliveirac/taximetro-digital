@@ -58,13 +58,21 @@ export function naRepescagem(date: string, period: ShiftPeriod, shift?: string |
   return hoje > abre.date || (hoje === abre.date && p.hour >= abre.hour);
 }
 
+/**
+ * Interno só se oferece para extra de USA: CRU e CRL não se pegam, não se
+ * pedem e não vão a sorteio pelo interno (decisão do Caio, 04/11). Líder e
+ * coordenação continuam escalando nelas.
+ */
+export const internoPegaExtraNoTipo = (baseType: string | null | undefined) => baseType === "USA";
+export const TEXTO_EXTRA_SO_USA = "Extra em CRU e CRL não é pelo interno: quem escala é o líder ou a coordenação.";
+
 /** Vagas livres que o interno da faculdade pega agora, direto: na janela, que cabem na viatura e que outra faculdade liberou. */
 export async function vagasNaRepescagem(facultyId: string, now: Date = new Date()) {
   const hoje = localDateStr(now);
   const vagas = await listFreeOffers({ excludeFacultyId: facultyId, from: hoje, to: addDaysToDateStr(hoje, 1) });
   return soAsQueCabem(vagas
     .map((v) => ({ ...v, date: String(v.date).slice(0, 10), period: v.period as ShiftPeriod, tipo: goalKindOf(v.baseType) }))
-    .filter((v) => naRepescagem(v.date, v.period, v.shift, now)));
+    .filter((v) => internoPegaExtraNoTipo(v.baseType) && naRepescagem(v.date, v.period, v.shift, now)));
 }
 
 /** Dos internos, os que já têm plantão extra no histórico (não cancelado, inclusive agendado). */

@@ -84,6 +84,8 @@ export type OcupanteDoTurno = Ocupante & {
   internId: string;
   interno: string;
   facultyName: string | null;
+  /** Plantão extra: mesmo mecanismo (check-in segura o lugar), sem checkout. */
+  extra: boolean;
 };
 
 export type BaseDoTurno = {

@@ -32,6 +32,8 @@ export async function GET(req: NextRequest) {
         eq(assignments.date, operationalDateStr()),
         eq(assignments.period, operationalPeriod()),
         eq(assignments.status, "CANCELLED"),
+        // Extra mandado para casa não repõe: não conta na meta.
+        eq(assignments.isExtraShift, false),
         sql`${assignments.notes} LIKE ${`%${MARCA_REPOR}%`}`,
       ),
     );
