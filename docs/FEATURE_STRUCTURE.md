@@ -156,7 +156,7 @@ grep -A 10 "case_records\|caseRecords" src/shared/db/schema.ts
 |---------|-------|
 | `src/components/intern/aviso-coordenacao.tsx` | Botões "sem médico / sem enfermeiro / viatura" no plantão de hoje |
 | `src/app/api/intern/aviso/route.ts` | Grava o aviso no `audit_log` e entrega no WhatsApp via secretário `tom` |
-| `src/app/api/intern/remanejamento/route.ts` | Grade de vagas do turno para o interno se mover sozinho |
+| `src/app/api/intern/remanejamento/route.ts` | Vagas livres do turno para o interno se mover sozinho (só onde há vaga; quem está em cada base e o médico ficam só no Plantão ao vivo do admin) |
 | `src/app/admin/plantao/page.tsx` + `src/components/admin/plantao-ao-vivo.tsx` | Tela da coordenação: arrastar interno entre bases, falso alarme, parar/reabrir base, liberar para repor |
 | `src/app/api/admin/plantao-ao-vivo/route.ts` | GET da grade do turno + POST das intervenções |
 | `src/features/scheduling/application/grade-do-turno.ts` | Matéria-prima comum: capacidade, ocupantes, estado de cada base |

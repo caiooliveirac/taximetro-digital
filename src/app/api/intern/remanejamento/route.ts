@@ -1,11 +1,12 @@
 /**
  * Remanejamento pelo próprio interno, no plantão em andamento.
  *
- * GET  ?assignmentId=  — a grade de hoje inteira: cada USA com suas células
- *                        (quem está lá, com ou sem check-in, e as livres), o
- *                        médico presente e a desativação (quando o canal com o
- *                        `plantoes` existe), o aviso de problema dado no turno,
- *                        e a base irmã (mesmo endereço) como sugestão.
+ * GET  ?assignmentId=  — só onde há vaga livre agora: as USAs com célula que
+ *                        ele pode ocupar, quantas, e a base irmã (mesmo
+ *                        endereço) como sugestão. Quem está em cada base (com
+ *                        ou sem check-in, de qual faculdade) e o médico
+ *                        presente não saem daqui: são da coordenação, no
+ *                        Plantão ao vivo (ver `vagasLivresDoInterno`).
  * POST {assignmentId, newBaseId} — ocupa uma célula livre na hora e avisa a
  *                        coordenação.
  *
@@ -56,6 +57,7 @@ import {
   motivoDoRemanejamento,
   participaDoRemanejamento,
   textoDoRemanejamento,
+  vagasLivresDoInterno,
 } from "@/lib/remanejamento-interno";
 import { avisoDaBase, avisoDoPlantao } from "@/lib/plantao-ao-vivo";
 import { basesDoTurno, estadoDasBasesNoTurno } from "@/features/scheduling/application/grade-do-turno";
@@ -125,9 +127,11 @@ const SEM_AVISO = "Avise a coordenação primeiro (sem médico, sem enfermeiro o
  * A grade de hoje, base por base, do ângulo deste interno: qual é a dele,
  * qual é a irmã, e o que ele pode ocupar. A matéria-prima (capacidade, quem
  * está lá, estado da base) é a mesma do Plantão ao vivo da coordenação.
+ * Fica no servidor: o POST valida por ela, e o GET entrega ao interno só as
+ * vagas livres.
  */
 async function gradeDoTurno(plantao: Plantao, reivindicando: boolean) {
-  const { bases, medicosDisponiveis } = await basesDoTurno(plantao.date, plantao.period);
+  const { bases } = await basesDoTurno(plantao.date, plantao.period);
   const participantes = bases.filter((b) => participaDoRemanejamento(b.code));
 
   const grade = participantes.map((base) => {
@@ -152,7 +156,6 @@ async function gradeDoTurno(plantao: Plantao, reivindicando: boolean) {
       aviso: aviso ? { tipo: aviso.tipo, hora: aviso.hora } : null,
       parada,
       desativada: base.desativada,
-      medicos: base.medicos,
       celulas: celulasDaBase(base.capacity, base.ocupantes, {
         bloqueada: aviso !== null || parada !== null || base.desativada !== null,
         reivindicarSemCheckin: reivindicando,
@@ -160,7 +163,7 @@ async function gradeDoTurno(plantao: Plantao, reivindicando: boolean) {
       }),
     };
   });
-  return { bases: grade, medicosDisponiveis };
+  return { bases: grade };
 }
 
 export async function GET(req: NextRequest) {
@@ -187,11 +190,11 @@ export async function GET(req: NextRequest) {
     reivindicando: minutos >= REIVINDICACAO_MIN,
   };
   if (!tolerancia.aberta) {
-    return NextResponse.json({ success: true, data: { ...tolerancia, medicosDisponiveis: false, bases: [] } });
+    return NextResponse.json({ success: true, data: { ...tolerancia, bases: [] } });
   }
 
-  const { bases, medicosDisponiveis } = await gradeDoTurno(plantao, tolerancia.reivindicando);
-  return NextResponse.json({ success: true, data: { ...tolerancia, medicosDisponiveis, bases } });
+  const { bases } = await gradeDoTurno(plantao, tolerancia.reivindicando);
+  return NextResponse.json({ success: true, data: { ...tolerancia, bases: vagasLivresDoInterno(bases) } });
 }
 
 const postSchema = z.object({

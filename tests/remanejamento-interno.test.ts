@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { celulaOcupavel, celulasDaBase, compararCodigoDeBase, horaDoTurno, mesmoEndereco, minutosDesdeInicioDoTurno, motivoDoRemanejamento, participaDoRemanejamento, textoDoRemanejamento, vagasNaGrade } from "../src/lib/remanejamento-interno";
+import { celulaOcupavel, celulasDaBase, compararCodigoDeBase, horaDoTurno, mesmoEndereco, minutosDesdeInicioDoTurno, motivoDoRemanejamento, participaDoRemanejamento, textoDoRemanejamento, vagasLivresDoInterno, vagasNaGrade } from "../src/lib/remanejamento-interno";
 import { computePeriodLoad } from "../src/features/scheduling/domain/policies/assignment-policy";
 
 test("vaga é de grade, não do limite físico", () => {
@@ -128,4 +128,41 @@ test("vaga além da grade respeita o limite físico junto com a reivindicação"
   assert.deepEqual(celulasDaBase(1, [semCheckin, chegou], r).map(celulaOcupavel), [false, false, true]);
   // chegaram dois: fecha tudo, e o sem check-in continua visível
   assert.deepEqual(celulasDaBase(1, [semCheckin, chegou, chegou], r).map(celulaOcupavel), [false, false, false, false]);
+});
+
+test("interno só vê onde há vaga livre: nada de quem está lá, com ou sem check-in", () => {
+  const r = { reivindicarSemCheckin: true };
+  const base = (code: string, celulas: ReturnType<typeof celulasDaBase>, extra: { atual?: boolean; irma?: boolean } = {}) => ({
+    id: code,
+    code,
+    name: `Base ${code}`,
+    atual: extra.atual ?? false,
+    irma: extra.irma ?? false,
+    celulas,
+    // O que a grade do servidor ainda carrega e não pode vazar.
+    medicos: ["Dr. Fulano"],
+    aviso: null,
+    parada: null,
+    desativada: null,
+  });
+  const visao = vagasLivresDoInterno([
+    base("SM01", celulasDaBase(2, [{ faculdade: "EBMSP", status: "CHECKED_IN" }, { faculdade: "AFYA", status: "SCHEDULED" }], r)),
+    base("CB02", celulasDaBase(3, [{ faculdade: "UFBA", status: "CHECKED_IN" }, { faculdade: "Zarns", status: "CHECKED_OUT" }])),
+    base("PR03", celulasDaBase(1, [{ faculdade: "UNIFACS", status: "CHECKED_IN" }])),
+    base("BR05", celulasDaBase(2, [], { bloqueada: true })),
+    base("BR60", celulasDaBase(1, [{ faculdade: "EBMSP", status: "CHECKED_IN" }], { extra: { limite: 2, podeUsar: true, reservadaPara: "BR05" } }), { irma: true }),
+    base("PM04", celulasDaBase(2, []), { atual: true }),
+  ]);
+
+  assert.deepEqual(visao, [
+    // a vaga de quem não fez check-in vira uma livre qualquer
+    { id: "SM01", code: "SM01", name: "Base SM01", irma: false, vagas: [{ alemDaGrade: false }] },
+    { id: "CB02", code: "CB02", name: "Base CB02", irma: false, vagas: [{ alemDaGrade: false }] },
+    { id: "BR60", code: "BR60", name: "Base BR60", irma: true, vagas: [{ alemDaGrade: true }] },
+  ], "cheia, bloqueada e a dele mesmo somem");
+
+  const json = JSON.stringify(visao);
+  for (const vazamento of ["EBMSP", "AFYA", "UFBA", "Zarns", "UNIFACS", "faculdade", "estado", "checkin", "medico", "Fulano", "reservadaPara"]) {
+    assert.equal(json.toLowerCase().includes(vazamento.toLowerCase()), false, `não manda "${vazamento}" ao interno`);
+  }
 });

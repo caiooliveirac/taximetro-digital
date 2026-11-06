@@ -2,9 +2,10 @@
  * Remanejamento pelo próprio interno.
  *
  * Ele avisou "sem médico" (ou enfermeiro, ou viatura) e a base está parada. Em
- * vez de esperar a coordenação acordar, ele vê a grade de hoje inteira — base
- * por base, célula por vaga — e se move sozinho para uma célula livre; a
- * coordenação é só avisada, pelo mesmo canal do aviso.
+ * vez de esperar a coordenação acordar, ele vê onde há vaga livre nas outras
+ * bases — só isso: quem está em cada uma é da coordenação (ver
+ * `vagasLivresDoInterno`) — e se move sozinho; a coordenação é só avisada,
+ * pelo mesmo canal do aviso.
  *
  * Vaga aqui é vaga **de grade**, não o limite físico: `slot_rules.capacity`
  * somada de todas as faculdades da base naquele dia/turno menos quem já está
@@ -140,6 +141,37 @@ export function celulasDaBase(
 
 export function celulaOcupavel(c: Celula): boolean {
   return c.tipo === "livre" || (c.tipo === "ocupada" ? c.reivindicavel : c.ocupavel);
+}
+
+/** Vaga que o interno pode ocupar agora. Não diz de quem era nem quem está ao lado. */
+export type VagaLivre = { alemDaGrade: boolean };
+export type BaseComVaga = { id: string; code: string; name: string; irma: boolean; vagas: VagaLivre[] };
+
+/**
+ * O que o interno vê da grade: só onde há vaga que ele pode ocupar agora.
+ *
+ * Quem está em cada base (faculdade, com ou sem check-in, já saiu,
+ * remanejado) e o médico presente ficam só com a coordenação, no Plantão ao
+ * vivo. A resposta ao interno nem carrega esses dados: esconder na tela não
+ * bastaria, o JSON continuaria lá.
+ *
+ * A vaga de quem não chegou (passada a tolerância) aparece como uma livre
+ * qualquer. Base sem vaga não aparece — parada, com aviso, desativada ou
+ * cheia dá no mesmo para quem procura —, e a base dele também não.
+ */
+export function vagasLivresDoInterno(
+  bases: { id: string; code: string; name: string; atual: boolean; irma: boolean; celulas: Celula[] }[],
+): BaseComVaga[] {
+  return bases
+    .filter((b) => !b.atual)
+    .map((b) => ({
+      id: b.id,
+      code: b.code,
+      name: b.name,
+      irma: b.irma,
+      vagas: b.celulas.filter(celulaOcupavel).map((c) => ({ alemDaGrade: c.tipo === "extra" })),
+    }))
+    .filter((b) => b.vagas.length > 0);
 }
 
 /**
