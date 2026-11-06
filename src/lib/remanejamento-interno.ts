@@ -63,8 +63,12 @@ export function horaDoTurno(period: "DAY" | "NIGHT", maisMinutos: number): strin
   return `${String(INICIO_DO_TURNO[period]).padStart(2, "0")}:${String(maisMinutos).padStart(2, "0")}`;
 }
 
-/** Plantão extra entra no mecanismo como qualquer outro: segura o lugar pelo check-in. */
-export type Ocupante = { faculdade: string; status: string; remanejado?: boolean };
+/**
+ * Plantão extra entra no mecanismo como qualquer outro: segura o lugar pelo check-in.
+ * `travaSemCheckin`: a faculdade dele segura a vaga mesmo sem check-in
+ * (pós-graduações, `faculties.holds_slot_without_checkin`).
+ */
+export type Ocupante = { faculdade: string; status: string; remanejado?: boolean; travaSemCheckin?: boolean };
 
 export type Celula =
   | { tipo: "livre" }
@@ -98,7 +102,9 @@ export type Extra = { limite: number; podeUsar: boolean; reservadaPara: string |
  *   continua na célula, mas ela pode ser ocupada por quem procura vaga. Cada
  *   não-comparecimento libera **uma** vaga: quem chegou remanejado (ainda sem
  *   check-in aqui) já conta como presente, e enquanto houver célula livre a do
- *   sem check-in fica fechada — a livre vai primeiro.
+ *   sem check-in fica fechada — a livre vai primeiro. Interno de faculdade
+ *   que trava a vaga (pós-graduação) conta como presente sem check-in: a
+ *   célula dele nunca abre.
  * - extra: aparece sempre que a grade é menor que o limite físico; é ocupável
  *   só enquanto o limite físico não estiver tomado por quem conta como
  *   presente e pelas células já oferecidas.
@@ -112,7 +118,7 @@ export function celulasDaBase(
     o.status === "CHECKED_IN" ? "checkin-ok" : o.status === "CHECKED_OUT" ? "saiu" : o.remanejado ? "remanejado" : "sem-checkin";
 
   const livres = opts.bloqueada ? 0 : vagasNaGrade({ capacity, occupied: ocupantes.length });
-  const segura = (o: Ocupante) => estadoDe(o) !== "sem-checkin";
+  const segura = (o: Ocupante) => o.travaSemCheckin === true || estadoDe(o) !== "sem-checkin";
   const presentes = ocupantes.filter(segura).length;
   // Antes da tolerância todo escalado segura o lugar; depois, só quem conta como presente.
   const contados = opts.reivindicarSemCheckin === true ? presentes : ocupantes.length;
@@ -122,7 +128,7 @@ export function celulasDaBase(
   let restantes = reivindicaveis;
   const ocupadas: Celula[] = ocupantes.map((o) => {
     const estado = estadoDe(o);
-    const reivindicavel = estado === "sem-checkin" && restantes > 0;
+    const reivindicavel = !segura(o) && restantes > 0;
     if (reivindicavel) restantes -= 1;
     return { tipo: "ocupada", faculdade: o.faculdade, estado, reivindicavel };
   });

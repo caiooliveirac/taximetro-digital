@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { slotRules, assignments, bases, cohorts, faculties, requests, userRoles } from "@/db/schema";
-import { eq, and, sql, ne, gte, lte, inArray } from "drizzle-orm";
+import { eq, and, or, sql, ne, gte, lte, inArray } from "drizzle-orm";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 import { computePeriodLoad } from "@/features/scheduling/domain/policies/assignment-policy";
 import { countLiveCessions, countLiveReservations, listLiveCessions, listLiveReservations } from "@/features/extra-offers/infra/repositories/extra-offer-repository";
@@ -318,8 +318,9 @@ export async function checkPeriodOccupancy(
   date: string,
   period: "DAY" | "NIGHT",
   excludeAssignmentId?: string,
-  // apenasComCheckin: interno escalado que não fez check-in não ocupa lugar.
-  // Só o remanejamento pelo interno usa, passada a tolerância do turno.
+  // apenasComCheckin: interno escalado que não fez check-in não ocupa lugar —
+  // exceto o de faculdade que trava a vaga (pós-graduação). Só o
+  // remanejamento pelo interno usa, passada a tolerância do turno.
   opts: { apenasComCheckin?: boolean } = {},
 ): Promise<ReturnType<typeof computePeriodLoad>> {
   const dayOfWeek = getDayOfWeek(date);
@@ -356,7 +357,10 @@ export async function checkPeriodOccupancy(
     eq(assignments.isExtraShift, false),
   ];
   if (excludeAssignmentId) conditions.push(ne(assignments.id, excludeAssignmentId));
-  if (opts.apenasComCheckin) conditions.push(inArray(assignments.status, ["CHECKED_IN", "CHECKED_OUT"]));
+  if (opts.apenasComCheckin) {
+    const travam = db.select({ id: faculties.id }).from(faculties).where(eq(faculties.holdsSlotWithoutCheckin, true));
+    conditions.push(or(inArray(assignments.status, ["CHECKED_IN", "CHECKED_OUT"]), inArray(assignments.facultyId, travam))!);
+  }
 
   // Turno partido (manhã/tarde) é coisa da EBMSP no CRU, que nem chega aqui.
   const [occupiedRow] = await db

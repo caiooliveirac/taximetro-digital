@@ -134,6 +134,8 @@ export async function basesDoTurno(date: string, period: Periodo): Promise<{ bas
         baseId: assignments.baseId,
         faculdade: faculties.abbreviation,
         facultyName: faculties.name,
+        // Pós-graduação: segura a vaga mesmo sem check-in (ver celulasDaBase).
+        travaSemCheckin: faculties.holdsSlotWithoutCheckin,
         status: assignments.status,
         // O caso de uso de remanejamento anota [REMANEJADO]; quem chegou assim já conta como presente.
         remanejado: sql<boolean>`COALESCE(${assignments.notes}, '') LIKE '%[REMANEJADO]%'`,

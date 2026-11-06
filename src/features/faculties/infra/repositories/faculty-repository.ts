@@ -12,6 +12,8 @@ export type FacultyTargets = {
   targetCRLsTotal: number;
   totalInterns: number;
   rotationStartDate: string;
+  /** Pós-graduação: o interno segura a vaga no turno mesmo sem check-in. */
+  holdsSlotWithoutCheckin?: boolean;
 };
 
 export async function listFaculties() {
@@ -26,6 +28,7 @@ export async function listFaculties() {
       targetCRLsTotal: faculties.targetCRLsTotal,
       totalInterns: faculties.totalInterns,
       isVirtual: faculties.isVirtual,
+      holdsSlotWithoutCheckin: faculties.holdsSlotWithoutCheckin,
       rotationStartDate: faculties.rotationStartDate,
       createdAt: faculties.createdAt,
     })

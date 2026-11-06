@@ -16,6 +16,9 @@ export const facultySchema = z.object({
   targetCRLsTotal: z.number().int().min(0).default(0),
   totalInterns: z.number().int().min(0).default(0),
   rotationStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // Sem default de propósito: o PUT é parcial, e um default aqui desligaria a
+  // trava de quem salvasse sem mandar o campo. Na criação, o banco põe false.
+  holdsSlotWithoutCheckin: z.boolean().optional(),
 });
 
 export async function executeListFaculties() {

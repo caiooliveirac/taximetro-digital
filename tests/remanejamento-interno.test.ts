@@ -166,3 +166,29 @@ test("interno só vê onde há vaga livre: nada de quem está lá, com ou sem ch
     assert.equal(json.toLowerCase().includes(vazamento.toLowerCase()), false, `não manda "${vazamento}" ao interno`);
   }
 });
+
+test("pós-graduação trava a vaga sem check-in: a célula dela nunca abre", () => {
+  const r = { reivindicarSemCheckin: true };
+  const pos = { faculdade: "PósUE", status: "SCHEDULED", travaSemCheckin: true };
+  const semCheckin = { faculdade: "AFYA", status: "SCHEDULED" };
+
+  // base cheia com a pós e outro sem check-in: só a do outro abre
+  assert.deepEqual(celulasDaBase(2, [pos, semCheckin], r).map(celulaOcupavel), [false, true]);
+  assert.deepEqual(celulasDaBase(2, [semCheckin, pos], r).map(celulaOcupavel), [true, false], "a ordem não importa");
+  // só a pós na base: nada abre
+  assert.deepEqual(celulasDaBase(1, [pos], r).map(celulaOcupavel), [false]);
+  // a pós conta como presente no limite físico: a vaga além da grade continua sendo a única extra
+  const extra = { limite: 2, podeUsar: true, reservadaPara: null };
+  assert.deepEqual(celulasDaBase(1, [pos], { ...r, extra }).map(celulaOcupavel), [false, true]);
+  // a vaga da grade é da pós; quem não chegou libera só o lugar físico além dela
+  assert.deepEqual(celulasDaBase(1, [pos, semCheckin], { ...r, extra }).map(celulaOcupavel), [false, false, true]);
+  // a coordenação continua vendo que ela não fez check-in
+  const [celula] = celulasDaBase(1, [pos], r);
+  assert.equal(celula.tipo === "ocupada" ? celula.estado : null, "sem-checkin");
+
+  // e o interno que procura não vê a base dela
+  const visao = vagasLivresDoInterno([
+    { id: "SM01", code: "SM01", name: "Base SM01", atual: false, irma: false, celulas: celulasDaBase(1, [pos], r) },
+  ]);
+  assert.deepEqual(visao, []);
+});

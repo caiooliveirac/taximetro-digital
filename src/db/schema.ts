@@ -71,6 +71,10 @@ export const faculties = pgTable("faculties", {
 
   totalInterns: integer("total_interns").notNull().default(0),
   isVirtual: boolean("is_virtual").notNull().default(false),
+  // Interno desta faculdade segura a vaga no turno mesmo sem check-in: passada
+  // a tolerância, a vaga dele não abre para quem procura remanejamento.
+  // Exceção das pós-graduações (Pós UE, Pós UTI). Editado na aba Faculdades.
+  holdsSlotWithoutCheckin: boolean("holds_slot_without_checkin").notNull().default(false),
   rotationStartDate: date("rotation_start_date").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 

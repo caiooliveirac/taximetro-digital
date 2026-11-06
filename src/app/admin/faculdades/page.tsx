@@ -17,6 +17,8 @@ type Faculty = {
   targetCRLsTotal: number;
   totalInterns: number;
   rotationStartDate: string;
+  /** Pós-graduação: o interno segura a vaga no turno mesmo sem check-in. */
+  holdsSlotWithoutCheckin: boolean;
 };
 
 function totalShifts(f: Pick<Faculty, "targetUSAsTotal" | "targetCRUsTotal" | "targetCRLsTotal">) {
@@ -31,6 +33,7 @@ const EMPTY: Partial<Faculty> = {
   targetCRUsTotal: 0,
   targetCRLsTotal: 0,
   totalInterns: 0,
+  holdsSlotWithoutCheckin: false,
 };
 
 export default function AdminFaculdades() {
@@ -127,6 +130,22 @@ export default function AdminFaculdades() {
             </p>
           </div>
 
+          <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <input
+              type="checkbox"
+              checked={editing.holdsSlotWithoutCheckin ?? false}
+              onChange={(e) => setEditing({ ...editing, holdsSlotWithoutCheckin: e.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+            />
+            <span>
+              <span className="block text-sm font-medium text-slate-900">Trava a vaga mesmo sem check-in</span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Para pós-graduação. Passada a tolerância do turno, a vaga do interno desta faculdade não abre para
+                quem procura remanejamento, mesmo que ele não tenha feito check-in.
+              </span>
+            </span>
+          </label>
+
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button onClick={save} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700">Salvar</button>
@@ -154,7 +173,17 @@ export default function AdminFaculdades() {
           <tbody>
             {faculties.map((f) => (
               <tr key={f.id} className="border-b border-slate-100">
-                <td className="py-2 pr-4 font-mono font-semibold">{f.abbreviation}</td>
+                <td className="py-2 pr-4 font-mono font-semibold">
+                  {f.abbreviation}
+                  {f.holdsSlotWithoutCheckin && (
+                    <span
+                      title="Trava a vaga mesmo sem check-in"
+                      className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-amber-800"
+                    >
+                      trava vaga
+                    </span>
+                  )}
+                </td>
                 <td className="py-2 pr-4">{f.name}</td>
                 <td className="py-2 pr-4 tabular-nums">{f.targetUSAsTotal ?? 0}</td>
                 <td className="py-2 pr-4 tabular-nums">{f.targetCRUsTotal ?? 0}</td>
