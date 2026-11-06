@@ -153,9 +153,6 @@ async function gradeDoTurno(plantao: Plantao, reivindicando: boolean) {
       name: base.name,
       atual: base.id === plantao.baseId,
       irma: base.id !== plantao.baseId && mesmoEndereco(base, plantao),
-      aviso: aviso ? { tipo: aviso.tipo, hora: aviso.hora } : null,
-      parada,
-      desativada: base.desativada,
       celulas: celulasDaBase(base.capacity, base.ocupantes, {
         bloqueada: aviso !== null || parada !== null || base.desativada !== null,
         reivindicarSemCheckin: reivindicando,
@@ -237,16 +234,8 @@ export async function POST(req: NextRequest) {
 
     const destino = (await gradeDoTurno(plantao, reivindicando)).bases.find((b) => b.id === newBaseId);
     if (!destino) return { status: 404, body: { success: false, error: "Base de destino inválida" } } as const;
-    if (destino.desativada) {
-      const desde = destino.desativada.desde ? ` desde ${destino.desativada.desde}` : "";
-      return { status: 409, body: { success: false, error: `A ${destino.code} está desativada no plantões${desde}.` } } as const;
-    }
-    if (destino.parada) {
-      return { status: 409, body: { success: false, error: `A ${destino.code} foi parada pela coordenação às ${destino.parada.desde}.` } } as const;
-    }
-    if (destino.aviso) {
-      return { status: 409, body: { success: false, error: `A ${destino.code} tem aviso de ${destino.aviso.tipo} às ${destino.aviso.hora}.` } } as const;
-    }
+    // Desativada, parada ou com aviso já não oferece célula (bloqueada em
+    // gradeDoTurno). A resposta não diz qual dos três: isso é da coordenação.
     if (!destino.celulas.some(celulaOcupavel)) {
       return { status: 409, body: { success: false, error: `A ${destino.code} já não tem vaga neste turno.` } } as const;
     }
