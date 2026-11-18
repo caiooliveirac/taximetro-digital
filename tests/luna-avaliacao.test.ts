@@ -1026,3 +1026,11 @@ test("vaga de última hora com a meta completa e nada aberto (5923, 09/11): diz 
   // Abre pelo caminho que anda para ele; a fila vem depois.
   assert.match(r.texto, /vaga liberada só chega a você na repescagem \(última hora, entra como extra\)[^\n]*Fora dela/);
 });
+
+test("muitas opções ('Encontrei 198 opções', eb3a, 14/11): sem a contagem que assusta, pede o recorte", async () => {
+  const liberadas = Array.from({ length: 30 }, (_, i) => oferta("LIBERADA", `LV${String(i).padStart(2, "0")}`, "USA", `2026-11-${String(5 + (i % 20)).padStart(2, "0")}`, "NIGHT", { faculdade: "FAC-B" }));
+  const { r } = await perguntar("Tem vaga pra mim?", { fx: { liberadas } });
+  assert.match(r.texto, /^Tem bastante coisa aberta: separei as 5 mais próximas/);
+  assert.match(r.texto, /outras — diga o dia, o turno ou a base e eu recorto\)/);
+  assert.doesNotMatch(r.texto, /Encontrei \d+|Achei \d+/);
+});

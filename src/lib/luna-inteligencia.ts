@@ -367,6 +367,7 @@ export function linhaDaOpcao(a: Avaliada, n: number) {
 }
 
 export const MOSTRAR = 5;
+const MUITAS = 20;
 
 /** `numero`: na reavaliação ("e a segunda?"), a opção mantém o número da lista original. */
 /** "(todas precisam de aprovação…)": diz que achar não é garantir, e de quem depende. */
@@ -396,11 +397,16 @@ export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => numbe
   } else if (b.status === "NO_OPTIONS") {
     linhas.push(b.objetivo === "troca" ? voz.semTroca(v) : voz.semNada(v));
   } else {
-    linhas.push(voz.achei(v, b.totalCompativeis, aprovacao(b.precisamAprovacao, b.totalCompativeis)));
+    // "Encontrei 198 opções" (14/11) assusta e não ajuda: muitas, mostra as mais
+    // próximas e pede o recorte.
+    linhas.push(b.totalCompativeis > MUITAS
+      ? `Tem bastante coisa aberta: separei as ${MOSTRAR} mais próximas${aprovacao(b.precisamAprovacao, b.totalCompativeis)}.`
+      : voz.achei(v, b.totalCompativeis, aprovacao(b.precisamAprovacao, b.totalCompativeis)));
   }
 
   b.opcoes.slice(0, MOSTRAR).forEach((a, i) => linhas.push(`- ${linhaDaOpcao(a, numero(a, i))}`));
-  if (b.opcoes.length > MOSTRAR) linhas.push(`(+${b.opcoes.length - MOSTRAR} outras compatíveis)`);
+  if (b.opcoes.length > MUITAS) linhas.push(`(+${b.opcoes.length - MOSTRAR} outras — diga o dia, o turno ou a base e eu recorto)`);
+  else if (b.opcoes.length > MOSTRAR) linhas.push(`(+${b.opcoes.length - MOSTRAR} outras compatíveis)`);
 
   const descartadas = b.descartes.reduce((s, d) => s + d.n, 0);
   if (descartadas) {
