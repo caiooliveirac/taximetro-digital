@@ -19,7 +19,7 @@ import { FERRAMENTAS, buscar, liberarOpcoes, remanejarOpcoes, semCheckoutOpcoes,
 import { quando, resumoParaModelo, textoDaAgenda, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
 import { basesDaPergunta, rotear, type Intencao } from "@/lib/luna-roteador";
 import { addDaysToDateStr } from "@/lib/utils";
-import { voz } from "@/lib/dai-voz";
+import { REPETIDA, voz } from "@/lib/dai-voz";
 
 type ChatMsg = {
   role: "system" | "user" | "assistant" | "tool";
@@ -137,11 +137,38 @@ async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: Luna
   };
 }
 
+/**
+ * A mesma resposta duas vezes seguidas soa robótica (8b60, 10/11: três iguais
+ * em cinco minutos; 9e9e, 04/11: "O que?" recebeu o mesmo texto). Igual = o
+ * mesmo texto, ou a mesma busca com as mesmas opções (a voz muda só a frase de
+ * abertura). Fica o cartão; o texto diz que nada mudou e pede outro jeito.
+ */
+function semRepetir(conversa: LunaPergunta[], r: LunaResposta, v?: string): LunaResposta {
+  if (r.erro || r.aviso) return r;
+  // Depois de um "nada mudou", compara com a resposta cheia de antes dele.
+  const anterior = [...conversa.slice(0, -1)].reverse().find((m) => m.role === "assistant" && !REPETIDA.includes(m.content.trim()));
+  if (!anterior) return r;
+  const ids = (m?: LunaMemoria) => JSON.stringify(m?.opcoes?.map((o) => `${o.fonte}|${o.id}`) ?? []);
+  const mesmaBusca = Boolean(r.memoria?.busca) && r.memoria !== anterior.memoria &&
+    JSON.stringify(r.memoria?.busca) === JSON.stringify(anterior.memoria?.busca) && ids(r.memoria) === ids(anterior.memoria);
+  if (r.texto.trim() !== anterior.content.trim() && !mesmaBusca) return r;
+  return { ...r, texto: voz.repetida(v) };
+}
+
 export async function perguntarLuna(
   ctx: LunaCtx,
   conversa: LunaPergunta[],
   log: (o: Record<string, unknown>) => void,
   deps: LunaDeps = {},
+): Promise<LunaResposta> {
+  return semRepetir(conversa, await responder(ctx, conversa, log, deps), ctx.voz);
+}
+
+async function responder(
+  ctx: LunaCtx,
+  conversa: LunaPergunta[],
+  log: (o: Record<string, unknown>) => void,
+  deps: LunaDeps,
 ): Promise<LunaResposta> {
   const t0 = Date.now();
   const fontes: RegistroFonte[] = [];

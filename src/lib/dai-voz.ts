@@ -18,6 +18,15 @@ const escolher = <T,>(voz: string | undefined, chave: string, formas: T[]): T =>
 const maiuscula = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const plural = (n: number, um: string, varios: string) => (n === 1 ? um : varios);
 
+/** Exportada para a Dai reconhecer que já disse "nada mudou" e não alternar repetida/cheia. */
+export const REPETIDA = [
+  "Conferi de novo e nada mudou desde a minha última resposta, logo acima. Se não era isso que você queria, me diga de outro jeito: o dia, o turno, a base ou o que deu errado.",
+  "Continua igual ao que te mostrei agora há pouco. Talvez eu não tenha entendido — me conta com outras palavras o que você precisa (dia, turno, base?).",
+  "Olhei outra vez: mesmo resultado de antes. Se a dúvida é outra, diga o dia, o turno ou a base que eu procuro por aí.",
+  "Nada novo desde a última resposta. Se eu entendi errado, reformule: por exemplo \"quero pegar sábado de dia\" ou \"não vou poder ir sexta\".",
+  "Mesma situação de agora há pouco. Me diga o que faltou — o dia, a base ou o que você quer fazer — e eu tento por outro caminho.",
+];
+
 export const voz = {
   metaNaTela: (v?: string) =>
     escolher(v, "metaNaTela", [
@@ -99,6 +108,9 @@ export const voz = {
       `Ajuda, mas não completa${fim}: ficariam faltando ${falta}.`,
       `Avança${fim}, só que ${falta} ainda ficariam sem vaga.`,
     ]),
+
+  /** A resposta sairia igual à anterior da conversa (luna-interno, semRepetir). */
+  repetida: (v?: string) => escolher(v, "repetida", REPETIDA),
 
   semMeta: (v?: string) =>
     escolher(v, "semMeta", [

@@ -18,7 +18,7 @@ import type { MedicosPrevistos } from "../src/features/scheduling/infra/reposito
 import { proximaAbertura, sanearArgs, type LunaMemoria } from "../src/lib/luna-ferramentas";
 import { perguntarLuna, type LunaPergunta } from "../src/lib/luna-interno";
 import { explicarPlantao, textoDaPresenca, type Meta, type MeuPlantao, type Oferta, type Solicitacao } from "../src/lib/luna-inteligencia";
-import { voz } from "../src/lib/dai-voz";
+import { REPETIDA, voz } from "../src/lib/dai-voz";
 import { datasDaPergunta, rotear } from "../src/lib/luna-roteador";
 
 const HOJE = "2026-10-29";
@@ -976,4 +976,24 @@ test("'Quem está na base CN10' com o modelo esquecendo a base (9b6e, 17/11): va
   });
   assert.match(r.texto, /PR03/);
   assert.ok(lidas.some((l) => l.startsWith("plantoes:PR03:")));
+});
+
+test("mesma resposta duas vezes (8b60, 10/11; 9e9e, 04/11): a segunda diz que nada mudou e pede outro jeito", async () => {
+  const primeira = await perguntar("Tenho checkout pendente?");
+  const antes: LunaPergunta[] = [{ role: "user", content: "Tenho checkout pendente?" }, { role: "assistant", content: primeira.r.texto, memoria: primeira.r.memoria }];
+  const segunda = await perguntar("Tenho checkout pendente?", { antes });
+  assert.ok(REPETIDA.includes(segunda.r.texto));
+  // A terceira compara com a cheia, não com o "nada mudou".
+  const terceira = await perguntar("Tenho checkout pendente?", { antes: [...antes, { role: "user", content: "?" }, { role: "assistant", content: segunda.r.texto }] });
+  assert.ok(REPETIDA.includes(terceira.r.texto));
+
+  // Busca: a voz muda a abertura, mas mesma busca e mesmas opções é repetição.
+  const b1 = await perguntar("Tem vaga dia 05/11?");
+  const b2 = await perguntar("Tem vaga dia 05/11?", { antes: [{ role: "user", content: "Tem vaga dia 05/11?" }, { role: "assistant", content: `${b1.r.texto} `.replace("Achei", "Encontrei"), memoria: structuredClone(b1.r.memoria) }] });
+  assert.ok(REPETIDA.includes(b2.r.texto));
+  assert.ok(b2.r.cartoes.length > 0);
+
+  // Outra pergunta, outra resposta: segue normal.
+  const outra = await perguntar("Tenho algum plantão amanhã?", { antes });
+  assert.ok(!REPETIDA.includes(outra.r.texto));
 });
