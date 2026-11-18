@@ -38,6 +38,8 @@ export type LunaItem = {
   liberar?: string;
   /** Plantão e nome do médico: botão "Registrar" que grava "preceptor saiu sem checkout" na falta. */
   semCheckout?: { assignmentId: string; preceptor: string };
+  /** Plantão dele e a vaga livre do mesmo turno: botão "Mudar" que troca a base (mudar-de-base-do-interno.ts). */
+  mudarBase?: { assignmentId: string; offerId: string; para: string };
   /** Com estes, a tela desenha data, turno e tipo como selos; `titulo` fica para conversas antigas. */
   quando?: { data: string; periodo: string; turno?: string | null };
   base?: string;
@@ -658,7 +660,7 @@ export async function remanejarOpcoes(f: Fontes, ctx: LunaCtx, agora: Date = new
           ? `O remanejamento só abre no plantão em andamento. O seu próximo é ${proximo.baseCode} · ${quando(proximo.date, proximo.period, proximo.shift)}.`
           : "Você não está em plantão agora: o remanejamento só vale no plantão em andamento.",
         "Chegou e a base está parada (sem médico, sem enfermeiro, viatura) ou lotada? Toque em **Avisar** no card do plantão, na aba Hoje; depois do aviso, a grade de vagas das outras bases aparece ali mesmo.",
-        "Mudar de base num plantão de outro dia é com o seu líder.",
+        "Mudar de base num plantão de outro dia: diga qual, por exemplo \"quero ir para a PM40 dia 25\".",
       ].join("\n"),
     };
   }
@@ -729,6 +731,74 @@ export async function remanejarOpcoes(f: Fontes, ctx: LunaCtx, agora: Date = new
       })),
       ...(bases.length > MOSTRAR ? { verTudo: { href: grade, rotulo: "Ver a grade inteira" } } : {}),
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// mudar_de_base — "quero ir para a PM40 dia 25": plantão dele que ainda não
+// começou, trocado por uma vaga livre do mesmo dia, turno e tipo. Quem muda é
+// a rota /api/intern/mudar-de-base, no toque e na confirmação.
+
+export async function mudarDeBaseOpcoes(f: Fontes, ctx: LunaCtx, datas: string[], bases: string[], agora: Date = new Date()): Promise<Resultado> {
+  const meus = await f.meusPlantoes();
+  const futuros = meus
+    .filter((m) => LIBERAVEL.has(m.status) && m.date >= ctx.hoje && !hasShiftStarted(m.date, m.period as Periodo, m.shift, agora))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
+  if (!futuros.length) {
+    return { status: "NO_OPTIONS", registros: meus.length, texto: "Não achei plantão seu que ainda não começou. No plantão de agora, o caminho é o remanejamento: pergunte \"posso ir para outra base?\"." };
+  }
+  const pedidos = datas.length ? futuros.filter((m) => datas.includes(m.date)) : futuros.slice(0, 3);
+  if (!pedidos.length) {
+    return {
+      status: "NO_OPTIONS",
+      registros: meus.length,
+      texto: `Não achei plantão seu em ${datas.map(ddmm).join(", ")} que ainda dê para mudar. Os próximos são estes; diga o dia de um deles.`,
+      cartao: {
+        tipo: "plantoes",
+        titulo: "Seus próximos plantões",
+        itens: futuros.slice(0, MOSTRAR).map((m) => ({ titulo: `${m.baseCode} · ${quando(m.date, m.period, m.shift)}`, quando: { data: m.date, periodo: m.period, turno: m.shift }, base: m.baseCode, tipoVaga: m.tipo })),
+      },
+    };
+  }
+  const vagas = await f.liberadas(pedidos.at(-1)!.date);
+  const doTurno = (m: MeuPlantao) => vagas.filter((v) => v.date === m.date && v.period === m.period && v.tipo === m.tipo && v.baseCode !== m.baseCode && !v.repescagem);
+  const itens: LunaItem[] = [];
+  const semAPedida: string[] = [];
+  for (const m of pedidos) {
+    const todas = doTurno(m);
+    const escolhidas = bases.length ? todas.filter((v) => bases.includes(v.baseCode)) : todas;
+    if (bases.length && !escolhidas.length) semAPedida.push(`${bases.join("/")} em ${ddmm(m.date)}`);
+    for (const v of (escolhidas.length ? escolhidas : todas).slice(0, MOSTRAR)) {
+      itens.push({
+        titulo: `${v.baseCode} · ${quando(v.date, v.period, v.shift)}`,
+        detalhe: `no lugar do seu ${m.baseCode}`,
+        quando: { data: v.date, periodo: v.period, turno: v.shift },
+        base: v.baseCode,
+        tipoVaga: v.tipo,
+        mapa: v.baseCode,
+        mudarBase: { assignmentId: m.id, offerId: v.id, para: v.baseCode },
+      });
+    }
+  }
+  const nao = semAPedida.length ? `A ${semAPedida.join(", ")} não tem vaga livre nesse turno.` : "";
+  if (!itens.length) {
+    return {
+      status: "NO_OPTIONS",
+      registros: meus.length + vagas.length,
+      texto: [
+        nao || `Não há vaga livre no mesmo turno do seu plantão (${pedidos.map((m) => `${m.baseCode} ${ddmm(m.date)}`).join(", ")}) para mudar de base.`,
+        "A troca de base é por vaga livre do mesmo dia, turno e tipo. Se não for poder ir, dá para liberar o plantão (\"não vou poder ir\"); se não, fale com o seu líder.",
+      ].join("\n"),
+    };
+  }
+  return {
+    status: "OK",
+    registros: meus.length + vagas.length,
+    texto: [
+      nao ? `${nao} Estas têm:` : "Vagas livres no mesmo turno do seu plantão:",
+      "Toque em **Mudar** e confirme: seu plantão passa para a base escolhida e o lugar antigo fica livre para os colegas. A meta não muda; seu líder e a coordenação são avisados.",
+    ].join("\n"),
+    cartao: { tipo: "plantoes", titulo: "Mudar de base", itens: itens.slice(0, MOSTRAR) },
   };
 }
 
@@ -855,6 +925,23 @@ export const FERRAMENTAS: {
     description: "Quer sair da base no plantão de AGORA (base parada ou desativada, sem médico, sem enfermeiro, viatura com problema, lotada/muitos internos/sem lugar na viatura, 'posso ir para outra base?', 'como me remanejo?'): diz o que dá para fazer agora — avisar a coordenação, esperar a grade abrir ou as bases com vaga, cada uma com o botão Ir. Você não move ninguém: ele toca e confirma.",
     parameters: { type: "object", additionalProperties: false, properties: {} },
     run: (f, ctx) => remanejarOpcoes(f, ctx),
+  },
+  {
+    name: "mudar_de_base",
+    description: "Quer mudar de base num plantão dele que ainda NÃO começou ('quero ir para a PM40 dia 25', 'trocar de base amanhã'): mostra vagas livres do mesmo dia, turno e tipo, cada uma com o botão Mudar. Ele toca e confirma; você não muda nada. Plantão de agora é remanejar_agora.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        datas: { type: "array", items: { type: "string", description: "YYYY-MM-DD" }, description: "Dia do plantão dele que quer mudar" },
+        bases: { type: "array", items: { type: "string" }, description: "Código da base para onde quer ir (PM40), se disse" },
+      },
+    },
+    run: (f, ctx, args) => mudarDeBaseOpcoes(
+      f, ctx,
+      Array.isArray(args.datas) ? args.datas.filter((d): d is string => typeof d === "string" && DATA.test(d)) : [],
+      Array.isArray(args.bases) ? args.bases.filter((b): b is string => typeof b === "string").map((b) => b.replace(/\s+/g, "").toUpperCase()) : [],
+    ),
   },
   {
     name: "situacao_da_base",

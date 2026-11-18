@@ -183,7 +183,7 @@ export async function vagasAgora(plantao: Plantao): Promise<Tolerancia & { bases
  * 18/11/2026), pela conversa com a Dai, como na liberação. Nunca levanta: o
  * remanejamento já aconteceu.
  */
-export async function avisarLideres(plantao: Pick<Plantao, "id" | "facultyId">, internId: string, texto: string): Promise<void> {
+export async function avisarLideres(plantao: Pick<Plantao, "id" | "facultyId">, internId: string, texto: string, action = "DAI_AVISO_REMANEJAMENTO"): Promise<void> {
   if (!plantao.facultyId) return;
   const lideres = await db.selectDistinct({ id: users.id }).from(userRoles)
     .innerJoin(users, eq(users.id, userRoles.userId))
@@ -192,7 +192,7 @@ export async function avisarLideres(plantao: Pick<Plantao, "id" | "facultyId">, 
   await enviar(lideres.filter((l) => l.id !== internId).map((l) => ({
     para: l.id,
     texto,
-    action: "DAI_AVISO_REMANEJAMENTO",
+    action,
     entityId: l.id,
     payload: { assignmentId: plantao.id },
   })), false).catch(() => {});

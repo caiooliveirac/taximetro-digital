@@ -249,7 +249,7 @@ test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho s
   // Meta não vai no prompt (está na aba Hoje); a agenda vai.
   assert.doesNotMatch(corpos[0].messages[0].content, /"faltam"/);
   assert.match(corpos[0].messages[0].content, /RESUMO: .*"proximos"/);
-  assert.equal(corpos[0].tools.length, 7);
+  assert.equal(corpos[0].tools.length, 8);
 });
 
 test("3. 'Quais vagas posso pegar sem prejudicar meu descanso?' — direto, descanso conferido", async () => {
@@ -1033,4 +1033,55 @@ test("muitas opções ('Encontrei 198 opções', eb3a, 14/11): sem a contagem qu
   assert.match(r.texto, /^Tem bastante coisa aberta: separei as 5 mais próximas/);
   assert.match(r.texto, /outras — diga o dia, o turno ou a base e eu recorto\)/);
   assert.doesNotMatch(r.texto, /Encontrei \d+|Achei \d+/);
+});
+
+// ---------------------------------------------------------------------------
+// Mudar de base antes do dia (fase 3): vaga livre do mesmo dia, turno e tipo,
+// com o botão Mudar; quem muda é a rota, no toque.
+
+const VAGAS_SAB: Oferta[] = [
+  oferta("LIBERADA", "PM40", "USA", "2026-10-31", "DAY", { faculdade: "FAC-B" }),
+  oferta("LIBERADA", "SM01", "USA", "2026-10-31", "DAY", { faculdade: "FAC-C" }),
+  oferta("LIBERADA", "CRL9", "CRL", "2026-10-31", "DAY", { faculdade: "FAC-B" }), // outro tipo
+  oferta("LIBERADA", "BR05", "USA", "2026-10-31", "NIGHT", { faculdade: "FAC-B" }), // outro turno
+  oferta("LIBERADA", "PR03", "USA", "2026-10-31", "DAY", { faculdade: "FAC-B", repescagem: true }), // vai a sorteio
+];
+
+test("roteador: mudar de base num dia que vem é MUDAR_BASE; troca com colega não", () => {
+  assert.deepEqual(rotear("quero ir para a PM40 dia 31/10", HOJE), { tipo: "MUDAR_BASE", datas: ["2026-10-31"], bases: ["PM40"] });
+  assert.deepEqual(rotear("posso mudar de base amanhã?", HOJE), { tipo: "MUDAR_BASE", datas: ["2026-10-30"], bases: [] });
+  assert.notEqual(rotear("quero trocar meu plantão dia 31 com um colega", HOJE)?.tipo, "MUDAR_BASE");
+  assert.notEqual(rotear("quero ir para a PM40", HOJE)?.tipo, "MUDAR_BASE"); // sem dia: modelo pergunta
+});
+
+test("mudar de base: só vaga livre do mesmo turno e tipo, fora da repescagem, com o botão", async () => {
+  const { r, chamadas, log } = await perguntar("quero ir para a PM40 dia 31/10", { fx: { liberadas: VAGAS_SAB }, agora: AGORA_0830 });
+  assert.equal(chamadas, 0);
+  assert.equal(log.intencao, "MUDAR_BASE");
+  assert.deepEqual(r.cartoes[0].itens.map((i) => i.mudarBase), [{ assignmentId: "p5", offerId: "PM40", para: "PM40" }]);
+  assert.match(r.texto, /\*\*Mudar\*\*/);
+  assert.match(r.texto, /A meta não muda/);
+
+  const outra = await perguntar("quero ir para a SA01 dia 31/10", { fx: { liberadas: VAGAS_SAB }, agora: AGORA_0830 });
+  assert.match(outra.r.texto, /A SA01 em 31\/10 não tem vaga livre nesse turno\. Estas têm:/);
+  assert.deepEqual(outra.r.cartoes[0].itens.map((i) => i.base), ["PM40", "SM01"]);
+});
+
+test("mudar de base: dia sem plantão dele ou sem vaga diz por quê", async () => {
+  const sem = await perguntar("quero mudar de base dia 01/11", { fx: { liberadas: VAGAS_SAB }, agora: AGORA_0830 });
+  assert.match(sem.r.texto, /Não achei plantão seu em 01\/11/);
+  assert.ok(sem.r.cartoes[0].itens.every((i) => !i.mudarBase));
+
+  const nada = await perguntar("quero mudar de base dia 31/10", { fx: { liberadas: [] }, agora: AGORA_0830 });
+  assert.match(nada.r.texto, /Não há vaga livre no mesmo turno do seu plantão \(CB02 31\/10\)/);
+});
+
+test("mudar de base pelo modelo: frase livre chama mudar_de_base", async () => {
+  const { r, chamadas } = await perguntar("consigo fazer aquele plantão na Pau Miúdo em vez da Cabula?", {
+    fx: { liberadas: VAGAS_SAB },
+    passos: [{ tool: { name: "mudar_de_base", args: { datas: ["2026-10-31"] } } }],
+  });
+  assert.equal(chamadas, 1);
+  // Sem `agora` o relógio é o de verdade: aqui só confere que a ferramenta respondeu.
+  assert.ok(r.texto.length > 0);
 });

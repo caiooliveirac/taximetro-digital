@@ -170,6 +170,54 @@ function Liberar({ assignmentId }: { assignmentId: string }) {
   );
 }
 
+/** "Quero ir para a PM40 dia 25": dois toques — Mudar, depois Confirmar. Troca a base pela vaga livre (mudar-de-base-do-interno.ts). */
+function MudarBase({ assignmentId, offerId, para }: { assignmentId: string; offerId: string; para: string }) {
+  const [estado, setEstado] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  if (estado) {
+    return <span className={cn("max-w-[55%] text-right text-xs", estado.ok ? "text-emerald-700" : "text-amber-700")}>{estado.texto}</span>;
+  }
+  if (!confirmando) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirmando(true)}
+        className="shrink-0 rounded-full border border-accent-300 px-3 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-50"
+      >
+        Mudar
+      </button>
+    );
+  }
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      <button type="button" disabled={enviando} onClick={() => setConfirmando(false)} className="rounded-full px-2 py-1 text-xs text-slate-500 hover:bg-slate-100">
+        Não
+      </button>
+      <button
+        type="button"
+        disabled={enviando}
+        onClick={async () => {
+          setEnviando(true);
+          const r = await fetch("/taximetro/api/intern/mudar-de-base", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ assignmentId, offerId }),
+          }).catch(() => null);
+          const j = r ? await r.json().catch(() => null) : null;
+          setEnviando(false);
+          setEstado(j?.success
+            ? { ok: true, texto: `Pronto: agora é na ${para}. Líder e coordenação avisados.` }
+            : { ok: false, texto: j?.error ?? "Sem conexão. Tente de novo." });
+        }}
+        className="rounded-full bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700 disabled:opacity-50"
+      >
+        {enviando ? "Mudando…" : `Ir para a ${para}`}
+      </button>
+    </span>
+  );
+}
+
 const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
@@ -298,6 +346,7 @@ function Cartao({ cartao }: { cartao: LunaCartao }) {
             {item.candidatar ? <Candidatar offerId={item.candidatar} /> : null}
             {item.liberar ? <Liberar assignmentId={item.liberar} /> : null}
             {item.semCheckout ? <RegistrarSemCheckout {...item.semCheckout} /> : null}
+            {item.mudarBase ? <MudarBase {...item.mudarBase} /> : null}
             {item.href && item.acao ? (
               <Link href={item.href} className="shrink-0 rounded-full bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700">
                 {item.acao}

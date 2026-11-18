@@ -15,7 +15,7 @@
  */
 
 import { criarFontes, type Fontes, type LunaCtx, type RegistroFonte } from "@/lib/luna-dados";
-import { FERRAMENTAS, buscar, liberarOpcoes, remanejarOpcoes, semCheckoutOpcoes, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
+import { FERRAMENTAS, buscar, liberarOpcoes, mudarDeBaseOpcoes, remanejarOpcoes, semCheckoutOpcoes, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
 import { quando, resumoParaModelo, textoDaAgenda, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
 import { basesDaPergunta, rotear, type Intencao } from "@/lib/luna-roteador";
 import { addDaysToDateStr } from "@/lib/utils";
@@ -58,6 +58,7 @@ Como agir:
 - "Vai ativar?", "tem médico?", "o médico chegou?", agora ou num turno que vem: situacao_da_base. Ela só sabe do MÉDICO. O texto dela vira a resposta inteira, então só chame se a pergunta for essa.
 - Quem são os internos, enfermeiro, equipe, "quantos internos", quem esteve num turno que já passou ("ontem"): não chame ferramenta. Diga em uma linha que você só vê o médico na base agora e a escala médica dos próximos turnos; quem mais está na base fica com a coordenação.
 - Quer sair da base no plantão de agora (base parada ou desativada, sem médico, sem enfermeiro, viatura com problema, base lotada, muitos internos, sem lugar na viatura, "posso ir para outra base?", "como me remanejo?"): remanejar_agora. Ela diz se falta o aviso, quando a grade abre ou as bases com vaga, com o botão. Você não move ninguém nem autoriza nada.
+- Quer mudar de base num plantão dele de outro dia ("quero ir para a PM40 dia 25", "trocar de base amanhã"): mudar_de_base com a data e a base, se disse. Ela mostra as vagas livres do mesmo turno com o botão Mudar; você não muda nada.
 - Base citada na busca ("tem vaga na PP20?"): passe em bases; não devolva as outras.
 - Preceptor (médico) saiu sem fazer o checkout dele: registrar_sem_checkout com o NOME do médico. Sempre o nome: se ele não disse, não chame a ferramenta — pergunte "qual o nome do médico que saiu sem fazer seu checkout?". Resposta que é só um nome, depois dessa pergunta: é o preceptor. Não vira presença; fica como falta justificada que a coordenação e o líder veem.
 - Outro problema no check-in ou checkout (deu erro, código não aceita, base desativou depois do check-in): você não corrige registro. Se for um plantão dele específico, use explicar_plantao. Senão, sem ferramenta: o checkout é confirmado pelo preceptor; se o preceptor saiu sem fazer, ele te diz o nome e você registra; falta se justifica na aba Hoje ou em Histórico (botão Justificar falta) e a coordenação pode abonar; erro que se repete, fale com o líder ou a coordenação.
@@ -79,6 +80,7 @@ Regras (para explicar):
 - Extra: o líder publica, leva quem pegar primeiro na aba Extras; não conta para a meta; é um extra por interno (quem já teve não pega outro, nem comum nem de última hora). Repescagem: vaga livre que ninguém foi escalado vai a sorteio 8h antes do turno (diurno às 20h da véspera, noturno às 11h), entre quem se inscreveu em Extras → Sorteios; ordem: casinha vazia no tipo (conta na meta), depois nunca teve extra, por último já teve extra (entra como extra); empate, sorteio. Inscritos e resultado são públicos; o que sobrar, pega quem chegar primeiro. 12h de descanso sempre.
 - Não vai poder ir: até o início do turno, ele mesmo libera o plantão pela Dai (botão Liberar). Sai da escala sem falta, a casinha volta a ficar vazia e a vaga fica livre para todas as faculdades, inclusive a dele; o líder é avisado. Turno já começado: só o líder ou a coordenação. Plantão em troca em andamento: cancelar a troca antes.
 - Remanejamento: só no plantão em andamento, pelo card do plantão (aba Hoje). Abre depois do aviso: sem médico, sem enfermeiro, viatura ou base lotada (lotação só para quem fez check-in depois de a base encher). Base desativada no quadro dos médicos conta como aviso. A grade de vagas abre 10 min depois do início do turno; aos 15 min entra a vaga de quem não fez check-in. A coordenação e o líder dele são avisados.
+- Mudar de base antes do dia: ele mesmo, até o início do turno, por vaga livre do mesmo dia, turno e tipo (USA por USA). A meta não muda; o lugar antigo fica livre para todas as faculdades; líder e coordenação são avisados. Vaga já na repescagem vai a sorteio.
 - Sobra da grade: turno da grade da faculdade dele que ninguém da turma ocupou; pede em Trocas → Extra, o líder aprova.
 - Fila de reposição: colegas com casinha vazia (faltaram ou perderam plantão) têm prioridade na vaga liberada; quem já fechou a meta do tipo só se candidata quando há mais vaga livre do que gente na fila, e a coordenação decide.
 - Solicitações pendentes: a Dai lista e avisa o líder sozinha (não precisa de ferramenta; se cair aqui, diga para perguntar "tenho solicitação pendente?").`;
@@ -108,6 +110,7 @@ async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: Luna
   if (intencao.tipo === "LIBERAR") return liberarOpcoes(f, ctx, intencao.datas, agora);
   if (intencao.tipo === "SEM_CHECKOUT") return semCheckoutOpcoes(f, ctx, intencao.preceptor, agora);
   if (intencao.tipo === "REMANEJAR") return remanejarOpcoes(f, ctx, agora);
+  if (intencao.tipo === "MUDAR_BASE") return mudarDeBaseOpcoes(f, ctx, intencao.datas, intencao.bases, agora);
   // A meta está na aba Hoje: aqui não se gasta consulta nem token com ela.
   if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: voz.metaNaTela(ctx.voz) };
   if (intencao.tipo === "BASE_AGORA") return situacaoDaBase(f, ctx, pergunta, agora);

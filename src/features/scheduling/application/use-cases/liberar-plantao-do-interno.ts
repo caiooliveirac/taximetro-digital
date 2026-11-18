@@ -27,6 +27,18 @@ const erro = (status: number, code: string, error: string) => ({ status, body: {
 
 export const notaDeLiberacao = (now: Date) => `Liberado pelo interno pela Dai em ${now.toLocaleDateString("pt-BR", { timeZone: "America/Bahia" })}`;
 
+/** Plantão numa troca ou roda em andamento não sai da escala nem muda de base: a troca primeiro. */
+export async function emTroca(assignmentId: string): Promise<boolean> {
+  const [troca] = await db.select({ id: requests.id }).from(requests)
+    .where(and(inArray(requests.status, ["PENDING", "OPEN"]), or(eq(requests.assignmentId, assignmentId), eq(requests.targetAssignmentId, assignmentId))))
+    .limit(1);
+  const [roda] = await db.select({ id: swapCycles.id }).from(swapCycleLegs)
+    .innerJoin(swapCycles, eq(swapCycles.id, swapCycleLegs.cycleId))
+    .where(and(eq(swapCycles.status, "PROPOSTA"), or(eq(swapCycleLegs.givesAssignmentId, assignmentId), eq(swapCycleLegs.receivesAssignmentId, assignmentId))))
+    .limit(1);
+  return Boolean(troca || roda);
+}
+
 export async function executeLiberarPlantao(p: { internId: string; assignmentId: string; now?: Date }) {
   const now = p.now ?? new Date();
   const [a] = await db
@@ -51,14 +63,7 @@ export async function executeLiberarPlantao(p: { internId: string; assignmentId:
     return erro(409, "TURNO_COMECOU", "O turno já começou: agora só o líder ou a coordenação mexem nele.");
   }
 
-  const [troca] = await db.select({ id: requests.id }).from(requests)
-    .where(and(inArray(requests.status, ["PENDING", "OPEN"]), or(eq(requests.assignmentId, a.id), eq(requests.targetAssignmentId, a.id))))
-    .limit(1);
-  const [roda] = await db.select({ id: swapCycles.id }).from(swapCycleLegs)
-    .innerJoin(swapCycles, eq(swapCycles.id, swapCycleLegs.cycleId))
-    .where(and(eq(swapCycles.status, "PROPOSTA"), or(eq(swapCycleLegs.givesAssignmentId, a.id), eq(swapCycleLegs.receivesAssignmentId, a.id))))
-    .limit(1);
-  if (troca || roda) {
+  if (await emTroca(a.id)) {
     return erro(409, "EM_TROCA", "Esse plantão está numa troca em andamento. Cancele a troca em Trocas antes de liberar.");
   }
 

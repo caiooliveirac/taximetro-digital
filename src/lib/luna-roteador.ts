@@ -29,6 +29,8 @@ export type Intencao =
   | { tipo: "REGRA"; chave: string; texto: string }
   /** "Posso ir para outra base?", "base parada", "sem médico, e agora?": o que dá para fazer no plantão de agora (remanejarOpcoes). */
   | { tipo: "REMANEJAR" }
+  /** "Quero ir para a PM40 dia 25": plantão que ainda não começou, por vaga livre do mesmo turno (mudarDeBaseOpcoes). */
+  | { tipo: "MUDAR_BASE"; datas: string[]; bases: string[] }
   | { tipo: "BUSCA"; args: ArgsBusca };
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -139,6 +141,9 @@ const SEM_CHECKOUT = /\b(preceptora?|medic[oa]|doutora?|dra?)\b.*\b(saiu|foi emb
 // Pergunta de regra ("como funciona", "e se") vai ao modelo.
 const REMANEJAR = /\bremanej\w*|\b(ir|passar|mudar|trocar|me mover|mover|sair) (para|pra|pro) (outra|outro) base\b|\b(mudar|trocar|sair) de base\b|\boutra base (com vaga|livre)\b|\btem outra base\b|\bbase (esta |ta )?parada\b|\bsem enfermeir\w*|\bviatura (quebr\w*|pifou|com problema|baixad\w*|parada|sem condic\w*)|\b(quebrou|pifou|baixou) a viatura\b|\bsem viatura\b|\bsem medico\b.*\b(e agora|o que (eu )?(faco|fazer)|faco o que|outra base|posso sair|remanej\w*)\b/;
 
+// Mudar de base num dia que vem: precisa da data. Troca com colega é Trocas.
+const MUDAR_BASE = /\b(mudar|trocar|passar|transferir|ir|ficar)\b[^?]*?\b(de base|outra base|(para|pra|pro|na|no) (a |o )?[a-z]{2} ?\d{2})\b/;
+
 const FORA_DO_DIRETO = /\b(quem|quantos|quantas)\b.*\b(internos?|internas?|enfermeir\w*|equipe|sombras?)\b|\b(muitos|muitas|tres|3) (internos?|internas?)\b|\b(lotad[ao]|base cheia|sem (lugar|espaco|cama))\b|\b(ontem|anteontem)\b/;
 
 export function rotear(pergunta: string, hoje: string = localDateStr()): Intencao | null {
@@ -151,6 +156,10 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   // Regra fixa antes de tudo que lê "troca"/"vaga": "largar seria trocar??" ia para a busca de trocas.
   const regra = regraDaPergunta(q);
   if (regra) return { tipo: "REGRA", ...regra };
+  if (q.length <= 200 && MUDAR_BASE.test(q) && !/\b(colega|alguem|com (o|a) \w+)\b|\be se\b|\bcomo funciona\b/.test(q)) {
+    const datas = datasDaPergunta(q, hoje).filter((d) => d > hoje);
+    if (datas.length) return { tipo: "MUDAR_BASE", datas, bases: basesDaPergunta(q) };
+  }
   // Antes de FORA_DO_DIRETO: "muitos internos, posso ir para outra base?" é remanejar (lotação).
   // Só o plantão de agora: outro dia ("amanhã", "dia 25") vai ao modelo.
   if (q.length <= 200 && REMANEJAR.test(q) && !/\be se\b|\bo que acontece\b|\bcomo funciona\b|\bregra\b/.test(q) && !datasDaPergunta(q, hoje).some((d) => d > hoje)) return { tipo: "REMANEJAR" };
