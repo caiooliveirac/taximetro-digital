@@ -1044,7 +1044,16 @@ export async function solicitacoesPendentes(f: Fontes, ctx: LunaCtx): Promise<Re
 export async function situacaoDaBase(f: Fontes, ctx: LunaCtx, texto: string, now: Date = new Date(), baseDita = ""): Promise<Resultado> {
   const [lista, meus] = await Promise.all([f.bases(), f.meusPlantoes()]);
   const t = semAcentoMaiusculo(texto);
-  const codigo = t.match(/\b([A-Z]{2})\s?(\d{2})\b/);
+  // "BR05 BR60 SM01 qual médico?" (14/11): uma resposta por base, não só a primeira.
+  const codigos = [...new Set([...t.matchAll(/\b([A-Z]{2})\s?(\d{2})\b/g)].map((m) => `${m[1]}${m[2]}`).filter((c) => lista.some((b) => b.code === c)))];
+  if (codigos.length > 1) {
+    const semCodigos = t.replace(/\b([A-Z]{2})\s?(\d{2})\b/g, " ");
+    const partes = await Promise.all(codigos.slice(0, 4).map((c) => situacaoDaBase(f, ctx, `${c} ${semCodigos}`, now)));
+    return { status: partes[0].status, registros: partes.reduce((s, p) => s + p.registros, 0), texto: partes.map((p) => p.texto).join("\n\n") };
+  }
+  // "SD"/"SN" é o turno (serviço diurno/noturno), não base: "E hoje SD?" dava "Não conheço a base 'SD'".
+  if (/^(S[DN]|DIURNO|NOTURNO|DIA|NOITE)$/.test(semAcentoMaiusculo(baseDita.trim()))) baseDita = "";
+  const codigo = codigos.length ? [codigos[0], codigos[0].slice(0, 2), codigos[0].slice(2)] : t.match(/\b([A-Z]{2})\s?(\d{2})\b/);
   // "Base Pau Miúdo (2)" é a segunda viatura do mesmo endereço: o nome é o mesmo.
   const nomeDe = (b: { name: string }) => semAcentoMaiusculo(b.name).replace(/^BASE\s+/, "").replace(/\s*\(\d\)\s*$/, "").trim();
   const porNome = lista.filter((b) => nomeDe(b).length >= 4 && t.includes(nomeDe(b)));

@@ -953,3 +953,27 @@ test("'Preciso 15/11 dia' com o plantão dele à noite (0f00, 14/11): larga o da
   assert.match(r.texto, /T9 sex 30\/10 dia/);
   assert.equal(r.memoria?.busca?.trocar_periodo, undefined);
 });
+
+test("'PM04 PR03 CB02 qual médico estão hoje nessas bases SD?' (eb3a, 14/11): uma resposta por base", async () => {
+  const { r, chamadas } = await perguntar("PM04 PR03 CB02 qual médico estão hoje nessas bases SD?", { agora: new Date("2026-10-29T10:30:00Z") });
+  assert.equal(chamadas, 0);
+  for (const b of ["PM04", "PR03", "CB02"]) assert.match(r.texto, new RegExp(b));
+  assert.equal(r.texto.split("\n\n").length, 3);
+});
+
+test("'E hoje SD?' (eb3a, 14/11): SD é o turno, não base", async () => {
+  const { r } = await perguntar("E hoje SD?", {
+    agora: new Date("2026-10-29T10:30:00Z"),
+    passos: [{ tool: { name: "situacao_da_base", args: { base: "SD", data: "2026-10-29" } } }],
+  });
+  assert.doesNotMatch(r.texto, /Não conheço a base/);
+});
+
+test("'Quem está na base CN10' com o modelo esquecendo a base (9b6e, 17/11): vale a base da pergunta", async () => {
+  const { r, lidas } = await perguntar("Quem está na base PR03", {
+    agora: new Date("2026-10-29T10:30:00Z"),
+    passos: [{ tool: { name: "situacao_da_base", args: {} } }],
+  });
+  assert.match(r.texto, /PR03/);
+  assert.ok(lidas.some((l) => l.startsWith("plantoes:PR03:")));
+});

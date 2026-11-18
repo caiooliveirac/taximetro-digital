@@ -17,7 +17,7 @@
 import { criarFontes, type Fontes, type LunaCtx, type RegistroFonte } from "@/lib/luna-dados";
 import { FERRAMENTAS, buscar, liberarOpcoes, remanejarOpcoes, semCheckoutOpcoes, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
 import { quando, resumoParaModelo, textoDaAgenda, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
-import { rotear, type Intencao } from "@/lib/luna-roteador";
+import { basesDaPergunta, rotear, type Intencao } from "@/lib/luna-roteador";
 import { addDaysToDateStr } from "@/lib/utils";
 import { voz } from "@/lib/dai-voz";
 
@@ -35,6 +35,7 @@ export type LunaResposta = { texto: string; cartoes: LunaCartao[]; erro?: boolea
 export type LunaDeps = { fontes?: Fontes; fetch?: typeof fetch; agora?: Date; semModelo?: string };
 
 const HISTORICO = 6;
+const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const MAX_FERRAMENTAS = 3;
 
 const config = () => ({
@@ -64,7 +65,7 @@ Como agir:
 - Não vai poder ir num plantão dele (doente, prova, imprevisto), quer faltar, largar, cancelar ou liberar: liberar_plantao, com as datas se disse. Quem libera é ele, tocando no botão; você não libera nada.
 - Trocar um plantão dele por uma oferta específica: avaliar_troca. "Por que não contou", "fiz checkout e aparece pendente": explicar_plantao — só isso; comprovante, solicitação, justificativa e abono não são explicar_plantao.
 - "A segunda", "essa", "dessas" = números da ÚLTIMA LISTA: passe em opcoes/opcao. Sem ÚLTIMA LISTA, não invente número. Para refinar a última busca, repita os parâmetros dela e mude só o pedido.
-- Datas: use o CALENDÁRIO; dia da semana vai como dia_semana. "Fim de semana" = prefere_dias_semana sex, sab, dom.
+- Datas: use o CALENDÁRIO; dia da semana vai como dia_semana. SD = diurno e SN = noturno (turno, nunca base). "Fim de semana" = prefere_dias_semana sex, sab, dom.
 - Dias em que ele PODE ou QUER pegar ("dia 09/11 tem?", "preciso pegar 29, 30 e 01", "tenho disponibilidade dia 5") vão em datas. nao_posso é o contrário. Nunca troque um pelo outro.
 - nao_posso é só o que ele disse que não pode (prova, compromisso). Plantão que ele já tem NÃO entra: a ferramenta já respeita a agenda e o descanso.
 - Pergunta de regra ("e se eu faltar?", "fecha com uma falta?", "posso pegar com a meta completa?", "o que é sobra da grade?"): responda pelas Regras, sem ferramenta.
@@ -232,6 +233,12 @@ export async function perguntarLuna(
         args = JSON.parse(call.function.arguments || "{}");
       } catch {}
       if (!ferramenta) return null;
+      // Base citada na pergunta e esquecida pelo modelo ("Quem está na base CN10" saiu com a SM01 do plantão dele, 17/11).
+      if (call.function.name === "situacao_da_base") {
+        const existem = new Set((await f.bases().catch(() => [])).map((b) => b.code));
+        const citadas = basesDaPergunta(norm(pergunta)).filter((c) => existem.has(c)); // "às 19" não é base
+        if (citadas.length && (!args.base || citadas.length > 1)) args.base = citadas.join(" ");
+      }
       const res = await ferramenta.run(f, ctx, args, memoria).catch((e: Error): Resultado => {
         log({ ev: "luna_interno_ferramenta_erro", ferramenta: call.function.name, msg: e.message.slice(0, 200) });
         return { status: "FAILED", registros: 0, texto: "Essa consulta falhou agora — não tenho como afirmar nada sobre isso. Tente de novo em instantes." };

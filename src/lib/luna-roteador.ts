@@ -100,7 +100,8 @@ function porDia(q: string, hoje: string): Intencao | null {
   if (q.length > 120 || !DISPONIVEL.test(q) || SO_COM_MODELO.test(q)) return null;
   const datas = datasDaPergunta(q, hoje);
   if (!datas.length) return null;
-  const periodo = /\b(noite|notur\w*)\b/.test(q) ? "noite" : /\b(diurn\w*|de dia|manha)\b/.test(q) ? "dia" : undefined;
+  // SD/SN: serviço diurno/noturno, como eles escrevem ("tem vaga hoje SD?").
+  const periodo = /\b(noite|notur\w*|sn)\b/.test(q) ? "noite" : /\b(diurn\w*|de dia|manha|sd)\b/.test(q) ? "dia" : undefined;
   // "Tenho plantão dia 09?" é a agenda dele, não vaga.
   if (/\btenho (algum )?plantao\b|\bmeus? plantao\b|\bestou escalad/.test(q)) {
     const de = Math.round((Date.parse(datas[0]) - Date.parse(hoje)) / 86_400_000);
