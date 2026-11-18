@@ -50,7 +50,9 @@ export function turnoPedido(texto: string, now: Date): Turno | null {
   if (dm) {
     const ano = Number(dm[2]) < p.month - 6 ? p.year + 1 : p.year;
     date = `${ano}-${dm[2].padStart(2, "0")}-${dm[1].padStart(2, "0")}`;
-  } else if (/\bdepois de amanha\b/.test(q)) date = addDaysToDateStr(hoje, 2);
+  } else if (/\banteontem\b/.test(q)) date = addDaysToDateStr(hoje, -2);
+  else if (/\bontem\b/.test(q)) date = addDaysToDateStr(hoje, -1);
+  else if (/\bdepois de amanha\b/.test(q)) date = addDaysToDateStr(hoje, 2);
   else if (/\bamanha\b/.test(q)) date = addDaysToDateStr(hoje, 1);
   else if (/\bhoje\b/.test(q)) date = hoje;
   else {
@@ -105,9 +107,18 @@ function linhaDaEscala(baseCode: string, previstos: Previstos | undefined): stri
   return `Pela escala médica, o previsto é ${quem}${quem.endsWith(".") ? "" : "."}`;
 }
 
+/** O turno (12h) já terminou: o quadro dos médicos não diz mais nada sobre ele. */
+export const turnoJaAcabou = (t: Turno, now: Date) => now.getTime() >= inicioDoTurno(t).getTime() + 12 * 3_600_000;
+
 export function textoDaBaseAgora(p: { baseCode: string; turno: Turno; now: Date; situacao: SituacaoDoTurno; previstos?: Previstos }): string {
   const { baseCode, turno, now, situacao: s } = p;
   const escala = linhaDaEscala(baseCode, p.previstos);
+
+  // "Quem estava ontem?" — sem isto, o texto de "agora" saía para um turno
+  // encerrado: "ninguém chegou ainda, avise Sem médico" sobre o dia anterior.
+  if (turnoJaAcabou(turno, now)) {
+    return `${baseCode}, ${quando(turno.date, turno.period)}: esse turno já terminou. Eu só vejo o médico na base agora e a escala médica dos próximos turnos — não sei dizer quem esteve lá antes.`;
+  }
 
   // Turno que ainda vai começar: a resposta é a escala, não o quadro.
   if (now < inicioDoTurno(turno)) {
@@ -135,7 +146,9 @@ export function textoDaBaseAgora(p: { baseCode: string; turno: Turno; now: Date;
     return `A ${baseCode} está desativada no quadro dos médicos${desde}${motivo}. Não vai ativar por agora: ${comoRemanejar}.`;
   }
   if (s.chegaram.length) {
-    return `Sim: ${doutores(s.chegaram)} já chegou na ${baseCode} (às ${s.chegaram[0].desde}) para o turno das ${inicio}. Procure por ${s.chegaram.length > 1 ? "eles" : "ele(a)"}.`;
+    // Sem "Sim:" na frente: a mesma frase responde perguntas que não são
+    // "vai ativar?" ("posso ir para outra base?") e soava como permissão.
+    return `Médico na base: ${doutores(s.chegaram)} já chegou na ${baseCode} (às ${s.chegaram[0].desde}) para o turno das ${inicio}. Procure por ${s.chegaram.length > 1 ? "eles" : "ele(a)"}.`;
   }
   const linhas = [
     `Ninguém do turno das ${inicio} registrou chegada na ${baseCode} ainda (o quadro só mostra quem registrou).`,

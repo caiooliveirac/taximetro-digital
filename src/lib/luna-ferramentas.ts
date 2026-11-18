@@ -16,7 +16,7 @@ import {
   type Avaliada, type Bloqueio, type Busca, type Fonte, type Meta, type MeuPlantao, type Oferta, type Pedido, type Periodo, type Solicitacao,
 } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr, getBrazilNowParts } from "@/lib/utils";
-import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoPedido } from "@/lib/luna-base-agora";
+import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoJaAcabou, turnoPedido } from "@/lib/luna-base-agora";
 import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
 import { aberturaDaRepescagem } from "@/features/extra-offers/application/repescagem";
 
@@ -555,7 +555,7 @@ export const FERRAMENTAS: {
   },
   {
     name: "situacao_da_base",
-    description: "Se a base vai ativar: no turno de agora, o médico que chegou, o de saída ou se está desativada; em turno futuro, o médico previsto na escala. Sem base: a do plantão dele.",
+    description: "Só o MÉDICO e se a base vai ativar: no turno de agora, o médico que chegou, o de saída ou se está desativada; em turno futuro, o médico previsto na escala. Sem base: a do plantão dele. Não sabe internos, enfermeiro, equipe nem lotação, e não sabe turno que já passou: para isso, não chame.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -796,7 +796,7 @@ export async function situacaoDaBase(f: Fontes, ctx: LunaCtx, texto: string, now
   const [situacao, escala] = await Promise.all([f.situacaoDoTurno(baseCode, inicioDoTurno(turno)), f.medicosPrevistos(turno.date, turno.period)]);
   const previstos = { consultado: escala.consultado, diaSemEscala: escala.diaSemEscala, nomes: escala.porBase[baseCode] ?? [] };
   return {
-    status: now < inicioDoTurno(turno)
+    status: turnoJaAcabou(turno, now) ? "TURNO_PASSADO" : now < inicioDoTurno(turno)
       ? (!previstos.consultado || previstos.diaSemEscala ? "SEM_ESCALA" : previstos.nomes.length ? "PREVISTO" : "FURO_NA_ESCALA")
       : !situacao.consultado ? "FAILED" : situacao.desativada ? "DESATIVADA" : situacao.chegaram.length ? "MEDICO_CHEGOU" : situacao.saindo.length ? "MEDICO_SAINDO" : "SEM_MEDICO",
     registros: situacao.chegaram.length + situacao.saindo.length,

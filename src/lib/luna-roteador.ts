@@ -104,8 +104,14 @@ function porDia(q: string, hoje: string): Intencao | null {
 }
 const BASE_AGORA = /vai (ativar|abrir|funcionar|rodar)|(base|viatura|ela) (esta |ta |vai )?(ativa|ativada|desativada|parada|aberta|fechada)|ativ(ou|ada|a) (a |hoje)|(tem|chegou|ja chegou|cade|cade o|quem e o|qual) (o |algum |um )?medico|medico (chegou|ja chegou|de plantao|na base|ta ai|esta ai)|sem medico|(estou|to|tou|cheguei) na base/;
 
+const FORA_DO_DIRETO = /\b(quem|quantos|quantas)\b.*\b(internos?|internas?|enfermeir\w*|equipe|sombras?)\b|\b(muitos|muitas|tres|3) (internos?|internas?)\b|\b(lotad[ao]|base cheia|sem (lugar|espaco|cama))\b|\b(ontem|anteontem)\b/;
+
 export function rotear(pergunta: string, hoje: string = localDateStr()): Intencao | null {
   const q = norm(pergunta);
+  // Quem/quantos na base, lotação, turno passado: nenhuma resposta direta
+  // sabe isso (a da base só sabe o médico de agora). Vai ao modelo, que diz
+  // o que não sabe — antes, "quem está de interno na SM01?" saía com o médico.
+  if (FORA_DO_DIRETO.test(q)) return null;
   // Antes da peneira de nuance: "vai ativar hoje à noite?" é a mesma pergunta.
   if (q.length <= 120 && BASE_AGORA.test(q)) return { tipo: "BASE_AGORA" };
   if (q.length <= 160 && SOLICITACOES.test(q) && !/\b(como|onde) (eu )?(faco|faz|peco|pede)\b/.test(q)) return { tipo: "SOLICITACOES" };

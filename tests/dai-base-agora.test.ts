@@ -17,7 +17,7 @@ const sit = (s: Partial<{ consultado: boolean; chegaram: { nome: string; desde: 
 
 test("médico do turno já chegou: diz quem procurar", () => {
   const t = textoDaBaseAgora({ baseCode: "CB02", turno: dia, now: as("07:20"), situacao: sit({ chegaram: [{ nome: "Ana Lima", desde: "07:12" }] }) });
-  assert.match(t, /^Sim: Dr\(a\)\. Ana Lima já chegou na CB02 \(às 07:12\) para o turno das 07:00\. Procure por ele\(a\)\./);
+  assert.match(t, /^Médico na base: Dr\(a\)\. Ana Lima já chegou na CB02 \(às 07:12\) para o turno das 07:00\. Procure por ele\(a\)\./);
 });
 
 test("ninguém chegou e há médico de saída: procurar quem sai; antes de 07:15, espera", () => {
@@ -118,4 +118,17 @@ test("turno pedido na pergunta: amanhã, dia da semana, data, noite", () => {
 test("sem plantão perto, 'minha base vai ativar?' olha o próximo plantão dele", () => {
   const meus = [meu("2026-11-03", "NIGHT", "SM01")];
   assert.deepEqual(baseETurno(meus, as("10:00", "2026-10-29"), null), { baseCode: "SM01", turno: { date: "2026-11-03", period: "NIGHT" } });
+});
+
+test("turno que já terminou: não usa o texto de agora (sem 'avise Sem médico')", () => {
+  const t = textoDaBaseAgora({ baseCode: "PM40", turno: { date: "2026-10-29", period: "DAY" }, now: as("07:04"), situacao: sit({}) });
+  assert.match(t, /esse turno já terminou/);
+  assert.doesNotMatch(t, /Sem médico|ainda/);
+  assert.deepEqual(turnoPedido("quem estava ontem na pm40?", as("07:04")), { date: "2026-10-29", period: "DAY" });
+});
+
+test("roteador: equipe, lotação e ontem vão ao modelo, não à resposta do médico", () => {
+  for (const q of ["Quem está de interno hoje no SN na SM01?", "estou na base, vai ativar? tem muitos internos", "quantos internos na PM40", "o médico chegou ontem?", "sem lugar na ambulância, tem outra base?"]) {
+    assert.equal(rotear(q), null, q);
+  }
 });
