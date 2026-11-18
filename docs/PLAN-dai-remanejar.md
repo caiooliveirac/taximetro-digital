@@ -1,6 +1,15 @@
 # PLAN — remanejar pela Dai
 
-Status: **proposta, aguardando decisões do Caio** (18/11/2026). Nada codado.
+Status: **as três fases no ar** (18/11/2026), com as decisões do Caio abaixo.
+- Fase 1: `5395108` (Dai: intenção REMANEJAR, ferramenta `remanejar_agora`,
+  atalho `/intern?avisar=` e `/intern?remanejar=&destino=` no card do plantão);
+  líder avisado no remanejamento: `d4fdca5`.
+- Fase 2: `89f65f4` (base desativada vale como aviso; aviso LOTACAO).
+- Fase 3: `60a57f7` (`/api/intern/mudar-de-base`, intenção MUDAR_BASE,
+  ferramenta `mudar_de_base`, botão Mudar).
+
+Correção no caminho: a grade de remanejamento fica no card do plantão, **aba
+Hoje** (`AvisoCoordenacao`), não na aba Check-in. A Dai dizia "aba Check-in".
 
 ## O que existe hoje
 
@@ -58,7 +67,30 @@ aviso, só para quem excede. Exemplo: o 3º na SM01 diurna.
 uma vaga livre do mesmo dia e turno. Seria a liberação (`INTERNO`, já no ar)
 mais a pegada da vaga, num passo só.
 
-## Decisões abertas (Caio)
+## Decisões (Caio, 18/11/2026)
+
+1. **Fase 1**: vai assim, só guia e atalho. A Dai não grava nada; quem move é
+   o toque no card do plantão.
+2. **Lotação**: sai **o último a chegar** (check-in mais recente; quem ainda
+   não fez check-in excede se a base já encheu sem ele). Vira um **4º aviso**,
+   `LOTACAO` ("Base lotada"), que a coordenação recebe como os outros. O
+   servidor só aceita de quem passou do teto (`capacidadeDaBase`); sem teto
+   próprio (LF90) não há lotação. Código: `excedeOTeto`, `lotacaoDoPlantao`.
+3. **Base desativada** no quadro dos médicos **conta como aviso**: a grade
+   abre sem tocar em Avisar; motivo "base desativada no quadro dos médicos"
+   (`AVISO_DESATIVADA` em `ultimoAviso`).
+4. **Antes do dia**: o interno **troca sozinho**, sem aprovação. Só por vaga
+   livre do mesmo dia, turno e tipo (meta e descanso não mudam), fora da
+   janela da repescagem, cabendo na base de destino; liberada pelo líder da
+   própria faculdade segue só para as outras. Numa transação: pega a vaga,
+   move o plantão (nota `[MUDOU DE BASE]`) e abre o lugar antigo como vaga
+   livre (`autoRelease = "INTERNO"`). `mudar-de-base-do-interno.ts`.
+5. **Aviso**: remanejamento e mudança de base avisam **a coordenação e o líder
+   da faculdade** (líder pela Dai: `DAI_AVISO_REMANEJAMENTO`,
+   `DAI_AVISO_MUDANCA_DE_BASE`; coordenação pelo secretário no remanejamento e
+   pelo Telegram na mudança antes do dia).
+
+## Perguntas como estavam
 
 1. A **fase 1** pode ir assim (só guia e atalho, sem regra nova)?
 2. **Lotação (fase 2)**:
