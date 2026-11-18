@@ -332,8 +332,8 @@ test("12. 'Posso pegar vaga mesmo já tendo completado a meta?' — liberada nã
   // Vaga liberada não é dele agora, mas pode cair na repescagem: diz quando abre.
   assert.ok(lidas.includes("liberadas"));
   assert.match(r.texto, /Pode ir a sorteio na repescagem/);
-  assert.match(r.texto, /sua meta de USA e CRU e CRL já está completa: ela vai primeiro para quem ainda precisa repor plantão \(hoje esperam reposição 131 colegas em USA, 112 em CRU e 60 em CRL\)/);
-  assert.match(r.texto, /Quando houver mais vaga livre do que gente nessa fila, você pode se candidatar/);
+  assert.match(r.texto, /Com a meta de USA, CRU e CRL completa, vaga liberada só chega a você na repescagem \(última hora, entra como extra\)/);
+  assert.match(r.texto, /Fora dela, ela vai primeiro para quem ainda precisa repor plantão \(hoje esperam reposição 131 colegas em USA, 112 em CRU e 60 em CRL\); quando houver mais vaga livre do que gente nessa fila, você pode se candidatar/);
   assert.ok(!r.cartoes.some((c) => c.itens.some((i) => i.candidatar)));
 });
 
@@ -656,7 +656,7 @@ test("solicitações pendentes: lista, de quem é a decisão, e avisa o líder u
 
 test("fila de reposição explicada: o número diz o que é", async () => {
   const { r } = await perguntar("Tem vaga pra mim?", { fx: { meta: { ...META, faltam: { USA: 0, CRU: 0, CRL: 0 } } } });
-  assert.match(r.texto, /meta de USA e CRU e CRL já está completa/);
+  assert.match(r.texto, /meta de USA, CRU e CRL completa/);
   assert.match(r.texto, /esperam reposição 131 colegas em USA/);
 });
 
@@ -998,4 +998,31 @@ test("mesma resposta duas vezes (8b60, 10/11; 9e9e, 04/11): a segunda diz que na
   // Outra pergunta, outra resposta: segue normal.
   const outra = await perguntar("Tenho algum plantão amanhã?", { antes });
   assert.ok(!REPETIDA.includes(outra.r.texto));
+});
+
+test("'trocar meu PM04 pela IT30' quando a IT30 é vaga liberada (5923, 09/11): explica o caminho em vez de 'Não achei essa oferta'", async () => {
+  const liberadas = [oferta("LIBERADA", "IT30", "USA", "2026-10-30", "NIGHT", { faculdade: "FAC-B", repescagem: true })];
+  const { r } = await perguntar("Quero trocar o plantão de amanhã (PM04) pelo plantão de amanhã noturno (IT30)", {
+    fx: { liberadas },
+    passos: [{ tool: { name: "avaliar_troca", args: { meu_plantao_data: "2026-10-30", oferta_data: "2026-10-30", oferta_periodo: "noite", oferta_base: "IT30" } } }],
+  });
+  assert.doesNotMatch(r.texto, /Não achei essa oferta/);
+  assert.match(r.texto, /^A \*\*IT30 sex 30\/10 noite\*\* não é oferta de troca: é vaga liberada de última hora/);
+  assert.match(r.texto, /libere o seu \(me diga "não vou poder ir"\) — é o mesmo turno, então primeiro libere/);
+  assert.match(r.texto, /a IT30 conta na sua meta/);
+});
+
+test("'Quero trocar para a PM40' (82a2, 31/10): a troca respeita a base citada", async () => {
+  const trocas = [...TROCAS, oferta("TROCA", "PM40", "USA", "2026-11-07", "DAY", { quem: "Colega Quarenta", quemId: "u-40", assignmentId: "a-40", faculdade: "FAC-B" })];
+  const { r, chamadas } = await perguntar("Quero trocar para a PM40", { fx: { trocas } });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /^Só na PM40:/);
+  assert.match(r.texto, /PM40 sáb 07\/11 dia/);
+  assert.doesNotMatch(r.texto, /\bT1\b/);
+});
+
+test("vaga de última hora com a meta completa e nada aberto (5923, 09/11): diz o caminho da repescagem, sem sermão de fila", async () => {
+  const { r } = await perguntar("Tem vaga dia 05/11?", { fx: { meta: COMPLETA, liberadas: [] } });
+  // Abre pelo caminho que anda para ele; a fila vem depois.
+  assert.match(r.texto, /vaga liberada só chega a você na repescagem \(última hora, entra como extra\)[^\n]*Fora dela/);
 });

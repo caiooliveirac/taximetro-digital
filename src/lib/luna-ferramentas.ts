@@ -340,7 +340,13 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     if (fechados.length && completos.length === tiposDoPedido.length) {
       const quem = atual ? fechados.filter((k) => atual[k].precisam > 0).map((k, i) => `${atual[k].precisam}${i ? "" : ` ${atual[k].precisam === 1 ? "colega" : "colegas"}`} em ${k}`) : [];
       const naFila = quem.length > 1 ? `${quem.slice(0, -1).join(", ")} e ${quem.at(-1)}` : quem[0];
-      fila = `Vaga liberada não aparece para você porque sua meta de ${fechados.join(" e ")} já está completa: ela vai primeiro para quem ainda precisa repor plantão${naFila ? ` (hoje esperam reposição ${naFila})` : ""}. Quando houver mais vaga livre do que gente nessa fila, você pode se candidatar.`;
+      // Só repescagem: o que anda para ele é a última hora, não a fila (09/11, "vaga de última hora amanhã IT30").
+      const tiposTxt = fechados.length > 1 ? `${fechados.slice(0, -1).join(", ")} e ${fechados.at(-1)}` : fechados[0];
+      const filaTxt = `ela vai primeiro para quem ainda precisa repor plantão${naFila ? ` (hoje esperam reposição ${naFila})` : ""}`;
+      // Só repescagem: abre pelo que anda para ele, a última hora; a fila vem depois (09/11, "vaga de última hora amanhã IT30").
+      fila = soRepescagem
+        ? `Com a meta de ${tiposTxt} completa, vaga liberada só chega a você na repescagem (última hora, entra como extra) — nenhuma aberta agora que caiba na sua agenda. Fora dela, ${filaTxt}; quando houver mais vaga livre do que gente nessa fila, você pode se candidatar.`
+        : `Vaga liberada não aparece para você porque sua meta de ${tiposTxt} já está completa: ${filaTxt}. Quando houver mais vaga livre do que gente nessa fila, você pode se candidatar.`;
     }
     if (candidatura.length) fila += `${fila ? "\n" : ""}Em ${candidatura.join(" e ")} há mais vaga livre do que colegas precisando repor: como sua meta desse tipo está completa, você pode se candidatar, e a coordenação decide quem fica.`;
   }
@@ -465,9 +471,17 @@ export async function avaliarTroca(f: Fontes, ctx: LunaCtx, raw: Record<string, 
     if (ref.fonte !== "TROCA") return { status: "INCOMPATIBLE", registros: 0, texto: `A opção ${n} não é oferta de troca. Para largar um plantão, alguém precisa ficar com ele: veja as ofertas em Trocas ou publique o seu.` };
     alvos = trocas.filter((t) => t.id === ref.id);
     if (!alvos.length) return { status: "ALREADY_CLAIMED", registros: trocas.length, texto: "Essa oferta de troca não está mais aberta — alguém já fechou ou ela foi cancelada." };
-  } else if (typeof raw.oferta_data === "string" && DATA.test(raw.oferta_data)) {
-    const p = lerPeriodo(raw.oferta_periodo);
-    alvos = trocas.filter((t) => t.date === raw.oferta_data && (!p || t.period === p));
+  }
+  const ofertaData = typeof raw.oferta_data === "string" && DATA.test(raw.oferta_data) ? raw.oferta_data : null;
+  const ofertaBase = typeof raw.oferta_base === "string" ? raw.oferta_base.toUpperCase().replace(/\s+/g, "") : "";
+  const ofertaPeriodo = lerPeriodo(raw.oferta_periodo);
+  const bate = (o: Oferta) => (!ofertaData || o.date === ofertaData) && (!ofertaPeriodo || o.period === ofertaPeriodo) && (!ofertaBase || o.baseCode === ofertaBase);
+  if (!alvos.length && (ofertaData || ofertaBase)) alvos = trocas.filter(bate);
+  // "Trocar meu PM04 pela IT30 de amanhã" (09/11): a IT30 era vaga liberada, não
+  // oferta de troca, e a Dai respondia "Não achei essa oferta" duas vezes.
+  if (!alvos.length && (ofertaData || ofertaBase)) {
+    const livre = (await f.liberadas(ofertaData ?? addDaysToDateStr(ctx.hoje, 21))).find(bate);
+    if (livre) return trocaPorLiberada(meu, livre);
   }
   if (alvos.length !== 1) {
     const doTipo = trocas.filter((t) => t.tipo === meu.tipo).slice(0, MOSTRAR);
@@ -505,6 +519,21 @@ export async function avaliarTroca(f: Fontes, ctx: LunaCtx, raw: Record<string, 
     },
     memoria: { opcoes: [{ n: 1, fonte: "TROCA", id: alvo.id }] },
   };
+}
+
+/** Vaga liberada não se troca: o caminho é liberar o dele e pegar (ou pedir) a vaga. */
+function trocaPorLiberada(meu: MeuPlantao, livre: Oferta): Resultado {
+  const eu = `${meu.baseCode} ${quando(meu.date, meu.period, meu.shift)}`;
+  const ela = `${livre.baseCode} ${quando(livre.date, livre.period, livre.shift)}`;
+  // Liberar o dele, do mesmo tipo e que conta, abre a casinha: a vaga passa a contar (claim-extra-offer.ts, comoExtra).
+  const conta = meu.tipo === livre.tipo && !meu.isExtraShift;
+  const mesmoTurno = meu.date === livre.date && meu.period === livre.period;
+  const linhas = [`A **${ela}** não é oferta de troca: é vaga liberada${livre.repescagem ? " de última hora" : ""}, e vaga liberada não se troca.`];
+  linhas.push(livre.repescagem
+    ? `Para ficar com ela no lugar do seu **${eu}**: libere o seu (me diga "não vou poder ir")${mesmoTurno ? " — é o mesmo turno, então primeiro libere" : ""} e pegue a ${livre.baseCode} em **Extras**. Quem pegar antes leva.`
+    : `Para ficar com ela no lugar do seu **${eu}**: libere o seu (me diga "não vou poder ir") e peça a ${livre.baseCode} ao líder da sua faculdade — é ele quem escala vaga liberada.`);
+  if (conta) linhas.push(`Com o seu liberado, a casinha de ${livre.tipo} fica vazia e a ${livre.baseCode} conta na sua meta. O seu fica livre para os colegas e não volta sozinho.`);
+  return { status: "INCOMPATIBLE", registros: 1, texto: linhas.join("\n") };
 }
 
 // ---------------------------------------------------------------------------
@@ -770,7 +799,7 @@ export const FERRAMENTAS: {
   },
   {
     name: "avaliar_troca",
-    description: "Confere se um plantão dele pode ser trocado por uma oferta de troca específica (tipo, descanso dos dois lados, cota de CRU, faculdade).",
+    description: "Confere se um plantão dele pode ser trocado por uma oferta específica (tipo, descanso dos dois lados, cota de CRU, faculdade). Se o que ele quer é vaga liberada, e não oferta de troca, a resposta explica o caminho.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -781,6 +810,7 @@ export const FERRAMENTAS: {
         opcao: { type: "integer", description: "Número da oferta na última lista" },
         oferta_data: { type: "string", description: "YYYY-MM-DD, se ele disse a data em vez do número" },
         oferta_periodo: { type: "string", enum: ["dia", "noite"] },
+        oferta_base: { type: "string", description: "Código da base da oferta (PM40, IT30), se ele disse" },
       },
     },
     run: (f, ctx, args, memoria) => avaliarTroca(f, ctx, args, memoria),

@@ -182,7 +182,8 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   if (/vagas? liberad/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["LIBERADA"], ...comBases(q) } };
   if (/\bextras?\b/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["EXTRA"], ...comBases(q) } };
   if (/\bgrade\b|sobr\w* vaga|vaga sobr/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["GRADE"], ...comBases(q) } };
-  if (/\btroca(s|r)?\b/.test(q)) return { tipo: "BUSCA", args: { objetivo: "troca" } };
+  // "Quero trocar para a PM40" (31/10): a base citada recorta as ofertas.
+  if (/\btroca(s|r)?\b/.test(q)) return { tipo: "BUSCA", args: { objetivo: "troca", ...comBases(q) } };
   if (/(tem|ha|quais|alguma|que) vagas?|vagas? (pra|para) mim|posso pegar|plantao a mais/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", ...comBases(q) } };
   return null;
 }
