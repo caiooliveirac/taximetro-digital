@@ -130,7 +130,7 @@ async function avisarPlantao(now: Date, dry: boolean): Promise<ResultadoDosAviso
     const tema = temaParaPlantao(tipo, vistos.get(r.internId) ?? [], amanha);
     envios.push({
       para: r.internId,
-      texto: textoProximoPlantao({ quando: quando(dia(r.date), r.period, r.shift), baseCode: r.baseCode, tipo, tema }),
+      texto: textoProximoPlantao({ quando: quando(dia(r.date), r.period, r.shift), baseCode: r.baseCode, tipo, tema, novo: !vistos.get(r.internId)?.has(tema) }),
       action: AVISO.PLANTAO,
       entityId: r.id,
       payload: { tema, base: r.baseCode, data: amanha },
@@ -268,9 +268,10 @@ async function avisarVagas(now: Date, dry: boolean): Promise<ResultadoDosAvisos>
   }
 
   const porInterno = vagasParaCadaInterno(vagas, internos.filter((i) => !avisadoHoje.has(i.userId)), turnosDe, jaAvisadas, hoje);
+  const faltamDe = new Map(internos.map((i) => [i.userId, i.faltam]));
   const envios: Envio[] = [...porInterno].map(([para, lista]) => ({
     para,
-    texto: textoVagasAbertas(lista.map((v): VagaAvisada => ({ baseCode: v.baseCode, quando: quando(v.date, v.period, v.shift), tipo: v.tipo, liberadaPor: v.liberadaPor }))),
+    texto: textoVagasAbertas(lista.map((v): VagaAvisada => ({ baseCode: v.baseCode, quando: quando(v.date, v.period, v.shift), tipo: v.tipo, liberadaPor: v.liberadaPor })), faltamDe.get(para)!),
     action: AVISO.VAGAS,
     entityId: para,
     payload: { ofertas: lista.map((v) => v.id) },
@@ -334,9 +335,10 @@ async function avisarRepescagem(now: Date, dry: boolean): Promise<ResultadoDosAv
   }
 
   const porInterno = vagasParaCadaInterno(vagas, internos, turnosDe, jaAvisadas, hoje);
+  const faltamDe = new Map(internos.map((i) => [i.userId, i.faltam]));
   const envios: Envio[] = [...porInterno].map(([para, lista]) => ({
     para,
-    texto: textoRepescagem(lista.map((v): VagaAvisada => ({ baseCode: v.baseCode, quando: quando(v.date, v.period, v.shift), tipo: v.tipo, liberadaPor: v.liberadaPor }))),
+    texto: textoRepescagem(lista.map((v): VagaAvisada => ({ baseCode: v.baseCode, quando: quando(v.date, v.period, v.shift), tipo: v.tipo, liberadaPor: v.liberadaPor })), faltamDe.get(para)),
     action: AVISO.REPESCAGEM,
     entityId: para,
     payload: { ofertas: lista.map((v) => v.id) },

@@ -77,10 +77,12 @@ test("hora do sorteio = abertura da repescagem: diurno 20h da véspera, noturno 
 
 test("anúncio: hora, turno, vagas, a ordem e onde se inscrever", () => {
   const t = textoAnuncioSorteio({ turno: "seg 09/11 dia", hora: "hoje às 20h", vagas: [{ tipo: "USA", n: 4 }], precisa: ["USA"] });
-  assert.match(t, /Sorteio da repescagem \*\*hoje às 20h\*\* para \*\*seg 09\/11 dia\*\*: 4 vagas livres \(4 USA\)/);
-  assert.match(t, /primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra/);
-  assert.match(t, /Você ainda tem USA faltando na meta/);
-  assert.match(t, /Extras → Sorteios/);
+  assert.match(t, /^Sorteio \*\*hoje às 20h\*\*: 4 vagas USA para \*\*seg 09\/11 dia\*\*\./);
+  assert.match(t, /Você entra no primeiro grupo da fila: ainda falta USA na sua meta/);
+  assert.match(t, /\[Inscreva-se em Extras → Sorteios\]\(\/intern\/extras\)/);
+  const semMeta = textoAnuncioSorteio({ turno: "seg 09/11 dia", hora: "hoje às 20h", vagas: [{ tipo: "USA", n: 1 }], precisa: [] });
+  assert.match(semMeta, /1 vaga USA para/);
+  assert.match(semMeta, /primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra/);
 });
 
 // ---------------------------------------------------------------------------
@@ -105,7 +107,7 @@ test("hora adiada: 13h no noturno, 22h no diurno; minutos contados do horário d
 
 test("anúncio do adiamento diz que ninguém se inscreveu, a nova hora e o que acontece depois", () => {
   const t = textoAnuncioSorteio({ turno: "sex 30/10 noite", hora: "hoje às 13h", vagas: [{ tipo: "USA", n: 4 }], precisa: [], adiado: true });
-  assert.match(t, /Ninguém tinha se inscrito, então o sorteio da repescagem de \*\*sex 30\/10 noite\*\* foi adiado para \*\*hoje às 13h\*\*/);
+  assert.match(t, /^Sorteio de \*\*sex 30\/10 noite\*\* sem nenhum inscrito: adiado para \*\*hoje às 13h\*\*, com 4 vagas USA\./);
   assert.match(t, /Sem inscritos até lá, vão para quem pegar primeiro/);
 });
 

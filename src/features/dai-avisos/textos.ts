@@ -32,48 +32,71 @@ export function temaParaPlantao(tipo: GoalKind | null, vistos: Iterable<string>,
 
 const NOME_DO_TIPO: Record<GoalKind, string> = { USA: "USA", CRU: "Central de Regulação", CRL: "CRL" };
 
-export function textoProximoPlantao(p: { quando: string; baseCode: string; tipo: GoalKind | null; tema: Tema }) {
+/*
+ * Como a Dai escreve um aviso: a primeira linha é o que aparece na lista de
+ * conversas, então ela diz o que é seu ali (a vaga, a meta, o plantão), não o
+ * tipo do aviso. Depois o detalhe, e no fim um link só, para onde se resolve.
+ */
+
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+const vagaComoLinha = (v: VagaAvisada) => `- ${v.baseCode} ${v.quando} (${v.tipo}${v.liberadaPor ? `, liberada pela ${v.liberadaPor}` : ", sem dono"})`;
+/** "2 USA e 1 CRU", só dos tipos pedidos que ainda faltam. */
+const quantoFalta = (faltam: Partial<Record<GoalKind, number>>, tipos: GoalKind[]) =>
+  tipos.filter((k) => (faltam[k] ?? 0) > 0).map((k) => `${faltam[k]} ${k}`).join(" e ");
+
+/** `novo`: tema que ele ainda não abriu na Dai. */
+export function textoProximoPlantao(p: { quando: string; baseCode: string; tipo: GoalKind | null; tema: Tema; novo?: boolean }) {
   const tipo = p.tipo ? ` (${NOME_DO_TIPO[p.tipo]})` : "";
   return [
-    `Amanhã você está na ${p.baseCode}${tipo}, ${p.quando}.`,
-    `[Ver a base e a rota até ela](/intern/bases), na aba Bases.`,
-    `Para chegar afiado: [revise ${rotuloDoTema(p.tema)} com a Dai](/intern/luna?tema=${p.tema}), com um caso para treinar.`,
+    `Amanhã é na **${p.baseCode}**${tipo}, ${p.quando}. [Ver a base e a rota até ela](/intern/bases)`,
+    `Para chegar afiado: [revise ${rotuloDoTema(p.tema)} com a Dai](/intern/luna?tema=${p.tema})${p.novo ? ", tema que você ainda não viu" : ""}, com um caso para treinar.`,
   ].join("\n");
 }
 
 export type VagaAvisada = { baseCode: string; quando: string; tipo: GoalKind; liberadaPor: string | null };
 
-export function textoVagasAbertas(vagas: VagaAvisada[]) {
-  const tipos = [...new Set(vagas.map((v) => v.tipo))].join(" e ");
+/** `faltam`: a meta inteira do interno, para dizer se as vagas fecham ela. */
+export function textoVagasAbertas(vagas: VagaAvisada[], faltam: Record<GoalKind, number>) {
+  const tipos = [...new Set(vagas.map((v) => v.tipo))];
+  const cobrem = tipos.reduce((n, k) => n + Math.min(faltam[k], vagas.filter((v) => v.tipo === k).length), 0);
+  const fecha = cobrem > 0 && cobrem === Object.values(faltam).reduce((a, b) => a + b, 0);
+  const abriu = vagas.length === 1 ? "abriu uma vaga que cabe na sua agenda" : `abriram ${vagas.length} vagas que cabem na sua agenda`;
   return [
-    `Abriu vaga livre que cabe na sua agenda, e ainda falta ${tipos} na sua meta:`,
-    ...vagas.map((v) => `- ${v.baseCode} ${v.quando} (${v.tipo}${v.liberadaPor ? `, liberada pela ${v.liberadaPor}` : ", sem dono"})`),
-    `Quem escala é o líder da sua faculdade. [Pedir ao líder com um toque](/intern/luna?atalho=vaga-liberada) — vai rápido, outros colegas também precisam.`,
+    fecha ? `Dá para fechar sua meta: ${abriu}.` : `Faltam ${quantoFalta(faltam, tipos)} na sua meta, e ${abriu}:`,
+    ...vagas.map(vagaComoLinha),
+    `Quem escala é o líder da sua faculdade. [Pedir ao líder com um toque](/intern/luna?atalho=vaga-liberada) — a mesma vaga foi avisada a outros colegas.`,
   ].join("\n");
 }
 
 /** Vaga livre a menos de 8h do turno: virou extra, o interno pega direto (repescagem.ts). */
-export function textoRepescagem(vagas: VagaAvisada[]) {
+export function textoRepescagem(vagas: VagaAvisada[], faltam: Partial<Record<GoalKind, number>> = {}) {
+  const tipos = [...new Set(vagas.map((v) => v.tipo))];
+  const contam = tipos.filter((k) => (faltam[k] ?? 0) > 0);
+  const extra = tipos.filter((k) => !contam.includes(k));
   return [
-    `Sobrou do sorteio da repescagem, ainda sem ninguém, e cabe na sua agenda:`,
-    ...vagas.map((v) => `- ${v.baseCode} ${v.quando} (${v.tipo}${v.liberadaPor ? `, liberada pela ${v.liberadaPor}` : ", sem dono"})`),
-    `O sorteio já rodou e ninguém inscrito pôde levar: agora você pega direto na aba Extras, sem passar pelo líder. Quem pegar primeiro leva. [Abrir Extras](/intern/extras)`,
-    `Se ainda falta esse tipo na sua meta, conta na meta; se já fechou, entra como extra — um por interno: quem já teve extra não pega.`,
+    `Última chamada: ${vagas.length === 1 ? "plantão sem ninguém" : `${vagas.length} plantões sem ninguém`} que você pega direto, sem passar pelo líder:`,
+    ...vagas.map(vagaComoLinha),
+    [
+      contam.length ? `Conta na sua meta (faltam ${quantoFalta(faltam, contam)}).` : "",
+      extra.length ? `${extra.join(" e ")} já fechou na sua meta: entra como extra — um por interno, quem já teve extra não pega.` : "",
+    ].filter(Boolean).join(" "),
+    `O sorteio já rodou e ninguém inscrito levou. [Pegar agora em Extras](/intern/extras) — quem pegar primeiro leva.`,
   ].join("\n");
 }
 
 /** Anúncio do sorteio da repescagem (sorteio-repescagem.ts), horas antes. */
 export function textoAnuncioSorteio(s: { turno: string; hora: string; vagas: { tipo: GoalKind; n: number }[]; precisa: GoalKind[]; adiado?: boolean }) {
   const total = s.vagas.reduce((n, v) => n + v.n, 0);
-  const vagas = `${total} ${total === 1 ? "vaga livre" : "vagas livres"} (${s.vagas.map((v) => `${v.n} ${v.tipo}`).join(", ")})`;
+  const vagas = s.vagas.length === 1 ? plural(total, `vaga ${s.vagas[0].tipo}`, `vagas ${s.vagas[0].tipo}`) : `${plural(total, "vaga", "vagas")} (${s.vagas.map((v) => `${v.n} ${v.tipo}`).join(", ")})`;
   return [
     s.adiado
-      ? `Ninguém tinha se inscrito, então o sorteio da repescagem de **${s.turno}** foi adiado para **${s.hora}**: ${vagas} esperando interessados. Sem inscritos até lá, vão para quem pegar primeiro.`
-      : `Sorteio da repescagem **${s.hora}** para **${s.turno}**: ${vagas}.`,
-    `A ordem: primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra, por último quem já teve. Empate, o sorteio decide.`,
-    s.precisa.length ? `Você ainda tem ${s.precisa.join(" e ")} faltando na meta: se levar, conta.` : "",
-    `Para concorrer, [inscreva-se em Extras → Sorteios](/intern/extras) até a hora. Inscritos e resultado ficam públicos, e eu te conto aqui como foi.`,
-  ].filter(Boolean).join("\n");
+      ? `Sorteio de **${s.turno}** sem nenhum inscrito: adiado para **${s.hora}**, com ${vagas}. Sem inscritos até lá, vão para quem pegar primeiro.`
+      : `Sorteio **${s.hora}**: ${vagas} para **${s.turno}**.`,
+    s.precisa.length
+      ? `Você entra no primeiro grupo da fila: ainda falta ${s.precisa.join(" e ")} na sua meta, e se levar, conta.`
+      : `A fila: primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra, por último quem já teve.`,
+    `[Inscreva-se em Extras → Sorteios](/intern/extras) até a hora. Empate, o sorteio decide; resultado público, e eu te conto aqui.`,
+  ].join("\n");
 }
 
 export type SobraDaFaculdade = {

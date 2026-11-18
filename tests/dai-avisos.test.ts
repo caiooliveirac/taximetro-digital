@@ -14,12 +14,11 @@ import { cabeNaBase } from "../src/features/extra-offers/application/lotacao";
 
 const ler = (arquivo: string) => readFileSync(path.join(process.cwd(), arquivo), "utf8");
 
-test("véspera do plantão: base, aba Bases e um tema para revisar", () => {
-  const t = textoProximoPlantao({ quando: "sex 30/10 noite", baseCode: "CB02", tipo: "USA", tema: "TRAUMA" });
-  assert.match(t, /Amanhã você está na CB02 \(USA\), sex 30\/10 noite\./);
-  assert.match(t, /aba Bases/);
-  assert.match(t, /\[Ver a base e a rota até ela\]\(\/intern\/bases\)/);
-  assert.match(t, /\[revise Trauma com a Dai\]\(\/intern\/luna\?tema=TRAUMA\)/);
+test("véspera do plantão: base na primeira linha, rota e um tema para revisar", () => {
+  const t = textoProximoPlantao({ quando: "sex 30/10 noite", baseCode: "CB02", tipo: "USA", tema: "TRAUMA", novo: true });
+  assert.match(t.split("\n")[0], /^Amanhã é na \*\*CB02\*\* \(USA\), sex 30\/10 noite\. \[Ver a base e a rota até ela\]\(\/intern\/bases\)$/);
+  assert.match(t, /\[revise Trauma com a Dai\]\(\/intern\/luna\?tema=TRAUMA\), tema que você ainda não viu,/);
+  assert.doesNotMatch(textoProximoPlantao({ quando: "x", baseCode: "CB02", tipo: "USA", tema: "TRAUMA" }), /ainda não viu/);
 });
 
 test("tema: o primeiro do tipo que o interno não viu; regulação começa por IAM", () => {
@@ -90,13 +89,17 @@ test("teto da viatura: BR60/BR05/PM04/PM40 um de dia; à noite dois só nas base
   assert.equal(cabeNaBase(t("CENTRAL", "DAY", "CRU"), 9), true);
 });
 
-test("texto de vaga: diz que falta o tipo e manda pedir ao líder pela Dai", () => {
-  const t = textoVagasAbertas([{ baseCode: "CB05", quando: "qui 05/11 noite", tipo: "USA", liberadaPor: "UFBA" }, { baseCode: "CZ50", quando: "sáb 31/10 noite", tipo: "USA", liberadaPor: null }]);
-  assert.match(t, /ainda falta USA na sua meta/);
+test("texto de vaga: diz quanto falta e manda pedir ao líder pela Dai", () => {
+  const vagas = [{ baseCode: "CB05", quando: "qui 05/11 noite", tipo: "USA" as const, liberadaPor: "UFBA" }, { baseCode: "CZ50", quando: "sáb 31/10 noite", tipo: "USA" as const, liberadaPor: null }];
+  const t = textoVagasAbertas(vagas, { USA: 3, CRU: 1, CRL: 0 });
+  assert.match(t.split("\n")[0], /^Faltam 3 USA na sua meta, e abriram 2 vagas que cabem na sua agenda:$/);
   assert.match(t, /- CB05 qui 05\/11 noite \(USA, liberada pela UFBA\)/);
   assert.match(t, /- CZ50 sáb 31\/10 noite \(USA, sem dono\)/);
   assert.match(t, /Quem escala é o líder/);
   assert.match(t, /\[Pedir ao líder com um toque\]\(\/intern\/luna\?atalho=vaga-liberada\)/);
+  // As vagas cobrem tudo o que falta: o gancho é fechar a meta.
+  assert.match(textoVagasAbertas(vagas, { USA: 2, CRU: 0, CRL: 0 }), /^Dá para fechar sua meta: abriram 2 vagas que cabem na sua agenda\.\n/);
+  assert.match(textoVagasAbertas(vagas.slice(0, 1), { USA: 1, CRU: 0, CRL: 0 }), /^Dá para fechar sua meta: abriu uma vaga/);
 });
 
 test("a Dai não loga, não recebe mensagem e só a SAMU tem os avisos", () => {

@@ -53,11 +53,14 @@ test("aviso: quem precisa do tipo primeiro; meta fechada só recebe se marcou Qu
   assert.deepEqual([...r.keys()], ["precisa", "quer"]);
 });
 
-test("texto: pega direto na aba Extras, sem o líder, e conta na meta se falta", () => {
-  const t = textoRepescagem([{ baseCode: "CB02", quando: "sex 30/10 noite", tipo: "USA", liberadaPor: null }]);
+test("texto: pega direto, sem o líder, e conta na meta se falta", () => {
+  const vaga = [{ baseCode: "CB02", quando: "sex 30/10 noite", tipo: "USA" as const, liberadaPor: null }];
+  const t = textoRepescagem(vaga, { USA: 2 });
+  assert.match(t, /^Última chamada: plantão sem ninguém que você pega direto, sem passar pelo líder:/);
   assert.match(t, /- CB02 sex 30\/10 noite \(USA, sem dono\)/);
-  assert.match(t, /pega direto na aba Extras, sem passar pelo líder/);
-  assert.match(t, /conta na meta; se já fechou, entra como extra — um por interno/);
+  assert.match(t, /Conta na sua meta \(faltam 2 USA\)\./);
+  assert.match(t, /\[Pegar agora em Extras\]\(\/intern\/extras\) — quem pegar primeiro leva\./);
+  assert.match(textoRepescagem(vaga, { USA: 0 }), /USA já fechou na sua meta: entra como extra — um por interno/);
 });
 
 const meta = (usa: number): Meta => ({ faculdade: "X", inicio: "2026-10-01", fim: "2026-11-30", alvo: { USA: 8, CRU: 4, CRL: 4 }, faltam: { USA: usa, CRU: 0, CRL: 0 }, realizados: 0, faltas: 0 });
