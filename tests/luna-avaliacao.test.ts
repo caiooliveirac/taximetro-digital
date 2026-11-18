@@ -941,3 +941,15 @@ test("'não posso dia 05' e depois 'tem vaga dia 05/11?' (0f00, 14/11): o dia pe
   const outro = await perguntar("Tem vaga liberada pra mim?", { antes });
   assert.match(outro.r.texto, /não pode 05\/11/);
 });
+
+test("'Preciso 15/11 dia' com o plantão dele à noite (0f00, 14/11): larga o da noite e procura troca de dia", async () => {
+  const trocas = [...TROCAS, oferta("TROCA", "T9", "USA", "2026-10-30", "DAY", { quem: "Colega Nove", quemId: "u-9", assignmentId: "a-t9", faculdade: "FAC-B" })];
+  const { r } = await perguntar("Preciso 30/10 dia", {
+    fx: { trocas },
+    passos: [{ tool: { name: "buscar_opcoes", args: { objetivo: "troca", trocar_data: "2026-10-30", trocar_periodo: "dia" } } }],
+  });
+  assert.doesNotMatch(r.texto, /Não achei plantão seu/);
+  assert.match(r.texto, /^Para largar seu \*\*PM04 sex 30\/10 noite\*\*:\nSó no dia 30\/10 dia:/);
+  assert.match(r.texto, /T9 sex 30\/10 dia/);
+  assert.equal(r.memoria?.busca?.trocar_periodo, undefined);
+});

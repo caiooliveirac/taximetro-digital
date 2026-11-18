@@ -295,7 +295,16 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
 
   let largar: MeuPlantao | null = null;
   if (args.trocar_data) {
-    const achados = acharMeu(meus, ctx.hoje, args.trocar_data, lerPeriodo(args.trocar_periodo));
+    let achados = acharMeu(meus, ctx.hoje, args.trocar_data, lerPeriodo(args.trocar_periodo));
+    // "Preciso 15/11 dia" com o único plantão dele em 15/11 à noite (14/11): o
+    // turno dito é o que ele quer, não o que larga. Antes: "Não achei plantão
+    // seu para 15/11. Seus próximos: PP20 dom 15/11 noite".
+    const doDia = acharMeu(meus, ctx.hoje, args.trocar_data);
+    if (!achados.length && doDia.length === 1 && args.trocar_periodo) {
+      achados = doDia;
+      if (!args.datas?.length) args.datas = [{ data: args.trocar_data, periodo: args.trocar_periodo }];
+      delete args.trocar_periodo;
+    }
     if (achados.length !== 1) {
       return {
         status: "INSUFFICIENT_DATA",
