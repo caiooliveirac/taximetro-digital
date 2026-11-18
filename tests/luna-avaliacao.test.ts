@@ -857,11 +857,12 @@ const AGORA_0830 = new Date("2026-10-29T11:30:00Z"); // qui 29/10, 08:30 em Salv
 const NA_CB02 = [...MEUS, meu("r1", HOJE, "DAY", "USA", "CB02", { status: "CHECKED_IN" })];
 const ABERTA = { abreAs: "07:10", reivindicaAs: "07:15", aberta: true, reivindicando: true };
 
-test("roteador: sair da base agora é REMANEJAR; lotação, regra e outro dia não", () => {
+test("roteador: sair da base agora é REMANEJAR, lotação com pedido de ir também; regra e outro dia não", () => {
   for (const q of ["posso ir para outra base?", "minha base está parada", "estou sem médico, e agora?", "estamos sem enfermeiro", "a viatura quebrou", "quero me remanejar", "sem médico, o que eu faço?", "dá pra mudar de base?"]) {
     assert.equal(rotear(q, HOJE)?.tipo, "REMANEJAR", q);
   }
-  for (const q of ["tem médico na CB02?", "está com muitos internos, posso ir para outra base?", "posso mudar de base amanhã?", "como funciona o remanejamento?", "sem lugar na viatura"]) {
+  for (const q of ["está com muitos internos, posso ir para outra base?", "sem espaço na ambulância, tem outra base?"]) assert.equal(rotear(q, HOJE)?.tipo, "REMANEJAR", q);
+  for (const q of ["tem médico na CB02?", "posso mudar de base amanhã?", "como funciona o remanejamento?", "sem lugar na viatura", "quantos internos na PM40"]) {
     assert.notEqual(rotear(q, HOJE)?.tipo, "REMANEJAR", q);
   }
 });
@@ -872,7 +873,8 @@ test("remanejar sem aviso: explica e leva ao Avisar do card, sem modelo", async 
   assert.equal(log.intencao, "REMANEJAR");
   assert.ok(lidas.includes("remanejamento:r1"));
   assert.match(r.texto, /abre depois do aviso/);
-  assert.match(r.texto, /\*\*Sem médico\*\*, \*\*Sem enfermeiro\*\* ou \*\*Problema na viatura\*\*/);
+  assert.match(r.texto, /\*\*Sem médico\*\*, \*\*Sem enfermeiro\*\*, \*\*Problema na viatura\*\* ou \*\*Base lotada\*\*/);
+  assert.match(r.texto, /Base desativada no quadro dos médicos já abre a grade/);
   assert.deepEqual(r.cartoes[0].itens.map((i) => [i.acao, i.href]), [["Avisar", "/intern?avisar=r1"]]);
 });
 

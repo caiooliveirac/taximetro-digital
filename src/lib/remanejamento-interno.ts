@@ -189,8 +189,28 @@ export function mesmoEndereco(a: { latitude: number; longitude: number }, b: { l
   return Math.abs(a.latitude - b.latitude) < 1e-4 && Math.abs(a.longitude - b.longitude) < 1e-4;
 }
 
+/**
+ * Base desativada pelo chefe de plantão no quadro dos médicos vale como aviso:
+ * a grade abre sem o interno tocar em Avisar (decisão do Caio, 18/11/2026).
+ */
+export const AVISO_DESATIVADA = "DESATIVADA";
+
 export function motivoDoRemanejamento(tipo: string | null | undefined): string {
+  if (tipo === AVISO_DESATIVADA) return "base desativada no quadro dos médicos";
   return tipo && tipo in TIPOS_DE_AVISO ? TIPOS_DE_AVISO[tipo as TipoDeAviso] : "a pedido do interno";
+}
+
+/**
+ * Lotação (decisão do Caio, 18/11/2026): passou do teto da base
+ * (`capacidadeDaBase`), sai quem chegou por último. Presente = check-in feito
+ * (ou já remanejado para lá), na ordem de chegada. Quem ainda não fez check-in
+ * excede se a base já está cheia sem ele. Sem teto próprio (LF90), não há
+ * lotação.
+ */
+export function excedeOTeto(p: { teto: number | null; presentes: string[]; assignmentId: string }): boolean {
+  if (p.teto === null || p.teto <= 0) return false;
+  const i = p.presentes.indexOf(p.assignmentId);
+  return i >= 0 ? i >= p.teto : p.presentes.length >= p.teto;
 }
 
 export function textoDoRemanejamento(p: {

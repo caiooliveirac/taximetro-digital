@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { celulaOcupavel, celulasDaBase, compararCodigoDeBase, horaDoTurno, mesmoEndereco, minutosDesdeInicioDoTurno, motivoDoRemanejamento, participaDoRemanejamento, textoDoRemanejamento, vagasLivresDoInterno, vagasNaGrade } from "../src/lib/remanejamento-interno";
+import { AVISO_DESATIVADA, excedeOTeto, celulaOcupavel, celulasDaBase, compararCodigoDeBase, horaDoTurno, mesmoEndereco, minutosDesdeInicioDoTurno, motivoDoRemanejamento, participaDoRemanejamento, textoDoRemanejamento, vagasLivresDoInterno, vagasNaGrade } from "../src/lib/remanejamento-interno";
 import { computePeriodLoad } from "../src/features/scheduling/domain/policies/assignment-policy";
 
 test("vaga é de grade, não do limite físico", () => {
@@ -191,4 +191,22 @@ test("pós-graduação trava a vaga sem check-in: a célula dela nunca abre", ()
     { id: "SM01", code: "SM01", name: "Base SM01", atual: false, irma: false, celulas: celulasDaBase(1, [pos], r) },
   ]);
   assert.deepEqual(visao, []);
+});
+
+test("lotação: sai quem chegou depois de a base encher, pela ordem de check-in", () => {
+  // SM01 diurna, teto 2: o 3º a fazer check-in excede; os dois primeiros, não.
+  const presentes = ["a1", "a2", "a3"];
+  assert.equal(excedeOTeto({ teto: 2, presentes, assignmentId: "a1" }), false);
+  assert.equal(excedeOTeto({ teto: 2, presentes, assignmentId: "a2" }), false);
+  assert.equal(excedeOTeto({ teto: 2, presentes, assignmentId: "a3" }), true);
+  // Ainda sem check-in: excede se a base já encheu sem ele.
+  assert.equal(excedeOTeto({ teto: 2, presentes: ["a1", "a2"], assignmentId: "a9" }), true);
+  assert.equal(excedeOTeto({ teto: 2, presentes: ["a1"], assignmentId: "a9" }), false);
+  // Sem teto próprio (LF90): não há lotação.
+  assert.equal(excedeOTeto({ teto: null, presentes, assignmentId: "a3" }), false);
+});
+
+test("base desativada no quadro vale como aviso, com motivo próprio", () => {
+  assert.equal(motivoDoRemanejamento(AVISO_DESATIVADA), "base desativada no quadro dos médicos");
+  assert.equal(motivoDoRemanejamento("LOTACAO"), "base lotada, acima do teto de internos");
 });

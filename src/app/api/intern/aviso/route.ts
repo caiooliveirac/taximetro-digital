@@ -2,6 +2,9 @@
  * POST /api/intern/aviso — o interno aperta um botão no plantão de hoje e a
  * coordenação recebe no WhatsApp, via secretário `tom`.
  *
+ * Lotação (LOTACAO) só passa para quem excede o teto da base, pela ordem de
+ * check-in (`lotacaoDoPlantao`); os outros três valem para qualquer um.
+ *
  * Só o plantão do próprio interno, só o de hoje (operacional), e só em status
  * em que ele pode estar na base. Toque repetido do mesmo botão no mesmo
  * plantão e na mesma base dentro de 30 min é ignorado com sucesso: o dedo
@@ -17,6 +20,7 @@ import { logAudit } from "@/lib/audit";
 import { getEffectiveUser } from "@/lib/impersonate";
 import { formatBrazilTime, isCurrentOperationalAssignment } from "@/lib/utils";
 import { avisarSecretario, avisoRepetido, STATUS_NA_BASE, textoDoAviso, TIPOS_DE_AVISO } from "@/lib/aviso-tom";
+import { lotacaoDoPlantao } from "@/lib/remanejamento-grade";
 
 const schema = z.object({
   assignmentId: z.string().uuid(),
@@ -58,6 +62,17 @@ export async function POST(req: NextRequest) {
   if (!plantao) return NextResponse.json({ success: false, error: "Plantão não encontrado" }, { status: 404 });
   if (!STATUS_NA_BASE.has(plantao.status) || !isCurrentOperationalAssignment(plantao.date, plantao.period)) {
     return NextResponse.json({ success: false, error: "O aviso só vale para o plantão em andamento." }, { status: 409 });
+  }
+
+  // Lotação não é para qualquer um: só quem passou do teto, pela ordem de chegada.
+  if (tipo === "LOTACAO") {
+    const lotacao = await lotacaoDoPlantao(plantao);
+    if (!lotacao.excede) {
+      const error = lotacao.teto === null
+        ? `A ${plantao.baseCode} não tem teto de internos definido: fale com a coordenação.`
+        : `A ${plantao.baseCode} comporta ${lotacao.teto} interno${lotacao.teto > 1 ? "s" : ""} neste turno e ${lotacao.presentes} fizeram check-in. Lotação vale para quem chegou depois de a base encher.`;
+      return NextResponse.json({ success: false, error }, { status: 409 });
+    }
   }
 
   if (avisoRepetido(ultimos, { assignmentId, baseId: plantao.baseId, tipo }, Date.now())) {

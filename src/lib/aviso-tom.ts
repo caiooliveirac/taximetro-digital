@@ -16,6 +16,8 @@ export const TIPOS_DE_AVISO = {
   SEM_MEDICO: "sem médico na base",
   SEM_ENFERMEIRO: "sem enfermeiro na base",
   VIATURA: "problema na viatura",
+  /** Só para quem passou do teto da base, pela ordem de chegada (remanejamento-interno.ts, `excedeOTeto`). */
+  LOTACAO: "base lotada, acima do teto de internos",
 } as const;
 
 export type TipoDeAviso = keyof typeof TIPOS_DE_AVISO;

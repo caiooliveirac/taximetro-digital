@@ -9,10 +9,12 @@ import {
 import { participaDoRemanejamento } from "@/lib/remanejamento-interno";
 
 /**
- * Três botões no plantão em andamento: a coordenação recebe no WhatsApp, via
+ * Quatro botões no plantão em andamento: a coordenação recebe no WhatsApp, via
  * secretário. Um toque, um aviso — o servidor segura repetição. O aviso já
  * abre a grade de vagas das outras bases: quem avisou está procurando lugar.
- * Base fora do remanejamento (LF90) só tem o aviso.
+ * Base fora do remanejamento (LF90) só tem o aviso. "Base lotada" o servidor
+ * só aceita de quem passou do teto, pela ordem de check-in. Base desativada no
+ * quadro dos médicos já abre a grade sem aviso.
  *
  * A Dai traz para cá (`luna-ferramentas.ts`, remanejarOpcoes): `?avisar=<id>`
  * rola até os botões; `?remanejar=<id>&destino=<código>` já abre a grade com a
@@ -22,6 +24,7 @@ const BOTOES = [
   { tipo: "SEM_MEDICO", rotulo: "Sem médico" },
   { tipo: "SEM_ENFERMEIRO", rotulo: "Sem enfermeiro" },
   { tipo: "VIATURA", rotulo: "Problema na viatura" },
+  { tipo: "LOTACAO", rotulo: "Base lotada" },
 ] as const;
 
 export function AvisoCoordenacao({
@@ -84,7 +87,7 @@ export function AvisoCoordenacao({
         <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
           {icon}Avisar a coordenação
         </p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {BOTOES.map((b) => (
             <button
               key={b.tipo}

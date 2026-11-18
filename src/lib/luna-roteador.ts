@@ -137,7 +137,7 @@ const SEM_CHECKOUT = /\b(preceptora?|medic[oa]|doutora?|dra?)\b.*\b(saiu|foi emb
 // Sair da base no plantão de agora. "Sem médico" sozinho é "tem médico?"
 // (BASE_AGORA); com "e agora", "o que faço", "outra base", é remanejar.
 // Pergunta de regra ("como funciona", "e se") vai ao modelo.
-const REMANEJAR = /\bremanej\w*|\b(ir|passar|mudar|trocar|me mover|mover|sair) (para|pra|pro) (outra|outro) base\b|\b(mudar|trocar|sair) de base\b|\boutra base (com vaga|livre)\b|\bbase (esta |ta )?parada\b|\bsem enfermeir\w*|\bviatura (quebr\w*|pifou|com problema|baixad\w*|parada|sem condic\w*)|\b(quebrou|pifou|baixou) a viatura\b|\bsem viatura\b|\bsem medico\b.*\b(e agora|o que (eu )?(faco|fazer)|faco o que|outra base|posso sair|remanej\w*)\b/;
+const REMANEJAR = /\bremanej\w*|\b(ir|passar|mudar|trocar|me mover|mover|sair) (para|pra|pro) (outra|outro) base\b|\b(mudar|trocar|sair) de base\b|\boutra base (com vaga|livre)\b|\btem outra base\b|\bbase (esta |ta )?parada\b|\bsem enfermeir\w*|\bviatura (quebr\w*|pifou|com problema|baixad\w*|parada|sem condic\w*)|\b(quebrou|pifou|baixou) a viatura\b|\bsem viatura\b|\bsem medico\b.*\b(e agora|o que (eu )?(faco|fazer)|faco o que|outra base|posso sair|remanej\w*)\b/;
 
 const FORA_DO_DIRETO = /\b(quem|quantos|quantas)\b.*\b(internos?|internas?|enfermeir\w*|equipe|sombras?)\b|\b(muitos|muitas|tres|3) (internos?|internas?)\b|\b(lotad[ao]|base cheia|sem (lugar|espaco|cama))\b|\b(ontem|anteontem)\b/;
 
@@ -151,10 +151,11 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   // Regra fixa antes de tudo que lê "troca"/"vaga": "largar seria trocar??" ia para a busca de trocas.
   const regra = regraDaPergunta(q);
   if (regra) return { tipo: "REGRA", ...regra };
-  if (FORA_DO_DIRETO.test(q)) return null;
-  if (q.length <= 200 && LIBERAR.test(q) && !/\be se\b|\bo que acontece\b|\bpode(ria)?\b.*\?$/.test(q)) return { tipo: "LIBERAR", datas: datasDaPergunta(q, hoje) };
+  // Antes de FORA_DO_DIRETO: "muitos internos, posso ir para outra base?" é remanejar (lotação).
   // Só o plantão de agora: outro dia ("amanhã", "dia 25") vai ao modelo.
   if (q.length <= 200 && REMANEJAR.test(q) && !/\be se\b|\bo que acontece\b|\bcomo funciona\b|\bregra\b/.test(q) && !datasDaPergunta(q, hoje).some((d) => d > hoje)) return { tipo: "REMANEJAR" };
+  if (FORA_DO_DIRETO.test(q)) return null;
+  if (q.length <= 200 && LIBERAR.test(q) && !/\be se\b|\bo que acontece\b|\bpode(ria)?\b.*\?$/.test(q)) return { tipo: "LIBERAR", datas: datasDaPergunta(q, hoje) };
   // Antes da peneira de nuance: "vai ativar hoje à noite?" é a mesma pergunta.
   if (q.length <= 120 && BASE_AGORA.test(q)) return { tipo: "BASE_AGORA" };
   if (q.length <= 160 && SOLICITACOES.test(q) && !/\b(como|onde) (eu )?(faco|faz|peco|pede)\b/.test(q)) return { tipo: "SOLICITACOES" };

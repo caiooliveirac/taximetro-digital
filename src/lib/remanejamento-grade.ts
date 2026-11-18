@@ -6,14 +6,18 @@
  * `remanejamento-interno.ts`; o porquê de cada uma está no topo da rota.
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, bases, faculties, userRoles, users } from "@/db/schema";
+import { assignments, bases, checkins, faculties, userRoles, users } from "@/db/schema";
 import { enviar } from "@/features/dai-avisos/remetente";
 import { getBrazilNowParts, isCurrentOperationalAssignment } from "@/lib/utils";
 import { STATUS_NA_BASE } from "@/lib/aviso-tom";
+import { estadoDasBasesNoPlantoes } from "@/features/scheduling/infra/repositories/plantoes-medicos-repository";
+import { capacidadeDaBase } from "@/features/scheduling/domain/policies/auto-release-policy";
 import {
   ABERTURA_MIN,
+  AVISO_DESATIVADA,
+  excedeOTeto,
   REIVINDICACAO_MIN,
   celulasDaBase,
   horaDoTurno,
@@ -80,12 +84,40 @@ export async function plantaoEmAndamento(internId: string, assignmentId: string)
 
 /**
  * O aviso de pé deste plantão, ou null: sem aviso não há remanejamento. Vem
- * do estado do turno, então cancelamento pela coordenação conta.
+ * do estado do turno, então cancelamento pela coordenação conta. Base
+ * desativada no quadro dos médicos vale como aviso (AVISO_DESATIVADA).
  */
 export async function ultimoAviso(plantao: Plantao): Promise<string | null> {
   const estado = await estadoDasBasesNoTurno(plantao.date, plantao.period);
   const aviso = avisoDoPlantao(estado, plantao.id);
-  return aviso ? (aviso.codigo ?? "") : null;
+  if (aviso) return aviso.codigo ?? "";
+  const { desativadas } = await estadoDasBasesNoPlantoes([plantao.baseCode]);
+  return desativadas[plantao.baseCode] ? AVISO_DESATIVADA : null;
+}
+
+/**
+ * Lotação neste turno, do ângulo deste plantão: o teto da base, quantos já
+ * chegaram e se ele é dos que passaram (`excedeOTeto`). Chegada = check-in
+ * (hora do check-in); remanejado para cá conta como presente.
+ */
+export async function lotacaoDoPlantao(p: { id: string; baseId: string; baseCode: string; date: string; period: "DAY" | "NIGHT" }) {
+  const teto = capacidadeDaBase(p.baseCode, p.period);
+  const rows = await db
+    .select({ id: assignments.id })
+    .from(assignments)
+    .leftJoin(checkins, eq(checkins.assignmentId, assignments.id))
+    .where(
+      and(
+        eq(assignments.baseId, p.baseId),
+        eq(assignments.date, p.date),
+        eq(assignments.period, p.period),
+        notInArray(assignments.status, ["CANCELLED", "ABSENT"]),
+        sql`(${assignments.status} = 'CHECKED_IN' OR COALESCE(${assignments.notes}, '') LIKE '%[REMANEJADO]%')`,
+      ),
+    )
+    .orderBy(asc(sql`COALESCE(${checkins.checkinAt}, ${checkins.totpValidatedAt}, ${checkins.createdAt}, ${assignments.updatedAt})`));
+  const presentes = rows.map((r) => r.id);
+  return { teto, presentes: presentes.length, excede: excedeOTeto({ teto, presentes, assignmentId: p.id }) };
 }
 
 /**

@@ -128,9 +128,11 @@ test("turno que já terminou: não usa o texto de agora (sem 'avise Sem médico'
 });
 
 test("roteador: equipe, lotação e ontem vão ao modelo, não à resposta do médico", () => {
-  for (const q of ["Quem está de interno hoje no SN na SM01?", "estou na base, vai ativar? tem muitos internos", "quantos internos na PM40", "o médico chegou ontem?", "sem lugar na ambulância, tem outra base?"]) {
+  for (const q of ["Quem está de interno hoje no SN na SM01?", "estou na base, vai ativar? tem muitos internos", "quantos internos na PM40", "o médico chegou ontem?"]) {
     assert.equal(rotear(q), null, q);
   }
+  // Lotação com pedido de ir: é remanejar (fase 2, docs/PLAN-dai-remanejar.md).
+  assert.equal(rotear("sem lugar na ambulância, tem outra base?")?.tipo, "REMANEJAR");
 });
 
 test("roteador: problema no check-in vai ao modelo; status de pendência segue direto", () => {

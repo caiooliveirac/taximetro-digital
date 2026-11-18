@@ -628,7 +628,7 @@ export async function remanejarOpcoes(f: Fontes, ctx: LunaCtx, agora: Date = new
         deHoje
           ? `O remanejamento só abre no plantão em andamento. O seu próximo é ${proximo.baseCode} · ${quando(proximo.date, proximo.period, proximo.shift)}.`
           : "Você não está em plantão agora: o remanejamento só vale no plantão em andamento.",
-        "Chegou e a base está parada (sem médico, sem enfermeiro ou problema na viatura)? Toque em **Avisar** no card do plantão, na aba Hoje; depois do aviso, a grade de vagas das outras bases aparece ali mesmo.",
+        "Chegou e a base está parada (sem médico, sem enfermeiro, viatura) ou lotada? Toque em **Avisar** no card do plantão, na aba Hoje; depois do aviso, a grade de vagas das outras bases aparece ali mesmo.",
         "Mudar de base num plantão de outro dia é com o seu líder.",
       ].join("\n"),
     };
@@ -652,8 +652,8 @@ export async function remanejarOpcoes(f: Fontes, ctx: LunaCtx, agora: Date = new
       registros: meus.length,
       texto: [
         "O remanejamento abre depois do aviso à coordenação.",
-        `No card do plantão na ${atual.baseCode}, toque em **Sem médico**, **Sem enfermeiro** ou **Problema na viatura** — a coordenação recebe na hora. Logo abaixo aparece a grade de vagas das outras bases.`,
-        "Sem nenhum desses problemas, mudar de base é com o líder ou a coordenação.",
+        `No card do plantão na ${atual.baseCode}, toque em **Sem médico**, **Sem enfermeiro**, **Problema na viatura** ou **Base lotada** — a coordenação recebe na hora. Logo abaixo aparece a grade de vagas das outras bases.`,
+        "Base lotada vale para quem chegou depois de a base encher (pela hora do check-in). Base desativada no quadro dos médicos já abre a grade sem aviso. Fora disso, mudar de base é com o líder ou a coordenação.",
       ].join("\n"),
       cartao: { tipo: "plantoes", titulo: "Avisar a coordenação", itens: [item(atual, "Avisar", cardDoPlantao(`avisar=${atual.id}`))] },
     };
@@ -822,7 +822,7 @@ export const FERRAMENTAS: {
   },
   {
     name: "remanejar_agora",
-    description: "Quer sair da base no plantão de AGORA (base parada, sem médico, sem enfermeiro, viatura com problema, 'posso ir para outra base?', 'como me remanejo?'): diz o que dá para fazer agora — avisar a coordenação, esperar a grade abrir ou as bases com vaga, cada uma com o botão Ir. Você não move ninguém: ele toca e confirma.",
+    description: "Quer sair da base no plantão de AGORA (base parada ou desativada, sem médico, sem enfermeiro, viatura com problema, lotada/muitos internos/sem lugar na viatura, 'posso ir para outra base?', 'como me remanejo?'): diz o que dá para fazer agora — avisar a coordenação, esperar a grade abrir ou as bases com vaga, cada uma com o botão Ir. Você não move ninguém: ele toca e confirma.",
     parameters: { type: "object", additionalProperties: false, properties: {} },
     run: (f, ctx) => remanejarOpcoes(f, ctx),
   },
