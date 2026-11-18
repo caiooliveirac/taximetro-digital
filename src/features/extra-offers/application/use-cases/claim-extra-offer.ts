@@ -190,8 +190,12 @@ export async function executeClaimExtraOffer(params: {
     ? await db.select({ abbr: faculties.abbreviation }).from(faculties).where(eq(faculties.id, offer.releasedFacultyId)).limit(1)
     : [null];
 
-  // Sem o líder no meio, a trava da viatura cheia fica aqui (lotacao.ts).
-  if (repescagem && baseDaVaga) {
+  // Trava da viatura cheia (lotacao.ts) para qualquer um que pegue a vaga —
+  // líder e coordenação também. Uma oferta pode ficar aberta dias depois de
+  // a base lotar por outro caminho (escala da coordenação, remanejamento):
+  // em 15/11 uma vaga sem dono de 27/10 pôs o 3º interno na SM01 diurna.
+  // Só a escala retroativa (registro do que já aconteceu) passa.
+  if (baseDaVaga && !retroativo) {
     const turno = { baseCode: baseDaVaga.code, tipo: goalKindOf(baseDaVaga.type), date: offer.date, period: offer.period as "DAY" | "NIGHT" };
     if (!(await soAsQueCabem([turno])).length) {
       return { status: 409, body: { success: false, code: "BASE_CHEIA", error: "A base já está com a equipe completa nesse turno." } } as const;

@@ -25,7 +25,11 @@ export async function PATCH(req: NextRequest) {
             isImpersonating: user.isImpersonating,
             realUserId: user.realUserId,
         },
-        input: parsed.data,
+        // As duas flags afrouxam a lotação do destino e só valem nas chamadas
+        // internas (Plantão ao vivo da coordenação, remanejamento do interno).
+        // Nenhuma tela manda isto aqui: vindo do cliente, é chamada direta à
+        // API tentando pôr interno a mais na base. Descartadas.
+        input: { ...parsed.data, ignorarLotacao: undefined, apenasComCheckin: undefined },
     });
 
     return NextResponse.json(result.body, { status: result.status });

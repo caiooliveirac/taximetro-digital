@@ -28,6 +28,8 @@ import {
 } from "@/features/scheduling/infra/repositories/lottery-repository";
 import { updateAssignmentStatus } from "@/features/scheduling/infra/repositories/assignment-repository";
 import { shouldIncludeRuleInLottery } from "./run-leader-lottery";
+import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
+import { goalKindOf } from "@/lib/goal-slots";
 import type { SchedulingActor } from "./cru-fixed-shared";
 
 const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -84,7 +86,12 @@ export async function executeListFreeSlots(params: {
 }) {
   const facultyId = faculdadeDoAtor(params.actor, params.input);
   if (!facultyId) return { status: 403, body: { success: false, error: "Sem permissão" } } as const;
-  const rows = await listFreeOffers({ excludeFacultyId: facultyId, from: params.input.from, to: params.input.to });
+  // Vaga aberta em base que já está com a equipe completa não é vaga: alguém
+  // foi escalado por outro caminho (lotacao.ts). Some da grade do líder.
+  const rows = await soAsQueCabem(
+    (await listFreeOffers({ excludeFacultyId: facultyId, from: params.input.from, to: params.input.to }))
+      .map((r) => ({ ...r, date: String(r.date).slice(0, 10), period: r.period as "DAY" | "NIGHT", tipo: goalKindOf(r.baseType) })),
+  );
   return { status: 200, body: { success: true, data: rows } } as const;
 }
 
