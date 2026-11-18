@@ -18,7 +18,8 @@ test("véspera do plantão: base, aba Bases e um tema para revisar", () => {
   const t = textoProximoPlantao({ quando: "sex 30/10 noite", baseCode: "CB02", tipo: "USA", tema: "TRAUMA" });
   assert.match(t, /Amanhã você está na CB02 \(USA\), sex 30\/10 noite\./);
   assert.match(t, /aba Bases/);
-  assert.match(t, /revise Trauma\. Na Dai, toque em "Discutir um caso"/);
+  assert.match(t, /\[Ver a base e a rota até ela\]\(\/intern\/bases\)/);
+  assert.match(t, /\[revise Trauma com a Dai\]\(\/intern\/luna\?tema=TRAUMA\)/);
 });
 
 test("tema: o primeiro do tipo que o interno não viu; regulação começa por IAM", () => {
@@ -95,6 +96,7 @@ test("texto de vaga: diz que falta o tipo e manda pedir ao líder pela Dai", () 
   assert.match(t, /- CB05 qui 05\/11 noite \(USA, liberada pela UFBA\)/);
   assert.match(t, /- CZ50 sáb 31\/10 noite \(USA, sem dono\)/);
   assert.match(t, /Quem escala é o líder/);
+  assert.match(t, /\[Pedir ao líder com um toque\]\(\/intern\/luna\?atalho=vaga-liberada\)/);
 });
 
 test("a Dai não loga, não recebe mensagem e só a SAMU tem os avisos", () => {

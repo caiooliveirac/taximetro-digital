@@ -36,8 +36,8 @@ export function textoProximoPlantao(p: { quando: string; baseCode: string; tipo:
   const tipo = p.tipo ? ` (${NOME_DO_TIPO[p.tipo]})` : "";
   return [
     `Amanhã você está na ${p.baseCode}${tipo}, ${p.quando}.`,
-    `Veja onde fica a base e a rota a partir de onde você está na aba Bases.`,
-    `Para chegar afiado: revise ${rotuloDoTema(p.tema)}. Na Dai, toque em "Discutir um caso" e escolha esse tema.`,
+    `[Ver a base e a rota até ela](/intern/bases), na aba Bases.`,
+    `Para chegar afiado: [revise ${rotuloDoTema(p.tema)} com a Dai](/intern/luna?tema=${p.tema}), com um caso para treinar.`,
   ].join("\n");
 }
 
@@ -48,7 +48,7 @@ export function textoVagasAbertas(vagas: VagaAvisada[]) {
   return [
     `Abriu vaga livre que cabe na sua agenda, e ainda falta ${tipos} na sua meta:`,
     ...vagas.map((v) => `- ${v.baseCode} ${v.quando} (${v.tipo}${v.liberadaPor ? `, liberada pela ${v.liberadaPor}` : ", sem dono"})`),
-    `Quem escala é o líder da sua faculdade. Na Dai, toque em "Tem vaga liberada pra mim?" para pedir com um toque — vai rápido, outros colegas também precisam.`,
+    `Quem escala é o líder da sua faculdade. [Pedir ao líder com um toque](/intern/luna?atalho=vaga-liberada) — vai rápido, outros colegas também precisam.`,
   ].join("\n");
 }
 
@@ -57,7 +57,7 @@ export function textoRepescagem(vagas: VagaAvisada[]) {
   return [
     `Sobrou do sorteio da repescagem, ainda sem ninguém, e cabe na sua agenda:`,
     ...vagas.map((v) => `- ${v.baseCode} ${v.quando} (${v.tipo}${v.liberadaPor ? `, liberada pela ${v.liberadaPor}` : ", sem dono"})`),
-    `O sorteio já rodou e ninguém inscrito pôde levar: agora você pega direto na aba Extras, sem passar pelo líder. Quem pegar primeiro leva.`,
+    `O sorteio já rodou e ninguém inscrito pôde levar: agora você pega direto na aba Extras, sem passar pelo líder. Quem pegar primeiro leva. [Abrir Extras](/intern/extras)`,
     `Se ainda falta esse tipo na sua meta, conta na meta; se já fechou, entra como extra — um por interno: quem já teve extra não pega.`,
   ].join("\n");
 }
@@ -72,7 +72,7 @@ export function textoAnuncioSorteio(s: { turno: string; hora: string; vagas: { t
       : `Sorteio da repescagem **${s.hora}** para **${s.turno}**: ${vagas}.`,
     `A ordem: primeiro quem tem casinha vazia no tipo, depois quem nunca teve extra, por último quem já teve. Empate, o sorteio decide.`,
     s.precisa.length ? `Você ainda tem ${s.precisa.join(" e ")} faltando na meta: se levar, conta.` : "",
-    `Para concorrer, inscreva-se em **Extras → Sorteios** até a hora. Inscritos e resultado ficam públicos, e eu te conto aqui como foi.`,
+    `Para concorrer, [inscreva-se em Extras → Sorteios](/intern/extras) até a hora. Inscritos e resultado ficam públicos, e eu te conto aqui como foi.`,
   ].filter(Boolean).join("\n");
 }
 
@@ -108,7 +108,7 @@ export function textoTrocasNosTurnosMarcados(trocas: TrocaAvisada[]) {
     ...trocas.map((t) =>
       `- ${t.base}, ${t.quando}, de ${t.quem}${t.dar ? `. Você daria ${t.dar}` : ""}${t.perfeita ? " (troca perfeita: quem ofertou também marcou esse seu turno)" : ""}.`,
     ),
-    "Abra Trocas para propor com um toque. A primeira proposta segura a oferta até a pessoa responder.",
+    "[Abra Trocas](/intern/trocas) para propor com um toque. A primeira proposta segura a oferta até a pessoa responder.",
   ].join("\n");
 }
 
@@ -125,7 +125,7 @@ export function textoRodaSugerida(eu: PernaAvisada & { pediu: boolean }, outros:
     eu.pediu
       ? "Você marcou esse turno que receberia."
       : `Você não marcou ${eu.recebe}; se topar, a roda fecha.`,
-    "Abra Trocas, em Troca a três, para propor. Só vale quando os três confirmarem; até lá nada muda na escala.",
+    "[Abra Trocas](/intern/trocas), em Troca a três, para propor. Só vale quando os três confirmarem; até lá nada muda na escala.",
   ].join("\n");
 }
 
@@ -133,7 +133,7 @@ export function textoRodaProposta(quemPropos: string, eu: PernaAvisada) {
   return [
     `${quemPropos} propôs uma troca a três com você:`,
     `- Você entrega ${eu.entrega} para ${eu.paraQuem} e recebe ${eu.recebe}, de ${eu.deQuem}.`,
-    "Abra Trocas, em Troca a três, para confirmar ou recusar. Só vale quando os três confirmarem.",
+    "[Abra Trocas](/intern/trocas), em Troca a três, para confirmar ou recusar. Só vale quando os três confirmarem.",
   ].join("\n");
 }
 
@@ -152,6 +152,6 @@ export function textoReposicao(r: { perdidos: { quando: string; baseCode: string
       ? `Você saiu do plantão de **${r.perdidos[0].quando}** (${r.perdidos[0].baseCode}) por causa de ${r.perdidos[0].titulo}, e a coordenação marcou para **repor**.`
       : `Você saiu de ${r.perdidos.length} plantões por compromisso da turma (${r.perdidos.map((p) => `${p.quando} ${p.baseCode}`).join(", ")}), e a coordenação marcou para **repor**.`,
     `Ainda falta na sua meta: ${r.faltam.map((f) => `${f.n} ${f.tipo}`).join(" e ")}.`,
-    `Inscreva-se nos sorteios da repescagem em **Extras → Sorteios**: quem tem reposição entra na frente. Fechou a meta, a reposição está feita e eu paro de avisar.`,
+    `Inscreva-se nos sorteios da repescagem em [Extras → Sorteios](/intern/extras): quem tem reposição entra na frente. Fechou a meta, a reposição está feita e eu paro de avisar.`,
   ].join("\n");
 }

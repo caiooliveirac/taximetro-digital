@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Loader2, MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, formatBrazilTime, localDateStr } from "@/lib/utils";
+import { partesDaLinha, semMarcacao } from "@/lib/texto-do-chat";
 
 type Conversa = {
   comId: string;
@@ -83,7 +84,7 @@ function Lista() {
                     {c.faculdade ? <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{c.faculdade}</span> : null}
                   </span>
                   <span className={cn("block truncate text-xs", c.naoLidas > 0 ? "text-slate-800" : "text-slate-500")}>
-                    {c.ultima.minha ? "Você: " : ""}{c.ultima.texto}
+                    {c.ultima.minha ? "Você: " : ""}{semMarcacao(c.ultima.texto)}
                   </span>
                 </span>
                 <span className="flex shrink-0 flex-col items-end gap-1">
@@ -99,6 +100,23 @@ function Lista() {
       )}
     </div>
   );
+}
+
+/** Aviso da Dai: negrito e link de um toque para a tela onde se resolve. */
+function TextoDaDai({ texto }: { texto: string }) {
+  return texto.split("\n").map((linha, i) => (
+    <span key={i} className="block">
+      {partesDaLinha(linha).map((p, j) =>
+        p.tipo === "link" ? (
+          <Link key={j} href={p.href} className="font-semibold text-accent-600 underline underline-offset-2">{p.texto}</Link>
+        ) : p.tipo === "negrito" ? (
+          <strong key={j}>{p.texto}</strong>
+        ) : (
+          p.texto
+        ),
+      )}
+    </span>
+  ));
 }
 
 function Conversa({ com, troca, rascunho }: { com: string; troca: string | null; rascunho: string }) {
@@ -196,7 +214,7 @@ function Conversa({ com, troca, rascunho }: { com: string; troca: string | null;
                   m.minha ? "rounded-br-md bg-accent-600 text-white" : "rounded-bl-md bg-slate-100 text-slate-900",
                 )}
               >
-                {m.texto}
+                {pessoa?.dai && !m.minha ? <TextoDaDai texto={m.texto} /> : m.texto}
                 <span className={cn("mt-0.5 block text-right text-[10px]", m.minha ? "text-white/70" : "text-slate-400")}>{quando(m.em)}</span>
               </div>
             </div>

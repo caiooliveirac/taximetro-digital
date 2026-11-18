@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { getBaseStyle } from "@/lib/base-colors";
 import type { LunaCartao, LunaCasinhas, LunaItem, LunaMemoria } from "@/lib/luna-ferramentas";
 import type { CasoAberto, CasoFechado, Ficha, TemaResumo } from "@/lib/dai-casos";
-import { pedidoDeCaso, rotuloDoTema } from "@/lib/dai-temas";
+import { TEMAS, pedidoDeCaso, rotuloDoTema } from "@/lib/dai-temas";
 
 type Msg = { role: "user" | "assistant"; content: string; cartoes?: LunaCartao[]; erro?: boolean; memoria?: LunaMemoria; temas?: TemaResumo[]; caso?: CasoFechado; ficha?: FichaMsg };
 type FichaMsg = Ficha & { casos: number };
@@ -17,15 +17,17 @@ const GUARDA = "luna-interno-conversa";
 
 // Os atalhos caem no caminho direto do Dai (sem modelo): ver luna-roteador.ts.
 // "Discutir um caso" nem passa pelo Dai de plantões: é texto pronto (dai-casos.ts).
+// Na ordem de uso (perguntas de 29/10 a 17/11). `chave` é o link dos avisos da
+// Dai no chat (/intern/luna?atalho=<chave>, textos.ts): abre já perguntando.
 const ATALHOS = [
-  { icone: Target, rotulo: "Que vagas fecham minha meta?", pergunta: "Que vagas fecham minha meta?" },
-  { icone: ClipboardCheck, rotulo: "Tenho checkout pendente?", pergunta: "Tenho checkout pendente?" },
-  { icone: Ticket, rotulo: "Tem vaga liberada pra mim?", pergunta: "Tem vaga liberada pra mim?" },
-  { icone: ArrowLeftRight, rotulo: "Quero trocar um plantão", pergunta: "Quero trocar um plantão: que trocas servem pra mim?" },
-  { icone: Zap, rotulo: "Tem extra aberto?", pergunta: "Tem plantão extra aberto pra mim?" },
-  { icone: CalendarClock, rotulo: "Meus próximos plantões", pergunta: "Quais são meus próximos plantões?" },
-  { icone: Siren, rotulo: "Minha base vai ativar?", pergunta: "Minha base vai ativar?" },
-  { icone: Stethoscope, rotulo: "Discutir um caso", pergunta: "Quero discutir um caso" },
+  { chave: "vaga-liberada", icone: Ticket, rotulo: "Tem vaga liberada pra mim?", pergunta: "Tem vaga liberada pra mim?" },
+  { chave: "extra", icone: Zap, rotulo: "Tem extra aberto?", pergunta: "Tem plantão extra aberto pra mim?" },
+  { chave: "base-ativa", icone: Siren, rotulo: "Minha base vai ativar?", pergunta: "Minha base vai ativar?" },
+  { chave: "trocar", icone: ArrowLeftRight, rotulo: "Quero trocar um plantão", pergunta: "Quero trocar um plantão: que trocas servem pra mim?" },
+  { chave: "proximos", icone: CalendarClock, rotulo: "Meus próximos plantões", pergunta: "Quais são meus próximos plantões?" },
+  { chave: "meta", icone: Target, rotulo: "Que vagas fecham minha meta?", pergunta: "Que vagas fecham minha meta?" },
+  { chave: "checkout", icone: ClipboardCheck, rotulo: "Tenho checkout pendente?", pergunta: "Tenho checkout pendente?" },
+  { chave: "caso", icone: Stethoscope, rotulo: "Discutir um caso", pergunta: "Quero discutir um caso" },
 ] as const;
 
 /** **negrito** e listas com "- ", sem HTML do modelo. */
@@ -353,12 +355,22 @@ export default function LunaPage() {
   const [pensando, setPensando] = useState(false);
   const [ligada, setLigada] = useState<boolean | null>(null);
   const fim = useRef<HTMLDivElement>(null);
+  // Link de aviso da Dai (?atalho= ou ?tema=): pergunta assim que souber se ela está ligada.
+  const doLink = useRef<{ pergunta?: string; tema?: string } | null>(null);
 
   useEffect(() => {
     try {
       const salva = sessionStorage.getItem(GUARDA);
       if (salva) setConversa(JSON.parse(salva));
     } catch {}
+    const qs = new URLSearchParams(window.location.search);
+    const atalho = ATALHOS.find((a) => a.chave === qs.get("atalho"));
+    const tema = TEMAS.find((t) => t.tema === qs.get("tema"))?.tema;
+    if (atalho || tema) {
+      doLink.current = { pergunta: atalho?.pergunta, tema };
+      // Sem o parâmetro, recarregar a página não pergunta de novo.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     fetch("/taximetro/api/intern/luna")
       .then((r) => r.json())
       .then((j) => setLigada(Boolean(j.success && j.data.ligada)))
@@ -424,6 +436,14 @@ export default function LunaPage() {
         : { role: "assistant", content: j?.error ?? "Sem conexão. Tente de novo.", erro: true },
     ]);
   }
+
+  useEffect(() => {
+    const link = doLink.current;
+    if (ligada === null || !link) return;
+    doLink.current = null;
+    if (link.tema) pedirCaso(link.tema);
+    else if (link.pergunta && (ligada || pedidoDeCaso(link.pergunta) !== undefined)) void perguntar(link.pergunta);
+  }, [ligada]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const vazia = conversa.length === 0;
 

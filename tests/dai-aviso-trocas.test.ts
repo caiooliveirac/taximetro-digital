@@ -57,7 +57,7 @@ test("texto: lugar, quando, quem, o que daria e como propor", () => {
   const t = textoTrocasNosTurnosMarcados([{ base: "Centenário", quando: "dom 08/11 dia", quem: "Bruno", perfeita: true, dar: "Periperi, qua 11/11 noite" }]);
   assert.match(t, /^Apareceu uma oferta de troca num turno que você marcou no calendário:/);
   assert.match(t, /- Centenário, dom 08\/11 dia, de Bruno\. Você daria Periperi, qua 11\/11 noite \(troca perfeita/);
-  assert.match(t, /Abra Trocas para propor com um toque\./);
+  assert.match(t, /\[Abra Trocas\]\(\/intern\/trocas\) para propor com um toque\./);
 });
 
 test("a rota só envia aviso de trocas com a feature ligada; o teste (?dry=1) sempre roda", () => {
