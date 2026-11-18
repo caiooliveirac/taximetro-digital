@@ -724,7 +724,9 @@ test("vaga liberada, falta meta: o que falta e até quando, só o que conta, que
   const meta: Meta = { ...META, fim: "2026-11-06" };
   const { r, chamadas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta } });
   assert.equal(chamadas, 0);
-  assert.match(r.texto, /^Falta \*\*2 USA e 1 CRL\*\* na sua meta e seu rodízio fecha \*\*sex 06\/11\*\*\./);
+  // A meta está na Início: abre pela vaga, não por "Falta 2 USA" (18/11, 20 respostas reais abriam assim).
+  assert.match(r.texto, /^Estas vagas liberadas contam na sua meta e cabem no seu descanso até o fim do rodízio \(sex 06\/11\):/);
+  assert.doesNotMatch(r.texto, /Falta \*\*/);
   // Só o que conta até o fim do rodízio: CB07 (10/11) e CRUX (CRU completo) ficam fora.
   assert.match(r.texto, /1\. \*\*CRL4 qua 04\/11 dia\*\*[\s\S]*2\. \*\*CB05 qui 05\/11 noite\*\*/);
   assert.doesNotMatch(r.texto, /CB07|CRUX|candidat/);
@@ -740,7 +742,7 @@ test("vaga liberada, falta meta: o que falta e até quando, só o que conta, que
 
 test("vaga liberada, falta meta e nada cabe: diz e aponta a busca da meta", async () => {
   const { r } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: { ...META, fim: "2026-11-01" } } });
-  assert.match(r.texto, /Nenhuma vaga liberada que conte na sua meta cabe no seu descanso até 01\/11/);
+  assert.match(r.texto, /^Nenhuma vaga liberada que conte na sua meta cabe no seu descanso até 01\/11/);
   assert.match(r.texto, /que vagas fecham minha meta\?/);
 });
 
@@ -748,7 +750,8 @@ test("vaga liberada, meta fechada e sem extra: sorteio, candidaturas que já tem
   const pedida: Solicitacao = { id: "s1", tipo: "FREE_SLOT", baseCode: "CB05", date: "2026-11-05", period: "NIGHT", shift: null, criada: HOJE, decide: "COORDENACAO" };
   const { r, chamadas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: COMPLETA, solicitacoes: [pedida, { ...pedida, id: "s2" }], fila: { ...FILA, USA: { precisam: 2, casinhas: 3, vagasAbertas: 9 } } } });
   assert.equal(chamadas, 0);
-  assert.match(r.texto, /^Sua meta está fechada e você \*\*ainda não teve extra\*\*: tem direito a um/);
+  assert.match(r.texto, /^Para você, vaga liberada só sai pela repescagem e entra como extra — você ainda tem direito ao seu/);
+  assert.doesNotMatch(r.texto, /meta está fechada/);
   assert.match(r.texto, /\*\*Pode ir a sorteio na repescagem\*\*/);
   assert.match(r.texto, /Suas 2 candidaturas estão com a coordenação: não precisa pedir de novo\./);
   assert.match(r.texto, /Próxima: \*\*(hoje às 11h|hoje às 20h|amanhã às 11h)\*\*/);
@@ -759,7 +762,7 @@ test("vaga liberada, meta fechada e sem extra: sorteio, candidaturas que já tem
 
 test("vaga liberada, meta fechada e já teve extra: diz que fica por último", async () => {
   const { r } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta: { ...COMPLETA, jaTemExtra: true } } });
-  assert.match(r.texto, /^Sua meta está fechada e você já teve seu extra: no sorteio da repescagem você fica por último/);
+  assert.match(r.texto, /^Para você, vaga liberada só sai pela repescagem e entra como extra\. Como você já teve o seu extra, no sorteio fica por último/);
 });
 
 test("vaga liberada já na repescagem com meta fechada: aparece para pegar", async () => {

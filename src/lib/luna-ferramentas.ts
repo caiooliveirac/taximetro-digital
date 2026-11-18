@@ -802,18 +802,19 @@ export function respostaDaLiberada(p: {
   const { busca, meta, falta, lider, hoje } = p;
   const numero = (_a: Avaliada, i: number) => i + 1;
 
+  // A meta está na tela Início: a resposta abre pela vaga, não pelo placar
+  // (antes, "Falta 2 USA…" abria cada resposta). Fica o que decide a vaga: se conta.
   if (falta.length) {
     const faltaTxt = falta.map((k) => `${meta.faltam[k]} ${k}`).join(" e ");
-    const fecha = meta.fim ? ` e seu rodízio fecha **${diaRelativo(meta.fim, hoje)}**` : "";
-    const linhas = [`Falta **${faltaTxt}** na sua meta${fecha}.`];
     const contam = busca.opcoes.filter((a) => a.contaParaMeta && !a.candidatura);
     const mostradas = contam.slice(0, NA_LIBERADA);
     if (!mostradas.length) {
-      linhas.push(`Nenhuma vaga liberada que conte na sua meta cabe no seu descanso${meta.fim ? ` até ${ddmm(meta.fim)}` : ""}.`);
+      const linhas = [`Nenhuma vaga liberada que conte na sua meta cabe no seu descanso${meta.fim ? ` até ${ddmm(meta.fim)}` : ""}.`];
       linhas.push('Pergunte "que vagas fecham minha meta?": aí eu olho também sobra da grade e extras.');
       return { texto: linhas.join("\n"), mostradas };
     }
-    linhas.push(mostradas.length === 1 ? "Esta conta e cabe no seu descanso:" : "Estas contam e cabem no seu descanso:");
+    const ate = meta.fim ? ` até o fim do rodízio (${diaRelativo(meta.fim, hoje)})` : "";
+    const linhas = [mostradas.length === 1 ? `Esta vaga liberada conta na sua meta e cabe no seu descanso${ate}:` : `Estas vagas liberadas contam na sua meta e cabem no seu descanso${ate}:`];
     linhas.push(...mostradas.map((a, i) => `- ${linhaDaOpcao(a, i + 1)}`));
     if (contam.length > mostradas.length) linhas.push(`(+${contam.length - mostradas.length} que também contam)`);
 
@@ -845,8 +846,8 @@ export function respostaDaLiberada(p: {
   // Meta fechada: vaga liberada, para ele, só na repescagem — já aberta (pega
   // quem chegar) ou no sorteio. Quem já teve extra concorre, mas por último.
   const linhas = [meta.jaTemExtra
-    ? "Sua meta está fechada e você já teve seu extra: no sorteio da repescagem você fica por último, depois de quem precisa da meta e de quem nunca teve extra."
-    : "Sua meta está fechada e você **ainda não teve extra**: tem direito a um, e o caminho é o sorteio da repescagem."];
+    ? "Para você, vaga liberada só sai pela repescagem e entra como extra. Como você já teve o seu extra, no sorteio fica por último, depois de quem precisa da meta e de quem nunca teve."
+    : "Para você, vaga liberada só sai pela repescagem e entra como extra — você ainda tem direito ao seu, pelo sorteio."];
   const mostradas = busca.opcoes.filter((a) => a.repescagem).slice(0, NA_LIBERADA);
   if (mostradas.length) {
     linhas.push(`Já abertas agora, pega quem chegar primeiro em **Extras**:`);
@@ -858,7 +859,7 @@ export function respostaDaLiberada(p: {
       ? "Sua candidatura está com a coordenação: não precisa pedir de novo."
       : `Suas ${p.pendentes.length} candidaturas estão com a coordenação: não precisa pedir de novo.`);
   }
-  linhas.push(`Vaga liberada só abre para você na repescagem: 11h (turno da noite) e 20h (turno do dia seguinte). Próxima: **${proximaAbertura(p.agora)}** — entre uma e outra, nada novo aparece.`);
+  linhas.push(`A repescagem abre às 11h (turno da noite) e às 20h (turno do dia seguinte). Próxima: **${proximaAbertura(p.agora)}** — entre uma e outra, nada novo aparece.`);
   const cartao = mostradas.length ? cartaoDaBusca({ ...busca, opcoes: mostradas }, null, numero) : undefined;
   return { texto: linhas.join("\n"), cartao, mostradas };
 }
