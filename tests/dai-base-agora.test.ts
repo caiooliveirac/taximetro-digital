@@ -132,3 +132,18 @@ test("roteador: equipe, lotação e ontem vão ao modelo, não à resposta do m�
     assert.equal(rotear(q), null, q);
   }
 });
+
+test("roteador: problema no check-in vai ao modelo; status de pendência segue direto", () => {
+  for (const q of ["deu erro no check-in", "o preceptor foi embora sem fazer meu checkout", "check-in não aparece", "esqueci o checkout"]) {
+    assert.equal(rotear(q), null, q);
+  }
+  assert.equal(rotear("Tenho checkout pendente?")?.tipo, "PRESENCA");
+});
+
+test("roteador: base citada entra na busca", () => {
+  const r = rotear("tem vaga na pp20?");
+  assert.equal(r?.tipo, "BUSCA");
+  assert.deepEqual(r?.tipo === "BUSCA" ? r.args.bases : null, ["PP20"]);
+  const s = rotear("tem vaga?");
+  assert.equal(s?.tipo === "BUSCA" ? s.args.bases : "x", undefined);
+});

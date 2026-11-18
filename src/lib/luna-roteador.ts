@@ -77,6 +77,15 @@ export function datasDaPergunta(q: string, hoje: string): string[] {
   return [...new Set(datas.filter((d) => d && d >= hoje))].sort();
 }
 
+/** Bases citadas pelo código ("pp20", "sm 01"). Vazio = não citou. */
+export function basesDaPergunta(q: string): string[] {
+  return [...new Set([...q.matchAll(/\b([a-z]{2}) ?(\d{2})\b/g)].map((m) => `${m[1]}${m[2]}`.toUpperCase()))];
+}
+const comBases = (q: string) => {
+  const bases = basesDaPergunta(q);
+  return bases.length ? { bases } : {};
+};
+
 function porDia(q: string, hoje: string): Intencao | null {
   if (q.length > 120 || !DISPONIVEL.test(q) || SO_COM_MODELO.test(q)) return null;
   const datas = datasDaPergunta(q, hoje);
@@ -98,11 +107,14 @@ function porDia(q: string, hoje: string): Intencao | null {
       objetivo: "plantao",
       ...(tipos.length ? { tipos } : {}),
       ...(fontes ? { fontes } : {}),
+      ...comBases(q),
       datas: datas.map((data) => ({ data, ...(periodo ? { periodo } : {}) })),
     },
   };
 }
 const BASE_AGORA = /vai (ativar|abrir|funcionar|rodar)|(base|viatura|ela) (esta |ta |vai )?(ativa|ativada|desativada|parada|aberta|fechada)|ativ(ou|ada|a) (a |hoje)|(tem|chegou|ja chegou|cade|cade o|quem e o|qual) (o |algum |um )?medico|medico (chegou|ja chegou|de plantao|na base|ta ai|esta ai)|sem medico|(estou|to|tou|cheguei) na base/;
+
+const PROBLEMA = /\b(erro|errad\w*|problema|bug|trav\w*|zer(ar|ou)|apag\w*|esqueci|sumiu|testei|saiu sem|foi embora|nao (aparece|aceit\w*|funciona|registr\w*|valid\w*|fez|fiz|deu))\b/;
 
 const FORA_DO_DIRETO = /\b(quem|quantos|quantas)\b.*\b(internos?|internas?|enfermeir\w*|equipe|sombras?)\b|\b(muitos|muitas|tres|3) (internos?|internas?)\b|\b(lotad[ao]|base cheia|sem (lugar|espaco|cama))\b|\b(ontem|anteontem)\b/;
 
@@ -119,7 +131,9 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   if (dia) return dia;
   if (q.length > 90 || NUANCE.test(q)) return null;
 
-  if (/check ?-?(in|out)|presenca|frequencia|pendencia/.test(q)) return { tipo: "PRESENCA" };
+  // Problema no check-in ("deu erro", "preceptor saiu sem checkout") não é
+  // "tenho pendência?": vai ao modelo, que orienta o caminho (luna-interno.ts).
+  if (/check ?-?(in|out)|presenca|frequencia|pendencia/.test(q)) return PROBLEMA.test(q) ? null : { tipo: "PRESENCA" };
 
   if (/(consigo|da pra|da para|como|ajuda|quero|vou) .*(fechar|completar|terminar|bater|cumprir)|vagas? .*(meta)|(fechar|completar) (a |minha )?meta/.test(q) && !/quanto/.test(q)) {
     return TIPO.test(q) ? null : { tipo: "BUSCA", args: { objetivo: "meta" } };
@@ -133,10 +147,10 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   if (/proxim\w* plant|meus plant|minha (agenda|escala)|quando (e|eh) (o )?meu/.test(q)) return { tipo: "AGENDA", de: 0, ate: null };
 
   if (TIPO.test(q)) return null;
-  if (/vagas? liberad/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["LIBERADA"] } };
-  if (/\bextras?\b/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["EXTRA"] } };
-  if (/\bgrade\b|sobr\w* vaga|vaga sobr/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["GRADE"] } };
+  if (/vagas? liberad/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["LIBERADA"], ...comBases(q) } };
+  if (/\bextras?\b/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["EXTRA"], ...comBases(q) } };
+  if (/\bgrade\b|sobr\w* vaga|vaga sobr/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", fontes: ["GRADE"], ...comBases(q) } };
   if (/\btroca(s|r)?\b/.test(q)) return { tipo: "BUSCA", args: { objetivo: "troca" } };
-  if (/(tem|ha|quais|alguma|que) vagas?|vagas? (pra|para) mim|posso pegar|plantao a mais/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao" } };
+  if (/(tem|ha|quais|alguma|que) vagas?|vagas? (pra|para) mim|posso pegar|plantao a mais/.test(q)) return { tipo: "BUSCA", args: { objetivo: "plantao", ...comBases(q) } };
   return null;
 }

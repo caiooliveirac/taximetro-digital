@@ -85,6 +85,8 @@ export type ArgsBusca = {
   datas?: { data: string; periodo?: string }[];
   prefere_periodo?: string;
   prefere_dias_semana?: string[];
+  /** Só nestas bases (código: PP20, CB02), quando ele citou ("tem vaga na PP20?"). */
+  bases?: string[];
   dias?: number;
   trocar_data?: string;
   trocar_periodo?: string;
@@ -137,6 +139,8 @@ export function sanearArgs(raw: Record<string, unknown>): ArgsBusca {
   if (lerPeriodo(raw.prefere_periodo)) a.prefere_periodo = String(raw.prefere_periodo);
   const pd = lista(raw.prefere_dias_semana).filter((d) => lerDiaSemana(d) !== undefined).map(String);
   if (pd.length) a.prefere_dias_semana = pd;
+  const bs = [...new Set(lista(raw.bases).map((b) => String(b).toUpperCase().replace(/\s+/g, "")).filter((b) => /^[A-Z]{2}\d{2}$|^(CRU|CRL)$/.test(b)))];
+  if (bs.length) a.bases = bs;
   if (Number.isFinite(Number(raw.dias)) && Number(raw.dias) > 0) a.dias = Math.min(Math.round(Number(raw.dias)), 45);
   if (typeof raw.trocar_data === "string" && DATA.test(raw.trocar_data)) a.trocar_data = raw.trocar_data;
   if (lerPeriodo(raw.trocar_periodo)) a.trocar_periodo = String(raw.trocar_periodo);
@@ -315,10 +319,18 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
     GRADE: () => f.grade(),
     TROCA: () => f.trocas(),
   };
+  // Base citada: só ela. Antes, "tem vaga na PP20?" devolvia as 198 de todas.
+  // O roteador pega qualquer "xx 00" ("às 19"): vale só código que existe.
+  if (args.bases?.length) {
+    const codigos = new Set((await f.bases()).map((b) => b.code));
+    args.bases = args.bases.filter((b) => codigos.has(b));
+    if (!args.bases.length) delete args.bases;
+  }
+  const naBase = (o: Oferta) => !args.bases?.length || args.bases.includes(o.baseCode);
   const ofertas = (await Promise.all([
     ...fontes.map((x) => leituras[x]()),
     soRepescagem ? f.liberadas(ate).then((l) => l.filter((o) => o.repescagem)) : Promise.resolve([]),
-  ])).flat();
+  ])).flat().filter(naBase);
 
   const pedido: Pedido = {
     objetivo,
@@ -357,6 +369,7 @@ export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknow
   let texto = textoDaBusca(busca, numero, ctx.voz);
   if (fila && busca.status !== "META_COMPLETA" && !mostradas.some((a) => a.repescagem)) texto += `\n${fila}`;
   if (args.datas?.length) texto = `${diasPedidos(args.datas)}:\n${texto}`;
+  if (args.bases?.length) texto = `Só na ${args.bases.join(" e na ")}:\n${texto}`;
   if (args.nao_posso?.length) texto += `\nLevei em conta que você não pode ${bloqueios(args).map(descreveBloqueio).join(", ")}.`;
   if (largar) texto = `Para largar seu **${largar.baseCode} ${quando(largar.date, largar.period, largar.shift)}**:\n${texto}`;
   if (mostradas.some((a) => a.fonte === "LIBERADA") && !lider) texto += "\nSua faculdade está sem líder ativo cadastrado: a vaga liberada depende dele.";
@@ -518,6 +531,7 @@ export const FERRAMENTAS: {
         },
         prefere_periodo: { type: "string", enum: ["dia", "noite"] },
         prefere_dias_semana: { type: "array", items: { type: "string", enum: DIA_ENUM }, description: "Fim de semana = sex, sab, dom" },
+        bases: { type: "array", items: { type: "string" }, description: "Código das bases que ele citou (PP20, CB02, CRU, CRL), só se citou" },
         dias: { type: "integer", description: "Janela em dias a partir de hoje (padrão 21; meta: até o fim do rodízio)" },
         trocar_data: { type: "string", description: "YYYY-MM-DD do plantão DELE que quer largar (objetivo troca)" },
         trocar_periodo: { type: "string", enum: ["dia", "noite"] },

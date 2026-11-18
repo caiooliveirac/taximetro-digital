@@ -773,3 +773,8 @@ test("próxima abertura da repescagem pela hora de Salvador", () => {
   assert.equal(proximaAbertura(new Date("2026-10-30T17:00:00Z")), "hoje às 20h"); // 14h
   assert.equal(proximaAbertura(new Date("2026-10-30T23:30:00Z")), "amanhã às 11h"); // 20h30
 });
+
+test("sanearArgs: bases só no formato de código", () => {
+  assert.deepEqual(sanearArgs({ bases: ["pp20", "SM 01", "CRU", "drop", 5, "ABCD1"] }).bases, ["PP20", "SM01", "CRU"]);
+  assert.equal(sanearArgs({ bases: ["nada"] }).bases, undefined);
+});
