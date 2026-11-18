@@ -41,6 +41,7 @@ import { ADIAMENTO_DO_SORTEIO_H, ESPERA_DO_SORTEIO_MIN, horaDoSorteioAdiado, min
 import { sorteioInscricoes } from "@/db/schema";
 import { plantaoSemDescanso, type TurnoDePlantao } from "@/shared/domain/policies/rest-policy";
 import { soAsQueCabem } from "@/features/extra-offers/application/lotacao";
+import { abertaTambemADona } from "@/features/scheduling/domain/policies/auto-release-policy";
 import { enviar, type Envio } from "./remetente";
 import { listToReplace } from "@/features/scheduling/infra/repositories/commitment-release-repository";
 import { aindaDeveRepor, JANELA_LIBERACOES_DIAS } from "@/features/scheduling/domain/policies/commitment-release-policy";
@@ -186,10 +187,17 @@ export function vagasParaCadaInterno(
   return saida;
 }
 
+/**
+ * `releasedFacultyId` só serve aqui para tirar a faculdade que liberou. Lugar
+ * levado à repescagem e plantão liberado pelo próprio interno são de todas,
+ * inclusive dela (abertaTambemADona): sem dona para o filtro.
+ */
+const semDona = (releasedFacultyId: string | null, autoRelease: string | null) => (abertaTambemADona(autoRelease) ? null : releasedFacultyId);
+
 /** Vagas livres abertas de `de` a `ate`, que cabem na viatura e cujo turno não começou. */
 async function vagasLivresAbertas(de: string, ate: string, now: Date): Promise<Vaga[]> {
   const ofertas = await db
-    .select({ id: extraShiftOffers.id, baseCode: bases.code, baseType: bases.type, date: extraShiftOffers.date, period: extraShiftOffers.period, shift: extraShiftOffers.shift, releasedFacultyId: extraShiftOffers.releasedFacultyId, liberadaPor: faculties.abbreviation })
+    .select({ id: extraShiftOffers.id, baseCode: bases.code, baseType: bases.type, date: extraShiftOffers.date, period: extraShiftOffers.period, shift: extraShiftOffers.shift, releasedFacultyId: extraShiftOffers.releasedFacultyId, autoRelease: extraShiftOffers.autoRelease, liberadaPor: faculties.abbreviation })
     .from(extraShiftOffers)
     .innerJoin(bases, eq(bases.id, extraShiftOffers.baseId))
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.releasedFacultyId))
@@ -200,7 +208,7 @@ async function vagasLivresAbertas(de: string, ate: string, now: Date): Promise<V
     ))
     .orderBy(extraShiftOffers.date, extraShiftOffers.period);
   return soAsQueCabem(ofertas
-    .map((o) => ({ ...o, date: dia(o.date), period: o.period as "DAY" | "NIGHT", tipo: goalKindOf(o.baseType) }))
+    .map(({ autoRelease, ...o }) => ({ ...o, releasedFacultyId: semDona(o.releasedFacultyId, autoRelease), date: dia(o.date), period: o.period as "DAY" | "NIGHT", tipo: goalKindOf(o.baseType) }))
     .filter((o): o is typeof o & { tipo: GoalKind } => Boolean(o.tipo) && !hasShiftStarted(o.date, o.period, o.shift, now)));
 }
 
@@ -364,7 +372,8 @@ async function anunciarSorteios(now: Date, dry: boolean): Promise<ResultadoDosAv
   let considerados = 0;
   for (const t of turnos) {
     if (await sorteioFeito(t.date, t.period)) continue;
-    const vagas = (await vagasDoTurno(t.date, t.date)).filter((v) => v.period === t.period);
+    const vagas = (await vagasDoTurno(t.date, t.date)).filter((v) => v.period === t.period)
+      .map((v) => ({ ...v, releasedFacultyId: semDona(v.releasedFacultyId, v.autoRelease) }));
     if (!vagas.length) continue;
     const chave = `${t.date}|${t.period}${t.adiado ? "|adiado" : ""}`;
     const [todos, sinais, inscritos, jaAvisados] = await Promise.all([
