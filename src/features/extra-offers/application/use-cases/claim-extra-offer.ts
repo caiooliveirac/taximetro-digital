@@ -16,6 +16,7 @@ import { metaDoInternoNoTipo, textoMetaCumprida } from "./free-slot-goal";
 import { comExtraNoHistorico, internoPegaExtraNoTipo, naRepescagem, sorteioPendente, TEXTO_EXTRA_SO_USA, TEXTO_JA_TEVE_EXTRA } from "../repescagem";
 import { soAsQueCabem } from "../lotacao";
 import { goalKindOf } from "@/lib/goal-slots";
+import { abertaTambemADona, ORIGEM_INTERNO } from "@/features/scheduling/domain/policies/auto-release-policy";
 
 /**
  * Oferta de data passada não se pega. O board e a grade já não mostram; isto é
@@ -55,6 +56,8 @@ export function textoVagaAutomaticaUsada(p: {
     ? "Vaga sem dono usada"
     : p.autoRelease === "REPESCAGEM"
       ? `Lugar vazio da grade da ${p.releasedByAbbr ?? "faculdade"}, levado à repescagem, usado`
+      : p.autoRelease === ORIGEM_INTERNO
+        ? `Plantão liberado por interno da ${p.releasedByAbbr ?? "faculdade"} usado`
       : `Vaga liberada pelo prazo da ${p.releasedByAbbr ?? "outra faculdade"} usada`;
   const quem = p.actorRole === "COORDINATOR"
     ? `${p.actorName} (coordenação)`
@@ -128,7 +131,8 @@ export async function executeClaimExtraOffer(params: {
   // estaria ocupando a vaga que disse que não ia usar.
   // Exceção: lugar da grade levado à repescagem (auto-release-slots.ts) — a
   // faculdade não cedeu, só não escalou; os internos dela concorrem também.
-  if (offer.releasedFacultyId && offer.releasedFacultyId === facultyId && offer.autoRelease !== "REPESCAGEM") {
+  // Idem o plantão que um interno dela liberou pela Dai: a vaga é para todas.
+  if (offer.releasedFacultyId && offer.releasedFacultyId === facultyId && !abertaTambemADona(offer.autoRelease)) {
     return { status: 409, body: { success: false, error: "Sua faculdade liberou esta vaga para as outras" } } as const;
   }
 

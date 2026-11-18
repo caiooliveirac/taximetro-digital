@@ -25,6 +25,17 @@
 export type Periodo = "DAY" | "NIGHT";
 export type OrigemAutomatica = "PRAZO" | "SEM_DONO" | "REPESCAGEM";
 
+/** Vaga que o próprio interno liberou pela Dai (liberar-plantao-do-interno.ts). Não é automática, mas mora na mesma coluna. */
+export const ORIGEM_INTERNO = "INTERNO";
+
+/**
+ * Vaga livre que a faculdade dona também pode pegar: o lugar da grade levado à
+ * repescagem (ela não cedeu, só não escalou) e o plantão que um interno dela
+ * liberou (a vaga é para todas). A liberação feita pelo líder continua só para
+ * as outras.
+ */
+export const abertaTambemADona = (autoRelease: string | null | undefined) => autoRelease === "REPESCAGEM" || autoRelease === ORIGEM_INTERNO;
+
 /** Prazo padrão, em dias, para faculdade sem configuração salva. */
 export const PRAZO_PADRAO_DIAS = 3;
 

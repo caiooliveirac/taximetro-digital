@@ -15,7 +15,7 @@ import {
   FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, ddmm, descreveBloqueio, explicarPlantao, linhaDaOpcao, linhaDaSolicitacao, quando, textoDaBusca,
   type Avaliada, type Bloqueio, type Busca, type Fonte, type Meta, type MeuPlantao, type Oferta, type Pedido, type Periodo, type Solicitacao,
 } from "@/lib/luna-inteligencia";
-import { addDaysToDateStr, getBrazilNowParts } from "@/lib/utils";
+import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted } from "@/lib/utils";
 import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoJaAcabou, turnoPedido } from "@/lib/luna-base-agora";
 import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
 import { aberturaDaRepescagem } from "@/features/extra-offers/application/repescagem";
@@ -31,6 +31,8 @@ export type LunaItem = {
   mapa?: string;
   /** id da vaga livre: botão que abre a candidatura. */
   candidatar?: string;
+  /** id do plantão dele: botão "Liberar" (com confirmação) que o tira da escala e abre a vaga. */
+  liberar?: string;
   /** Com estes, a tela desenha data, turno e tipo como selos; `titulo` fica para conversas antigas. */
   quando?: { data: string; periodo: string; turno?: string | null };
   base?: string;
@@ -476,6 +478,50 @@ export async function avaliarTroca(f: Fontes, ctx: LunaCtx, raw: Record<string, 
 }
 
 // ---------------------------------------------------------------------------
+// liberar_plantao — "não vou poder ir": os plantões dele que ainda dá para
+// liberar, cada um com o botão. Quem tira da escala é a rota
+// /api/intern/liberar-plantao (luna-* só lê), depois do toque e da confirmação.
+
+const LIBERAVEL = new Set(["SCHEDULED", "CONFIRMED"]);
+const COMO_LIBERAR = "Toque em **Liberar** no plantão e confirme: você sai da escala, a vaga fica livre para os colegas de todas as faculdades e seu líder é avisado. Não conta falta, mas a casinha volta a ficar vazia na sua meta.";
+
+export async function liberarOpcoes(f: Fontes, ctx: LunaCtx, datas: string[], agora: Date = new Date()): Promise<Resultado> {
+  const meus = await f.meusPlantoes();
+  const futuros = meus
+    .filter((m) => LIBERAVEL.has(m.status) && m.date >= ctx.hoje && !hasShiftStarted(m.date, m.period as Periodo, m.shift, agora))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
+  const pedidos = datas.length ? futuros.filter((m) => datas.includes(m.date)) : futuros;
+  const naoAchei = datas.length && !pedidos.length;
+  const lista = (naoAchei ? futuros : pedidos).slice(0, MOSTRAR);
+  if (!lista.length) {
+    return { status: "NO_OPTIONS", registros: meus.length, texto: "Não achei plantão seu que ainda dê para liberar: só antes de o turno começar. Se você já está no turno ou ele já começou, fale com o seu líder." };
+  }
+  const dias = datas.map((d) => ddmm(d)).join(", ");
+  const texto = [
+    naoAchei ? `Não achei plantão seu em ${dias} que dê para liberar. Os próximos:` : lista.length === 1 ? "Este é o plantão:" : "Qual deles?",
+    COMO_LIBERAR,
+    "Já começou o turno? Aí é com o líder.",
+  ].join("\n");
+  return {
+    status: "OK",
+    registros: meus.length,
+    texto,
+    cartao: {
+      tipo: "plantoes",
+      titulo: "Liberar plantão",
+      itens: lista.map((m) => ({
+        titulo: `${m.baseCode} · ${quando(m.date, m.period, m.shift)}`,
+        detalhe: `${m.tipo ?? "?"}${m.isExtraShift ? " · extra" : ""}`,
+        quando: { data: m.date, periodo: m.period, turno: m.shift },
+        base: m.baseCode,
+        tipoVaga: m.isExtraShift ? `${m.tipo ?? "?"} · extra` : m.tipo,
+        liberar: m.id,
+      })),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // explicar_plantao
 
 export async function explicar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknown>): Promise<Resultado> {
@@ -566,6 +612,18 @@ export const FERRAMENTAS: {
       properties: { data: { type: "string", description: "YYYY-MM-DD" }, periodo: { type: "string", enum: ["dia", "noite"] } },
     },
     run: (f, ctx, args) => explicar(f, ctx, args),
+  },
+  {
+    name: "liberar_plantao",
+    description: "Ele não vai poder ir num plantão dele (doença, prova, imprevisto) ou quer largar/cancelar/faltar: mostra os plantões dele que ainda dá para liberar, cada um com o botão Liberar. Você não libera nada: ele toca e confirma.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        datas: { type: "array", items: { type: "string", description: "YYYY-MM-DD" }, description: "Dias do plantão que ele não pode, se disse" },
+      },
+    },
+    run: (f, ctx, args) => liberarOpcoes(f, ctx, Array.isArray(args.datas) ? args.datas.filter((d): d is string => typeof d === "string" && DATA.test(d)) : []),
   },
   {
     name: "situacao_da_base",

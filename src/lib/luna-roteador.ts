@@ -19,6 +19,8 @@ export type Intencao =
   | { tipo: "BASE_AGORA" }
   /** "Tenho solicitação pendente?": lista as dele e avisa o líder (route.ts manda a mensagem). */
   | { tipo: "SOLICITACOES" }
+  /** "Não vou poder ir": os plantões dele que dá para liberar, com o botão (liberarOpcoes). */
+  | { tipo: "LIBERAR"; datas: string[] }
   | { tipo: "BUSCA"; args: ArgsBusca };
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -116,6 +118,10 @@ const BASE_AGORA = /vai (ativar|abrir|funcionar|rodar)|(base|viatura|ela) (esta 
 
 const PROBLEMA = /\b(erro|errad\w*|problema|bug|trav\w*|zer(ar|ou)|apag\w*|esqueci|sumiu|testei|saiu sem|foi embora|nao (aparece|aceit\w*|funciona|registr\w*|valid\w*|fez|fiz|deu))\b/;
 
+// Não vai poder ir / quer largar o plantão. Regra ("e se eu faltar?", "o que
+// acontece se eu faltar") não entra: é o modelo que explica.
+const LIBERAR = /\bnao (vou|vai) (poder |conseguir |dar pra |dar para )?(ir|comparecer|estar la|fazer o plantao)\b|\bnao (posso|poderei|consigo|conseguirei) (ir|comparecer)\b|\b(vou|preciso|quero|tenho que) faltar\b|\b(liberar|largar|cancelar|desmarcar|soltar) (a |o |minha |meu |esse |este )?(vaga|plantao|extra)\b|\bdesistir do plantao\b|\btirar (o )?meu nome\b/;
+
 const FORA_DO_DIRETO = /\b(quem|quantos|quantas)\b.*\b(internos?|internas?|enfermeir\w*|equipe|sombras?)\b|\b(muitos|muitas|tres|3) (internos?|internas?)\b|\b(lotad[ao]|base cheia|sem (lugar|espaco|cama))\b|\b(ontem|anteontem)\b/;
 
 export function rotear(pergunta: string, hoje: string = localDateStr()): Intencao | null {
@@ -124,6 +130,7 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   // sabe isso (a da base só sabe o médico de agora). Vai ao modelo, que diz
   // o que não sabe — antes, "quem está de interno na SM01?" saía com o médico.
   if (FORA_DO_DIRETO.test(q)) return null;
+  if (q.length <= 200 && LIBERAR.test(q) && !/\be se\b|\bo que acontece\b|\bpode(ria)?\b.*\?$/.test(q)) return { tipo: "LIBERAR", datas: datasDaPergunta(q, hoje) };
   // Antes da peneira de nuance: "vai ativar hoje à noite?" é a mesma pergunta.
   if (q.length <= 120 && BASE_AGORA.test(q)) return { tipo: "BASE_AGORA" };
   if (q.length <= 160 && SOLICITACOES.test(q) && !/\b(como|onde) (eu )?(faco|faz|peco|pede)\b/.test(q)) return { tipo: "SOLICITACOES" };

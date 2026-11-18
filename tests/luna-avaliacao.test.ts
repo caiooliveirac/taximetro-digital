@@ -245,7 +245,7 @@ test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho s
   // Meta não vai no prompt (está na tela Início); a agenda vai.
   assert.doesNotMatch(corpos[0].messages[0].content, /"faltam"/);
   assert.match(corpos[0].messages[0].content, /RESUMO: .*"proximos"/);
-  assert.equal(corpos[0].tools.length, 4);
+  assert.equal(corpos[0].tools.length, 5);
 });
 
 test("3. 'Quais vagas posso pegar sem prejudicar meu descanso?' — direto, descanso conferido", async () => {
@@ -777,4 +777,32 @@ test("próxima abertura da repescagem pela hora de Salvador", () => {
 test("sanearArgs: bases só no formato de código", () => {
   assert.deepEqual(sanearArgs({ bases: ["pp20", "SM 01", "CRU", "drop", 5, "ABCD1"] }).bases, ["PP20", "SM01", "CRU"]);
   assert.equal(sanearArgs({ bases: ["nada"] }).bases, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// "Não vou poder ir": lista os plantões que dá para liberar, com o botão.
+
+test("liberar: direto, só plantão que ainda não começou, com o botão", async () => {
+  const agora = new Date("2026-10-29T10:00:00-03:00");
+  const { r, chamadas, log } = await perguntar("não vou poder ir no plantão", { agora });
+  assert.equal(chamadas, 0);
+  assert.equal(log.intencao, "LIBERAR");
+  const ids = r.cartoes[0].itens.map((i) => i.liberar);
+  // p1 está em andamento (CHECKED_IN), p2/p3 passaram: ficam de fora.
+  assert.deepEqual(ids, ["p4", "p5", "p6"]);
+  assert.match(r.texto, /Não conta falta/);
+});
+
+test("liberar: data citada filtra; data sem plantão mostra os próximos", async () => {
+  const agora = new Date("2026-10-29T10:00:00-03:00");
+  const um = await perguntar("vou faltar dia 31/10", { agora });
+  assert.deepEqual(um.r.cartoes[0].itens.map((i) => i.liberar), ["p5"]);
+  const nenhum = await perguntar("preciso faltar dia 01/11", { agora });
+  assert.match(nenhum.r.texto, /Não achei plantão seu em 01\/11/);
+  assert.equal(nenhum.r.cartoes[0].itens.length, 3);
+});
+
+test("roteador: regra sobre faltar não é pedido de liberar", () => {
+  for (const q of ["e se eu faltar?", "o que acontece se eu faltar"]) assert.notEqual(rotear(q, HOJE)?.tipo, "LIBERAR", q);
+  for (const q of ["não vou conseguir ir amanhã", "quero cancelar meu plantão", "não posso ir dia 31/10", "liberar minha vaga"]) assert.equal(rotear(q, HOJE)?.tipo, "LIBERAR", q);
 });

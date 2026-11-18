@@ -23,6 +23,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { db } from "@/db";
+import { abertaTambemADona } from "@/features/scheduling/domain/policies/auto-release-policy";
 import { bases, extraShiftOffers, faculties, sorteioInscricoes, sorteios, userRoles, users } from "@/db/schema";
 import { executeGetComplianceOverview } from "@/features/compliance/application/use-cases/get-compliance-overview";
 import { enviar, idDaDai, type Envio } from "@/features/dai-avisos/remetente";
@@ -226,7 +227,7 @@ export async function executarSorteios(params: { now?: Date; dry?: boolean } = {
       const { levou, motivos } = await distribuir(
         ordem,
         // Lugar da grade levado à repescagem é da faculdade dona: ela concorre também.
-        vagas.map((v) => ({ offerId: v.id, baseCode: v.baseCode, tipo: v.tipo, releasedFacultyId: v.autoRelease === "REPESCAGEM" ? null : v.releasedFacultyId })),
+        vagas.map((v) => ({ offerId: v.id, baseCode: v.baseCode, tipo: v.tipo, releasedFacultyId: abertaTambemADona(v.autoRelease) ? null : v.releasedFacultyId })),
         async (c, v) => {
           if (dry) return null;
           if (!c.facultyId || !dai) return "sem faculdade ativa no cadastro";

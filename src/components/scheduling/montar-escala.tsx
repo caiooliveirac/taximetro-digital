@@ -61,7 +61,7 @@ type FreeSlot = {
   id: string; baseId: string; baseCode: string; baseType: string; date: string; period: string;
   shift: string | null; releasedFacultyAbbr: string | null;
   /** Liberada pelo sistema: PRAZO (turma não usou no prazo), SEM_DONO ou REPESCAGEM (vazia na abertura, vai a sorteio). Ver auto-release-slots.ts. */
-  autoRelease: "PRAZO" | "SEM_DONO" | "REPESCAGEM" | null;
+  autoRelease: "PRAZO" | "SEM_DONO" | "REPESCAGEM" | "INTERNO" | null;
 };
 function rotuloVagaLivre(f: FreeSlot) {
   return f.autoRelease === "SEM_DONO" ? "Vaga sem dono" : `Cedida pela ${f.releasedFacultyAbbr}`;
@@ -76,6 +76,8 @@ function dicaVagaLivre(f: FreeSlot) {
       ? `A ${f.releasedFacultyAbbr} não usou esta vaga no prazo da turma`
       : f.autoRelease === "REPESCAGEM"
         ? `Ninguém foi escalado aqui até a repescagem: a vaga vai a sorteio entre os inscritos`
+      : f.autoRelease === "INTERNO"
+        ? `Um interno da ${f.releasedFacultyAbbr} não vai poder ir e liberou o plantão: vale para qualquer faculdade`
       : `A ${f.releasedFacultyAbbr} cedeu esta vaga`;
   return `${motivo} — toque para escalar um interno da sua faculdade`;
 }

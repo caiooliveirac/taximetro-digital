@@ -15,7 +15,7 @@
  */
 
 import { criarFontes, type Fontes, type LunaCtx, type RegistroFonte } from "@/lib/luna-dados";
-import { FERRAMENTAS, buscar, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
+import { FERRAMENTAS, buscar, liberarOpcoes, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
 import { quando, resumoParaModelo, textoDaAgenda, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
 import { rotear, type Intencao } from "@/lib/luna-roteador";
 import { addDaysToDateStr } from "@/lib/utils";
@@ -59,6 +59,7 @@ Como agir:
 - Base lotada, muitos internos, sem lugar na viatura, "posso ir para outra base?": não chame ferramenta e não autorize nada. Você não move ninguém. O próprio interno só se remaneja depois de avisar sem médico, sem enfermeiro ou problema na viatura (card do plantão na aba Hoje → Avisar; depois aba Check-in). Lotação ou outro motivo: fale com o líder ou a coordenação.
 - Base citada na busca ("tem vaga na PP20?"): passe em bases; não devolva as outras.
 - Problema no check-in ou checkout (deu erro, código não aceita, preceptor foi embora sem checkout, base desativou depois do check-in, falta automática): você não corrige registro. Se for um plantão dele específico, use explicar_plantao. Senão, sem ferramenta: o checkout é confirmado pelo preceptor; sem checkout vira falta automática, que o preceptor corrige em Pendências; falta se justifica no calendário; erro que se repete, fale com o líder ou a coordenação.
+- Não vai poder ir num plantão dele (doente, prova, imprevisto), quer faltar, largar, cancelar ou liberar: liberar_plantao, com as datas se disse. Quem libera é ele, tocando no botão; você não libera nada.
 - Trocar um plantão dele por uma oferta específica: avaliar_troca. "Por que não contou", "fiz checkout e aparece pendente": explicar_plantao.
 - "A segunda", "essa", "dessas" = números da ÚLTIMA LISTA: passe em opcoes/opcao. Sem ÚLTIMA LISTA, não invente número. Para refinar a última busca, repita os parâmetros dela e mude só o pedido.
 - Datas: use o CALENDÁRIO; dia da semana vai como dia_semana. "Fim de semana" = prefere_dias_semana sex, sab, dom.
@@ -72,7 +73,8 @@ Regras (para explicar):
 - Meta: casinhas por tipo (USA, CRU, CRL) no rodízio. Realizados, o de hoje e os agendados ocupam casinha. Extra não conta. Falta não ocupa casinha: ela volta a ficar vazia e precisa de reposição (vaga liberada pelo líder ou sobra da grade). Falta abonada conta.
 - Vaga liberada (outra faculdade abriu mão): só para quem ainda tem casinha vazia no tipo; quem escala é o líder da faculdade dele.
 - Troca: mesmo tipo, 12h de descanso, CRU uma por rodízio; USA e CRU com qualquer faculdade, CRL só com a mesma; vale quando quem ofereceu confirma.
-- Extra: o líder publica, leva quem pegar primeiro na aba Extras; não conta para a meta; é um extra por interno (quem já teve não pega outro, nem comum nem de última hora). Repescagem: vaga livre que ninguém foi escalado vai a sorteio 8h antes do turno (diurno às 20h da véspera, noturno às 11h), entre quem se inscreveu em Extras → Sorteios; ordem: casinha vazia no tipo (conta na meta), depois nunca teve extra, por último já teve extra (entra como extra); empate, sorteio. Inscritos e resultado são públicos; o que sobrar, pega quem chegar primeiro. 12h de descanso sempre; quem pegou só sai pelo líder ou coordenação.
+- Extra: o líder publica, leva quem pegar primeiro na aba Extras; não conta para a meta; é um extra por interno (quem já teve não pega outro, nem comum nem de última hora). Repescagem: vaga livre que ninguém foi escalado vai a sorteio 8h antes do turno (diurno às 20h da véspera, noturno às 11h), entre quem se inscreveu em Extras → Sorteios; ordem: casinha vazia no tipo (conta na meta), depois nunca teve extra, por último já teve extra (entra como extra); empate, sorteio. Inscritos e resultado são públicos; o que sobrar, pega quem chegar primeiro. 12h de descanso sempre.
+- Não vai poder ir: até o início do turno, ele mesmo libera o plantão pela Dai (botão Liberar). Sai da escala sem falta, a casinha volta a ficar vazia e a vaga fica livre para todas as faculdades, inclusive a dele; o líder é avisado. Turno já começado: só o líder ou a coordenação. Plantão em troca em andamento: cancelar a troca antes.
 - Sobra da grade: turno da grade da faculdade dele que ninguém da turma ocupou; pede em Trocas → Extra, o líder aprova.
 - Fila de reposição: colegas com casinha vazia (faltaram ou perderam plantão) têm prioridade na vaga liberada; quem já fechou a meta do tipo só se candidata quando há mais vaga livre do que gente na fila, e a coordenação decide.
 - Solicitações pendentes: a Dai lista e avisa o líder sozinha (não precisa de ferramenta; se cair aqui, diga para perguntar "tenho solicitação pendente?").`;
@@ -98,6 +100,7 @@ async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: Luna
     return buscar(f, ctx, { ...intencao.args, ...(np ? { nao_posso: np } : {}) }, memoria);
   }
   if (intencao.tipo === "SOLICITACOES") return solicitacoesPendentes(f, ctx);
+  if (intencao.tipo === "LIBERAR") return liberarOpcoes(f, ctx, intencao.datas, agora);
   // A meta está na tela Início: aqui não se gasta consulta nem token com ela.
   if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: voz.metaNaTela(ctx.voz) };
   if (intencao.tipo === "BASE_AGORA") return situacaoDaBase(f, ctx, pergunta, agora);

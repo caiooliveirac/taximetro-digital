@@ -302,8 +302,8 @@ export async function listFreeOffers(params: { excludeFacultyId: string; from: s
     // Vaga sem dono (auto-release-slots.ts) não tem faculdade que liberou.
     .leftJoin(faculties, eq(faculties.id, extraShiftOffers.releasedFacultyId))
     .where(and(
-      // Lugar levado à repescagem fica visível também para a faculdade dona (auto-release-slots.ts).
-      sql`(${extraShiftOffers.releasedFacultyId} <> ${params.excludeFacultyId} or ${extraShiftOffers.autoRelease} = 'REPESCAGEM' or (${extraShiftOffers.releasedFacultyId} is null and ${extraShiftOffers.autoRelease} = 'SEM_DONO'))`,
+      // Lugar levado à repescagem e plantão liberado pelo interno ficam visíveis também para a faculdade dona (abertaTambemADona).
+      sql`(${extraShiftOffers.releasedFacultyId} <> ${params.excludeFacultyId} or ${extraShiftOffers.autoRelease} in ('REPESCAGEM', 'INTERNO') or (${extraShiftOffers.releasedFacultyId} is null and ${extraShiftOffers.autoRelease} = 'SEM_DONO'))`,
       gte(extraShiftOffers.date, params.from),
       gte(extraShiftOffers.date, localDateStr()),
       lte(extraShiftOffers.date, params.to),
