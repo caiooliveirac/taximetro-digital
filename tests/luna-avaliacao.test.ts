@@ -926,3 +926,18 @@ test("remanejar pelo modelo: frase livre chama remanejar_agora e a resposta é a
   assert.ok((corpos[0].tools as { function: { name: string } }[]).some((t) => t.function.name === "remanejar_agora"));
   assert.match(r.texto, /abre depois do aviso|plantão em andamento/);
 });
+
+test("'não posso dia 05' e depois 'tem vaga dia 05/11?' (0f00, 14/11): o dia pedido agora vence o bloqueio guardado", async () => {
+  const antes: LunaPergunta[] = [
+    { role: "user", content: "Não posso dia 05" },
+    { role: "assistant", content: "…", memoria: { busca: { objetivo: "plantao", nao_posso: [{ data: "2026-11-05" }] } } },
+  ];
+  const { r, chamadas } = await perguntar("Tem vaga dia 05/11?", { antes });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /CB05 qui 05\/11 noite/);
+  assert.doesNotMatch(r.texto, /não pode|dia que você não pode/);
+  assert.equal(r.memoria?.busca?.nao_posso, undefined);
+  // Outro dia bloqueado continua valendo.
+  const outro = await perguntar("Tem vaga liberada pra mim?", { antes });
+  assert.match(outro.r.texto, /não pode 05\/11/);
+});

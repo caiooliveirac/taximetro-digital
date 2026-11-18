@@ -12,7 +12,7 @@
 import { GOAL_KINDS, type GoalKind } from "@/lib/goal-slots";
 import type { Fontes, LunaCtx } from "@/lib/luna-dados";
 import {
-  FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, ddmm, descreveBloqueio, explicarPlantao, linhaDaOpcao, linhaDaSolicitacao, quando, textoDaBusca,
+  FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, ddmm, diaDaSemana, descreveBloqueio, explicarPlantao, linhaDaOpcao, linhaDaSolicitacao, quando, textoDaBusca,
   type Avaliada, type Bloqueio, type Busca, type Fonte, type Meta, type MeuPlantao, type Oferta, type Pedido, type Periodo, type Solicitacao,
 } from "@/lib/luna-inteligencia";
 import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted, isCurrentOperationalAssignment, operationalDateStr } from "@/lib/utils";
@@ -251,8 +251,24 @@ const FONTES_PADRAO: Record<Pedido["objetivo"], Fonte[]> = {
   troca: ["TROCA"],
 };
 
+/**
+ * Dia pedido agora vence o "não posso" de antes: "não posso dia 15" e depois
+ * "posso dia 15 de dia" (14/11) deixava o bloqueio na memória, e "quais bases
+ * para amanhã?" descartava as cinco vagas do dia 15 como "dia que você não pode".
+ */
+function semBloqueioNosDiasPedidos(a: ArgsBusca): ArgsBusca {
+  if (!a.datas?.length || !a.nao_posso?.length) return a;
+  const colide = (b: NonNullable<ArgsBusca["nao_posso"]>[number], d: NonNullable<ArgsBusca["datas"]>[number]) =>
+    (b.data ? b.data === d.data : b.dia_semana !== undefined && lerDiaSemana(b.dia_semana) === diaDaSemana(d.data)) &&
+    (!b.periodo || !d.periodo || lerPeriodo(b.periodo) === lerPeriodo(d.periodo));
+  const np = a.nao_posso.filter((b) => !a.datas!.some((d) => colide(b, d)));
+  const r = { ...a, nao_posso: np };
+  if (!np.length) delete r.nao_posso;
+  return r;
+}
+
 export async function buscar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknown>, memoria?: LunaMemoria): Promise<Resultado> {
-  const args = sanearArgs(raw);
+  const args = semBloqueioNosDiasPedidos(sanearArgs(raw));
   const somente = (args.opcoes ?? [])
     .map((n) => memoria?.opcoes?.find((r) => r.n === n))
     .filter((r): r is LunaRef => Boolean(r));
