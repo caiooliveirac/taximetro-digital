@@ -134,10 +134,12 @@ test("roteador: equipe, lotação e ontem vão ao modelo, não à resposta do m�
 });
 
 test("roteador: problema no check-in vai ao modelo; status de pendência segue direto", () => {
-  for (const q of ["deu erro no check-in", "o preceptor foi embora sem fazer meu checkout", "check-in não aparece", "esqueci o checkout"]) {
+  for (const q of ["deu erro no check-in", "check-in não aparece", "esqueci o checkout"]) {
     assert.equal(rotear(q), null, q);
   }
   assert.equal(rotear("Tenho checkout pendente?")?.tipo, "PRESENCA");
+  // Preceptor que saiu sem checkout tem intenção própria (sem-checkout.ts).
+  assert.equal(rotear("o preceptor foi embora sem fazer meu checkout")?.tipo, "SEM_CHECKOUT");
 });
 
 test("roteador: base citada entra na busca", () => {

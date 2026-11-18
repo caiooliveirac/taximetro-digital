@@ -18,6 +18,7 @@ import {
 import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted } from "@/lib/utils";
 import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoJaAcabou, turnoPedido } from "@/lib/luna-base-agora";
 import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
+import { nomeDoPreceptor, semCheckoutRegistravel } from "@/lib/sem-checkout";
 import { aberturaDaRepescagem } from "@/features/extra-offers/application/repescagem";
 
 export type { LunaCtx } from "@/lib/luna-dados";
@@ -33,6 +34,8 @@ export type LunaItem = {
   candidatar?: string;
   /** id do plantão dele: botão "Liberar" (com confirmação) que o tira da escala e abre a vaga. */
   liberar?: string;
+  /** Plantão e nome do médico: botão "Registrar" que grava "preceptor saiu sem checkout" na falta. */
+  semCheckout?: { assignmentId: string; preceptor: string };
   /** Com estes, a tela desenha data, turno e tipo como selos; `titulo` fica para conversas antigas. */
   quando?: { data: string; periodo: string; turno?: string | null };
   base?: string;
@@ -522,6 +525,50 @@ export async function liberarOpcoes(f: Fontes, ctx: LunaCtx, datas: string[], ag
 }
 
 // ---------------------------------------------------------------------------
+// registrar_sem_checkout — o preceptor saiu sem fechar o checkout dele. Sempre
+// com o nome do médico. Quem grava é a rota /api/intern/sem-checkout, no toque.
+
+export const PERGUNTA_NOME_PRECEPTOR = "Qual o nome do médico (preceptor) que saiu sem fazer seu checkout? Escreva assim: \"Dr. Fulano de Tal saiu sem fazer meu checkout\". Com o nome, eu registro na sua falta.";
+
+export async function semCheckoutOpcoes(f: Fontes, ctx: LunaCtx, preceptor: unknown, agora: Date = new Date()): Promise<Resultado> {
+  const nome = nomeDoPreceptor(preceptor);
+  if (!nome) return { status: "INSUFFICIENT_DATA", registros: 0, texto: PERGUNTA_NOME_PRECEPTOR };
+  const meus = await f.meusPlantoes();
+  const lista = meus
+    .filter((m) => m.date <= ctx.hoje && semCheckoutRegistravel(m, agora))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.period.localeCompare(a.period))
+    .slice(0, MOSTRAR);
+  if (!lista.length) {
+    return {
+      status: "NO_OPTIONS",
+      registros: meus.length,
+      texto: "Não achei plantão seu com check-in validado e sem checkout. Se o check-in nem foi validado, isso é com o preceptor ou com o líder da sua faculdade.",
+    };
+  }
+  return {
+    status: "OK",
+    registros: meus.length,
+    texto: [
+      `Vou registrar na falta: "Preceptor ${nome} saiu sem realizar o checkout."`,
+      "Fica como falta justificada, que a coordenação e o líder da sua faculdade veem. Não vira presença: abonar é com a coordenação.",
+      `Toque em **Registrar** no plantão${lista.length > 1 ? " certo" : ""}.`,
+    ].join("\n"),
+    cartao: {
+      tipo: "plantoes",
+      titulo: "Preceptor saiu sem checkout",
+      itens: lista.map((m) => ({
+        titulo: `${m.baseCode} · ${quando(m.date, m.period, m.shift)}`,
+        detalhe: `${m.tipo ?? "?"} · ${m.status === "ABSENT" ? "virou falta" : "sem checkout"}`,
+        quando: { data: m.date, periodo: m.period, turno: m.shift },
+        base: m.baseCode,
+        tipoVaga: m.tipo,
+        semCheckout: { assignmentId: m.id, preceptor: nome },
+      })),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // explicar_plantao
 
 export async function explicar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknown>): Promise<Resultado> {
@@ -612,6 +659,19 @@ export const FERRAMENTAS: {
       properties: { data: { type: "string", description: "YYYY-MM-DD" }, periodo: { type: "string", enum: ["dia", "noite"] } },
     },
     run: (f, ctx, args) => explicar(f, ctx, args),
+  },
+  {
+    name: "registrar_sem_checkout",
+    description: "O preceptor (médico) saiu sem fazer o checkout dele. Precisa do NOME do médico: se ele não disse, NÃO chame — pergunte o nome antes. Mostra o plantão com o botão Registrar; ele toca, você não grava nada.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["preceptor"],
+      properties: {
+        preceptor: { type: "string", description: "Nome do médico como ele disse (ex.: João Silva)" },
+      },
+    },
+    run: (f, ctx, args) => semCheckoutOpcoes(f, ctx, args.preceptor),
   },
   {
     name: "liberar_plantao",

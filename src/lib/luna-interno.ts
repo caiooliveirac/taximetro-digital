@@ -15,7 +15,7 @@
  */
 
 import { criarFontes, type Fontes, type LunaCtx, type RegistroFonte } from "@/lib/luna-dados";
-import { FERRAMENTAS, buscar, liberarOpcoes, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
+import { FERRAMENTAS, buscar, liberarOpcoes, semCheckoutOpcoes, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
 import { quando, resumoParaModelo, textoDaAgenda, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
 import { rotear, type Intencao } from "@/lib/luna-roteador";
 import { addDaysToDateStr } from "@/lib/utils";
@@ -58,7 +58,8 @@ Como agir:
 - Quem são os internos, enfermeiro, equipe, "quantos internos", quem esteve num turno que já passou ("ontem"): não chame ferramenta. Diga em uma linha que você só vê o médico na base agora e a escala médica dos próximos turnos; quem mais está na base fica com a coordenação.
 - Base lotada, muitos internos, sem lugar na viatura, "posso ir para outra base?": não chame ferramenta e não autorize nada. Você não move ninguém. O próprio interno só se remaneja depois de avisar sem médico, sem enfermeiro ou problema na viatura (card do plantão na aba Hoje → Avisar; depois aba Check-in). Lotação ou outro motivo: fale com o líder ou a coordenação.
 - Base citada na busca ("tem vaga na PP20?"): passe em bases; não devolva as outras.
-- Problema no check-in ou checkout (deu erro, código não aceita, preceptor foi embora sem checkout, base desativou depois do check-in, falta automática): você não corrige registro. Se for um plantão dele específico, use explicar_plantao. Senão, sem ferramenta: o checkout é confirmado pelo preceptor; sem checkout vira falta automática, que o preceptor corrige em Pendências; falta se justifica no calendário; erro que se repete, fale com o líder ou a coordenação.
+- Preceptor (médico) saiu sem fazer o checkout dele: registrar_sem_checkout com o NOME do médico. Sempre o nome: se ele não disse, não chame a ferramenta — pergunte "qual o nome do médico que saiu sem fazer seu checkout?". Resposta que é só um nome, depois dessa pergunta: é o preceptor. Não vira presença; fica como falta justificada que a coordenação e o líder veem.
+- Outro problema no check-in ou checkout (deu erro, código não aceita, base desativou depois do check-in): você não corrige registro. Se for um plantão dele específico, use explicar_plantao. Senão, sem ferramenta: o checkout é confirmado pelo preceptor; se o preceptor saiu sem fazer, ele te diz o nome e você registra; falta se justifica no calendário; erro que se repete, fale com o líder ou a coordenação.
 - Não vai poder ir num plantão dele (doente, prova, imprevisto), quer faltar, largar, cancelar ou liberar: liberar_plantao, com as datas se disse. Quem libera é ele, tocando no botão; você não libera nada.
 - Trocar um plantão dele por uma oferta específica: avaliar_troca. "Por que não contou", "fiz checkout e aparece pendente": explicar_plantao.
 - "A segunda", "essa", "dessas" = números da ÚLTIMA LISTA: passe em opcoes/opcao. Sem ÚLTIMA LISTA, não invente número. Para refinar a última busca, repita os parâmetros dela e mude só o pedido.
@@ -101,6 +102,7 @@ async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: Luna
   }
   if (intencao.tipo === "SOLICITACOES") return solicitacoesPendentes(f, ctx);
   if (intencao.tipo === "LIBERAR") return liberarOpcoes(f, ctx, intencao.datas, agora);
+  if (intencao.tipo === "SEM_CHECKOUT") return semCheckoutOpcoes(f, ctx, intencao.preceptor, agora);
   // A meta está na tela Início: aqui não se gasta consulta nem token com ela.
   if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: voz.metaNaTela(ctx.voz) };
   if (intencao.tipo === "BASE_AGORA") return situacaoDaBase(f, ctx, pergunta, agora);

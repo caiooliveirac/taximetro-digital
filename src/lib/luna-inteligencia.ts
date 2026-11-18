@@ -487,7 +487,8 @@ export function textoDaPresenca(meus: MeuPlantao[], hoje: string, inicio: string
   for (const m of andamento) linhas.push(`Em andamento: **${m.baseCode} ${quando(m.date, m.period, m.shift)}** — check-in feito; o checkout é no fim do turno.`);
   if (checkout.length) {
     linhas.push(`Checkout pendente em ${checkout.length}:`);
-    for (const { m } of checkout.slice(0, 5)) linhas.push(`- **${m.baseCode} ${quando(m.date, m.period, m.shift)}** — ${m.status === "ABSENT" ? "check-in validado, mas virou falta automática sem checkout; o preceptor corrige em Pendências" : "check-in validado e sem checkout; peça ao preceptor"}`);
+    for (const { m } of checkout.slice(0, 5)) linhas.push(`- **${m.baseCode} ${quando(m.date, m.period, m.shift)}** — ${m.status === "ABSENT" ? "check-in validado, mas virou falta automática sem checkout" : "check-in validado e sem checkout; peça ao preceptor"}`);
+    linhas.push("O preceptor saiu sem fazer seu checkout? Me diga o nome do médico (ex.: \"Dr. Fulano saiu sem fazer meu checkout\") que eu registro na falta como justificada.");
   }
   if (checkin.length) {
     linhas.push(`Sem check-in validado em ${checkin.length}:`);
@@ -517,7 +518,7 @@ export function explicarPlantao(m: MeuPlantao, meta: Meta | null, hoje: string, 
     case "scheduled":
       return `${nome}: agendado — já ocupa a casinha de ${m.tipo}; vira realizado com o checkout.`;
     case "pending":
-      return `${nome}: o prazo do checkout passou sem checkout, por isso não conta. ${m.checkinStatus === "VALIDATED" ? "Teve check-in: peça ao preceptor para fechar." : "Sem check-in validado: fale com o preceptor."}`;
+      return `${nome}: o prazo do checkout passou sem checkout, por isso não conta. ${m.checkinStatus === "VALIDATED" ? "Teve check-in: se o preceptor saiu sem fechar, me diga o nome do médico que eu registro na falta." : "Sem check-in validado: fale com o preceptor."}`;
     case "missed":
       return `${nome}: ficou como falta — falta não ocupa casinha. ${m.justificativa ? "Sua justificativa foi enviada; conta se for abonada." : "Dá para justificar no calendário; conta se for abonada."}`;
     default:

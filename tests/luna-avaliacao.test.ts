@@ -245,7 +245,7 @@ test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho s
   // Meta não vai no prompt (está na tela Início); a agenda vai.
   assert.doesNotMatch(corpos[0].messages[0].content, /"faltam"/);
   assert.match(corpos[0].messages[0].content, /RESUMO: .*"proximos"/);
-  assert.equal(corpos[0].tools.length, 5);
+  assert.equal(corpos[0].tools.length, 6);
 });
 
 test("3. 'Quais vagas posso pegar sem prejudicar meu descanso?' — direto, descanso conferido", async () => {
@@ -805,4 +805,32 @@ test("liberar: data citada filtra; data sem plantão mostra os próximos", async
 test("roteador: regra sobre faltar não é pedido de liberar", () => {
   for (const q of ["e se eu faltar?", "o que acontece se eu faltar"]) assert.notEqual(rotear(q, HOJE)?.tipo, "LIBERAR", q);
   for (const q of ["não vou conseguir ir amanhã", "quero cancelar meu plantão", "não posso ir dia 31/10", "liberar minha vaga"]) assert.equal(rotear(q, HOJE)?.tipo, "LIBERAR", q);
+});
+
+// ---------------------------------------------------------------------------
+// "O preceptor saiu sem fazer meu checkout": sempre com o nome do médico.
+
+test("sem checkout: sem nome, a Dai pergunta o nome e não mostra botão", async () => {
+  const { r, chamadas, log } = await perguntar("O preceptor saiu sem fazer meu checkout");
+  assert.equal(chamadas, 0);
+  assert.equal(log.intencao, "SEM_CHECKOUT");
+  assert.match(r.texto, /Qual o nome do médico/);
+  assert.equal(r.cartoes.length, 0);
+});
+
+test("sem checkout: com o nome, mostra o plantão com check-in validado e o botão Registrar", async () => {
+  const agora = new Date("2026-10-29T10:00:00-03:00");
+  const { r, chamadas } = await perguntar("O Dr. Paulo Mendes foi embora sem fazer meu checkout", { agora });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /Preceptor Paulo Mendes saiu sem realizar o checkout/);
+  assert.deepEqual(r.cartoes[0].itens.map((i) => i.semCheckout), [{ assignmentId: "p1", preceptor: "Paulo Mendes" }]);
+});
+
+test("sem checkout: nome dito depois vai ao modelo, que chama a ferramenta com ele", async () => {
+  const { r, chamadas } = await perguntar("Dra. Lúcia Prado", {
+    passos: [{ tool: { name: "registrar_sem_checkout", args: { preceptor: "Lúcia Prado" } } }],
+    agora: new Date("2026-10-29T10:00:00-03:00"),
+  });
+  assert.equal(chamadas, 1);
+  assert.equal(r.cartoes[0].itens[0].semCheckout?.preceptor, "Lúcia Prado");
 });

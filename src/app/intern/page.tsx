@@ -331,6 +331,13 @@ export default function InternHoje() {
                   ? "O checkout já foi solicitado e está aguardando confirmação do preceptor."
                   : "Seu plantão anterior ainda não teve checkout. Isso não impede o próximo check-in, mas precisa ser encerrado."}
               </p>
+              <p className={`text-xs ${pendingCheckout.state === "AWAITING" ? "text-blue-700" : "text-amber-700"}`}>
+                O preceptor saiu sem fazer seu checkout?{" "}
+                <Link href="/intern/luna?atalho=sem-checkout" className="font-semibold underline underline-offset-2">
+                  Conte à Dai com o nome do médico
+                </Link>
+                : fica registrado na falta como justificada.
+              </p>
             </div>
           </div>
           <Link href={`/intern/checkin?assignmentId=${pendingCheckout.assignment.id}`} className="mt-4 block">
@@ -389,6 +396,15 @@ export default function InternHoje() {
                   </div>
                   {justified && (
                     <p className="line-clamp-2 text-xs text-slate-600">{a.absenceJustification}</p>
+                  )}
+                  {!excused && !justified && (
+                    <p className="text-xs text-slate-600">
+                      Fez check-in e o preceptor saiu sem fazer seu checkout?{" "}
+                      <Link href="/intern/luna?atalho=sem-checkout" className="font-semibold text-accent-600 underline underline-offset-2">
+                        Conte à Dai com o nome do médico
+                      </Link>
+                      .
+                    </p>
                   )}
                   {!excused && (
                     <button

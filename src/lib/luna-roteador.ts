@@ -9,6 +9,7 @@
 
 import type { ArgsBusca } from "@/lib/luna-ferramentas";
 import { diaDaSemana } from "@/lib/luna-inteligencia";
+import { nomeNaFrase } from "@/lib/sem-checkout";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 
 export type Intencao =
@@ -21,6 +22,8 @@ export type Intencao =
   | { tipo: "SOLICITACOES" }
   /** "Não vou poder ir": os plantões dele que dá para liberar, com o botão (liberarOpcoes). */
   | { tipo: "LIBERAR"; datas: string[] }
+  /** "O preceptor saiu sem fazer meu checkout": com o nome, o botão Registrar; sem, pergunta o nome (semCheckoutOpcoes). */
+  | { tipo: "SEM_CHECKOUT"; preceptor: string | null }
   | { tipo: "BUSCA"; args: ArgsBusca };
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -122,6 +125,9 @@ const PROBLEMA = /\b(erro|errad\w*|problema|bug|trav\w*|zer(ar|ou)|apag\w*|esque
 // acontece se eu faltar") não entra: é o modelo que explica.
 const LIBERAR = /\bnao (vou|vai) (poder |conseguir |dar pra |dar para )?(ir|comparecer|estar la|fazer o plantao)\b|\bnao (posso|poderei|consigo|conseguirei) (ir|comparecer)\b|\b(vou|preciso|quero|tenho que) faltar\b|\b(liberar|largar|cancelar|desmarcar|soltar) (a |o |minha |meu |esse |este )?(vaga|plantao|extra)\b|\bdesistir do plantao\b|\btirar (o )?meu nome\b/;
 
+// Preceptor/médico que saiu sem fechar o checkout dele (sem-checkout.ts).
+const SEM_CHECKOUT = /\b(preceptora?|medic[oa]|doutora?|dra?)\b.*\b(saiu|foi embora|esqueceu|nao (fez|deu|realizou|finalizou|fechou)|sem (fazer|dar|realizar|finalizar|fechar))\b.*check ?-?out|check ?-?out.*\b(preceptora?|medic[oa]|doutora?|dra?)\b.*\b(saiu|foi embora|esqueceu|nao (fez|deu|realizou|finalizou|fechou))\b|\bsaiu sem (fazer |dar |realizar )?(o |meu )?check ?-?out\b/;
+
 const FORA_DO_DIRETO = /\b(quem|quantos|quantas)\b.*\b(internos?|internas?|enfermeir\w*|equipe|sombras?)\b|\b(muitos|muitas|tres|3) (internos?|internas?)\b|\b(lotad[ao]|base cheia|sem (lugar|espaco|cama))\b|\b(ontem|anteontem)\b/;
 
 export function rotear(pergunta: string, hoje: string = localDateStr()): Intencao | null {
@@ -129,6 +135,8 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   // Quem/quantos na base, lotação, turno passado: nenhuma resposta direta
   // sabe isso (a da base só sabe o médico de agora). Vai ao modelo, que diz
   // o que não sabe — antes, "quem está de interno na SM01?" saía com o médico.
+  // Antes de tudo: "o médico saiu ontem sem meu checkout" não é pergunta sobre o passado da base.
+  if (q.length <= 300 && SEM_CHECKOUT.test(q)) return { tipo: "SEM_CHECKOUT", preceptor: nomeNaFrase(pergunta) };
   if (FORA_DO_DIRETO.test(q)) return null;
   if (q.length <= 200 && LIBERAR.test(q) && !/\be se\b|\bo que acontece\b|\bpode(ria)?\b.*\?$/.test(q)) return { tipo: "LIBERAR", datas: datasDaPergunta(q, hoje) };
   // Antes da peneira de nuance: "vai ativar hoje à noite?" é a mesma pergunta.

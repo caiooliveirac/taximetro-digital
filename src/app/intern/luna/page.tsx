@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeftRight, CalendarClock, ChevronDown, ClipboardCheck, Loader2, Moon, Siren, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Sun, Sunrise, Sunset, Target, Ticket, Zap } from "lucide-react";
+import { ArrowLeftRight, CalendarClock, ChevronDown, ClipboardCheck, Loader2, Moon, Siren, MapPin, RotateCcw, Send, Sparkles, Stethoscope, Sun, Sunrise, Sunset, Target, Ticket, UserX, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getBaseStyle } from "@/lib/base-colors";
@@ -27,6 +27,8 @@ const ATALHOS = [
   { chave: "proximos", icone: CalendarClock, rotulo: "Meus próximos plantões", pergunta: "Quais são meus próximos plantões?" },
   { chave: "meta", icone: Target, rotulo: "Que vagas fecham minha meta?", pergunta: "Que vagas fecham minha meta?" },
   { chave: "checkout", icone: ClipboardCheck, rotulo: "Tenho checkout pendente?", pergunta: "Tenho checkout pendente?" },
+  // Sem nome na frase, a Dai pergunta o nome do médico (sem-checkout.ts).
+  { chave: "sem-checkout", icone: UserX, rotulo: "Preceptor saiu sem checkout", pergunta: "O preceptor saiu sem fazer meu checkout" },
   { chave: "caso", icone: Stethoscope, rotulo: "Discutir um caso", pergunta: "Quero discutir um caso" },
 ] as const;
 
@@ -85,6 +87,37 @@ function Candidatar({ offerId }: { offerId: string }) {
       className="shrink-0 rounded-full bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700 disabled:opacity-50"
     >
       {enviando ? "Enviando…" : "Me candidatar"}
+    </button>
+  );
+}
+
+/** "Preceptor saiu sem checkout": um toque grava a justificativa padrão na falta (registrar-sem-checkout.ts). */
+function RegistrarSemCheckout({ assignmentId, preceptor }: { assignmentId: string; preceptor: string }) {
+  const [estado, setEstado] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  if (estado) {
+    return <span className={cn("max-w-[55%] text-right text-xs", estado.ok ? "text-emerald-700" : "text-amber-700")}>{estado.texto}</span>;
+  }
+  return (
+    <button
+      type="button"
+      disabled={enviando}
+      onClick={async () => {
+        setEnviando(true);
+        const r = await fetch("/taximetro/api/intern/sem-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignmentId, preceptor }),
+        }).catch(() => null);
+        const j = r ? await r.json().catch(() => null) : null;
+        setEnviando(false);
+        setEstado(j?.success
+          ? { ok: true, texto: "Registrado como falta justificada." }
+          : { ok: false, texto: j?.error ?? "Sem conexão. Tente de novo." });
+      }}
+      className="shrink-0 rounded-full bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700 disabled:opacity-50"
+    >
+      {enviando ? "Registrando…" : "Registrar"}
     </button>
   );
 }
@@ -264,6 +297,7 @@ function Cartao({ cartao }: { cartao: LunaCartao }) {
             ) : null}
             {item.candidatar ? <Candidatar offerId={item.candidatar} /> : null}
             {item.liberar ? <Liberar assignmentId={item.liberar} /> : null}
+            {item.semCheckout ? <RegistrarSemCheckout {...item.semCheckout} /> : null}
             {item.href && item.acao ? (
               <Link href={item.href} className="shrink-0 rounded-full bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700">
                 {item.acao}
