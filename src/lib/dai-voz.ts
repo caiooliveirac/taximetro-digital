@@ -21,11 +21,11 @@ const plural = (n: number, um: string, varios: string) => (n === 1 ? um : varios
 export const voz = {
   metaNaTela: (v?: string) =>
     escolher(v, "metaNaTela", [
-      "Sua meta, tipo por tipo, está na tela **Início**. Aqui eu procuro o que fecha ela: pergunte \"que vagas fecham minha meta?\".",
-      "O placar da meta, tipo por tipo, fica na tela **Início**. Meu trabalho é achar o que fecha ela — pergunte \"que vagas fecham minha meta?\".",
-      "Suas casinhas estão na **Início**, sempre atualizadas. Se quiser, eu procuro vagas que completam: \"que vagas fecham minha meta?\".",
-      "A contagem da meta mora na tela **Início**. Aqui eu caço o que falta: é só pedir \"que vagas fecham minha meta?\".",
-      "Dá uma olhada na **Início**: lá está a meta de cada tipo. Para achar vaga que fecha, me pergunte \"que vagas fecham minha meta?\".",
+      "Sua meta, tipo por tipo, está na aba **Hoje**. Aqui eu procuro o que fecha ela: pergunte \"que vagas fecham minha meta?\".",
+      "O placar da meta, tipo por tipo, fica na aba **Hoje**. Meu trabalho é achar o que fecha ela — pergunte \"que vagas fecham minha meta?\".",
+      "Suas casinhas estão na aba **Hoje**, sempre atualizadas. Se quiser, eu procuro vagas que completam: \"que vagas fecham minha meta?\".",
+      "A contagem da meta mora na aba **Hoje**. Aqui eu caço o que falta: é só pedir \"que vagas fecham minha meta?\".",
+      "Dá uma olhada na aba **Hoje**: lá está a meta de cada tipo. Para achar vaga que fecha, me pergunte \"que vagas fecham minha meta?\".",
     ]),
 
   agenda: (v: string | undefined, janela?: string) =>

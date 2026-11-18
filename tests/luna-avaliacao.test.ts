@@ -123,12 +123,12 @@ async function perguntar(texto: string, opts: { passos?: Passo[]; fx?: Fixture; 
 // ---------------------------------------------------------------------------
 // Caminho direto: zero chamadas ao modelo.
 
-test("1. 'Quanto falta para eu terminar?' — meta está na tela Início: sem modelo e sem consulta", async () => {
+test("1. 'Quanto falta para eu terminar?' — meta está na aba Hoje: sem modelo e sem consulta", async () => {
   const { r, chamadas, log, lidas } = await perguntar("Quanto falta para eu terminar?");
   assert.equal(chamadas, 0);
   assert.equal(log.rota, "direta");
   assert.deepEqual(lidas, []);
-  assert.match(r.texto, /tela \*\*Início\*\*/);
+  assert.match(r.texto, /aba \*\*Hoje\*\*/);
   assert.doesNotMatch(r.texto, /Faltam/);
 });
 
@@ -242,7 +242,7 @@ test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho s
   assert.doesNotMatch(r.texto, /SA01|IT30/);
   assert.match(r.texto, /Deixei de fora 2: 1 sem 12h de descanso \(por causa do seu CB02 sáb 31\/10 dia\), 1 em dia que você não pode/);
   // O resumo foi junto no prompt: o modelo não precisa de ferramenta para a agenda.
-  // Meta não vai no prompt (está na tela Início); a agenda vai.
+  // Meta não vai no prompt (está na aba Hoje); a agenda vai.
   assert.doesNotMatch(corpos[0].messages[0].content, /"faltam"/);
   assert.match(corpos[0].messages[0].content, /RESUMO: .*"proximos"/);
   assert.equal(corpos[0].tools.length, 6);
@@ -299,7 +299,7 @@ test("7. 'Minha meta fecha mesmo com uma falta?' — vai ao modelo com o resumo,
   const { chamadas, corpos, log } = await perguntar("Minha meta fecha mesmo com uma falta?", { passos: [{ texto: "Falta não ocupa casinha…" }] });
   assert.equal(chamadas, 1);
   assert.equal(log.rota, "modelo");
-  assert.match(corpos[0].messages[0].content, /tela Início/);
+  assert.match(corpos[0].messages[0].content, /aba Hoje/);
 });
 
 test("9. 'Por que meu plantão não contou na meta?' — explica cada um", async () => {
@@ -724,7 +724,7 @@ test("vaga liberada, falta meta: o que falta e até quando, só o que conta, que
   const meta: Meta = { ...META, fim: "2026-11-06" };
   const { r, chamadas } = await perguntar("Tem vaga liberada pra mim?", { fx: { meta } });
   assert.equal(chamadas, 0);
-  // A meta está na Início: abre pela vaga, não por "Falta 2 USA" (18/11, 20 respostas reais abriam assim).
+  // A meta está na aba Hoje: abre pela vaga, não por "Falta 2 USA" (18/11, 20 respostas reais abriam assim).
   assert.match(r.texto, /^Estas vagas liberadas contam na sua meta e cabem no seu descanso até o fim do rodízio \(sex 06\/11\):/);
   assert.doesNotMatch(r.texto, /Falta \*\*/);
   // Só o que conta até o fim do rodízio: CB07 (10/11) e CRUX (CRU completo) ficam fora.

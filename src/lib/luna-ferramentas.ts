@@ -802,7 +802,7 @@ export function respostaDaLiberada(p: {
   const { busca, meta, falta, lider, hoje } = p;
   const numero = (_a: Avaliada, i: number) => i + 1;
 
-  // A meta está na tela Início: a resposta abre pela vaga, não pelo placar
+  // A meta está na aba Hoje: a resposta abre pela vaga, não pelo placar
   // (antes, "Falta 2 USA…" abria cada resposta). Fica o que decide a vaga: se conta.
   if (falta.length) {
     const faltaTxt = falta.map((k) => `${meta.faltam[k]} ${k}`).join(" e ");

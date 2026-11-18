@@ -383,7 +383,7 @@ export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => numbe
   if (b.sumiram) linhas.push(b.sumiram === 1 ? "Essa opção não está mais aberta — alguém já pegou ou ela saiu da lista." : `${b.sumiram} dessas opções não estão mais abertas.`);
 
   if (b.objetivo === "meta") {
-    if (b.status === "INSUFFICIENT_DATA") linhas.push("Não consegui achar sua meta, então não sei o que conta. Confira a aba Início ou fale com o líder.");
+    if (b.status === "INSUFFICIENT_DATA") linhas.push("Não consegui achar sua meta, então não sei o que conta. Confira a aba Hoje ou fale com o líder.");
     else if (b.status === "META_COMPLETA") {
       const tipos = b.tipos?.length ? `de ${b.tipos.join(" e ")} ` : "";
       return voz.metaCompleta(v, tipos);

@@ -46,13 +46,13 @@ const config = () => ({
 
 export const lunaLigada = () => Boolean(config().key);
 
-const FALHOU = "Não consegui consultar seus dados agora — não vou chutar. As telas de Início, Trocas e Extras seguem funcionando.";
+const FALHOU = "Não consegui consultar seus dados agora — não vou chutar. As abas Hoje, Trocas e Extras seguem funcionando.";
 
 const SISTEMA = `Você é o Dai, assistente dos internos de medicina no SAMU Salvador, no app Taxímetro. Ajuda a achar plantão possível: fechar a meta, trocar, pegar vaga liberada, extra ou sobra da grade.
 
 Como agir:
 - RESUMO abaixo é o estado real do interno agora (rodízio, próximos plantões). Pergunta só sobre isso: responda direto, sem ferramenta.
-- Meta e casinhas ele já vê na tela Início: não repita números de meta; se perguntar, aponte a tela Início.
+- Meta e casinhas ele já vê na aba Hoje (a primeira do app): não repita números de meta; se perguntar, aponte a aba Hoje.
 - Vaga, extra, troca, opção, "consigo fechar a meta", "melhor solução": chame buscar_opcoes com as restrições que ele disse (nao_posso, prefere_*, tipos). Não filtre nem conte nada você: a ferramenta cruza meta, descanso e agenda.
 - "Vai ativar?", "tem médico?", "o médico chegou?", agora ou num turno que vem: situacao_da_base. Ela só sabe do MÉDICO. O texto dela vira a resposta inteira, então só chame se a pergunta for essa.
 - Quem são os internos, enfermeiro, equipe, "quantos internos", quem esteve num turno que já passou ("ontem"): não chame ferramenta. Diga em uma linha que você só vê o médico na base agora e a escala médica dos próximos turnos; quem mais está na base fica com a coordenação.
@@ -103,7 +103,7 @@ async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: Luna
   if (intencao.tipo === "SOLICITACOES") return solicitacoesPendentes(f, ctx);
   if (intencao.tipo === "LIBERAR") return liberarOpcoes(f, ctx, intencao.datas, agora);
   if (intencao.tipo === "SEM_CHECKOUT") return semCheckoutOpcoes(f, ctx, intencao.preceptor, agora);
-  // A meta está na tela Início: aqui não se gasta consulta nem token com ela.
+  // A meta está na aba Hoje: aqui não se gasta consulta nem token com ela.
   if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: voz.metaNaTela(ctx.voz) };
   if (intencao.tipo === "BASE_AGORA") return situacaoDaBase(f, ctx, pergunta, agora);
   const [meta, meus] = await Promise.all([f.meta(), f.meusPlantoes()]);
