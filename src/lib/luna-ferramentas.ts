@@ -652,7 +652,7 @@ export const FERRAMENTAS: {
   },
   {
     name: "explicar_plantao",
-    description: "Explica por que um plantão dele conta ou não conta para a meta (extra, falta, checkout pendente, fora do rodízio, cancelado). Sem data: lista os que não estão contando.",
+    description: "Só quando ele pergunta POR QUE um plantão dele conta ou não conta para a meta, ou por que aparece pendente/não confirmado (extra, falta, checkout pendente, fora do rodízio, cancelado). Sem data: lista os que não estão contando. Não serve para comprovante, solicitação, justificativa, abono nem para quem não vai poder ir.",
     parameters: {
       type: "object",
       additionalProperties: false,

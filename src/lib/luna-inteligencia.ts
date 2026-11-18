@@ -507,7 +507,7 @@ export function textoDaPresenca(meus: MeuPlantao[], hoje: string, inicio: string
   }
   if (faltas.length) {
     const semJust = faltas.filter((f) => !f.justificativa).length;
-    linhas.push(`Faltas no rodízio: ${faltas.length}${semJust ? ` (${semJust} sem justificativa — dá para justificar no calendário)` : " (todas justificadas)"}.`);
+    linhas.push(`Faltas no rodízio: ${faltas.length}${semJust ? ` (${semJust} sem justificativa — dá para justificar na aba Hoje ou em Histórico)` : " (todas justificadas)"}.`);
   }
   return linhas.join("\n");
 }
@@ -531,7 +531,7 @@ export function explicarPlantao(m: MeuPlantao, meta: Meta | null, hoje: string, 
     case "pending":
       return `${nome}: o prazo do checkout passou sem checkout, por isso não conta. ${m.checkinStatus === "VALIDATED" ? "Teve check-in: se o preceptor saiu sem fechar, me diga o nome do médico que eu registro na falta." : "Sem check-in validado: fale com o preceptor."}`;
     case "missed":
-      return `${nome}: ficou como falta — falta não ocupa casinha. ${m.justificativa ? "Sua justificativa foi enviada; conta se for abonada." : "Dá para justificar no calendário; conta se for abonada."}`;
+      return `${nome}: ficou como falta — falta não ocupa casinha. ${m.justificativa ? "Sua justificativa foi enviada; conta se for abonada." : "Dá para justificar na aba Hoje ou em Histórico; conta se a coordenação abonar."}`;
     default:
       return `${nome}: não consegui classificar esse plantão.`;
   }

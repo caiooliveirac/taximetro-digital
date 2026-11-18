@@ -9,6 +9,7 @@
 
 import type { ArgsBusca } from "@/lib/luna-ferramentas";
 import { diaDaSemana } from "@/lib/luna-inteligencia";
+import { regraDaPergunta } from "@/lib/luna-regras";
 import { nomeNaFrase } from "@/lib/sem-checkout";
 import { addDaysToDateStr, localDateStr } from "@/lib/utils";
 
@@ -24,6 +25,8 @@ export type Intencao =
   | { tipo: "LIBERAR"; datas: string[] }
   /** "O preceptor saiu sem fazer meu checkout": com o nome, o botão Registrar; sem, pergunta o nome (semCheckoutOpcoes). */
   | { tipo: "SEM_CHECKOUT"; preceptor: string | null }
+  /** Regra ou app ("que horas acaba o turno?", "quando abonam?"): texto fixo de luna-regras. */
+  | { tipo: "REGRA"; chave: string; texto: string }
   | { tipo: "BUSCA"; args: ArgsBusca };
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -31,7 +34,7 @@ const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCa
 /** Restrição, referência a algo anterior, explicação ou condição: precisa interpretar. */
 const NUANCE = /\b(significa\w*|quer dizer|o que (e|eh)|como funciona|o que acontece|nao (posso|da|consigo|quero)|prova|aula|prefir\w*|prefer\w*|exceto|menos|evit\w*|segunda|terca|quarta|quinta|sexta|sabado|domingo|seg|ter|qua|qui|sex|sab|dom|fim de semana|\d{1,2}\/\d{1,2}|ess[ae]s?|dess[ae]s?|opc(ao|oes)|e se|melhor|mas|mesmo|por ?que|pq|explica\w*|nao cont\w*|noite|notur\w*|diurn\w*|manha|tarde|perto|longe|com o|com a|colega)\b/;
 const TIPO = /\b(usa|cru|crl)\b/;
-const SOLICITACOES = /\bsolicita(cao|coes|ei|do|da|dos|das)\b|\bmeus? pedidos?\b|\bpedido pendente|nao (analisaram|aprovaram|responderam|avaliaram|viram)|(ninguem|lider|coordenacao) (ainda )?(nao )?(aprovou|analisou|respondeu|viu)/;
+const SOLICITACOES = /\bsolicita(cao|coes|ei|do|da|dos|das)\b|\bmeus? pedidos?\b|\bpedido pendente|nao (analisaram|aprovaram|responderam|avaliaram|viram)|\b(cliquei em .?pedir|pedi|solicitei|me candidatei)\b.*\bnao (apareceu|aparece)\b|(ninguem|lider|coordenacao) (ainda )?(nao )?(aprovou|analisou|respondeu|viu)/;
 
 // Pergunta por dia ("dia 09/11 tem?", "preciso pegar dia 29, 30 e 01",
 // "tem vaga sábado?"): vai direto, só naqueles dias. Formas reais no audit_log
@@ -137,6 +140,9 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   // o que não sabe — antes, "quem está de interno na SM01?" saía com o médico.
   // Antes de tudo: "o médico saiu ontem sem meu checkout" não é pergunta sobre o passado da base.
   if (q.length <= 300 && SEM_CHECKOUT.test(q)) return { tipo: "SEM_CHECKOUT", preceptor: nomeNaFrase(pergunta) };
+  // Regra fixa antes de tudo que lê "troca"/"vaga": "largar seria trocar??" ia para a busca de trocas.
+  const regra = regraDaPergunta(q);
+  if (regra) return { tipo: "REGRA", ...regra };
   if (FORA_DO_DIRETO.test(q)) return null;
   if (q.length <= 200 && LIBERAR.test(q) && !/\be se\b|\bo que acontece\b|\bpode(ria)?\b.*\?$/.test(q)) return { tipo: "LIBERAR", datas: datasDaPergunta(q, hoje) };
   // Antes da peneira de nuance: "vai ativar hoje à noite?" é a mesma pergunta.

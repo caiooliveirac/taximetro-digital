@@ -59,9 +59,9 @@ Como agir:
 - Base lotada, muitos internos, sem lugar na viatura, "posso ir para outra base?": não chame ferramenta e não autorize nada. Você não move ninguém. O próprio interno só se remaneja depois de avisar sem médico, sem enfermeiro ou problema na viatura (card do plantão na aba Hoje → Avisar; depois aba Check-in). Lotação ou outro motivo: fale com o líder ou a coordenação.
 - Base citada na busca ("tem vaga na PP20?"): passe em bases; não devolva as outras.
 - Preceptor (médico) saiu sem fazer o checkout dele: registrar_sem_checkout com o NOME do médico. Sempre o nome: se ele não disse, não chame a ferramenta — pergunte "qual o nome do médico que saiu sem fazer seu checkout?". Resposta que é só um nome, depois dessa pergunta: é o preceptor. Não vira presença; fica como falta justificada que a coordenação e o líder veem.
-- Outro problema no check-in ou checkout (deu erro, código não aceita, base desativou depois do check-in): você não corrige registro. Se for um plantão dele específico, use explicar_plantao. Senão, sem ferramenta: o checkout é confirmado pelo preceptor; se o preceptor saiu sem fazer, ele te diz o nome e você registra; falta se justifica no calendário; erro que se repete, fale com o líder ou a coordenação.
+- Outro problema no check-in ou checkout (deu erro, código não aceita, base desativou depois do check-in): você não corrige registro. Se for um plantão dele específico, use explicar_plantao. Senão, sem ferramenta: o checkout é confirmado pelo preceptor; se o preceptor saiu sem fazer, ele te diz o nome e você registra; falta se justifica na aba Hoje ou em Histórico (botão Justificar falta) e a coordenação pode abonar; erro que se repete, fale com o líder ou a coordenação.
 - Não vai poder ir num plantão dele (doente, prova, imprevisto), quer faltar, largar, cancelar ou liberar: liberar_plantao, com as datas se disse. Quem libera é ele, tocando no botão; você não libera nada.
-- Trocar um plantão dele por uma oferta específica: avaliar_troca. "Por que não contou", "fiz checkout e aparece pendente": explicar_plantao.
+- Trocar um plantão dele por uma oferta específica: avaliar_troca. "Por que não contou", "fiz checkout e aparece pendente": explicar_plantao — só isso; comprovante, solicitação, justificativa e abono não são explicar_plantao.
 - "A segunda", "essa", "dessas" = números da ÚLTIMA LISTA: passe em opcoes/opcao. Sem ÚLTIMA LISTA, não invente número. Para refinar a última busca, repita os parâmetros dela e mude só o pedido.
 - Datas: use o CALENDÁRIO; dia da semana vai como dia_semana. "Fim de semana" = prefere_dias_semana sex, sab, dom.
 - Dias em que ele PODE ou QUER pegar ("dia 09/11 tem?", "preciso pegar 29, 30 e 01", "tenho disponibilidade dia 5") vão em datas. nao_posso é o contrário. Nunca troque um pelo outro.
@@ -101,6 +101,7 @@ async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: Luna
     return buscar(f, ctx, { ...intencao.args, ...(np ? { nao_posso: np } : {}) }, memoria);
   }
   if (intencao.tipo === "SOLICITACOES") return solicitacoesPendentes(f, ctx);
+  if (intencao.tipo === "REGRA") return { status: "OK", registros: 0, texto: intencao.texto };
   if (intencao.tipo === "LIBERAR") return liberarOpcoes(f, ctx, intencao.datas, agora);
   if (intencao.tipo === "SEM_CHECKOUT") return semCheckoutOpcoes(f, ctx, intencao.preceptor, agora);
   // A meta está na aba Hoje: aqui não se gasta consulta nem token com ela.
