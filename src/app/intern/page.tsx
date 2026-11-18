@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { MapPin, Sun, Moon, Calendar, ArrowRight, CalendarDays, CircleDot, Target, AlertTriangle, CheckCircle2, ShieldAlert, LogOut, FileText, XCircle, Megaphone, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -448,7 +448,7 @@ export default function InternHoje() {
       {todayAssignments.length > 0 ? (
         <div className="space-y-3">
           {todayAssignments.map((assignment) => (
-            <div key={assignment.id} className={`rounded-xl border bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-4 ${getBaseStyle(assignment.baseType).border}`}>
+            <div key={assignment.id} id={`plantao-${assignment.id}`} className={`rounded-xl border bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] space-y-4 ${getBaseStyle(assignment.baseType).border}`}>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs font-medium text-slate-500">Base</p>
@@ -487,7 +487,9 @@ export default function InternHoje() {
                 </Link>
               )}
               {isCurrentOperationalAssignment(assignment.date, assignment.period as "DAY" | "NIGHT") && (
-                <AvisoCoordenacao assignmentId={assignment.id} baseCode={assignment.baseCode} icon={<Megaphone className="h-3.5 w-3.5" strokeWidth={1.8} />} />
+                <Suspense fallback={null}>
+                  <AvisoCoordenacao assignmentId={assignment.id} baseCode={assignment.baseCode} icon={<Megaphone className="h-3.5 w-3.5" strokeWidth={1.8} />} />
+                </Suspense>
               )}
             </div>
           ))}

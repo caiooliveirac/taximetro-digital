@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   GradeDeRemanejamento,
   useRemanejamento,
@@ -12,6 +13,10 @@ import { participaDoRemanejamento } from "@/lib/remanejamento-interno";
  * secretário. Um toque, um aviso — o servidor segura repetição. O aviso já
  * abre a grade de vagas das outras bases: quem avisou está procurando lugar.
  * Base fora do remanejamento (LF90) só tem o aviso.
+ *
+ * A Dai traz para cá (`luna-ferramentas.ts`, remanejarOpcoes): `?avisar=<id>`
+ * rola até os botões; `?remanejar=<id>&destino=<código>` já abre a grade com a
+ * base escolhida em destaque. Quem muda de base continua sendo o toque aqui.
  */
 const BOTOES = [
   { tipo: "SEM_MEDICO", rotulo: "Sem médico" },
@@ -32,6 +37,18 @@ export function AvisoCoordenacao({
   const [enviando, setEnviando] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const remanejamento = useRemanejamento(assignmentId);
+  const params = useSearchParams();
+  const destino = params.get("remanejar") === assignmentId ? params.get("destino") : null;
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const remanejar = params.get("remanejar") === assignmentId;
+    if (!remanejar && params.get("avisar") !== assignmentId) return;
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (remanejar && comGrade) void remanejamento.buscar();
+    // Só na chegada pelo link: buscar de novo é o botão "Atualizar a grade".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, assignmentId]);
 
   async function avisar(tipo: string, rotulo: string) {
     if (!window.confirm(`Avisar a coordenação: "${rotulo}"?`)) return;
@@ -62,7 +79,7 @@ export function AvisoCoordenacao({
   }
 
   return (
-    <div className="space-y-3">
+    <div ref={ref} className="space-y-3 scroll-mt-24">
       <div className="space-y-2">
         <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
           {icon}Avisar a coordenação
@@ -103,7 +120,7 @@ export function AvisoCoordenacao({
                 ? "Atualizar a grade"
                 : "Ver vaga em outra base"}
           </button>
-          <GradeDeRemanejamento r={remanejamento} />
+          <GradeDeRemanejamento r={remanejamento} destino={destino} />
         </div>
       )}
     </div>

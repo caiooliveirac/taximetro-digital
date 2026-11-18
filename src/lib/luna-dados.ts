@@ -27,9 +27,14 @@ import { medicosPrevistos, type MedicosPrevistos } from "@/features/scheduling/i
 import { filaDeReposicao, type Fila } from "@/features/extra-offers/application/fila-de-reposicao";
 import { addDaysToDateStr, hasShiftStarted, operationalDateStr } from "@/lib/utils";
 import type { Meta, MeuPlantao, Oferta, Periodo, Solicitacao } from "@/lib/luna-inteligencia";
+import { plantaoEmAndamento, ultimoAviso, vagasAgora, type Tolerancia } from "@/lib/remanejamento-grade";
+import type { BaseComVaga } from "@/lib/remanejamento-interno";
 
 /** `voz`: semente da redação das respostas diretas (dai-voz.ts); sem ela, sempre a mesma. */
 export type LunaCtx = { internId: string; facultyId: string | null; hoje: string; voz?: string };
+
+/** Remanejamento no plantão em andamento: o aviso de pé (null = nenhum) e as vagas livres agora; `erro` = a rota recusaria. */
+export type RemanejamentoAgora = { erro: string } | (Tolerancia & { aviso: string | null; bases: BaseComVaga[] });
 
 export type Fontes = {
   meta(): Promise<Meta | null>;
@@ -54,6 +59,8 @@ export type Fontes = {
   trocas(): Promise<Oferta[]>;
   /** Regras da troca que dependem do colega: descanso dele, cota de CRU, pedido pendente. */
   conferirTroca(oferta: Oferta, meu: MeuPlantao): Promise<string | null>;
+  /** A mesma grade do card do plantão (`/api/intern/remanejamento`), para este plantão dele. */
+  remanejamento(assignmentId: string): Promise<RemanejamentoAgora>;
 };
 
 export type RegistroFonte = { fonte: string; ms: number; n: number; ok: boolean };
@@ -103,6 +110,14 @@ export function criarFontes(ctx: LunaCtx, registrar: (r: RegistroFonte) => void 
     situacaoDoTurno: (codigo, inicio) => lido(`plantoes:${codigo}:${inicio.toISOString()}`, () => situacaoDoTurnoNaBase(codigo, inicio)),
 
     medicosPrevistos: (date, period) => lido(`escala:${date}:${period}`, () => medicosPrevistos(date, period)),
+
+    remanejamento: (assignmentId) => lido(`remanejamento:${assignmentId}`, async (): Promise<RemanejamentoAgora> => {
+      const plantao = await plantaoEmAndamento(ctx.internId, assignmentId);
+      if ("error" in plantao) return { erro: plantao.error };
+      const aviso = await ultimoAviso(plantao);
+      if (aviso === null) return { aviso, abreAs: "", reivindicaAs: "", aberta: false, reivindicando: false, bases: [] };
+      return { aviso, ...(await vagasAgora(plantao)) };
+    }),
 
     meusPlantoes: () => lido("meus_plantoes", async () => {
       const rows = await db

@@ -15,7 +15,7 @@
  */
 
 import { criarFontes, type Fontes, type LunaCtx, type RegistroFonte } from "@/lib/luna-dados";
-import { FERRAMENTAS, buscar, liberarOpcoes, semCheckoutOpcoes, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
+import { FERRAMENTAS, buscar, liberarOpcoes, remanejarOpcoes, semCheckoutOpcoes, situacaoDaBase, solicitacoesPendentes, type AvisoAoLider, type LunaCartao, type LunaMemoria, type Resultado } from "@/lib/luna-ferramentas";
 import { quando, resumoParaModelo, textoDaAgenda, textoDaPresenca, ativos } from "@/lib/luna-inteligencia";
 import { rotear, type Intencao } from "@/lib/luna-roteador";
 import { addDaysToDateStr } from "@/lib/utils";
@@ -56,7 +56,8 @@ Como agir:
 - Vaga, extra, troca, opção, "consigo fechar a meta", "melhor solução": chame buscar_opcoes com as restrições que ele disse (nao_posso, prefere_*, tipos). Não filtre nem conte nada você: a ferramenta cruza meta, descanso e agenda.
 - "Vai ativar?", "tem médico?", "o médico chegou?", agora ou num turno que vem: situacao_da_base. Ela só sabe do MÉDICO. O texto dela vira a resposta inteira, então só chame se a pergunta for essa.
 - Quem são os internos, enfermeiro, equipe, "quantos internos", quem esteve num turno que já passou ("ontem"): não chame ferramenta. Diga em uma linha que você só vê o médico na base agora e a escala médica dos próximos turnos; quem mais está na base fica com a coordenação.
-- Base lotada, muitos internos, sem lugar na viatura, "posso ir para outra base?": não chame ferramenta e não autorize nada. Você não move ninguém. O próprio interno só se remaneja depois de avisar sem médico, sem enfermeiro ou problema na viatura (card do plantão na aba Hoje → Avisar; depois aba Check-in). Lotação ou outro motivo: fale com o líder ou a coordenação.
+- Quer sair da base no plantão de agora (base parada, sem médico, sem enfermeiro, viatura com problema, "posso ir para outra base?", "como me remanejo?"): remanejar_agora. Ela diz se falta o aviso, quando a grade abre ou as bases com vaga, com o botão. Você não move ninguém nem autoriza nada.
+- Base lotada, muitos internos, sem lugar na viatura: não é motivo de remanejamento (só sem médico, sem enfermeiro ou viatura). Não chame ferramenta: fale com o líder ou a coordenação. Mudar de base num plantão de outro dia: também com o líder.
 - Base citada na busca ("tem vaga na PP20?"): passe em bases; não devolva as outras.
 - Preceptor (médico) saiu sem fazer o checkout dele: registrar_sem_checkout com o NOME do médico. Sempre o nome: se ele não disse, não chame a ferramenta — pergunte "qual o nome do médico que saiu sem fazer seu checkout?". Resposta que é só um nome, depois dessa pergunta: é o preceptor. Não vira presença; fica como falta justificada que a coordenação e o líder veem.
 - Outro problema no check-in ou checkout (deu erro, código não aceita, base desativou depois do check-in): você não corrige registro. Se for um plantão dele específico, use explicar_plantao. Senão, sem ferramenta: o checkout é confirmado pelo preceptor; se o preceptor saiu sem fazer, ele te diz o nome e você registra; falta se justifica na aba Hoje ou em Histórico (botão Justificar falta) e a coordenação pode abonar; erro que se repete, fale com o líder ou a coordenação.
@@ -104,6 +105,7 @@ async function direto(intencao: Intencao, f: Fontes, ctx: LunaCtx, memoria: Luna
   if (intencao.tipo === "REGRA") return { status: "OK", registros: 0, texto: intencao.texto };
   if (intencao.tipo === "LIBERAR") return liberarOpcoes(f, ctx, intencao.datas, agora);
   if (intencao.tipo === "SEM_CHECKOUT") return semCheckoutOpcoes(f, ctx, intencao.preceptor, agora);
+  if (intencao.tipo === "REMANEJAR") return remanejarOpcoes(f, ctx, agora);
   // A meta está na aba Hoje: aqui não se gasta consulta nem token com ela.
   if (intencao.tipo === "META") return { status: "OK", registros: 0, texto: voz.metaNaTela(ctx.voz) };
   if (intencao.tipo === "BASE_AGORA") return situacaoDaBase(f, ctx, pergunta, agora);

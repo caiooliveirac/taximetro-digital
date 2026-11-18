@@ -4,7 +4,7 @@
  *
  * Quem procurar: o médico que chegou para o turno; se ninguém chegou, o que
  * está de saída (ele sabe quem assume). Sem médico depois da tolerância, o
- * caminho é o aviso "Sem médico" e o remanejamento pela aba Check-in
+ * caminho é o aviso "Sem médico" e o remanejamento no card do plantão
  * (remanejamento-interno.ts).
  *
  * Turno que ainda não começou ("vai ativar amanhã à noite?"): quem a escala
@@ -135,7 +135,7 @@ export function textoDaBaseAgora(p: { baseCode: string; turno: Turno; now: Date;
   }
   const inicio = horaDoInicio(turno);
   const tolerancia = horaDaTolerancia(turno);
-  const comoRemanejar = `no card do plantão (aba Hoje) toque em Avisar → Sem médico; depois disso, na aba Check-in, escolha outra base livre`;
+  const comoRemanejar = `no card do plantão (aba Hoje) toque em Avisar → Sem médico; depois disso, no mesmo card, Ver vaga em outra base`;
 
   if (!s.consultado) {
     return `Não consegui ver agora o quadro dos médicos. Se você chegar na ${baseCode} e não tiver médico até ${tolerancia}: ${comoRemanejar}.`;

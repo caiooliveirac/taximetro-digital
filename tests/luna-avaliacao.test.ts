@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { Fontes, LunaCtx } from "../src/lib/luna-dados";
+import type { Fontes, LunaCtx, RemanejamentoAgora } from "../src/lib/luna-dados";
 import type { Fila } from "../src/features/extra-offers/application/fila-de-reposicao";
 import type { SituacaoDoTurno } from "../src/features/scheduling/infra/repositories/plantoes-medicos-repository";
 import type { MedicosPrevistos } from "../src/features/scheduling/infra/repositories/escala-medica-repository";
@@ -60,7 +60,7 @@ const TROCAS: Oferta[] = [
   oferta("TROCA", "T3", "USA", "2026-10-31", "NIGHT", { quem: "Davi Reis", quemId: "u-d", assignmentId: "a-t3", faculdade: "FAC-A" }),
 ];
 
-type Fixture = { solicitacoes?: Solicitacao[]; avisoAoLider?: { ids: string[]; hora: string } | null; meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; situacao?: SituacaoDoTurno; previstos?: MedicosPrevistos; falha?: string };
+type Fixture = { solicitacoes?: Solicitacao[]; avisoAoLider?: { ids: string[]; hora: string } | null; meta?: Meta | null; meus?: MeuPlantao[]; liberadas?: Oferta[]; extras?: Oferta[]; grade?: Oferta[]; trocas?: Oferta[]; fila?: Fila; situacao?: SituacaoDoTurno; previstos?: MedicosPrevistos; remanejamento?: RemanejamentoAgora; falha?: string };
 
 // Números de 29/10/2026: a demanda passa da oferta em todo tipo.
 const FILA: Fila = { USA: { precisam: 131, casinhas: 611, vagasAbertas: 43 }, CRU: { precisam: 112, casinhas: 356, vagasAbertas: 0 }, CRL: { precisam: 60, casinhas: 60, vagasAbertas: 0 } };
@@ -90,6 +90,10 @@ function fontes(fx: Fixture = {}) {
     grade: le("grade", fx.grade ?? GRADE),
     trocas: le("trocas", fx.trocas ?? TROCAS),
     // Lado do colega: o Davi já tem plantão domingo de manhã.
+    remanejamento: async (id) => {
+      lidas.push(`remanejamento:${id}`);
+      return fx.remanejamento ?? { aviso: null, abreAs: "", reivindicaAs: "", aberta: false, reivindicando: false, bases: [] };
+    },
     conferirTroca: async (o) => (o.id === "T3" ? "Não dá para fazer essa troca: Davi Reis ficaria com dois plantões seguidos, sem 12h de descanso." : null),
   };
   return { f, lidas };
@@ -245,7 +249,7 @@ test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho s
   // Meta não vai no prompt (está na aba Hoje); a agenda vai.
   assert.doesNotMatch(corpos[0].messages[0].content, /"faltam"/);
   assert.match(corpos[0].messages[0].content, /RESUMO: .*"proximos"/);
-  assert.equal(corpos[0].tools.length, 6);
+  assert.equal(corpos[0].tools.length, 7);
 });
 
 test("3. 'Quais vagas posso pegar sem prejudicar meu descanso?' — direto, descanso conferido", async () => {
@@ -843,4 +847,82 @@ test("'Serviço quinta à noite' (9e9e, 04/11): o que ficou de fora por descanso
   const { r, chamadas } = await perguntar("Tem vaga dia 30/10 à noite?", { fx: { liberadas } });
   assert.equal(chamadas, 0);
   assert.match(r.texto, /Deixei de fora 2: 2 sem 12h de descanso \(por causa do seu PM04 sex 30\/10 noite\)\./);
+});
+
+// ---------------------------------------------------------------------------
+// Remanejar no plantão de agora: a Dai só lê e leva ao card do plantão (aba
+// Hoje), onde o aviso e a troca de base são toques.
+
+const AGORA_0830 = new Date("2026-10-29T11:30:00Z"); // qui 29/10, 08:30 em Salvador
+const NA_CB02 = [...MEUS, meu("r1", HOJE, "DAY", "USA", "CB02", { status: "CHECKED_IN" })];
+const ABERTA = { abreAs: "07:10", reivindicaAs: "07:15", aberta: true, reivindicando: true };
+
+test("roteador: sair da base agora é REMANEJAR; lotação, regra e outro dia não", () => {
+  for (const q of ["posso ir para outra base?", "minha base está parada", "estou sem médico, e agora?", "estamos sem enfermeiro", "a viatura quebrou", "quero me remanejar", "sem médico, o que eu faço?", "dá pra mudar de base?"]) {
+    assert.equal(rotear(q, HOJE)?.tipo, "REMANEJAR", q);
+  }
+  for (const q of ["tem médico na CB02?", "está com muitos internos, posso ir para outra base?", "posso mudar de base amanhã?", "como funciona o remanejamento?", "sem lugar na viatura"]) {
+    assert.notEqual(rotear(q, HOJE)?.tipo, "REMANEJAR", q);
+  }
+});
+
+test("remanejar sem aviso: explica e leva ao Avisar do card, sem modelo", async () => {
+  const { r, chamadas, log, lidas } = await perguntar("minha base está parada", { fx: { meus: NA_CB02 }, agora: AGORA_0830 });
+  assert.equal(chamadas, 0);
+  assert.equal(log.intencao, "REMANEJAR");
+  assert.ok(lidas.includes("remanejamento:r1"));
+  assert.match(r.texto, /abre depois do aviso/);
+  assert.match(r.texto, /\*\*Sem médico\*\*, \*\*Sem enfermeiro\*\* ou \*\*Problema na viatura\*\*/);
+  assert.deepEqual(r.cartoes[0].itens.map((i) => [i.acao, i.href]), [["Avisar", "/intern?avisar=r1"]]);
+});
+
+test("remanejar com aviso: bases com vaga, irmã primeiro, cada uma com o destino", async () => {
+  const remanejamento: RemanejamentoAgora = {
+    ...ABERTA,
+    aviso: "SEM_MEDICO",
+    bases: [
+      { id: "b-pr03", code: "PR03", name: "Base Periperi", irma: false, vagas: [{ alemDaGrade: false }, { alemDaGrade: false }] },
+      { id: "b-cb20", code: "CB20", name: "Base Cabula (2)", irma: true, vagas: [{ alemDaGrade: true }] },
+    ],
+  };
+  const { r, chamadas } = await perguntar("estou sem médico, e agora?", { fx: { meus: NA_CB02, remanejamento }, agora: AGORA_0830 });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /A CB20 é a mesma base física/);
+  assert.match(r.texto, /coordenação é avisada/);
+  const itens = r.cartoes[0].itens;
+  assert.deepEqual(itens.map((i) => i.href), ["/intern?remanejar=r1&destino=CB20", "/intern?remanejar=r1&destino=PR03"]);
+  assert.deepEqual(itens.map((i) => i.detalhe), ["mesma base física, outra viatura", "2 vagas"]);
+  assert.ok(itens.every((i) => i.acao === "Ir" && !i.liberar));
+});
+
+test("remanejar com aviso antes da tolerância: diz quando a grade abre", async () => {
+  const remanejamento: RemanejamentoAgora = { abreAs: "07:10", reivindicaAs: "07:15", aberta: false, reivindicando: false, aviso: "VIATURA", bases: [] };
+  const { r } = await perguntar("posso ir para outra base?", { fx: { meus: NA_CB02, remanejamento }, agora: AGORA_0830 });
+  assert.match(r.texto, /A grade de vagas abre às 07:10/);
+  assert.equal(r.cartoes[0].itens[0].href, "/intern?remanejar=r1");
+});
+
+test("remanejar com aviso e nenhuma vaga: diz, sem inventar base", async () => {
+  const { r } = await perguntar("posso ir para outra base?", { fx: { meus: NA_CB02, remanejamento: { ...ABERTA, reivindicando: false, aviso: "SEM_MEDICO", bases: [] } }, agora: AGORA_0830 });
+  assert.match(r.texto, /Nenhuma base com vaga livre agora\. A partir das 07:15/);
+});
+
+test("remanejar fora do turno e na LF90: diz por quê, sem ler a grade", async () => {
+  const fora = await perguntar("posso ir para outra base?", { agora: AGORA_0830 });
+  assert.match(fora.r.texto, /só abre no plantão em andamento\. O seu próximo é PM04/);
+  assert.ok(!fora.lidas.some((l) => l.startsWith("remanejamento")));
+
+  const lf = await perguntar("posso ir para outra base?", { fx: { meus: [meu("l1", HOJE, "DAY", "USA", "LF90", { status: "CHECKED_IN" })] }, agora: AGORA_0830 });
+  assert.match(lf.r.texto, /A LF90 fica fora do remanejamento/);
+  assert.ok(!lf.lidas.some((l) => l.startsWith("remanejamento")));
+});
+
+test("remanejar pelo modelo: frase livre chama remanejar_agora e a resposta é a da ferramenta", async () => {
+  const { r, chamadas, corpos } = await perguntar("cheguei aqui e a ambulância tá sem condutor e sem nada, consigo ir pra outro lugar?", {
+    fx: { meus: NA_CB02 },
+    passos: [{ tool: { name: "remanejar_agora", args: {} } }],
+  });
+  assert.equal(chamadas, 1);
+  assert.ok((corpos[0].tools as { function: { name: string } }[]).some((t) => t.function.name === "remanejar_agora"));
+  assert.match(r.texto, /abre depois do aviso|plantão em andamento/);
 });

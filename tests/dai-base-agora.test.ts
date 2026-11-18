@@ -24,7 +24,7 @@ test("ninguém chegou e há médico de saída: procurar quem sai; antes de 07:15
   const t = textoDaBaseAgora({ baseCode: "CB02", turno: dia, now: as("07:05"), situacao: sit({ saindo: [{ nome: "Bruno Reis", desde: "19:02" }] }) });
   assert.match(t, /Ninguém do turno das 07:00 registrou chegada na CB02/);
   assert.match(t, /Quem está de saída é Dr\(a\)\. Bruno Reis: procure por ele\(a\) e pergunte quem assume\./);
-  assert.match(t, /Se ninguém chegar até 07:15: no card do plantão \(aba Hoje\) toque em Avisar → Sem médico; depois disso, na aba Check-in, escolha outra base livre\./);
+  assert.match(t, /Se ninguém chegar até 07:15: no card do plantão \(aba Hoje\) toque em Avisar → Sem médico; depois disso, no mesmo card, Ver vaga em outra base\./);
 });
 
 test("depois de 07:15 sem ninguém: avisar Sem médico e escolher outra base", () => {

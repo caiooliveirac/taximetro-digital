@@ -15,7 +15,9 @@ import {
   FONTES, MOSTRAR, ativos, avaliarOferta, buscarOpcoes, ddmm, descreveBloqueio, explicarPlantao, linhaDaOpcao, linhaDaSolicitacao, quando, textoDaBusca,
   type Avaliada, type Bloqueio, type Busca, type Fonte, type Meta, type MeuPlantao, type Oferta, type Pedido, type Periodo, type Solicitacao,
 } from "@/lib/luna-inteligencia";
-import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted } from "@/lib/utils";
+import { addDaysToDateStr, getBrazilNowParts, hasShiftStarted, isCurrentOperationalAssignment, operationalDateStr } from "@/lib/utils";
+import { STATUS_NA_BASE } from "@/lib/aviso-tom";
+import { compararCodigoDeBase, participaDoRemanejamento } from "@/lib/remanejamento-interno";
 import { baseETurno, inicioDoTurno, textoDaBaseAgora, turnoJaAcabou, turnoPedido } from "@/lib/luna-base-agora";
 import { candidaturaAberta } from "@/features/extra-offers/application/fila-de-reposicao";
 import { nomeDoPreceptor, semCheckoutRegistravel } from "@/lib/sem-checkout";
@@ -569,6 +571,114 @@ export async function semCheckoutOpcoes(f: Fontes, ctx: LunaCtx, preceptor: unkn
 }
 
 // ---------------------------------------------------------------------------
+// remanejar_agora — "posso ir para outra base?", "base parada", "sem médico, e
+// agora?". Só lê: o aviso e a troca de base são toques no card do plantão (aba
+// Hoje), que passam por /api/intern/aviso e /api/intern/remanejamento.
+
+const cardDoPlantao = (query: string) => `/intern?${query}`;
+
+export async function remanejarOpcoes(f: Fontes, ctx: LunaCtx, agora: Date = new Date()): Promise<Resultado> {
+  const meus = await f.meusPlantoes();
+  const naBase = meus.filter((m) => STATUS_NA_BASE.has(m.status));
+  const atual = naBase.find((m) => isCurrentOperationalAssignment(m.date, m.period as Periodo, agora));
+  const item = (m: MeuPlantao, acao: string, href: string): LunaItem => ({
+    titulo: `${m.baseCode} · ${quando(m.date, m.period, m.shift)}`,
+    quando: { data: m.date, periodo: m.period, turno: m.shift },
+    base: m.baseCode,
+    tipoVaga: m.tipo,
+    href,
+    acao,
+  });
+
+  if (!atual) {
+    const hoje = operationalDateStr(agora);
+    const proximo = naBase
+      .filter((m) => m.date >= hoje && !hasShiftStarted(m.date, m.period as Periodo, m.shift, agora))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period))[0];
+    const deHoje = proximo && proximo.date <= addDaysToDateStr(hoje, 1);
+    return {
+      status: "NO_OPTIONS",
+      registros: meus.length,
+      texto: [
+        deHoje
+          ? `O remanejamento só abre no plantão em andamento. O seu próximo é ${proximo.baseCode} · ${quando(proximo.date, proximo.period, proximo.shift)}.`
+          : "Você não está em plantão agora: o remanejamento só vale no plantão em andamento.",
+        "Chegou e a base está parada (sem médico, sem enfermeiro ou problema na viatura)? Toque em **Avisar** no card do plantão, na aba Hoje; depois do aviso, a grade de vagas das outras bases aparece ali mesmo.",
+        "Mudar de base num plantão de outro dia é com o seu líder.",
+      ].join("\n"),
+    };
+  }
+
+  if (!participaDoRemanejamento(atual.baseCode)) {
+    return {
+      status: "NO_OPTIONS",
+      registros: meus.length,
+      texto: `A ${atual.baseCode} fica fora do remanejamento (é outra cidade): dá para avisar a coordenação no card do plantão, mas mudar de base é com ela.`,
+      cartao: { tipo: "plantoes", titulo: "Seu plantão agora", itens: [item(atual, "Avisar", cardDoPlantao(`avisar=${atual.id}`))] },
+    };
+  }
+
+  const r = await f.remanejamento(atual.id);
+  if ("erro" in r) return { status: "NO_OPTIONS", registros: meus.length, texto: r.erro };
+
+  if (r.aviso === null) {
+    return {
+      status: "NO_OPTIONS",
+      registros: meus.length,
+      texto: [
+        "O remanejamento abre depois do aviso à coordenação.",
+        `No card do plantão na ${atual.baseCode}, toque em **Sem médico**, **Sem enfermeiro** ou **Problema na viatura** — a coordenação recebe na hora. Logo abaixo aparece a grade de vagas das outras bases.`,
+        "Sem nenhum desses problemas, mudar de base é com o líder ou a coordenação.",
+      ].join("\n"),
+      cartao: { tipo: "plantoes", titulo: "Avisar a coordenação", itens: [item(atual, "Avisar", cardDoPlantao(`avisar=${atual.id}`))] },
+    };
+  }
+
+  const grade = cardDoPlantao(`remanejar=${atual.id}`);
+  if (!r.aberta) {
+    return {
+      status: "NO_OPTIONS",
+      registros: meus.length,
+      texto: `Seu aviso está de pé. A grade de vagas abre às ${r.abreAs}: tolerância para quem ainda vai chegar fazer o check-in na própria base. Depois disso, toque em **Ver vaga em outra base** no card do plantão.`,
+      cartao: { tipo: "plantoes", titulo: "Seu plantão agora", itens: [item(atual, "Abrir", grade)] },
+    };
+  }
+
+  if (!r.bases.length) {
+    const mais = r.reivindicando ? "" : ` A partir das ${r.reivindicaAs} pode abrir a vaga de quem não fez check-in.`;
+    return {
+      status: "NO_OPTIONS",
+      registros: meus.length,
+      texto: `Nenhuma base com vaga livre agora.${mais} Atualize a grade no card do plantão daqui a pouco ou ligue para a coordenação.`,
+      cartao: { tipo: "plantoes", titulo: "Seu plantão agora", itens: [item(atual, "Abrir", grade)] },
+    };
+  }
+
+  const bases = [...r.bases].sort((a, b) => Number(b.irma) - Number(a.irma) || compararCodigoDeBase(a.code, b.code));
+  const irma = bases.find((b) => b.irma);
+  return {
+    status: "OK",
+    registros: meus.length,
+    texto: [
+      irma ? `A ${irma.code} é a mesma base física, outra viatura, e tem vaga: a troca natural.` : "Estas bases têm vaga agora.",
+      "Toque em **Ir** e confirme no card do plantão: você muda de base na hora e a coordenação é avisada.",
+    ].join("\n"),
+    cartao: {
+      tipo: "plantoes",
+      titulo: "Vagas em outra base agora",
+      itens: bases.slice(0, MOSTRAR).map((b) => ({
+        titulo: `${b.code} — ${b.name}`,
+        detalhe: b.irma ? "mesma base física, outra viatura" : b.vagas.length > 1 ? `${b.vagas.length} vagas` : "1 vaga",
+        mapa: b.code,
+        href: cardDoPlantao(`remanejar=${atual.id}&destino=${encodeURIComponent(b.code)}`),
+        acao: "Ir",
+      })),
+      ...(bases.length > MOSTRAR ? { verTudo: { href: grade, rotulo: "Ver a grade inteira" } } : {}),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // explicar_plantao
 
 export async function explicar(f: Fontes, ctx: LunaCtx, raw: Record<string, unknown>): Promise<Resultado> {
@@ -684,6 +794,12 @@ export const FERRAMENTAS: {
       },
     },
     run: (f, ctx, args) => liberarOpcoes(f, ctx, Array.isArray(args.datas) ? args.datas.filter((d): d is string => typeof d === "string" && DATA.test(d)) : []),
+  },
+  {
+    name: "remanejar_agora",
+    description: "Quer sair da base no plantão de AGORA (base parada, sem médico, sem enfermeiro, viatura com problema, 'posso ir para outra base?', 'como me remanejo?'): diz o que dá para fazer agora — avisar a coordenação, esperar a grade abrir ou as bases com vaga, cada uma com o botão Ir. Você não move ninguém: ele toca e confirma.",
+    parameters: { type: "object", additionalProperties: false, properties: {} },
+    run: (f, ctx) => remanejarOpcoes(f, ctx),
   },
   {
     name: "situacao_da_base",

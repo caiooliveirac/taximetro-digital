@@ -27,6 +27,8 @@ export type Intencao =
   | { tipo: "SEM_CHECKOUT"; preceptor: string | null }
   /** Regra ou app ("que horas acaba o turno?", "quando abonam?"): texto fixo de luna-regras. */
   | { tipo: "REGRA"; chave: string; texto: string }
+  /** "Posso ir para outra base?", "base parada", "sem médico, e agora?": o que dá para fazer no plantão de agora (remanejarOpcoes). */
+  | { tipo: "REMANEJAR" }
   | { tipo: "BUSCA"; args: ArgsBusca };
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -131,6 +133,11 @@ const LIBERAR = /\bnao (vou|vai) (poder |conseguir |dar pra |dar para )?(ir|comp
 // Preceptor/médico que saiu sem fechar o checkout dele (sem-checkout.ts).
 const SEM_CHECKOUT = /\b(preceptora?|medic[oa]|doutora?|dra?)\b.*\b(saiu|foi embora|esqueceu|nao (fez|deu|realizou|finalizou|fechou)|sem (fazer|dar|realizar|finalizar|fechar))\b.*check ?-?out|check ?-?out.*\b(preceptora?|medic[oa]|doutora?|dra?)\b.*\b(saiu|foi embora|esqueceu|nao (fez|deu|realizou|finalizou|fechou))\b|\bsaiu sem (fazer |dar |realizar )?(o |meu )?check ?-?out\b/;
 
+// Sair da base no plantão de agora. "Sem médico" sozinho é "tem médico?"
+// (BASE_AGORA); com "e agora", "o que faço", "outra base", é remanejar.
+// Pergunta de regra ("como funciona", "e se") vai ao modelo.
+const REMANEJAR = /\bremanej\w*|\b(ir|passar|mudar|trocar|me mover|mover|sair) (para|pra|pro) (outra|outro) base\b|\b(mudar|trocar|sair) de base\b|\boutra base (com vaga|livre)\b|\bbase (esta |ta )?parada\b|\bsem enfermeir\w*|\bviatura (quebr\w*|pifou|com problema|baixad\w*|parada|sem condic\w*)|\b(quebrou|pifou|baixou) a viatura\b|\bsem viatura\b|\bsem medico\b.*\b(e agora|o que (eu )?(faco|fazer)|faco o que|outra base|posso sair|remanej\w*)\b/;
+
 const FORA_DO_DIRETO = /\b(quem|quantos|quantas)\b.*\b(internos?|internas?|enfermeir\w*|equipe|sombras?)\b|\b(muitos|muitas|tres|3) (internos?|internas?)\b|\b(lotad[ao]|base cheia|sem (lugar|espaco|cama))\b|\b(ontem|anteontem)\b/;
 
 export function rotear(pergunta: string, hoje: string = localDateStr()): Intencao | null {
@@ -145,6 +152,8 @@ export function rotear(pergunta: string, hoje: string = localDateStr()): Intenca
   if (regra) return { tipo: "REGRA", ...regra };
   if (FORA_DO_DIRETO.test(q)) return null;
   if (q.length <= 200 && LIBERAR.test(q) && !/\be se\b|\bo que acontece\b|\bpode(ria)?\b.*\?$/.test(q)) return { tipo: "LIBERAR", datas: datasDaPergunta(q, hoje) };
+  // Só o plantão de agora: outro dia ("amanhã", "dia 25") vai ao modelo.
+  if (q.length <= 200 && REMANEJAR.test(q) && !/\be se\b|\bo que acontece\b|\bcomo funciona\b|\bregra\b/.test(q) && !datasDaPergunta(q, hoje).some((d) => d > hoje)) return { tipo: "REMANEJAR" };
   // Antes da peneira de nuance: "vai ativar hoje à noite?" é a mesma pergunta.
   if (q.length <= 120 && BASE_AGORA.test(q)) return { tipo: "BASE_AGORA" };
   if (q.length <= 160 && SOLICITACOES.test(q) && !/\b(como|onde) (eu )?(faco|faz|peco|pede)\b/.test(q)) return { tipo: "SOLICITACOES" };

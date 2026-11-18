@@ -95,9 +95,11 @@ function detalheDaVaga(v: Vaga, irma: boolean) {
   return irma ? "reserva sua, além da grade" : "além da grade";
 }
 
-export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejamento> }) {
+/** `destino`: código da base escolhida na Dai — vem em destaque; se já não tem vaga, diz. */
+export function GradeDeRemanejamento({ r, destino }: { r: ReturnType<typeof useRemanejamento>; destino?: string | null }) {
   const { grade, indo, erro, ir } = r;
   const irma = grade?.bases.find((b) => b.irma) ?? null;
+  const semVagaNoDestino = Boolean(destino && grade?.aberta && !grade.bases.some((b) => b.code === destino));
 
   return (
     <div className="space-y-2">
@@ -129,6 +131,12 @@ export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejame
         </div>
       )}
 
+      {semVagaNoDestino && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          A {destino} já não tem vaga livre. Veja as outras abaixo.
+        </p>
+      )}
+
       {grade?.aberta && grade.bases.length === 0 && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
           Nenhuma vaga livre em outra base agora. Atualize daqui a pouco ou ligue para a coordenação.
@@ -138,10 +146,11 @@ export function GradeDeRemanejamento({ r }: { r: ReturnType<typeof useRemanejame
       {grade?.aberta && grade.bases.length > 0 && (
         <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {grade.bases.map((b) => (
-            <li key={b.id} className="space-y-1.5 px-3 py-2">
+            <li key={b.id} className={`space-y-1.5 px-3 py-2 ${b.code === destino ? "bg-emerald-50/60 ring-2 ring-inset ring-emerald-400" : ""}`}>
               <p className="text-sm font-semibold text-slate-900">
                 {b.code} <span className="font-normal text-slate-500">— {b.name}</span>
                 {b.irma && <span className="ml-2 text-xs font-medium text-emerald-700">mesma base física</span>}
+                {b.code === destino && <span className="ml-2 text-xs font-medium text-emerald-700">escolhida na Dai</span>}
               </p>
               <div className="grid grid-cols-3 gap-1.5">
                 {b.vagas.map((v, i) => {
