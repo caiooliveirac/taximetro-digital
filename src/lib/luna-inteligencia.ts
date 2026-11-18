@@ -110,6 +110,8 @@ export type Avaliada = Oferta & {
   ofereco?: MeuPlantao | null;
   /** Vaga livre para quem já fechou a meta: é candidatura, a coordenação decide. */
   candidatura?: boolean;
+  /** SEM_DESCANSO: o plantão dele que bloqueia ("PM04 sex 06/11 noite"). */
+  choque?: string;
 };
 
 const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -173,7 +175,7 @@ export function avaliarOferta(o: Oferta, cx: { meta: Meta | null; meus: MeuPlant
   const b = bloqueado(o.date, o.period, pedido.bloqueios);
   if (b) return fora("DIA_BLOQUEADO", `você não pode ${descreveBloqueio(b)}`);
   const choque = plantaoSemDescanso({ date: o.date, period: o.period, shift: o.shift, baseCode: o.baseCode }, ocupados);
-  if (choque) return fora("SEM_DESCANSO", `sem 12h de descanso por causa do seu ${descreveTurno(choque)}`);
+  if (choque) return { ...fora("SEM_DESCANSO", `sem 12h de descanso por causa do seu ${descreveTurno(choque)}`), choque: descreveTurno(choque) };
 
   // Extra é um por interno (claim-extra-offer.ts): o comum também.
   if (o.fonte === "EXTRA" && meta?.jaTemExtra) return fora("JA_TEVE_EXTRA", "extra é um por interno e você já teve o seu");
@@ -274,7 +276,8 @@ export type Busca = {
   aindaFaltam: Record<GoalKind, number> | null;
   totalCompativeis: number;
   precisamAprovacao: number;
-  descartes: { motivo: Motivo; n: number; exemplo: string }[];
+  /** `seus`: em SEM_DESCANSO, os plantões dele que bloqueiam. */
+  descartes: { motivo: Motivo; n: number; exemplo: string; seus?: string[] }[];
   /** Ofertas pedidas pelo número que não estão mais abertas. */
   sumiram: number;
   avisos: string[];
@@ -292,13 +295,14 @@ export function buscarOpcoes(ofertas: Oferta[], cx: { meta: Meta | null; meus: M
   const boas = ordenar(avaliadas.filter((a) => a.status === "ELIGIBLE" || a.status === "REQUIRES_APPROVAL"), pedido);
   const ruins = avaliadas.filter((a) => a.status === "INCOMPATIBLE");
 
-  const porMotivo = new Map<Motivo, { n: number; exemplo: string }>();
+  const porMotivo = new Map<Motivo, { n: number; exemplo: string; seus?: string[] }>();
   for (const r of ruins) {
     // Tipo não pedido e fora da janela não são "descartes" para o interno: ele mesmo recortou.
     // Extra fora da meta já vira aviso próprio.
     if (r.motivo === "TIPO_NAO_PEDIDO" || r.motivo === "FORA_DA_JANELA" || r.motivo === "JA_PASSOU" || r.motivo === "NAO_CONTA_PARA_META") continue;
     const atual = porMotivo.get(r.motivo!) ?? { n: 0, exemplo: `${r.baseCode} ${quando(r.date, r.period, r.shift)}: ${r.porque}` };
     atual.n += 1;
+    if (r.choque && !atual.seus?.includes(r.choque)) atual.seus = [...(atual.seus ?? []), r.choque];
     porMotivo.set(r.motivo!, atual);
   }
 
@@ -400,7 +404,14 @@ export function textoDaBusca(b: Busca, numero: (a: Avaliada, i: number) => numbe
 
   const descartadas = b.descartes.reduce((s, d) => s + d.n, 0);
   if (descartadas) {
-    const top = b.descartes.slice(0, 3).map((d) => `${d.n} ${ROTULO_MOTIVO[d.motivo]}`).join(", ");
+    // "sem 12h" sozinho não diz o que fazer: diz qual plantão dele bloqueia (9e9e, 04/11).
+    const seus = (d: Busca["descartes"][number]) => {
+      if (!d.seus?.length) return "";
+      const l = d.seus.slice(0, 2);
+      const lista = l.length > 1 ? `${l[0]} e ${l[1]}` : l[0];
+      return ` (por causa do seu ${lista}${d.seus.length > 2 ? ` e de mais ${d.seus.length - 2}` : ""})`;
+    };
+    const top = b.descartes.slice(0, 3).map((d) => `${d.n} ${ROTULO_MOTIVO[d.motivo]}${seus(d)}`).join(", ");
     linhas.push(`Deixei de fora ${descartadas}: ${top}.`);
   }
   linhas.push(...b.avisos);

@@ -240,7 +240,7 @@ test("critério final: 2 USA, não posso seg nem qua, prefiro noite, já tenho s
   assert.match(r.texto, /1\. \*\*CB05 qui 05\/11 noite\*\*/); // noite primeiro
   assert.match(r.texto, /2\. \*\*CB07 ter 10\/11 dia\*\*/);
   assert.doesNotMatch(r.texto, /SA01|IT30/);
-  assert.match(r.texto, /Deixei de fora 2: 1 sem 12h de descanso, 1 em dia que você não pode/);
+  assert.match(r.texto, /Deixei de fora 2: 1 sem 12h de descanso \(por causa do seu CB02 sáb 31\/10 dia\), 1 em dia que você não pode/);
   // O resumo foi junto no prompt: o modelo não precisa de ferramenta para a agenda.
   // Meta não vai no prompt (está na tela Início); a agenda vai.
   assert.doesNotMatch(corpos[0].messages[0].content, /"faltam"/);
@@ -836,4 +836,11 @@ test("sem checkout: nome dito depois vai ao modelo, que chama a ferramenta com e
   });
   assert.equal(chamadas, 1);
   assert.equal(r.cartoes[0].itens[0].semCheckout?.preceptor, "Lúcia Prado");
+});
+
+test("'Serviço quinta à noite' (9e9e, 04/11): o que ficou de fora por descanso diz qual plantão dele bloqueia", async () => {
+  const liberadas = [oferta("LIBERADA", "BR05", "USA", "2026-10-30", "NIGHT", { faculdade: "FAC-B" }), oferta("LIBERADA", "SM01", "USA", "2026-10-30", "NIGHT", { faculdade: "FAC-C" })];
+  const { r, chamadas } = await perguntar("Tem vaga dia 30/10 à noite?", { fx: { liberadas } });
+  assert.equal(chamadas, 0);
+  assert.match(r.texto, /Deixei de fora 2: 2 sem 12h de descanso \(por causa do seu PM04 sex 30\/10 noite\)\./);
 });
