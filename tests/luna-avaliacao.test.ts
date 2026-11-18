@@ -888,7 +888,7 @@ test("remanejar com aviso: bases com vaga, irmã primeiro, cada uma com o destin
   const { r, chamadas } = await perguntar("estou sem médico, e agora?", { fx: { meus: NA_CB02, remanejamento }, agora: AGORA_0830 });
   assert.equal(chamadas, 0);
   assert.match(r.texto, /A CB20 é a mesma base física/);
-  assert.match(r.texto, /coordenação é avisada/);
+  assert.match(r.texto, /coordenação e o seu líder são avisados/);
   const itens = r.cartoes[0].itens;
   assert.deepEqual(itens.map((i) => i.href), ["/intern?remanejar=r1&destino=CB20", "/intern?remanejar=r1&destino=PR03"]);
   assert.deepEqual(itens.map((i) => i.detalhe), ["mesma base física, outra viatura", "2 vagas"]);

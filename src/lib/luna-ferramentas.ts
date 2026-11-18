@@ -686,7 +686,7 @@ export async function remanejarOpcoes(f: Fontes, ctx: LunaCtx, agora: Date = new
     registros: meus.length,
     texto: [
       irma ? `A ${irma.code} é a mesma base física, outra viatura, e tem vaga: a troca natural.` : "Estas bases têm vaga agora.",
-      "Toque em **Ir** e confirme no card do plantão: você muda de base na hora e a coordenação é avisada.",
+      "Toque em **Ir** e confirme no card do plantão: você muda de base na hora e a coordenação e o seu líder são avisados.",
     ].join("\n"),
     cartao: {
       tipo: "plantoes",

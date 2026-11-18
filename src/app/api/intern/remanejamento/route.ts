@@ -8,7 +8,7 @@
  *                        presente não saem daqui: são da coordenação, no
  *                        Plantão ao vivo (ver `vagasLivresDoInterno`).
  * POST {assignmentId, newBaseId} — ocupa uma célula livre na hora e avisa a
- *                        coordenação.
+ *                        coordenação e o líder da faculdade dele.
  *
  * Só depois de um aviso (sem médico / sem enfermeiro / viatura) neste mesmo
  * plantão: o aviso é o gatilho, e é o que impede virar "mudo para a base perto
@@ -46,7 +46,7 @@ import { getEffectiveUser } from "@/lib/impersonate";
 import { formatBrazilTime } from "@/lib/utils";
 import { avisarSecretario } from "@/lib/aviso-tom";
 import { celulaOcupavel, motivoDoRemanejamento, textoDoRemanejamento } from "@/lib/remanejamento-interno";
-import { SEM_AVISO, gradeDoTurno, plantaoEmAndamento, toleranciaAgora, ultimoAviso, vagasAgora } from "@/lib/remanejamento-grade";
+import { SEM_AVISO, avisarLideres, gradeDoTurno, plantaoEmAndamento, toleranciaAgora, ultimoAviso, vagasAgora } from "@/lib/remanejamento-grade";
 import { executeReassignAssignmentBase } from "@/features/scheduling/application/use-cases/reassign-assignment-base";
 
 export async function GET(req: NextRequest) {
@@ -130,16 +130,15 @@ export async function POST(req: NextRequest) {
 
   if (resultado.status !== 200) return NextResponse.json(resultado.body, { status: resultado.status });
 
-  const entregue = await avisarSecretario(
-    textoDoRemanejamento({
-      interno: plantao.interno,
-      faculdade: plantao.faculdade,
-      de: plantao.baseCode,
-      para: resultado.baseCode,
-      hora: formatBrazilTime(new Date()),
-      motivo,
-    }),
-  );
+  const texto = textoDoRemanejamento({
+    interno: plantao.interno,
+    faculdade: plantao.faculdade,
+    de: plantao.baseCode,
+    para: resultado.baseCode,
+    hora: formatBrazilTime(new Date()),
+    motivo,
+  });
+  const [entregue] = await Promise.all([avisarSecretario(texto), avisarLideres(plantao, user.id, texto)]);
 
   return NextResponse.json({ success: true, data: { baseCode: resultado.baseCode, entregue } });
 }

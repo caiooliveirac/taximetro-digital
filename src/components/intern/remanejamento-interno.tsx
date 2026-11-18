@@ -57,7 +57,7 @@ export function useRemanejamento(assignmentId: string) {
   }
 
   async function ir(base: Base) {
-    if (!window.confirm(`Ir para a ${base.code} — ${base.name}?\n\nA coordenação será avisada.`)) return;
+    if (!window.confirm(`Ir para a ${base.code} — ${base.name}?\n\nA coordenação e o seu líder serão avisados.`)) return;
     setIndo(base.id);
     setErro(null);
     try {
@@ -70,7 +70,7 @@ export function useRemanejamento(assignmentId: string) {
       if (json.success) {
         window.alert(
           json.data.entregue
-            ? `Você agora está na ${json.data.baseCode}. Coordenação avisada.`
+            ? `Você agora está na ${json.data.baseCode}. Coordenação e líder avisados.`
             : `Você agora está na ${json.data.baseCode}. O aviso não chegou — ligue para a coordenação.`,
         );
         window.location.reload();
