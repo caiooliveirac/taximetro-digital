@@ -262,7 +262,7 @@ function semBloqueioNosDiasPedidos(a: ArgsBusca): ArgsBusca {
     (b.data ? b.data === d.data : b.dia_semana !== undefined && lerDiaSemana(b.dia_semana) === diaDaSemana(d.data)) &&
     (!b.periodo || !d.periodo || lerPeriodo(b.periodo) === lerPeriodo(d.periodo));
   const np = a.nao_posso.filter((b) => !a.datas!.some((d) => colide(b, d)));
-  const r = { ...a, nao_posso: np };
+  const r: ArgsBusca = { ...a, nao_posso: np };
   if (!np.length) delete r.nao_posso;
   return r;
 }
